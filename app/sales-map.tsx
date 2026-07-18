@@ -12,6 +12,11 @@ import {
   downloadCampaignTemplate,
   parseCampaignFile,
 } from "./campaign-xlsx";
+import {
+  buildOrganizationSearchQuery,
+  compactMapSearchName,
+  normalizeInstitutionSearchName,
+} from "../lib/map-location-query";
 
 export type SalesMapRecord = {
   id: number;
@@ -362,22 +367,22 @@ function formatDate(value: string) {
   return year && month && day ? `${year}.${month}.${day}` : value;
 }
 
-function compactOrganizationName(value: string) {
-  return value
-    .normalize("NFKC")
-    .toLocaleLowerCase("ko-KR")
-    .replace(/[^0-9a-z가-힣]/g, "");
+function compactOrganizationName(value: string, region = "") {
+  return compactMapSearchName(value, region);
 }
 
 function automaticLocationQueries(item: OrganizationSummary) {
   const organization = item.organization.trim();
-  const simplified = organization
+  const normalizedOrganization =
+    normalizeInstitutionSearchName(organization) || organization;
+  const simplified = normalizedOrganization
     .replace(/\s+(?:관련.*|[가-힣]+학과|[가-힣]+학부|[가-힣]+부서)$/, "")
     .trim();
   return [
-    [item.region, organization].filter(Boolean).join(" "),
+    buildOrganizationSearchQuery(item),
+    normalizedOrganization,
     organization,
-    simplified !== organization ? simplified : "",
+    simplified !== normalizedOrganization ? simplified : "",
   ].filter(
     (query, index, queries) =>
       query.length >= 2 && queries.indexOf(query) === index,
@@ -398,15 +403,21 @@ async function findAutomaticOrganizationPlace(
   item: OrganizationSummary,
 ) {
   if (ambiguousOrganizationPattern.test(item.organization)) return null;
-  const organizationKey = compactOrganizationName(item.organization);
+  const organizationKey = compactOrganizationName(
+    item.organization,
+    item.region,
+  );
 
   for (const query of automaticLocationQueries(item)) {
     const results = await searchKakaoKeyword(maps, query);
     if (!results.length) continue;
-    const queryKey = compactOrganizationName(query);
+    const queryKey = compactOrganizationName(query, item.region);
     const ranked = results
       .map((place, index) => {
-        const placeKey = compactOrganizationName(place.place_name);
+        const placeKey = compactOrganizationName(
+          place.place_name,
+          item.region,
+        );
         const address = `${place.road_address_name} ${place.address_name}`;
         let score = Math.max(0, 10 - index);
         if (placeKey === organizationKey) score += 100;
@@ -1427,7 +1438,7 @@ export default function SalesMapPage({
   }
 
   function openLocationSearch(item: OrganizationSummary) {
-    const query = [item.region, item.organization].filter(Boolean).join(" ");
+    const query = buildOrganizationSearchQuery(item);
     setLocatingOrganization(item);
     setLocationQuery(query);
     setPlaceResults([]);
