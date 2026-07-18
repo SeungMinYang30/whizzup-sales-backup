@@ -93,3 +93,26 @@ test("records, campaign, and map location GET handlers are read-only", async () 
   assert.doesNotMatch(recordsGet, /mergeExistingInstitutionAliases/);
   assert.doesNotMatch(locationsGet, /syncRegionsFromMappedLocations/);
 });
+
+test("saved map locations remain visible while refresh state is honest", async () => {
+  const locationsRoute = await readFile(
+    new URL("app/api/map/locations/route.ts", root),
+    "utf8",
+  );
+  const salesMap = await readFile(
+    new URL("app/sales-map.tsx", root),
+    "utf8",
+  );
+
+  assert.match(
+    locationsRoute,
+    /SELECT organization_locations\.\*\s+FROM organization_locations\s+ORDER BY organization COLLATE NOCASE/,
+  );
+  assert.doesNotMatch(
+    locationsRoute,
+    /WHERE EXISTS\s*\(\s*SELECT 1 FROM activities/,
+  );
+  assert.match(salesMap, /const mappedCountDisplay = locationsLoading/);
+  assert.match(salesMap, /locationsFetchSucceeded\s*\?\s*mappedCount/);
+  assert.match(salesMap, /저장된 위치 조회 실패/);
+});
