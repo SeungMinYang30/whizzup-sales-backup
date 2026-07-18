@@ -2,14 +2,21 @@ import {
   accessErrorResponse,
   ensureCollaborationReady,
   requireAdminMember,
-  requireApprovedMember,
 } from "../../../../lib/collaboration";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    await requireApprovedMember();
+    const environmentKey =
+      process.env.NEXT_PUBLIC_KAKAO_JAVASCRIPT_KEY?.trim() ?? "";
+    if (environmentKey) {
+      return Response.json({
+        configured: true,
+        javascriptKey: environmentKey,
+      });
+    }
+
     const d1 = await ensureCollaborationReady();
     const row = await d1
       .prepare(

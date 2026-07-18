@@ -31,12 +31,17 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getClaims();
+  try {
+    await supabase.auth.getClaims();
+  } catch {
+    // Route handlers verify API requests themselves. For page requests, let
+    // the page-level auth check decide whether to show the app or sign-in.
+  }
   return response;
 }
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

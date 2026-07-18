@@ -109,6 +109,10 @@ export async function getOrCreateMember(identity: ChatGPTUser) {
         SET auth_user_id = COALESCE(auth_user_id, ?),
             last_seen_at = CURRENT_TIMESTAMP
         WHERE id = ?
+          AND (
+            auth_user_id IS NULL
+            OR last_seen_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+          )
         RETURNING *
       `)
       .bind(identity.authUserId, Number(row.id))
