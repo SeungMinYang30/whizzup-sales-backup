@@ -7,10 +7,7 @@ import {
   clean,
   ensureRecordsReady,
 } from "../../../../lib/records-store";
-import {
-  ensureMapReady,
-  syncRegionsFromMappedLocations,
-} from "../../../../lib/map-store";
+import { ensureMapReady } from "../../../../lib/map-store";
 import { regionFromAddress } from "../../../../lib/region-from-address";
 
 export const dynamic = "force-dynamic";
@@ -18,18 +15,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     await requireApprovedMember();
-    await ensureRecordsReady();
     const d1 = await ensureMapReady();
-    await syncRegionsFromMappedLocations();
-    await d1
-      .prepare(
-        `DELETE FROM organization_locations
-         WHERE NOT EXISTS (
-           SELECT 1 FROM activities
-           WHERE activities.organization = organization_locations.organization
-         )`,
-      )
-      .run();
     const result = await d1
       .prepare(
         `SELECT organization_locations.*
