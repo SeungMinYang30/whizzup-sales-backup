@@ -37,9 +37,15 @@ function getSqlClient() {
     globalDatabase.whizzupPostgres = postgres(databaseUrl(), {
       prepare: false,
       ssl: "require",
-      max: 1,
+      max: 3,
       idle_timeout: 20,
       connect_timeout: 15,
+      max_lifetime: 300,
+      connection: {
+        statement_timeout: 12000,
+        lock_timeout: 5000,
+        idle_in_transaction_session_timeout: 15000,
+      },
     });
   }
   return globalDatabase.whizzupPostgres;
