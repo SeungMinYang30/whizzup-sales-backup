@@ -20,10 +20,6 @@ export async function GET() {
       .prepare(
         `SELECT organization_locations.*
          FROM organization_locations
-         WHERE EXISTS (
-           SELECT 1 FROM activities
-           WHERE activities.organization = organization_locations.organization
-         )
          ORDER BY organization COLLATE NOCASE`,
       )
       .all();
