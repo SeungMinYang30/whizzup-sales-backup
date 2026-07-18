@@ -49,42 +49,40 @@ export async function GET() {
     await requireApprovedMember();
     await ensureRecordsReady();
     const d1 = await ensureCampaignsReady();
-    const [campaigns, targets, members] = await Promise.all([
-      d1
-        .prepare(`
-          SELECT
-            c.*,
-            m.display_name AS created_by_name,
-            COUNT(t.id) AS target_count,
-            SUM(CASE WHEN t.assigned_member_id IS NOT NULL THEN 1 ELSE 0 END) AS assigned_count
-          FROM sales_campaigns c
-          LEFT JOIN members m ON m.id = c.created_by
-          LEFT JOIN sales_campaign_targets t ON t.campaign_id = c.id
-          GROUP BY c.id, m.display_name
-          ORDER BY c.created_at DESC, c.id DESC
-        `)
-        .all(),
-      d1
-        .prepare(`
-          SELECT
-            t.*,
-            m.display_name AS assigned_member_name
-          FROM sales_campaign_targets t
-          LEFT JOIN members m
-            ON m.id = t.assigned_member_id
-           AND m.status = 'approved'
-          ORDER BY t.campaign_id DESC, t.organization COLLATE NOCASE
-        `)
-        .all(),
-      d1
-        .prepare(`
-          SELECT id, display_name, email
-          FROM members
-          WHERE status = 'approved'
-          ORDER BY display_name COLLATE NOCASE
-        `)
-        .all(),
-    ]);
+    const campaigns = await d1
+      .prepare(`
+        SELECT
+          c.*,
+          m.display_name AS created_by_name,
+          COUNT(t.id) AS target_count,
+          SUM(CASE WHEN t.assigned_member_id IS NOT NULL THEN 1 ELSE 0 END) AS assigned_count
+        FROM sales_campaigns c
+        LEFT JOIN members m ON m.id = c.created_by
+        LEFT JOIN sales_campaign_targets t ON t.campaign_id = c.id
+        GROUP BY c.id, m.display_name
+        ORDER BY c.created_at DESC, c.id DESC
+      `)
+      .all();
+    const targets = await d1
+      .prepare(`
+        SELECT
+          t.*,
+          m.display_name AS assigned_member_name
+        FROM sales_campaign_targets t
+        LEFT JOIN members m
+          ON m.id = t.assigned_member_id
+         AND m.status = 'approved'
+        ORDER BY t.campaign_id DESC, t.organization COLLATE NOCASE
+      `)
+      .all();
+    const members = await d1
+      .prepare(`
+        SELECT id, display_name, email
+        FROM members
+        WHERE status = 'approved'
+        ORDER BY display_name COLLATE NOCASE
+      `)
+      .all();
     return Response.json({
       campaigns: campaigns.results,
       targets: targets.results,
