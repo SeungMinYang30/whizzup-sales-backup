@@ -32,6 +32,32 @@ export function buildOrganizationSearchQuery({
   return `${detailRegion} ${normalized}`.trim();
 }
 
+export function buildOrganizationSearchQueries({
+  region,
+  organization,
+}: {
+  region: string;
+  organization: string;
+}) {
+  const original = normalizeSpaces(organization);
+  const normalized = normalizeInstitutionSearchName(original) || original;
+  const detailRegion = detailedRegionName(region);
+  const preferred = buildOrganizationSearchQuery({ region, organization });
+  const organizationWithoutRegion =
+    detailRegion && normalized.startsWith(detailRegion)
+      ? normalized.slice(detailRegion.length).trim()
+      : normalized;
+  const cityVariant =
+    detailRegion && organizationWithoutRegion
+      ? `${detailRegion}시 ${organizationWithoutRegion}`
+      : "";
+
+  return [preferred, cityVariant, normalized, original].filter(
+    (query, index, queries) =>
+      query.length >= 2 && queries.indexOf(query) === index,
+  );
+}
+
 export function compactMapSearchName(value: string, region = "") {
   const compact = normalizeInstitutionSearchName(value)
     .toLocaleLowerCase("ko-KR")
