@@ -39,12 +39,15 @@ test("Supabase auth refresh responses are private and verified", async () => {
   assert.match(proxy, /setAll\(cookiesToSet,\s*headersToSet\)/);
   assert.match(proxy, /response\.headers\.set\(key,\s*value\)/);
   assert.match(proxy, /supabase\.auth\.getClaims\(\)/);
+  assert.match(proxy, /\(\?!api\|/);
 });
 
-test("serverless database access uses one unprepared pooled connection", async () => {
+test("serverless database access has bounded concurrent connections and query deadlines", async () => {
   const database = await readFile(new URL("db/index.ts", root), "utf8");
   assert.match(database, /prepare:\s*false/);
-  assert.match(database, /max:\s*1/);
+  assert.match(database, /max:\s*3/);
+  assert.match(database, /statement_timeout:\s*12000/);
+  assert.match(database, /lock_timeout:\s*5000/);
 });
 
 test("activity and author writes share one transaction", async () => {
