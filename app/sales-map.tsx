@@ -312,17 +312,31 @@ function normalizeCampaignMember(
   };
 }
 
+async function readJsonPayload<T>(response: Response, fallback: string) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const detail = text.replace(/\s+/g, " ").trim().slice(0, 180);
+    throw new Error(
+      !response.ok && detail
+        ? detail
+        : `${fallback} (응답 ${response.status})`,
+    );
+  }
+}
+
 async function fetchCampaignData(signal?: AbortSignal) {
   const response = await fetch("/api/map/campaigns", {
     cache: "no-store",
     signal,
   });
-  const payload = (await response.json()) as {
+  const payload = await readJsonPayload<{
     campaigns?: Record<string, unknown>[];
     targets?: Record<string, unknown>[];
     members?: Record<string, unknown>[];
     error?: string;
-  };
+  }>(response, "영업 카테고리 응답을 확인하지 못했습니다.");
   if (!response.ok) {
     throw new Error(
       payload.error || "영업 카테고리를 불러오지 못했습니다.",
@@ -559,10 +573,10 @@ export default function SalesMapPage({
       signal: configController.signal,
     })
       .then(async (response) => {
-        const payload = (await response.json()) as {
+        const payload = await readJsonPayload<{
           javascriptKey?: string;
           error?: string;
-        };
+        }>(response, "지도 설정 응답을 확인하지 못했습니다.");
         if (!response.ok) throw new Error(payload.error || "지도 설정을 확인하지 못했습니다.");
         return payload.javascriptKey ?? "";
       })
@@ -589,10 +603,10 @@ export default function SalesMapPage({
       signal: locationsController.signal,
     })
       .then(async (response) => {
-        const payload = (await response.json()) as {
+        const payload = await readJsonPayload<{
           locations?: Record<string, unknown>[];
           error?: string;
-        };
+        }>(response, "기관 위치 응답을 확인하지 못했습니다.");
         if (!response.ok) throw new Error(payload.error || "기관 위치를 불러오지 못했습니다.");
         return (payload.locations ?? []).map(normalizeLocation);
       })
