@@ -83,7 +83,7 @@ export async function PUT(request: Request) {
         UPDATE members SET
           status = ?,
           role = ?,
-          permissions = ?,
+          permissions = ?::jsonb,
           approved_at = CASE WHEN ? = 'approved' THEN COALESCE(approved_at, CURRENT_TIMESTAMP) ELSE approved_at END,
           approved_by = CASE WHEN ? = 'approved' THEN ? ELSE approved_by END
         WHERE id = ?
