@@ -198,13 +198,37 @@ let kakaoLoader: Promise<KakaoMapsApi> | null = null;
 function loadKakaoMaps(javascriptKey: string) {
   if (kakaoLoader) return kakaoLoader;
   kakaoLoader = new Promise<KakaoMapsApi>((resolve, reject) => {
+    let settled = false;
+    let timeout = 0;
+    const succeed = (maps: KakaoMapsApi) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      resolve(maps);
+    };
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      kakaoLoader = null;
+      reject(error);
+    };
     const finish = () => {
       if (!window.kakao?.maps) {
-        reject(new Error("카카오 지도 모듈을 불러오지 못했습니다."));
+        fail(new Error("카카오 지도 모듈을 불러오지 못했습니다."));
         return;
       }
-      window.kakao.maps.load(() => resolve(window.kakao!.maps));
+      window.kakao.maps.load(() => succeed(window.kakao!.maps));
     };
+    timeout = window.setTimeout(
+      () =>
+        fail(
+          new Error(
+            "카카오 지도 연결 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.",
+          ),
+        ),
+      12_000,
+    );
 
     if (window.kakao?.maps) {
       finish();
@@ -220,10 +244,7 @@ function loadKakaoMaps(javascriptKey: string) {
       javascriptKey,
     )}&autoload=false&libraries=services`;
     script.onload = finish;
-    script.onerror = () => {
-      kakaoLoader = null;
-      reject(new Error("카카오 지도 연결을 확인해 주세요."));
-    };
+    script.onerror = () => fail(new Error("카카오 지도 연결을 확인해 주세요."));
     document.head.appendChild(script);
   });
   return kakaoLoader;
@@ -466,7 +487,9 @@ export default function SalesMapPage({
   const [configSaving, setConfigSaving] = useState(false);
   const [locations, setLocations] = useState<OrganizationLocation[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(true);
+  const [locationsFetchSucceeded, setLocationsFetchSucceeded] = useState(false);
   const [sdkReady, setSdkReady] = useState(false);
+  const [sdkRetry, setSdkRetry] = useState(0);
   const [mapError, setMapError] = useState("");
   const [statusFilter, setStatusFilter] = useState<"전체" | MapStatus>("전체");
   const [regionFilter, setRegionFilter] = useState("전체 지역");
@@ -520,40 +543,77 @@ export default function SalesMapPage({
 
   useEffect(() => {
     let active = true;
+    const configController = new AbortController();
+    const locationsController = new AbortController();
     const campaignController = new AbortController();
-    void Promise.all([
-      fetch("/api/map/config", { cache: "no-store" }).then(async (response) => {
+    const configTimeout = window.setTimeout(
+      () => configController.abort(),
+      15_000,
+    );
+    const locationsTimeout = window.setTimeout(
+      () => locationsController.abort(),
+      15_000,
+    );
+    void fetch("/api/map/config", {
+      cache: "no-store",
+      signal: configController.signal,
+    })
+      .then(async (response) => {
         const payload = (await response.json()) as {
           javascriptKey?: string;
           error?: string;
         };
         if (!response.ok) throw new Error(payload.error || "지도 설정을 확인하지 못했습니다.");
         return payload.javascriptKey ?? "";
-      }),
-      fetch("/api/map/locations", { cache: "no-store" }).then(async (response) => {
+      })
+      .then((key) => {
+        if (!active) return;
+        setJavascriptKey(key);
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setMapError(
+          configController.signal.aborted
+            ? "지도 설정 확인이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."
+            : caught instanceof Error
+              ? caught.message
+              : "지도 설정을 확인하지 못했습니다.",
+        );
+      })
+      .finally(() => {
+        window.clearTimeout(configTimeout);
+        if (active) setConfigLoading(false);
+      });
+    void fetch("/api/map/locations", {
+      cache: "no-store",
+      signal: locationsController.signal,
+    })
+      .then(async (response) => {
         const payload = (await response.json()) as {
           locations?: Record<string, unknown>[];
           error?: string;
         };
         if (!response.ok) throw new Error(payload.error || "기관 위치를 불러오지 못했습니다.");
         return (payload.locations ?? []).map(normalizeLocation);
-      }),
-    ])
-      .then(([key, nextLocations]) => {
+      })
+      .then((nextLocations) => {
         if (!active) return;
-        setJavascriptKey(key);
         setLocations(nextLocations);
+        setLocationsFetchSucceeded(true);
       })
       .catch((caught: unknown) => {
-        if (active) {
-          setMapError(caught instanceof Error ? caught.message : "지도를 준비하지 못했습니다.");
-        }
+        if (!active) return;
+        setNotice(
+          locationsController.signal.aborted
+            ? "기관 위치 조회가 지연되어 지도부터 표시했습니다."
+            : caught instanceof Error
+              ? caught.message
+              : "기관 위치를 불러오지 못했습니다.",
+        );
       })
       .finally(() => {
-        if (active) {
-          setConfigLoading(false);
-          setLocationsLoading(false);
-        }
+        window.clearTimeout(locationsTimeout);
+        if (active) setLocationsLoading(false);
       });
     void fetchCampaignData(campaignController.signal)
       .then((campaignData) => {
@@ -575,12 +635,16 @@ export default function SalesMapPage({
       });
     return () => {
       active = false;
+      configController.abort();
+      locationsController.abort();
       campaignController.abort();
+      window.clearTimeout(configTimeout);
+      window.clearTimeout(locationsTimeout);
     };
   }, []);
 
   useEffect(() => {
-    if (!javascriptKey || !mapContainerRef.current) return;
+    if (configLoading || !javascriptKey || !mapContainerRef.current) return;
     let active = true;
     setMapError("");
     void loadKakaoMaps(javascriptKey)
@@ -605,7 +669,7 @@ export default function SalesMapPage({
     return () => {
       active = false;
     };
-  }, [javascriptKey]);
+  }, [configLoading, javascriptKey, sdkRetry]);
 
   useEffect(() => {
     if (!notice) return;
@@ -682,6 +746,7 @@ export default function SalesMapPage({
       !isAdmin ||
       !sdkReady ||
       locationsLoading ||
+      !locationsFetchSucceeded ||
       !maps ||
       autoLocateRunningRef.current
     ) {
@@ -753,7 +818,13 @@ export default function SalesMapPage({
       cancelled = true;
       autoLocateRunningRef.current = false;
     };
-  }, [isAdmin, locationsLoading, records, sdkReady]);
+  }, [
+    isAdmin,
+    locationsFetchSucceeded,
+    locationsLoading,
+    records,
+    sdkReady,
+  ]);
 
   const activeCampaign = useMemo(
     () =>
@@ -1427,7 +1498,7 @@ export default function SalesMapPage({
     ? activeCampaignTargetByOrganization.get(focused.organization)
     : undefined;
 
-  if (configLoading || locationsLoading) {
+  if (configLoading) {
     return (
       <section className="panel sales-map-loading">
         <span className="access-spinner" />
@@ -1861,6 +1932,17 @@ export default function SalesMapPage({
             <div className="map-canvas-message error">
               <strong>지도를 표시하지 못했습니다.</strong>
               <span>{mapError}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  kakaoLoader = null;
+                  setMapError("");
+                  setSdkReady(false);
+                  setSdkRetry((current) => current + 1);
+                }}
+              >
+                다시 시도
+              </button>
               {isAdmin && (
                 <button
                   type="button"

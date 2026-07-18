@@ -57,7 +57,7 @@ test("activity and author writes share one transaction", async () => {
   assert.match(recordsStore, /transaction[\s\S]*INSERT INTO activity_authors/);
 });
 
-test("records and campaign GET handlers are read-only", async () => {
+test("records, campaign, and map location GET handlers are read-only", async () => {
   const recordsRoute = await readFile(
     new URL("app/api/records/route.ts", root),
     "utf8",
@@ -66,17 +66,27 @@ test("records and campaign GET handlers are read-only", async () => {
     new URL("app/api/map/campaigns/route.ts", root),
     "utf8",
   );
+  const locationsRoute = await readFile(
+    new URL("app/api/map/locations/route.ts", root),
+    "utf8",
+  );
   const recordsGet = recordsRoute.match(
     /export async function GET\(\) \{([\s\S]*?)\r?\n\}\r?\n\r?\nexport async function POST/,
   )?.[1];
   const campaignsGet = campaignsRoute.match(
     /export async function GET\(\) \{([\s\S]*?)\r?\n\}\r?\n\r?\nexport async function POST/,
   )?.[1];
+  const locationsGet = locationsRoute.match(
+    /export async function GET\(\) \{([\s\S]*?)\r?\n\}\r?\n\r?\nexport async function PUT/,
+  )?.[1];
 
   assert.ok(recordsGet, "records GET handler should be present");
   assert.ok(campaignsGet, "campaigns GET handler should be present");
+  assert.ok(locationsGet, "map locations GET handler should be present");
   assert.doesNotMatch(recordsGet, /\b(?:INSERT|UPDATE|DELETE)\b/i);
   assert.doesNotMatch(campaignsGet, /\b(?:INSERT|UPDATE|DELETE)\b/i);
+  assert.doesNotMatch(locationsGet, /\b(?:INSERT|UPDATE|DELETE)\b/i);
   assert.doesNotMatch(recordsGet, /syncRegionsFromMappedLocations/);
   assert.doesNotMatch(recordsGet, /mergeExistingInstitutionAliases/);
+  assert.doesNotMatch(locationsGet, /syncRegionsFromMappedLocations/);
 });
