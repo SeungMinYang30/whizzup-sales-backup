@@ -1499,6 +1499,16 @@ export default function SalesMapPage({
     ),
   ) as Record<VisibleMapStatus, number>;
   const mappedCount = eligibleOrganizations.filter((item) => item.location).length;
+  const mappedCountDisplay = locationsLoading
+    ? "…"
+    : locationsFetchSucceeded
+      ? mappedCount
+      : "확인 실패";
+  const mappedCountDescription = locationsLoading
+    ? "저장된 위치를 불러오는 중"
+    : locationsFetchSucceeded
+      ? `전체 ${eligibleOrganizations.length}개 기관`
+      : "저장된 위치 조회 실패";
   const unmappedCount = eligibleOrganizations.length - mappedCount;
   const showingUnmappedList =
     locationFilter === "위치 미등록" &&
@@ -1572,8 +1582,8 @@ export default function SalesMapPage({
       <div className="sales-map-summary">
         <div>
           <span>지도 등록</span>
-          <strong>{mappedCount}</strong>
-          <small>전체 {eligibleOrganizations.length}개 기관</small>
+          <strong>{mappedCountDisplay}</strong>
+          <small>{mappedCountDescription}</small>
         </div>
         <div className="map-summary-progress">
           <span>진행 중</span>
