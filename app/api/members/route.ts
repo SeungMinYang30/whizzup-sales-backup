@@ -78,12 +78,16 @@ export async function PUT(request: Request) {
       role === "assistant"
         ? normalizeMemberPermissions(payload.permissions)
         : [];
+    const permissionsExpression =
+      permissions.length > 0
+        ? `jsonb_build_array(${permissions.map(() => "?").join(", ")})`
+        : "'[]'::jsonb";
     const result = await d1
       .prepare(`
         UPDATE members SET
           status = ?,
           role = ?,
-          permissions = ?::jsonb,
+          permissions = ${permissionsExpression},
           approved_at = CASE WHEN ? = 'approved' THEN COALESCE(approved_at, CURRENT_TIMESTAMP) ELSE approved_at END,
           approved_by = CASE WHEN ? = 'approved' THEN ? ELSE approved_by END
         WHERE id = ?
@@ -92,7 +96,7 @@ export async function PUT(request: Request) {
       .bind(
         status,
         role,
-        JSON.stringify(permissions),
+        ...permissions,
         status,
         status,
         actor.id,
