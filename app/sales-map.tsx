@@ -1375,7 +1375,7 @@ export default function SalesMapPage({
     const maps = sdkRef.current;
     if (!maps || !query.trim()) {
       setPlaceError("기관명이나 주소를 입력해 주세요.");
-      return;
+      return false;
     }
     const searchQuery = query.trim();
     setPlaceSearching(true);
@@ -1425,14 +1425,23 @@ export default function SalesMapPage({
       setPlaceSearching(false);
       if (results.length) {
         setPlaceResults(results);
-        return;
+        return true;
       }
       setPlaceResults([]);
       setPlaceError("검색 결과가 없습니다. 기관명 또는 정확한 주소로 다시 검색해 보세요.");
+      return false;
     } catch {
       setPlaceSearching(false);
       setPlaceResults([]);
       setPlaceError("위치 검색 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+      return false;
+    }
+  }
+
+  async function runOrganizationPlaceSearch(item: OrganizationSummary) {
+    for (const query of buildOrganizationSearchQueries(item)) {
+      setLocationQuery(query);
+      if (await runPlaceSearch(query)) return;
     }
   }
 
@@ -1442,7 +1451,7 @@ export default function SalesMapPage({
     setLocationQuery(query);
     setPlaceResults([]);
     setPlaceError("");
-    window.setTimeout(() => void runPlaceSearch(query), 0);
+    window.setTimeout(() => void runOrganizationPlaceSearch(item), 0);
   }
 
   async function persistLocation(
