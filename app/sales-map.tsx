@@ -291,6 +291,29 @@ function normalizeCampaignMember(
   };
 }
 
+async function fetchCampaignData(signal?: AbortSignal) {
+  const response = await fetch("/api/map/campaigns", {
+    cache: "no-store",
+    signal,
+  });
+  const payload = (await response.json()) as {
+    campaigns?: Record<string, unknown>[];
+    targets?: Record<string, unknown>[];
+    members?: Record<string, unknown>[];
+    error?: string;
+  };
+  if (!response.ok) {
+    throw new Error(
+      payload.error || "영업 카테고리를 불러오지 못했습니다.",
+    );
+  }
+  return {
+    campaigns: (payload.campaigns ?? []).map(normalizeCampaign),
+    targets: (payload.targets ?? []).map(normalizeCampaignTarget),
+    members: (payload.members ?? []).map(normalizeCampaignMember),
+  };
+}
+
 function resolveMapStatus(record: SalesMapRecord | undefined): MapStatus {
   if (!record || record.awardStatus === "미정") return "영업 중";
   if (record.awardStatus === "타업체 수주") return "타업체";
@@ -480,27 +503,10 @@ export default function SalesMapPage({
   async function loadCampaigns() {
     try {
       setCampaignLoading(true);
-      const response = await fetch("/api/map/campaigns", {
-        cache: "no-store",
-      });
-      const payload = (await response.json()) as {
-        campaigns?: Record<string, unknown>[];
-        targets?: Record<string, unknown>[];
-        members?: Record<string, unknown>[];
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(
-          payload.error || "영업 카테고리를 불러오지 못했습니다.",
-        );
-      }
-      setCampaigns((payload.campaigns ?? []).map(normalizeCampaign));
-      setCampaignTargets(
-        (payload.targets ?? []).map(normalizeCampaignTarget),
-      );
-      setCampaignMembers(
-        (payload.members ?? []).map(normalizeCampaignMember),
-      );
+      const campaignData = await fetchCampaignData();
+      setCampaigns(campaignData.campaigns);
+      setCampaignTargets(campaignData.targets);
+      setCampaignMembers(campaignData.members);
     } catch (caught) {
       setNotice(
         caught instanceof Error
@@ -514,6 +520,7 @@ export default function SalesMapPage({
 
   useEffect(() => {
     let active = true;
+    const campaignController = new AbortController();
     void Promise.all([
       fetch("/api/map/config", { cache: "no-store" }).then(async (response) => {
         const payload = (await response.json()) as {
@@ -531,34 +538,11 @@ export default function SalesMapPage({
         if (!response.ok) throw new Error(payload.error || "기관 위치를 불러오지 못했습니다.");
         return (payload.locations ?? []).map(normalizeLocation);
       }),
-      fetch("/api/map/campaigns", { cache: "no-store" }).then(
-        async (response) => {
-          const payload = (await response.json()) as {
-            campaigns?: Record<string, unknown>[];
-            targets?: Record<string, unknown>[];
-            members?: Record<string, unknown>[];
-            error?: string;
-          };
-          if (!response.ok) {
-            throw new Error(
-              payload.error || "영업 카테고리를 불러오지 못했습니다.",
-            );
-          }
-          return {
-            campaigns: (payload.campaigns ?? []).map(normalizeCampaign),
-            targets: (payload.targets ?? []).map(normalizeCampaignTarget),
-            members: (payload.members ?? []).map(normalizeCampaignMember),
-          };
-        },
-      ),
     ])
-      .then(([key, nextLocations, campaignData]) => {
+      .then(([key, nextLocations]) => {
         if (!active) return;
         setJavascriptKey(key);
         setLocations(nextLocations);
-        setCampaigns(campaignData.campaigns);
-        setCampaignTargets(campaignData.targets);
-        setCampaignMembers(campaignData.members);
       })
       .catch((caught: unknown) => {
         if (active) {
@@ -569,11 +553,29 @@ export default function SalesMapPage({
         if (active) {
           setConfigLoading(false);
           setLocationsLoading(false);
-          setCampaignLoading(false);
         }
+      });
+    void fetchCampaignData(campaignController.signal)
+      .then((campaignData) => {
+        if (!active) return;
+        setCampaigns(campaignData.campaigns);
+        setCampaignTargets(campaignData.targets);
+        setCampaignMembers(campaignData.members);
+      })
+      .catch((caught: unknown) => {
+        if (!active || campaignController.signal.aborted) return;
+        setNotice(
+          caught instanceof Error
+            ? caught.message
+            : "영업 카테고리를 불러오지 못했습니다.",
+        );
+      })
+      .finally(() => {
+        if (active) setCampaignLoading(false);
       });
     return () => {
       active = false;
+      campaignController.abort();
     };
   }, []);
 
