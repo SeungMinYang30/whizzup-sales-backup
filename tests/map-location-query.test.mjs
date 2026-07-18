@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildOrganizationSearchQuery,
+  buildOrganizationSearchQueries,
   compactMapSearchName,
   normalizeInstitutionSearchName,
 } from "../lib/map-location-query.ts";
@@ -51,6 +52,23 @@ test("상세 지역만 한 번 붙여 지도 검색어를 만든다", () => {
       organization: "성남초 병설유치원",
     }),
     "성남초",
+  );
+});
+
+test("상세 지역명에 시를 붙인 자동 검색 후보도 함께 만든다", () => {
+  assert.deepEqual(
+    buildOrganizationSearchQueries({
+      region: "경남 거제",
+      organization: "거제 장애인 복지관",
+    }),
+    ["거제 장애인 복지관", "거제시 장애인 복지관"],
+  );
+  assert.deepEqual(
+    buildOrganizationSearchQueries({
+      region: "경기 김포",
+      organization: "모담초등학교",
+    }),
+    ["김포 모담초", "김포시 모담초", "모담초", "모담초등학교"],
   );
 });
 

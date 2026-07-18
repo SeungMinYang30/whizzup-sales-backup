@@ -14,6 +14,7 @@ import {
 } from "./campaign-xlsx";
 import {
   buildOrganizationSearchQuery,
+  buildOrganizationSearchQueries,
   compactMapSearchName,
   normalizeInstitutionSearchName,
 } from "../lib/map-location-query";
@@ -379,9 +380,7 @@ function automaticLocationQueries(item: OrganizationSummary) {
     .replace(/\s+(?:관련.*|[가-힣]+학과|[가-힣]+학부|[가-힣]+부서)$/, "")
     .trim();
   return [
-    buildOrganizationSearchQuery(item),
-    normalizedOrganization,
-    organization,
+    ...buildOrganizationSearchQueries(item),
     simplified !== normalizedOrganization ? simplified : "",
   ].filter(
     (query, index, queries) =>
