@@ -11,6 +11,18 @@ test("bootstrap admin promotion requires the configured email and no other appro
   );
 
   assert.match(collaboration, /bootstrapAdminEmail === email/);
+  assert.match(
+    collaboration,
+    /WHERE role = 'admin' AND status = 'approved'[\s\S]*ORDER BY id ASC/,
+  );
+  assert.match(
+    collaboration,
+    /SET auth_user_id = NULL[\s\S]*WHERE auth_user_id = \? AND id <> \?/,
+  );
+  assert.match(
+    collaboration,
+    /SET auth_user_id = \?[\s\S]*last_seen_at = CURRENT_TIMESTAMP/,
+  );
   assert.match(collaboration, /lower\(candidate\.email\) = lower\(\?\)/);
   assert.match(collaboration, /NOT EXISTS\s*\(/);
   assert.match(
