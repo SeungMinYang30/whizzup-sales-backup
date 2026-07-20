@@ -1,5 +1,7 @@
 import {
+  replicaContentChecksum,
   restoreReplicaBackup,
+  validateFullBackup,
   type FullBackup,
 } from "../../../lib/backup-store";
 import {
@@ -105,24 +107,26 @@ export async function POST(request: Request) {
   try {
     await markReplicationAttempt(sourceOrigin);
     const backup = await fetchPrimaryBackup(sourceOrigin);
+    const { inspection: sourceInspection } = await validateFullBackup(backup);
+    const contentChecksum = await replicaContentChecksum(backup);
     const current = await getReplicationSyncState();
 
     if (
       current?.status !== "failed" &&
-      current?.source_checksum === backup.checksum
+      current?.source_checksum === contentChecksum
     ) {
       await markReplicationSuccess({
         sourceOrigin,
-        sourceCreatedAt: backup.createdAt,
-        sourceChecksum: backup.checksum,
-        sourceCountsJson: JSON.stringify(backup.counts),
+        sourceCreatedAt: sourceInspection.createdAt,
+        sourceChecksum: contentChecksum,
+        sourceCountsJson: JSON.stringify(sourceInspection.counts),
         durationMs: Date.now() - startedAt,
       });
       return Response.json({
         ok: true,
         changed: false,
-        checksum: backup.checksum,
-        createdAt: backup.createdAt,
+        checksum: contentChecksum,
+        createdAt: sourceInspection.createdAt,
       });
     }
 
@@ -131,14 +135,14 @@ export async function POST(request: Request) {
     await markReplicationSuccess({
       sourceOrigin,
       sourceCreatedAt: inspection.createdAt,
-      sourceChecksum: inspection.checksum,
+      sourceChecksum: contentChecksum,
       sourceCountsJson: JSON.stringify(inspection.counts),
       durationMs,
     });
     return Response.json({
       ok: true,
       changed: true,
-      checksum: inspection.checksum,
+      checksum: contentChecksum,
       createdAt: inspection.createdAt,
       totalRows: inspection.totalRows,
       counts: inspection.counts,
