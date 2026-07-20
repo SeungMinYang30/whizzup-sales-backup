@@ -103,6 +103,53 @@ export function institutionAliasKey(value: unknown) {
     .replace(/[^0-9a-z가-힣]/g, "");
 }
 
+export const INSTITUTION_ALIASES_SETTING_KEY = "institution_aliases";
+
+function parseInstitutionAliases(value: unknown) {
+  try {
+    const parsed =
+      typeof value === "string" ? (JSON.parse(value) as unknown) : value;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {} as Record<string, string>;
+    }
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .map(([alias, canonical]) => [
+          institutionAliasKey(alias),
+          canonicalInstitutionName(canonical),
+        ])
+        .filter(([alias, canonical]) => Boolean(alias && canonical))
+        .slice(0, 500),
+    );
+  } catch {
+    return {} as Record<string, string>;
+  }
+}
+
+export function rememberedInstitutionAlias(
+  requestedValue: unknown,
+  settingValue: unknown,
+) {
+  const requestedKey = institutionAliasKey(requestedValue);
+  if (!requestedKey) return "";
+  return parseInstitutionAliases(settingValue)[requestedKey] ?? "";
+}
+
+export function updateInstitutionAliasSetting(
+  settingValue: unknown,
+  aliasValue: unknown,
+  canonicalValue: unknown,
+) {
+  const aliases = parseInstitutionAliases(settingValue);
+  const aliasKey = institutionAliasKey(aliasValue);
+  const canonical = canonicalInstitutionName(canonicalValue);
+  if (!aliasKey || !canonical || aliasKey === institutionAliasKey(canonical)) {
+    return JSON.stringify(aliases);
+  }
+  aliases[aliasKey] = canonical;
+  return JSON.stringify(aliases);
+}
+
 export function preferFullInstitutionName(...values: string[]) {
   const normalized = values
     .map((value) => canonicalInstitutionName(value))
@@ -123,6 +170,32 @@ type InstitutionKind =
   | "boys-high"
   | "high"
   | "other";
+
+const SAFE_FACILITY_SUFFIXES = [
+  "노인종합복지관",
+  "장애인종합복지관",
+  "실버복지관",
+  "종합복지관",
+  "노인복지관",
+  "장애인복지관",
+  "사회복지관",
+  "체육센터",
+  "문화센터",
+  "복지센터",
+  "스포츠클럽",
+  "어린이집",
+  "유치원",
+  "복지관",
+] as const;
+
+function institutionFacilityType(value: string) {
+  const key = institutionAliasKey(value);
+  return (
+    SAFE_FACILITY_SUFFIXES.find((suffix) =>
+      key.endsWith(institutionAliasKey(suffix)),
+    ) ?? ""
+  );
+}
 
 function institutionKind(value: string): InstitutionKind {
   if (value.endsWith("초등학교 병설유치원")) return "annex-kindergarten";
@@ -345,6 +418,7 @@ export function findSimilarInstitutionMatches(
   const requestedKey = institutionAliasKey(requested);
   const requestedKind = institutionKind(requested);
   const requestedBase = institutionBaseKey(requested);
+  const requestedFacilityType = institutionFacilityType(requested);
   if (!requestedKey) return [];
 
   const grouped = new Map<string, InstitutionMatchCandidate>();
@@ -355,6 +429,7 @@ export function findSimilarInstitutionMatches(
 
     const candidateKind = institutionKind(organization);
     const candidateBase = institutionBaseKey(organization);
+    const candidateFacilityType = institutionFacilityType(organization);
     const sameKind =
       requestedKind !== "other" &&
       candidateKind !== "other" &&
@@ -376,6 +451,41 @@ export function findSimilarInstitutionMatches(
       requestedContext,
       context,
     );
+    const sameRegion =
+      Boolean(requestedContext.region && context.region) &&
+      sameOrContained(requestedContext.region, context.region);
+    const sameFacilityType =
+      Boolean(requestedFacilityType) &&
+      requestedFacilityType === candidateFacilityType;
+    const hasSupportingContext =
+      Boolean(
+        requestedContext.contactName &&
+          context.contactName &&
+          comparableText(requestedContext.contactName) ===
+            comparableText(context.contactName),
+      ) ||
+      Boolean(
+        requestedContext.contactPhone &&
+          context.contactPhone &&
+          comparableText(requestedContext.contactPhone) ===
+            comparableText(context.contactPhone),
+      ) ||
+      Boolean(
+        requestedContext.contactEmail &&
+          context.contactEmail &&
+          comparableText(requestedContext.contactEmail) ===
+            comparableText(context.contactEmail),
+      ) ||
+      Boolean(
+        requestedContext.progressManager &&
+          context.progressManager &&
+          comparableText(requestedContext.progressManager) ===
+            comparableText(context.progressManager),
+      ) ||
+      similarDescription(requestedContext.topic, context.topic) ||
+      similarDescription(requestedContext.summary, context.summary);
+    const facilityTypeCandidate =
+      sameFacilityType && sameRegion && hasSupportingContext;
 
     let score = 0;
     const reasons: string[] = [];
@@ -386,14 +496,14 @@ export function findSimilarInstitutionMatches(
       score += 3;
       reasons.push("기관명이 비슷함");
     }
+    if (facilityTypeCandidate) {
+      score += 2;
+      reasons.push("기관 유형이 같음");
+    }
     if (sameRegionInstitution) {
       score += 8;
       reasons.push("지역과 기관 핵심명이 같음");
-    } else if (
-      requestedContext.region &&
-      context.region &&
-      sameOrContained(requestedContext.region, context.region)
-    ) {
+    } else if (sameRegion) {
       score += 3;
       reasons.push("지역이 같음");
     }
@@ -443,7 +553,10 @@ export function findSimilarInstitutionMatches(
     }
 
     const hasNameEvidence =
-      regionPrefixDifference || similarName || sameRegionInstitution;
+      regionPrefixDifference ||
+      similarName ||
+      sameRegionInstitution ||
+      facilityTypeCandidate;
     if (score < 5 || !hasNameEvidence) return;
 
     const previous = grouped.get(organizationKey);
