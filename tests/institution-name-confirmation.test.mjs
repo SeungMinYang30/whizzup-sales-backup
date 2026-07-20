@@ -103,15 +103,15 @@ test("사용자가 승인한 기관 별칭만 다음 입력부터 기억한다",
 
 test("승인한 별칭은 저장되고 다음 기록 입력에서 먼저 적용된다", async () => {
   const root = new URL("../", import.meta.url);
-  const [recordsStore, recordsRoute] = await Promise.all([
+  const [recordsStore, institutionMerge] = await Promise.all([
     readFile(new URL("lib/records-store.ts", root), "utf8"),
-    readFile(new URL("app/api/records/route.ts", root), "utf8"),
+    readFile(new URL("lib/institution-merge.ts", root), "utf8"),
   ]);
 
   assert.match(recordsStore, /rememberedInstitutionAlias/);
   assert.match(recordsStore, /INSTITUTION_ALIASES_SETTING_KEY/);
-  assert.match(recordsRoute, /updateInstitutionAliasSetting/);
-  assert.match(recordsRoute, /ON CONFLICT\(key\) DO UPDATE SET/);
+  assert.match(institutionMerge, /updateInstitutionAliasSetting/);
+  assert.match(institutionMerge, /ON CONFLICT\(key\) DO UPDATE SET/);
 });
 
 test("띄어쓰기만 다른 동일 기관은 채팅에서 다시 묻지 않고 기존 기관명으로 연결한다", async () => {
