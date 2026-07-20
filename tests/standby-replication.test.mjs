@@ -45,6 +45,10 @@ test("replica restore validates the signed backup before replacement", () => {
     /const \{ backup, inspection \} = await validateFullBackup\(input\)/,
   );
   assert.match(backupStore, /await replaceDatabaseFromBackup\(backup\)/);
+  assert.doesNotMatch(
+    backupStore,
+    /requiredText\(\s*row\.name,\s*"equipment_projects\.name"/,
+  );
 });
 
 test("replication state is private from browser database roles", () => {
