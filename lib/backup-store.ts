@@ -539,10 +539,9 @@ function validateRows(
   assertUnique(
     projects,
     (row) =>
-      `${requiredText(row.organization, "equipment_projects.organization")}|${requiredText(
-        row.name,
-        "equipment_projects.name",
-      )}`,
+      `${requiredText(row.organization, "equipment_projects.organization")}|${String(
+        row.name ?? "",
+      ).trim()}`,
     "기관별 사업명",
   );
   assertUnique(
