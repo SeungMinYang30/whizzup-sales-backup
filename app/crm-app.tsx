@@ -310,6 +310,21 @@ type OrganizationHealth = {
   score: number;
 };
 
+type InstitutionMergeItem = {
+  organization: string;
+  activityCount: number;
+  recommendationCount: number;
+  campaignCount: number;
+  equipmentProjectCount: number;
+  equipmentItemCount: number;
+  hasLocation: boolean;
+};
+
+type InstitutionMergePreview = {
+  organizations: InstitutionMergeItem[];
+  recommendedTarget: string;
+};
+
 type TeamWorkMetric = {
   name: string;
   activityCount: number;
@@ -2410,6 +2425,10 @@ export default function CrmApp({
   const [selectedInstitutionIds, setSelectedInstitutionIds] = useState<number[]>(
     [],
   );
+  const [institutionMergePreview, setInstitutionMergePreview] =
+    useState<InstitutionMergePreview | null>(null);
+  const [institutionMergeTarget, setInstitutionMergeTarget] = useState("");
+  const [institutionMergeBusy, setInstitutionMergeBusy] = useState(false);
   const [selectedAwardIds, setSelectedAwardIds] = useState<number[]>([]);
   const [view, setView] = useState<View>("dashboard");
   const [mapVisited, setMapVisited] = useState(false);
@@ -5173,6 +5192,107 @@ export default function CrmApp({
     }
   }
 
+  async function openInstitutionMerge() {
+    const organizations = [
+      ...new Set(
+        selectedInstitutionIds
+          .map((id) => records.find((record) => record.id === id)?.organization)
+          .filter((organization): organization is string => Boolean(organization)),
+      ),
+    ];
+    if (organizations.length !== 2 || institutionMergeBusy) {
+      setToast("합칠 기관을 정확히 두 곳 선택해 주세요.");
+      return;
+    }
+    try {
+      setInstitutionMergeBusy(true);
+      const response = await fetch("/api/institutions/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizations }),
+      });
+      const payload = (await response.json()) as {
+        preview?: InstitutionMergePreview;
+        error?: string;
+      };
+      if (!response.ok || !payload.preview) {
+        throw new Error(payload.error || "기관 병합 정보를 확인하지 못했습니다.");
+      }
+      setInstitutionMergePreview(payload.preview);
+      setInstitutionMergeTarget(
+        payload.preview.recommendedTarget ||
+          payload.preview.organizations[0]?.organization ||
+          "",
+      );
+    } catch (caught) {
+      setToast(
+        caught instanceof Error
+          ? caught.message
+          : "기관 병합 정보를 확인하지 못했습니다.",
+      );
+    } finally {
+      setInstitutionMergeBusy(false);
+    }
+  }
+
+  async function mergeSelectedInstitutions() {
+    if (
+      !institutionMergePreview ||
+      !institutionMergeTarget ||
+      institutionMergeBusy
+    ) {
+      return;
+    }
+    const organizations = institutionMergePreview.organizations.map(
+      (item) => item.organization,
+    );
+    const sourceOrganization = organizations.find(
+      (organization) => organization !== institutionMergeTarget,
+    );
+    if (!sourceOrganization) return;
+    if (
+      !window.confirm(
+        `${sourceOrganization}의 모든 기록을 ${institutionMergeTarget}으로 합칠까요?\n합친 뒤에는 ${institutionMergeTarget} 이름으로 표시됩니다.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      setInstitutionMergeBusy(true);
+      const response = await fetch("/api/institutions/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organizations,
+          targetOrganization: institutionMergeTarget,
+          confirm: true,
+        }),
+      });
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        result?: { activityCount?: number };
+        error?: string;
+      };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "두 기관을 합치지 못했습니다.");
+      }
+      await loadRecords("full");
+      setSelectedInstitutionIds([]);
+      setDetailOrganization(null);
+      setInstitutionMergePreview(null);
+      setInstitutionMergeTarget("");
+      setToast(
+        `${sourceOrganization} 기록을 ${institutionMergeTarget}으로 안전하게 합쳤습니다.`,
+      );
+    } catch (caught) {
+      setToast(
+        caught instanceof Error ? caught.message : "두 기관을 합치지 못했습니다.",
+      );
+    } finally {
+      setInstitutionMergeBusy(false);
+    }
+  }
+
   async function saveMemberAccess(member: TeamMember) {
     if (await updateMember(member, member.status, member.role)) {
       const preset = memberAccessPreset(member);
@@ -7519,6 +7639,26 @@ export default function CrmApp({
                   </h2>
                 </div>
                 <div className="records-heading-actions">
+                  {canManageRecords && (
+                    <button
+                      type="button"
+                      className="institution-merge-button"
+                      disabled={
+                        selectedInstitutionIds.length !== 2 ||
+                        institutionMergeBusy
+                      }
+                      onClick={() => void openInstitutionMerge()}
+                      title="같은 기관이 다른 이름으로 등록됐을 때 두 곳을 하나로 합칩니다."
+                    >
+                      {institutionMergeBusy
+                        ? "기관 확인 중…"
+                        : `선택 기관 합치기${
+                            selectedInstitutionIds.length > 0
+                              ? ` ${selectedInstitutionIds.length}`
+                              : ""
+                          }`}
+                    </button>
+                  )}
                   {canExportData && (
                     <button
                       type="button"
@@ -9429,6 +9569,128 @@ export default function CrmApp({
                   </div>
                 )}
             </div>
+          </aside>
+        </div>
+      )}
+
+      {institutionMergePreview && (
+        <div
+          className="modal-layer"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="institution-merge-title"
+        >
+          <button
+            className="modal-backdrop"
+            aria-label="기관 합치기 창 닫기"
+            disabled={institutionMergeBusy}
+            onClick={() => {
+              setInstitutionMergePreview(null);
+              setInstitutionMergeTarget("");
+            }}
+          />
+          <aside className="record-modal institution-merge-modal">
+            <div className="modal-header">
+              <div>
+                <span className="section-kicker">INSTITUTION MERGE</span>
+                <h2 id="institution-merge-title">선택 기관 합치기</h2>
+              </div>
+              <button
+                type="button"
+                className="close-button"
+                disabled={institutionMergeBusy}
+                onClick={() => {
+                  setInstitutionMergePreview(null);
+                  setInstitutionMergeTarget("");
+                }}
+                aria-label="닫기"
+              >
+                ×
+              </button>
+            </div>
+            <div className="institution-merge-body">
+              <div className="institution-merge-guide">
+                <strong>최종으로 사용할 기관명을 선택해 주세요.</strong>
+                <p>
+                  두 기관의 영업 기록·지도 위치·수주 사업·AI 제안을 한곳으로
+                  모으고, 다른 이름은 별칭으로 기억합니다.
+                </p>
+              </div>
+              <div className="institution-merge-options">
+                {institutionMergePreview.organizations.map((item) => (
+                  <label
+                    className={
+                      institutionMergeTarget === item.organization
+                        ? "selected"
+                        : ""
+                    }
+                    key={item.organization}
+                  >
+                    <input
+                      type="radio"
+                      name="institution-merge-target"
+                      value={item.organization}
+                      checked={institutionMergeTarget === item.organization}
+                      disabled={institutionMergeBusy}
+                      onChange={() =>
+                        setInstitutionMergeTarget(item.organization)
+                      }
+                    />
+                    <span>
+                      <b>{item.organization}</b>
+                      <small>
+                        영업 기록 {item.activityCount}건 · 수주 사업{" "}
+                        {item.equipmentProjectCount}건 · AI 제안{" "}
+                        {item.recommendationCount}건
+                      </small>
+                    </span>
+                    <em>
+                      {institutionMergeTarget === item.organization
+                        ? "최종 기관명"
+                        : "이 이름으로 선택"}
+                    </em>
+                  </label>
+                ))}
+              </div>
+              {institutionMergeTarget && (
+                <div className="institution-merge-result">
+                  <span>병합 결과</span>
+                  <strong>
+                    {
+                      institutionMergePreview.organizations.find(
+                        (item) =>
+                          item.organization !== institutionMergeTarget,
+                      )?.organization
+                    }{" "}
+                    → {institutionMergeTarget}
+                  </strong>
+                  <p>
+                    기록은 삭제하지 않고 모두 보존하며, 앞으로 두 이름을 같은
+                    기관으로 인식합니다.
+                  </p>
+                </div>
+              )}
+            </div>
+            <footer className="institution-merge-actions">
+              <button
+                type="button"
+                disabled={institutionMergeBusy}
+                onClick={() => {
+                  setInstitutionMergePreview(null);
+                  setInstitutionMergeTarget("");
+                }}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={!institutionMergeTarget || institutionMergeBusy}
+                onClick={() => void mergeSelectedInstitutions()}
+              >
+                {institutionMergeBusy ? "안전하게 합치는 중…" : "두 기관 합치기"}
+              </button>
+            </footer>
           </aside>
         </div>
       )}
