@@ -77,9 +77,9 @@ test("확인 전에는 자동 합치지 않고 승인한 별칭만 기억한다"
 
 test("승인 병합은 관리자 알림 처리 기록까지 함께 정리한다", async () => {
   const root = new URL("../", import.meta.url);
-  const recordsRoute = await readFile(
-    new URL("app/api/records/route.ts", root),
+  const institutionMerge = await readFile(
+    new URL("lib/institution-merge.ts", root),
     "utf8",
   );
-  assert.match(recordsRoute, /manager_alert_acknowledgements/);
+  assert.match(institutionMerge, /manager_alert_acknowledgements/);
 });
