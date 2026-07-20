@@ -177,21 +177,6 @@ export async function resolveInstitutionName(
     ? preferFullInstitutionName(...exactAliases)
     : requested;
 
-  if (payload.institutionSeparate !== true && clean(payload.region)) {
-    const sameRegionAliases = existingContexts
-      .filter((context) =>
-        isSameRegionInstitution(
-          { organization: requested, region: clean(payload.region) },
-          context,
-        ),
-      )
-      .map((context) => context.organization)
-      .filter(Boolean);
-    if (sameRegionAliases.length) {
-      return preferFullInstitutionName(...sameRegionAliases);
-    }
-  }
-
   if (payload.institutionSeparate !== true) {
     const contextualCandidates = findSimilarInstitutionMatches(
       {
