@@ -27,10 +27,9 @@ import {
 } from "../../../lib/map-store";
 import {
   canonicalInstitutionName,
-  INSTITUTION_ALIASES_SETTING_KEY,
   institutionConfirmationResponse,
-  updateInstitutionAliasSetting,
 } from "../../../lib/institution-names";
+import { mergeInstitutionRecords } from "../../../lib/institution-merge";
 import {
   canonicalProgressManagerName,
   listRegisteredSalesNames,
@@ -41,134 +40,6 @@ import {
 } from "../../../lib/share-text";
 
 export const dynamic = "force-dynamic";
-
-async function mergeConfirmedInstitutionAlias(
-  alias: string,
-  canonical: string,
-  memberId: number,
-) {
-  if (!alias || !canonical || alias === canonical) return;
-  const d1 = await ensureRecordsReady();
-  await ensureEquipmentReady();
-  await ensureMapReady();
-  await ensureCampaignsReady();
-  await ensureAiRecommendationsReady();
-  const duplicates = await d1
-    .prepare(
-      `SELECT source.id AS source_id, target.id AS target_id
-       FROM equipment_projects source
-       JOIN equipment_projects target
-         ON target.organization = ? AND target.name = source.name
-       WHERE source.organization = ?`,
-    )
-    .bind(canonical, alias)
-    .all<{ source_id: number; target_id: number }>();
-  for (const project of duplicates.results) {
-    await d1.batch([
-      d1
-        .prepare("UPDATE equipment_items SET project_id = ? WHERE project_id = ?")
-        .bind(project.target_id, project.source_id),
-      d1
-        .prepare("DELETE FROM equipment_projects WHERE id = ?")
-        .bind(project.source_id),
-    ]);
-  }
-  const currentAliasSetting = await d1
-    .prepare("SELECT value FROM app_settings WHERE key = ? LIMIT 1")
-    .bind(INSTITUTION_ALIASES_SETTING_KEY)
-    .first<{ value: string }>();
-  const nextAliasSetting = updateInstitutionAliasSetting(
-    currentAliasSetting?.value,
-    alias,
-    canonical,
-  );
-  await d1.batch([
-    d1
-      .prepare(
-        `UPDATE activities SET
-           organization = ?,
-           topic = REPLACE(topic, ?, ?),
-           summary = REPLACE(summary, ?, ?),
-           next_action = REPLACE(next_action, ?, ?),
-           progress_schedule = REPLACE(progress_schedule, ?, ?),
-           notes = REPLACE(notes, ?, ?),
-           updated_at = CURRENT_TIMESTAMP
-         WHERE organization = ?`,
-      )
-      .bind(
-        canonical,
-        alias,
-        canonical,
-        alias,
-        canonical,
-        alias,
-        canonical,
-        alias,
-        canonical,
-        alias,
-        canonical,
-        alias,
-      ),
-    d1
-      .prepare(
-        "DELETE FROM organization_locations WHERE organization = ? AND EXISTS (SELECT 1 FROM organization_locations WHERE organization = ?)",
-      )
-      .bind(alias, canonical),
-    d1
-      .prepare(
-        "UPDATE organization_locations SET organization = ?, updated_at = CURRENT_TIMESTAMP WHERE organization = ?",
-      )
-      .bind(canonical, alias),
-    d1
-      .prepare(
-        "DELETE FROM manager_alert_acknowledgements WHERE organization = ? AND member_id IN (SELECT member_id FROM manager_alert_acknowledgements WHERE organization = ?)",
-      )
-      .bind(alias, canonical),
-    d1
-      .prepare(
-        "UPDATE manager_alert_acknowledgements SET organization = ?, updated_at = CURRENT_TIMESTAMP WHERE organization = ?",
-      )
-      .bind(canonical, alias),
-    d1
-      .prepare(
-        "DELETE FROM sales_campaign_targets WHERE organization = ? AND campaign_id IN (SELECT campaign_id FROM sales_campaign_targets WHERE organization = ?)",
-      )
-      .bind(alias, canonical),
-    d1
-      .prepare(
-        "UPDATE sales_campaign_targets SET organization = ?, updated_at = CURRENT_TIMESTAMP WHERE organization = ?",
-      )
-      .bind(canonical, alias),
-    d1
-      .prepare(
-        "UPDATE equipment_projects SET organization = ?, updated_at = CURRENT_TIMESTAMP WHERE organization = ?",
-      )
-      .bind(canonical, alias),
-    d1
-      .prepare(
-        `UPDATE ai_recommendations SET
-           organization = ?,
-           meeting_summary = REPLACE(meeting_summary, ?, ?),
-           updated_at = CURRENT_TIMESTAMP
-         WHERE organization = ?`,
-      )
-      .bind(canonical, alias, canonical, alias),
-    d1
-      .prepare(
-        `INSERT INTO app_settings (key, value, updated_by, updated_at)
-         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-         ON CONFLICT(key) DO UPDATE SET
-           value = excluded.value,
-           updated_by = excluded.updated_by,
-           updated_at = CURRENT_TIMESTAMP`,
-      )
-      .bind(
-        INSTITUTION_ALIASES_SETTING_KEY,
-        nextAliasSetting,
-        memberId,
-      ),
-  ]);
-}
 
 function syncedProjectStatus(payload: Record<string, unknown>) {
   const awardStage = clean(payload.awardStage);
@@ -422,7 +293,7 @@ export async function POST(request: Request) {
       requestedOrganization !== clean(record.organization)
     ) {
       await requireApprovedMember();
-      await mergeConfirmedInstitutionAlias(
+      await mergeInstitutionRecords(
         requestedOrganization,
         clean(record.organization),
         member.id,
@@ -622,7 +493,7 @@ export async function PUT(request: Request) {
       canonicalInstitutionName(payload.organization) !== clean(result.organization)
     ) {
       await requireApprovedMember();
-      await mergeConfirmedInstitutionAlias(
+      await mergeInstitutionRecords(
         canonicalInstitutionName(payload.organization),
         clean(result.organization),
         member.id,
