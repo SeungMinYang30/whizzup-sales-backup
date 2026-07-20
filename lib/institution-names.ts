@@ -73,7 +73,7 @@ export function canonicalInstitutionName(value: unknown) {
   if (!name) return "";
 
   const annex = name.match(
-    /^(.+?)\s*(?:초등학교|초)\s*병설(?:\s*유치원)?$/,
+    /^(.+?)\s*(?:초등학교|초)\s*(?:병설(?:\s*유치원)?|유치원)$/,
   );
   if (annex?.[1]?.trim()) {
     return `${annex[1].trim()}초등학교 병설유치원`;
@@ -380,17 +380,32 @@ export function findSimilarInstitutionNames(
         institutionAliasKey(value),
       );
       const longestBase = Math.max(requestedBase.length, candidateBase.length);
+      const schoolAndAnnexPair =
+        (requestedKind === "annex-kindergarten" &&
+          candidateKind === "elementary") ||
+        (requestedKind === "elementary" &&
+          candidateKind === "annex-kindergarten");
       const similarBase =
         longestBase >= 2 &&
         (baseDistance <= 1 ||
           (longestBase >= 6 && baseDistance / longestBase <= 0.18));
+      const relatedSchoolBase =
+        schoolAndAnnexPair &&
+        Math.min(requestedBase.length, candidateBase.length) >= 2 &&
+        (similarBase ||
+          ((requestedBase.endsWith(candidateBase) ||
+            candidateBase.endsWith(requestedBase)) &&
+            Math.abs(requestedBase.length - candidateBase.length) <= 4));
       const likelySuffixTypo =
         fullDistance <= 1 &&
         Math.max(requestedKey.length, institutionAliasKey(value).length) >= 6;
       return {
         value,
         score: baseDistance * 10 + fullDistance,
-        match: (sameKind && similarBase) || likelySuffixTypo,
+        match:
+          (sameKind && similarBase) ||
+          relatedSchoolBase ||
+          likelySuffixTypo,
       };
     })
     .filter((candidate) => candidate.match)
@@ -434,6 +449,11 @@ export function findSimilarInstitutionMatches(
       requestedKind !== "other" &&
       candidateKind !== "other" &&
       requestedKind === candidateKind;
+    const schoolAndAnnexPair =
+      (requestedKind === "annex-kindergarten" &&
+        candidateKind === "elementary") ||
+      (requestedKind === "elementary" &&
+        candidateKind === "annex-kindergarten");
     const baseDistance = editDistance(requestedBase, candidateBase);
     const longestBase = Math.max(requestedBase.length, candidateBase.length);
     const regionPrefixDifference =
@@ -447,6 +467,13 @@ export function findSimilarInstitutionMatches(
       longestBase >= 2 &&
       (baseDistance <= 1 ||
           (longestBase >= 6 && baseDistance / longestBase <= 0.18));
+    const relatedSchoolAndAnnex =
+      schoolAndAnnexPair &&
+      Math.min(requestedBase.length, candidateBase.length) >= 2 &&
+      (baseDistance <= 1 ||
+        ((requestedBase.endsWith(candidateBase) ||
+          candidateBase.endsWith(requestedBase)) &&
+          Math.abs(requestedBase.length - candidateBase.length) <= 4));
     const sameRegionInstitution = isSameRegionInstitution(
       requestedContext,
       context,
@@ -495,6 +522,10 @@ export function findSimilarInstitutionMatches(
     } else if (similarName) {
       score += 3;
       reasons.push("기관명이 비슷함");
+    }
+    if (relatedSchoolAndAnnex) {
+      score += 5;
+      reasons.push("초등학교와 병설유치원 관계");
     }
     if (facilityTypeCandidate) {
       score += 2;
@@ -555,6 +586,7 @@ export function findSimilarInstitutionMatches(
     const hasNameEvidence =
       regionPrefixDifference ||
       similarName ||
+      relatedSchoolAndAnnex ||
       sameRegionInstitution ||
       facilityTypeCandidate;
     if (score < 5 || !hasNameEvidence) return;
