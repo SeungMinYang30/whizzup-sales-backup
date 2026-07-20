@@ -40,14 +40,25 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   inset: 0 auto 0 0;
   z-index: 30;
   width: 246px;
-  padding: 22px 18px 22px;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 22px 18px calc(22px + env(safe-area-inset-bottom));
   border-right: 1px solid #e2e7ef;
   background: rgba(255,255,255,.97);
   color: var(--ink);
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
   box-shadow: 12px 0 35px rgba(32,42,59,.04);
 }
+.sidebar > .brand,
+.sidebar > .main-nav,
+.sidebar > .sidebar-note,
+.sidebar > .profile-menu { flex: 0 0 auto; }
 .brand { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0 0 25px; }
 .brand-logo {
   width: 184px;
