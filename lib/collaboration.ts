@@ -169,6 +169,41 @@ export async function getOrCreateMember(identity: ChatGPTUser) {
   const isBootstrapAdmin = Boolean(
     bootstrapAdminEmail && bootstrapAdminEmail === email,
   );
+
+  if (isBootstrapAdmin) {
+    const primaryAdmin = await d1
+      .prepare(
+        `SELECT *
+         FROM members
+         WHERE role = 'admin' AND status = 'approved'
+         ORDER BY id ASC
+         LIMIT 1`,
+      )
+      .first<Record<string, unknown>>();
+
+    if (primaryAdmin) {
+      await d1
+        .prepare(
+          `UPDATE members
+           SET auth_user_id = NULL
+           WHERE auth_user_id = ? AND id <> ?`,
+        )
+        .bind(identity.authUserId, Number(primaryAdmin.id))
+        .run();
+      const linkedAdmin = await d1
+        .prepare(
+          `UPDATE members
+           SET auth_user_id = ?,
+               last_seen_at = CURRENT_TIMESTAMP
+           WHERE id = ?
+           RETURNING *`,
+        )
+        .bind(identity.authUserId, Number(primaryAdmin.id))
+        .first<Record<string, unknown>>();
+      return mapMember(linkedAdmin ?? primaryAdmin);
+    }
+  }
+
   let row = await d1
     .prepare(
       "SELECT * FROM members WHERE auth_user_id = ? OR lower(email) = lower(?) LIMIT 1",
