@@ -3,10 +3,43 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  canonicalInstitutionName,
+  findSimilarInstitutionNames,
   findSimilarInstitutionMatches,
   rememberedInstitutionAlias,
   updateInstitutionAliasSetting,
 } from "../lib/institution-names.ts";
+
+test("초 유치원 축약을 초등학교 병설유치원으로 정리한다", () => {
+  assert.equal(
+    canonicalInstitutionName("성남초 유치원"),
+    "성남초등학교 병설유치원",
+  );
+  assert.equal(
+    canonicalInstitutionName("성남초 병설유치원"),
+    "성남초등학교 병설유치원",
+  );
+});
+
+test("같은 초등학교와 병설유치원은 합치기 확인 후보로 올린다", () => {
+  assert.deepEqual(
+    findSimilarInstitutionNames("성남초 병설", ["성남초"]),
+    ["성남초등학교"],
+  );
+  assert.deepEqual(
+    findSimilarInstitutionMatches(
+      { organization: "성남초 병설" },
+      [{ organization: "성남초" }],
+    ),
+    [
+      {
+        organization: "성남초등학교",
+        reasons: ["초등학교와 병설유치원 관계"],
+        score: 5,
+      },
+    ],
+  );
+});
 
 test("같은 지역·기관 유형에 진행 담당자까지 같으면 합치기 확인 후보로 올린다", () => {
   const requested = {
