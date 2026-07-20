@@ -55,7 +55,7 @@ export async function configureStandbySchedule(input: {
     .bind(JOB_NAME)
     .all<CronJobRow>();
   for (const job of existingJobs.results) {
-    await d1.prepare("SELECT cron.unschedule(?)").bind(job.jobid).run();
+    await d1.prepare("SELECT cron.unschedule(?::bigint)").bind(job.jobid).run();
   }
 
   const command = `
@@ -95,7 +95,7 @@ export async function removeStandbySchedule() {
     .bind(JOB_NAME)
     .all<CronJobRow>();
   for (const job of existingJobs.results) {
-    await d1.prepare("SELECT cron.unschedule(?)").bind(job.jobid).run();
+    await d1.prepare("SELECT cron.unschedule(?::bigint)").bind(job.jobid).run();
   }
   return {
     jobName: JOB_NAME,
