@@ -1,13 +1,14 @@
 import {
   accessErrorResponse,
   requireApprovedMember,
-  requireMemberPermission,
 } from "../../../../lib/collaboration";
 import {
   clean,
   ensureRecordsReady,
 } from "../../../../lib/records-store";
-import { ensureMapReady } from "../../../../lib/map-store";
+import {
+  ensureMapReady,
+} from "../../../../lib/map-store";
 import { regionFromAddress } from "../../../../lib/region-from-address";
 
 export const dynamic = "force-dynamic";
@@ -15,11 +16,16 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     await requireApprovedMember();
+    await ensureRecordsReady();
     const d1 = await ensureMapReady();
     const result = await d1
       .prepare(
         `SELECT organization_locations.*
          FROM organization_locations
+         WHERE EXISTS (
+           SELECT 1 FROM activities
+           WHERE activities.organization = organization_locations.organization
+         )
          ORDER BY organization COLLATE NOCASE`,
       )
       .all();
@@ -31,7 +37,7 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
-    const admin = await requireMemberPermission("map:manage");
+    const member = await requireApprovedMember();
     const payload = (await request.json()) as Record<string, unknown>;
     const organization = clean(payload.organization);
     const address = clean(payload.address).slice(0, 500);
@@ -98,7 +104,7 @@ export async function PUT(request: Request) {
         longitude,
         clean(payload.placeName).slice(0, 200),
         clean(payload.placeId).slice(0, 100),
-        admin.id,
+        member.id,
       )
       .first();
     if (region) {

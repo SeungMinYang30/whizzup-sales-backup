@@ -12,12 +12,7 @@ import {
   downloadCampaignTemplate,
   parseCampaignFile,
 } from "./campaign-xlsx";
-import {
-  buildOrganizationSearchQuery,
-  buildOrganizationSearchQueries,
-  compactMapSearchName,
-  normalizeInstitutionSearchName,
-} from "../lib/map-location-query";
+import { fetchWithInstitutionConfirmation } from "./institution-confirmation";
 
 export type SalesMapRecord = {
   id: number;
@@ -32,6 +27,8 @@ export type SalesMapRecord = {
   executionType: string;
   consortiumCompany: string;
   progressManager: string;
+  contactName: string;
+  contactPhone: string;
   topic: string;
   summary: string;
   nextAction: string;
@@ -64,6 +61,7 @@ type OrganizationSummary = {
   consortiumCompany: string;
   progressManager: string;
   summary: string;
+  searchText: string;
   location?: OrganizationLocation;
 };
 
@@ -100,6 +98,15 @@ type CampaignImportPreview = {
   fileName: string;
   rows: CampaignImportRow[];
 };
+
+type RouteOrigin = {
+  label: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+};
+
+type NearbyRadius = 30 | 50 | 100;
 
 type KakaoPlace = {
   id: string;
@@ -198,6 +205,10 @@ const statusOrder: Array<"전체" | VisibleMapStatus> = [
 ];
 const ambiguousOrganizationPattern =
   /(?:외\s*\d+\s*건|등\s*(?:여러\s*)?곳|관련\s*$|[·/&]\s*)/;
+const companyRouteOrigin = {
+  label: "위즈업 본사",
+  address: "경기도 하남시 하남대로 947 하남테크노밸리 U1 CENTER",
+};
 
 let kakaoLoader: Promise<KakaoMapsApi> | null = null;
 
@@ -205,36 +216,29 @@ function loadKakaoMaps(javascriptKey: string) {
   if (kakaoLoader) return kakaoLoader;
   kakaoLoader = new Promise<KakaoMapsApi>((resolve, reject) => {
     let settled = false;
-    let timeout = 0;
-    const succeed = (maps: KakaoMapsApi) => {
+    let timeoutId = 0;
+    const fail = (message: string) => {
       if (settled) return;
       settled = true;
-      window.clearTimeout(timeout);
-      resolve(maps);
-    };
-    const fail = (error: Error) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeout);
+      window.clearTimeout(timeoutId);
       kakaoLoader = null;
-      reject(error);
+      reject(new Error(message));
     };
     const finish = () => {
       if (!window.kakao?.maps) {
-        fail(new Error("카카오 지도 모듈을 불러오지 못했습니다."));
+        fail("카카오 지도 모듈을 불러오지 못했습니다.");
         return;
       }
-      window.kakao.maps.load(() => succeed(window.kakao!.maps));
+      window.kakao.maps.load(() => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        resolve(window.kakao!.maps);
+      });
     };
-    timeout = window.setTimeout(
-      () =>
-        fail(
-          new Error(
-            "카카오 지도 연결 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.",
-          ),
-        ),
-      12_000,
-    );
+    timeoutId = window.setTimeout(() => {
+      fail("카카오 지도 응답이 늦어지고 있습니다. 다시 불러와 주세요.");
+    }, 12_000);
 
     if (window.kakao?.maps) {
       finish();
@@ -250,7 +254,9 @@ function loadKakaoMaps(javascriptKey: string) {
       javascriptKey,
     )}&autoload=false&libraries=services`;
     script.onload = finish;
-    script.onerror = () => fail(new Error("카카오 지도 연결을 확인해 주세요."));
+    script.onerror = () => {
+      fail("카카오 지도 연결을 확인해 주세요.");
+    };
     document.head.appendChild(script);
   });
   return kakaoLoader;
@@ -318,43 +324,6 @@ function normalizeCampaignMember(
   };
 }
 
-async function readJsonPayload<T>(response: Response, fallback: string) {
-  const text = await response.text();
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    const detail = text.replace(/\s+/g, " ").trim().slice(0, 180);
-    throw new Error(
-      !response.ok && detail
-        ? detail
-        : `${fallback} (응답 ${response.status})`,
-    );
-  }
-}
-
-async function fetchCampaignData(signal?: AbortSignal) {
-  const response = await fetch("/api/map/campaigns", {
-    cache: "no-store",
-    signal,
-  });
-  const payload = await readJsonPayload<{
-    campaigns?: Record<string, unknown>[];
-    targets?: Record<string, unknown>[];
-    members?: Record<string, unknown>[];
-    error?: string;
-  }>(response, "영업 카테고리 응답을 확인하지 못했습니다.");
-  if (!response.ok) {
-    throw new Error(
-      payload.error || "영업 카테고리를 불러오지 못했습니다.",
-    );
-  }
-  return {
-    campaigns: (payload.campaigns ?? []).map(normalizeCampaign),
-    targets: (payload.targets ?? []).map(normalizeCampaignTarget),
-    members: (payload.members ?? []).map(normalizeCampaignMember),
-  };
-}
-
 function resolveMapStatus(record: SalesMapRecord | undefined): MapStatus {
   if (!record || record.awardStatus === "미정") return "영업 중";
   if (record.awardStatus === "타업체 수주") return "타업체";
@@ -368,24 +337,84 @@ function formatDate(value: string) {
   return year && month && day ? `${year}.${month}.${day}` : value;
 }
 
-function compactOrganizationName(value: string, region = "") {
-  return compactMapSearchName(value, region);
+function compactOrganizationName(value: string) {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase("ko-KR")
+    .replace(/[^0-9a-z가-힣]/g, "");
+}
+
+function uniqueLocationQueries(queries: string[]) {
+  return queries
+    .map((query) =>
+      query
+        .trim()
+        .split(/\s+/)
+        .filter((token, index, tokens) => token !== tokens[index - 1])
+        .join(" "),
+    )
+    .filter(
+      (query, index, normalized) =>
+        query.length >= 2 && normalized.indexOf(query) === index,
+    );
+}
+
+function organizationLocationVariants(organization: string) {
+  const withoutKindergartenSuffix = organization
+    .replace(/\s*(?:병설(?:유치원)?|부설(?:유치원)?)\s*$/, "")
+    .trim();
+  const simplified = withoutKindergartenSuffix
+    .replace(/\s+(?:관련.*|[가-힣]+학과|[가-힣]+학부|[가-힣]+부서)$/, "")
+    .trim();
+  const abbreviatedSchool = simplified.replace(/초등학교/g, "초");
+
+  return uniqueLocationQueries([
+    abbreviatedSchool,
+    simplified,
+    withoutKindergartenSuffix,
+    organization,
+  ]);
+}
+
+function regionLocationVariants(region: string) {
+  const normalized = region.trim().replace(/\s+/g, " ");
+  if (!normalized) return [];
+  const tokens = normalized.split(" ");
+  const locality = tokens.at(-1) ?? "";
+  const localityWithSuffix =
+    locality && !/[시군구]$/.test(locality) ? `${locality}시` : locality;
+  const provinceWithLocality =
+    tokens.length > 1 && localityWithSuffix !== locality
+      ? [...tokens.slice(0, -1), localityWithSuffix].join(" ")
+      : "";
+
+  return uniqueLocationQueries([
+    normalized,
+    provinceWithLocality,
+    locality,
+    localityWithSuffix,
+  ]);
 }
 
 function automaticLocationQueries(item: OrganizationSummary) {
   const organization = item.organization.trim();
-  const normalizedOrganization =
-    normalizeInstitutionSearchName(organization) || organization;
-  const simplified = normalizedOrganization
-    .replace(/\s+(?:관련.*|[가-힣]+학과|[가-힣]+학부|[가-힣]+부서)$/, "")
-    .trim();
-  return [
-    ...buildOrganizationSearchQueries(item),
-    simplified !== normalizedOrganization ? simplified : "",
-  ].filter(
-    (query, index, queries) =>
-      query.length >= 2 && queries.indexOf(query) === index,
+  const organizationVariants = organizationLocationVariants(organization);
+  const regionVariants = regionLocationVariants(item.region);
+  const combined = regionVariants.flatMap((region) =>
+    organizationVariants.map((name) => {
+      const locality = (region.split(" ").at(-1) ?? "").replace(/[시군구]$/, "");
+      const withoutRepeatedLocality = name
+        .split(" ")
+        .filter(
+          (token, index) =>
+            index > 0 || token.replace(/[시군구]$/, "") !== locality,
+        )
+        .join(" ");
+      return `${region} ${withoutRepeatedLocality || name}`;
+    }),
   );
+
+  return uniqueLocationQueries([...combined, ...organizationVariants]);
 }
 
 function searchKakaoKeyword(maps: KakaoMapsApi, query: string) {
@@ -402,21 +431,15 @@ async function findAutomaticOrganizationPlace(
   item: OrganizationSummary,
 ) {
   if (ambiguousOrganizationPattern.test(item.organization)) return null;
-  const organizationKey = compactOrganizationName(
-    item.organization,
-    item.region,
-  );
+  const organizationKey = compactOrganizationName(item.organization);
 
   for (const query of automaticLocationQueries(item)) {
     const results = await searchKakaoKeyword(maps, query);
     if (!results.length) continue;
-    const queryKey = compactOrganizationName(query, item.region);
+    const queryKey = compactOrganizationName(query);
     const ranked = results
       .map((place, index) => {
-        const placeKey = compactOrganizationName(
-          place.place_name,
-          item.region,
-        );
+        const placeKey = compactOrganizationName(place.place_name);
         const address = `${place.road_address_name} ${place.address_name}`;
         let score = Math.max(0, 10 - index);
         if (placeKey === organizationKey) score += 100;
@@ -461,34 +484,29 @@ function haversine(
   return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function currentPosition() {
-  return new Promise<{ latitude: number; longitude: number } | null>((resolve) => {
-    if (!navigator.geolocation) {
-      resolve(null);
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (position) =>
-        resolve({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        }),
-      () => resolve(null),
-      { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 },
-    );
-  });
+function isSchoolOrganization(organization: string) {
+  const normalized = organization.replace(/\s+/g, "");
+  return /(?:초등학교|중학교|고등학교|특수학교|대학교|유치원|병설|초$|중$|고$)/.test(
+    normalized,
+  );
 }
 
 export default function SalesMapPage({
+  active,
   records,
-  isAdmin,
+  isOwner,
+  canManageCampaigns,
+  canEditLocations,
   search,
   onSearchChange,
   onOpenOrganization,
   onRecordsChanged,
 }: {
+  active: boolean;
   records: SalesMapRecord[];
-  isAdmin: boolean;
+  isOwner: boolean;
+  canManageCampaigns: boolean;
+  canEditLocations: boolean;
   search: string;
   onSearchChange: (value: string) => void;
   onOpenOrganization: (organization: string) => void;
@@ -511,10 +529,9 @@ export default function SalesMapPage({
   const [configSaving, setConfigSaving] = useState(false);
   const [locations, setLocations] = useState<OrganizationLocation[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(true);
-  const [locationsFetchSucceeded, setLocationsFetchSucceeded] = useState(false);
   const [sdkReady, setSdkReady] = useState(false);
-  const [sdkRetry, setSdkRetry] = useState(0);
   const [mapError, setMapError] = useState("");
+  const [mapLoadAttempt, setMapLoadAttempt] = useState(0);
   const [statusFilter, setStatusFilter] = useState<"전체" | MapStatus>("전체");
   const [regionFilter, setRegionFilter] = useState("전체 지역");
   const [locationFilter, setLocationFilter] = useState("전체 위치");
@@ -537,6 +554,15 @@ export default function SalesMapPage({
   const [selected, setSelected] = useState<string[]>([]);
   const [routeOrder, setRouteOrder] = useState<string[]>([]);
   const [routeMessage, setRouteMessage] = useState("");
+  const [routeStartOpen, setRouteStartOpen] = useState(false);
+  const [routeStartInput, setRouteStartInput] = useState("");
+  const [routeCalculating, setRouteCalculating] = useState(false);
+  const [routeLocating, setRouteLocating] = useState(false);
+  const [routeOrigin, setRouteOrigin] = useState<RouteOrigin | null>(null);
+  const [nearbyOrigin, setNearbyOrigin] = useState<RouteOrigin | null>(null);
+  const [nearbyRadius, setNearbyRadius] = useState<NearbyRadius | null>(null);
+  const [nearbyLocating, setNearbyLocating] = useState(false);
+  const [nearbyMessage, setNearbyMessage] = useState("");
   const [focusedOrganization, setFocusedOrganization] = useState("");
   const [locatingOrganization, setLocatingOrganization] =
     useState<OrganizationSummary | null>(null);
@@ -550,10 +576,27 @@ export default function SalesMapPage({
   async function loadCampaigns() {
     try {
       setCampaignLoading(true);
-      const campaignData = await fetchCampaignData();
-      setCampaigns(campaignData.campaigns);
-      setCampaignTargets(campaignData.targets);
-      setCampaignMembers(campaignData.members);
+      const response = await fetch("/api/map/campaigns", {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as {
+        campaigns?: Record<string, unknown>[];
+        targets?: Record<string, unknown>[];
+        members?: Record<string, unknown>[];
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(
+          payload.error || "영업 카테고리를 불러오지 못했습니다.",
+        );
+      }
+      setCampaigns((payload.campaigns ?? []).map(normalizeCampaign));
+      setCampaignTargets(
+        (payload.targets ?? []).map(normalizeCampaignTarget),
+      );
+      setCampaignMembers(
+        (payload.members ?? []).map(normalizeCampaignMember),
+      );
     } catch (caught) {
       setNotice(
         caught instanceof Error
@@ -567,79 +610,75 @@ export default function SalesMapPage({
 
   useEffect(() => {
     let active = true;
-    const configController = new AbortController();
-    const locationsController = new AbortController();
-    const campaignController = new AbortController();
-    const configTimeout = window.setTimeout(
-      () => configController.abort(),
-      15_000,
-    );
-    const locationsTimeout = window.setTimeout(
-      () => locationsController.abort(),
-      15_000,
-    );
-    void fetch("/api/map/config", {
-      cache: "no-store",
-      signal: configController.signal,
-    })
+    void fetch("/api/map/config", { cache: "no-store" })
       .then(async (response) => {
-        const payload = await readJsonPayload<{
+        const payload = (await response.json()) as {
           javascriptKey?: string;
           error?: string;
-        }>(response, "지도 설정 응답을 확인하지 못했습니다.");
+        };
         if (!response.ok) throw new Error(payload.error || "지도 설정을 확인하지 못했습니다.");
         return payload.javascriptKey ?? "";
       })
       .then((key) => {
-        if (!active) return;
-        setJavascriptKey(key);
+        if (active) setJavascriptKey(key);
       })
       .catch((caught: unknown) => {
-        if (!active) return;
-        setMapError(
-          configController.signal.aborted
-            ? "지도 설정 확인이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."
-            : caught instanceof Error
+        if (active) {
+          setMapError(
+            caught instanceof Error
               ? caught.message
               : "지도 설정을 확인하지 못했습니다.",
-        );
+          );
+        }
       })
       .finally(() => {
-        window.clearTimeout(configTimeout);
         if (active) setConfigLoading(false);
       });
-    void fetch("/api/map/locations", {
-      cache: "no-store",
-      signal: locationsController.signal,
-    })
+
+    void fetch("/api/map/locations", { cache: "no-store" })
       .then(async (response) => {
-        const payload = await readJsonPayload<{
+        const payload = (await response.json()) as {
           locations?: Record<string, unknown>[];
           error?: string;
-        }>(response, "기관 위치 응답을 확인하지 못했습니다.");
+        };
         if (!response.ok) throw new Error(payload.error || "기관 위치를 불러오지 못했습니다.");
         return (payload.locations ?? []).map(normalizeLocation);
       })
       .then((nextLocations) => {
-        if (!active) return;
-        setLocations(nextLocations);
-        setLocationsFetchSucceeded(true);
+        if (active) setLocations(nextLocations);
       })
       .catch((caught: unknown) => {
-        if (!active) return;
-        setNotice(
-          locationsController.signal.aborted
-            ? "기관 위치 조회가 지연되어 지도부터 표시했습니다."
-            : caught instanceof Error
+        if (active) {
+          setMapError(
+            caught instanceof Error
               ? caught.message
               : "기관 위치를 불러오지 못했습니다.",
-        );
+          );
+        }
       })
       .finally(() => {
-        window.clearTimeout(locationsTimeout);
         if (active) setLocationsLoading(false);
       });
-    void fetchCampaignData(campaignController.signal)
+
+    void fetch("/api/map/campaigns", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          campaigns?: Record<string, unknown>[];
+          targets?: Record<string, unknown>[];
+          members?: Record<string, unknown>[];
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(
+            payload.error || "영업 카테고리를 불러오지 못했습니다.",
+          );
+        }
+        return {
+          campaigns: (payload.campaigns ?? []).map(normalizeCampaign),
+          targets: (payload.targets ?? []).map(normalizeCampaignTarget),
+          members: (payload.members ?? []).map(normalizeCampaignMember),
+        };
+      })
       .then((campaignData) => {
         if (!active) return;
         setCampaigns(campaignData.campaigns);
@@ -647,38 +686,48 @@ export default function SalesMapPage({
         setCampaignMembers(campaignData.members);
       })
       .catch((caught: unknown) => {
-        if (!active || campaignController.signal.aborted) return;
-        setNotice(
-          caught instanceof Error
-            ? caught.message
-            : "영업 카테고리를 불러오지 못했습니다.",
-        );
+        if (active) {
+          setNotice(
+            caught instanceof Error
+              ? caught.message
+              : "영업 카테고리를 불러오지 못했습니다.",
+          );
+        }
       })
       .finally(() => {
         if (active) setCampaignLoading(false);
       });
     return () => {
       active = false;
-      configController.abort();
-      locationsController.abort();
-      campaignController.abort();
-      window.clearTimeout(configTimeout);
-      window.clearTimeout(locationsTimeout);
     };
   }, []);
 
   useEffect(() => {
-    if (configLoading || !javascriptKey || !mapContainerRef.current) return;
+    if (
+      configLoading ||
+      !javascriptKey ||
+      !mapContainerRef.current
+    ) {
+      return;
+    }
     let active = true;
     setMapError("");
+    if (mapRef.current && sdkRef.current) {
+      mapRef.current.relayout();
+      setSdkReady(true);
+      return;
+    }
+    setSdkReady(false);
     void loadKakaoMaps(javascriptKey)
       .then((maps) => {
         if (!active || !mapContainerRef.current) return;
         sdkRef.current = maps;
-        mapRef.current = new maps.Map(mapContainerRef.current, {
-          center: new maps.LatLng(36.4, 127.8),
-          level: 13,
-        });
+        if (!mapRef.current) {
+          mapRef.current = new maps.Map(mapContainerRef.current, {
+            center: new maps.LatLng(36.4, 127.8),
+            level: 13,
+          });
+        }
         setSdkReady(true);
       })
       .catch((caught: unknown) => {
@@ -693,7 +742,15 @@ export default function SalesMapPage({
     return () => {
       active = false;
     };
-  }, [configLoading, javascriptKey, sdkRetry]);
+  }, [javascriptKey, configLoading, mapLoadAttempt]);
+
+  useEffect(() => {
+    if (!active || !mapRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      mapRef.current?.relayout();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [active]);
 
   useEffect(() => {
     if (!notice) return;
@@ -749,6 +806,17 @@ export default function SalesMapPage({
             latest.summary ||
             latest.topic ||
             "최근 내용 미입력",
+          searchText: history
+            .flatMap((record) => [
+              record.contactName,
+              record.contactPhone,
+              record.progressManager,
+              record.topic,
+              record.summary,
+              record.nextAction,
+            ])
+            .filter(Boolean)
+            .join(" "),
           location: locationByOrganization.get(organization),
         } satisfies OrganizationSummary;
       })
@@ -767,10 +835,9 @@ export default function SalesMapPage({
   useEffect(() => {
     const maps = sdkRef.current;
     if (
-      !isAdmin ||
+      !canEditLocations ||
       !sdkReady ||
       locationsLoading ||
-      !locationsFetchSucceeded ||
       !maps ||
       autoLocateRunningRef.current
     ) {
@@ -842,13 +909,7 @@ export default function SalesMapPage({
       cancelled = true;
       autoLocateRunningRef.current = false;
     };
-  }, [
-    isAdmin,
-    locationsFetchSucceeded,
-    locationsLoading,
-    records,
-    sdkReady,
-  ]);
+  }, [canEditLocations, locationsLoading, records, sdkReady]);
 
   const activeCampaign = useMemo(
     () =>
@@ -911,9 +972,34 @@ export default function SalesMapPage({
     [eligibleOrganizations],
   );
 
+  const nearbyDistanceByOrganization = useMemo(() => {
+    const distances = new Map<string, number>();
+    if (!nearbyOrigin) return distances;
+    eligibleOrganizations.forEach((item) => {
+      if (!item.location) return;
+      distances.set(
+        item.organization,
+        haversine(nearbyOrigin, item.location),
+      );
+    });
+    return distances;
+  }, [eligibleOrganizations, nearbyOrigin]);
+
   const filteredOrganizations = useMemo(() => {
     const keyword = search.trim().toLowerCase();
-    return eligibleOrganizations.filter((item) => {
+    const filtered = eligibleOrganizations.filter((item) => {
+      if (nearbyOrigin && nearbyRadius) {
+        const distance = nearbyDistanceByOrganization.get(item.organization);
+        if (
+          item.status !== "완료" ||
+          !item.location ||
+          !isSchoolOrganization(item.organization) ||
+          distance === undefined ||
+          distance > nearbyRadius
+        ) {
+          return false;
+        }
+      }
       if (
         activeCampaignOrganizations &&
         !activeCampaignOrganizations.has(item.organization)
@@ -926,22 +1012,44 @@ export default function SalesMapPage({
       if (locationFilter === "위치 미등록" && item.location) return false;
       if (
         keyword &&
-        ![
-          item.organization,
-          item.region,
-          item.awardStage,
-          item.summary,
-          item.location?.address ?? "",
-          item.location?.roadAddress ?? "",
-        ].some((value) => value.toLowerCase().includes(keyword))
+        !(() => {
+          const campaignTarget = activeCampaignTargetByOrganization.get(
+            item.organization,
+          );
+          return [
+            item.organization,
+            item.region,
+            item.awardStage,
+            item.progressManager,
+            item.summary,
+            item.searchText,
+            item.location?.address ?? "",
+            item.location?.roadAddress ?? "",
+            campaignTarget?.contactName ?? "",
+            campaignTarget?.phone ?? "",
+            campaignTarget?.assignedMemberName ?? "",
+          ].some((value) => value.toLowerCase().includes(keyword));
+        })()
       ) {
         return false;
       }
       return true;
     });
+    if (nearbyOrigin && nearbyRadius) {
+      filtered.sort(
+        (first, second) =>
+          (nearbyDistanceByOrganization.get(first.organization) ?? Infinity) -
+          (nearbyDistanceByOrganization.get(second.organization) ?? Infinity),
+      );
+    }
+    return filtered;
   }, [
     eligibleOrganizations,
     activeCampaignOrganizations,
+    activeCampaignTargetByOrganization,
+    nearbyDistanceByOrganization,
+    nearbyOrigin,
+    nearbyRadius,
     statusFilter,
     regionFilter,
     locationFilter,
@@ -950,10 +1058,18 @@ export default function SalesMapPage({
 
   const visibleOrganizations = useMemo(
     () =>
-      eligibleOrganizations.filter((item) =>
-        activeSelected.includes(item.organization),
-      ),
-    [eligibleOrganizations, activeSelected],
+      nearbyOrigin && nearbyRadius
+        ? filteredOrganizations
+        : eligibleOrganizations.filter((item) =>
+            activeSelected.includes(item.organization),
+          ),
+    [
+      eligibleOrganizations,
+      activeSelected,
+      filteredOrganizations,
+      nearbyOrigin,
+      nearbyRadius,
+    ],
   );
 
   const visibleMapped = useMemo(
@@ -979,15 +1095,99 @@ export default function SalesMapPage({
 
   function selectCampaign(campaignId: number | "all") {
     setActiveCampaignId(campaignId);
+    setNearbyOrigin(null);
+    setNearbyRadius(null);
+    setNearbyMessage("");
     setSelected([]);
     setRouteOrder([]);
     setRouteMessage("");
+    setRouteStartOpen(false);
+    setRouteOrigin(null);
     setFocusedOrganization("");
     setStatusFilter("전체");
     setRegionFilter("전체 지역");
     setLocationFilter("전체 위치");
     onSearchChange("");
     changeMobileView("list");
+  }
+
+  function clearNearbyFilter() {
+    setNearbyOrigin(null);
+    setNearbyRadius(null);
+    setNearbyMessage("");
+  }
+
+  async function showNearbyInstalledSchools(radius: NearbyRadius) {
+    if (!navigator.geolocation) {
+      setNearbyMessage("이 기기에서는 현재 위치를 확인할 수 없습니다.");
+      return;
+    }
+
+    const applyRadius = (origin: RouteOrigin) => {
+      const count = eligibleOrganizations.filter((item) => {
+        if (
+          item.status !== "완료" ||
+          !item.location ||
+          !isSchoolOrganization(item.organization)
+        ) {
+          return false;
+        }
+        return haversine(origin, item.location) <= radius;
+      }).length;
+
+      setNearbyOrigin(origin);
+      setNearbyRadius(radius);
+      setNearbyMessage(
+        count
+          ? `내 위치에서 ${radius}km 안의 설치 완료 학교 ${count}곳을 표시합니다.`
+          : `내 위치에서 ${radius}km 안에 위치가 등록된 설치 완료 학교가 없습니다.`,
+      );
+      setActiveCampaignId("all");
+      setStatusFilter("전체");
+      setRegionFilter("전체 지역");
+      setLocationFilter("전체 위치");
+      onSearchChange("");
+      setSelected([]);
+      setRouteOrder([]);
+      setRouteMessage("");
+      setRouteStartOpen(false);
+      setRouteOrigin(null);
+      setFocusedOrganization("");
+      changeMobileView("map");
+    };
+
+    if (nearbyOrigin) {
+      applyRadius(nearbyOrigin);
+      return;
+    }
+
+    try {
+      setNearbyLocating(true);
+      setNearbyMessage("현재 위치를 확인하고 있습니다.");
+      const position = await new Promise<GeolocationPosition>(
+        (resolve, reject) =>
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 12000,
+            maximumAge: 300000,
+          }),
+      );
+      applyRadius({
+        label: "내 위치",
+        address: "현재 기기 위치",
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      });
+    } catch (caught) {
+      const error = caught as GeolocationPositionError;
+      setNearbyMessage(
+        error.code === 1
+          ? "현재 위치 권한이 필요합니다. 브라우저의 위치 허용 후 다시 눌러 주세요."
+          : "현재 위치를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      );
+    } finally {
+      setNearbyLocating(false);
+    }
   }
 
   async function handleCampaignFile(event: ChangeEvent<HTMLInputElement>) {
@@ -1082,28 +1282,30 @@ export default function SalesMapPage({
           [member.email.toLocaleLowerCase(), member.id] as const,
         ]),
       );
-      const response = await fetch("/api/map/campaigns", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const targetRows = campaignImport.rows.map((row) => ({
+        ...row,
+        assignedMemberId:
+          memberByName.get(
+            row.assignedMemberName
+              .replace(/\s+/g, "")
+              .toLocaleLowerCase("ko-KR"),
+          ) ??
+          memberByName.get(row.assignedMemberName.toLocaleLowerCase()) ??
+          null,
+      }));
+      const { response, payload: rawPayload } =
+        await fetchWithInstitutionConfirmation("/api/map/campaigns", {
+          method: "POST",
+          body: {
           name: campaignName.trim(),
           notes: campaignNotes.trim(),
-          targets: campaignImport.rows.map((row) => ({
-            ...row,
-            assignedMemberId:
-              memberByName.get(
-                row.assignedMemberName
-                  .replace(/\s+/g, "")
-                  .toLocaleLowerCase("ko-KR"),
-              ) ??
-              memberByName.get(row.assignedMemberName.toLocaleLowerCase()) ??
-              null,
-          })),
-        }),
-      });
-      const payload = (await response.json()) as {
+            targets: targetRows,
+          },
+        });
+      const payload = rawPayload as {
         campaign?: Record<string, unknown>;
         targetCount?: number;
+        targets?: CampaignImportRow[];
         error?: string;
       };
       if (!response.ok || !payload.campaign) {
@@ -1123,7 +1325,9 @@ export default function SalesMapPage({
       setLocationFilter("전체 위치");
       onSearchChange("");
       changeMobileView("list");
-      const mapped = await geocodeCampaignRows(campaignImport.rows);
+      const mapped = await geocodeCampaignRows(
+        payload.targets?.length ? payload.targets : campaignImport.rows,
+      );
       if (mapped.saved) await onRecordsChanged();
       setNotice(
         mapped.unresolved
@@ -1264,10 +1468,67 @@ export default function SalesMapPage({
       overlaysRef.current.push(overlay);
     });
 
-    const routePoints = activeRouteOrder
+    if (nearbyOrigin && nearbyRadius) {
+      const nearbyPosition = new maps.LatLng(
+        nearbyOrigin.latitude,
+        nearbyOrigin.longitude,
+      );
+      bounds.extend(nearbyPosition);
+      const nearbyMarker = document.createElement("button");
+      nearbyMarker.type = "button";
+      nearbyMarker.className = "sales-map-marker nearby-origin-marker";
+      nearbyMarker.title = "현재 위치 · 저장되지 않음";
+      nearbyMarker.setAttribute("aria-label", "현재 내 위치");
+      const nearbyIcon = document.createElement("span");
+      nearbyIcon.className = "nearby-origin-icon";
+      nearbyIcon.setAttribute("aria-hidden", "true");
+      nearbyIcon.textContent = "◎";
+      const nearbyLabel = document.createElement("strong");
+      nearbyLabel.textContent = "내 위치";
+      nearbyMarker.append(nearbyIcon, nearbyLabel);
+      const nearbyOverlay = new maps.CustomOverlay({
+        position: nearbyPosition,
+        content: nearbyMarker,
+        yAnchor: 1.2,
+        zIndex: 11,
+      });
+      nearbyOverlay.setMap(map);
+      overlaysRef.current.push(nearbyOverlay);
+    }
+
+    if (routeOrigin && activeRouteOrder.length) {
+      const originPosition = new maps.LatLng(
+        routeOrigin.latitude,
+        routeOrigin.longitude,
+      );
+      bounds.extend(originPosition);
+      const originMarker = document.createElement("button");
+      originMarker.type = "button";
+      originMarker.className = "sales-map-marker route-origin-marker";
+      originMarker.textContent = "출발";
+      originMarker.title = `${routeOrigin.label} · ${routeOrigin.address}`;
+      const originOverlay = new maps.CustomOverlay({
+        position: originPosition,
+        content: originMarker,
+        yAnchor: 1.2,
+        zIndex: 10,
+      });
+      originOverlay.setMap(map);
+      overlaysRef.current.push(originOverlay);
+    }
+
+    const routePoints = [
+      ...(routeOrigin && activeRouteOrder.length
+        ? [new maps.LatLng(routeOrigin.latitude, routeOrigin.longitude)]
+        : []),
+      ...activeRouteOrder
       .map((organization) => locationByOrganization.get(organization))
       .filter((location): location is OrganizationLocation => Boolean(location))
-      .map((location) => new maps.LatLng(location.latitude, location.longitude));
+        .map(
+          (location) =>
+            new maps.LatLng(location.latitude, location.longitude),
+        ),
+    ];
     if (routePoints.length > 1) {
       const line = new maps.Polyline({
         path: routePoints,
@@ -1280,11 +1541,19 @@ export default function SalesMapPage({
       routeLineRef.current = line;
     }
 
-    if (visibleMapped.length === 1) {
+    if (
+      visibleMapped.length === 1 &&
+      !routeOrigin &&
+      !(nearbyOrigin && nearbyRadius)
+    ) {
       const location = visibleMapped[0].location!;
       map.setCenter(new maps.LatLng(location.latitude, location.longitude));
       map.setLevel(5);
-    } else if (visibleMapped.length > 1) {
+    } else if (
+      visibleMapped.length > 0 ||
+      (routeOrigin && activeRouteOrder.length) ||
+      (nearbyOrigin && nearbyRadius)
+    ) {
       map.setBounds(bounds);
     }
   }, [
@@ -1293,6 +1562,9 @@ export default function SalesMapPage({
     activeRouteOrder,
     locationByOrganization,
     mobileView,
+    routeOrigin,
+    nearbyOrigin,
+    nearbyRadius,
   ]);
 
   async function saveMapKey() {
@@ -1334,25 +1606,57 @@ export default function SalesMapPage({
     );
   }
 
-  async function recommendRoute() {
+  async function findRouteOrigin(query: string, label?: string) {
+    const maps = sdkRef.current;
+    if (!maps) throw new Error("지도를 불러온 뒤 다시 시도해 주세요.");
+    const searchQuery = query.trim();
+    if (!searchQuery) throw new Error("출발지 주소나 장소명을 입력해 주세요.");
+
+    const addressResults = await new Promise<KakaoAddressResult[]>((resolve) => {
+      const geocoder = new maps.services.Geocoder();
+      geocoder.addressSearch(searchQuery, (results, status) => {
+        resolve(status === maps.services.Status.OK ? results : []);
+      });
+    });
+    const addressResult = addressResults[0];
+    if (addressResult) {
+      return {
+        label: label || searchQuery,
+        address:
+          addressResult.road_address?.address_name ||
+          addressResult.address?.address_name ||
+          addressResult.address_name ||
+          searchQuery,
+        latitude: Number(addressResult.y),
+        longitude: Number(addressResult.x),
+      } satisfies RouteOrigin;
+    }
+
+    const keywordResults = await searchKakaoKeyword(maps, searchQuery);
+    const place = keywordResults[0];
+    if (!place) {
+      throw new Error("출발지를 찾지 못했습니다. 주소나 장소명을 다시 확인해 주세요.");
+    }
+    return {
+      label: label || place.place_name || searchQuery,
+      address: place.road_address_name || place.address_name || searchQuery,
+      latitude: Number(place.y),
+      longitude: Number(place.x),
+    } satisfies RouteOrigin;
+  }
+
+  function applyRouteRecommendation(origin: RouteOrigin) {
     const candidates = eligibleOrganizations.filter(
       (item) => activeSelected.includes(item.organization) && item.location,
     );
     if (candidates.length < 2) {
       setRouteMessage("위치가 등록된 기관을 두 곳 이상 선택해 주세요.");
-      return;
+      return false;
     }
-    setRouteMessage("현재 위치를 확인해 방문 순서를 계산하고 있습니다.");
-    const userPosition = await currentPosition();
+
     const remaining = [...candidates];
     const ordered: OrganizationSummary[] = [];
-    let cursor =
-      userPosition ??
-      {
-        latitude: remaining[0].location!.latitude,
-        longitude: remaining[0].location!.longitude,
-      };
-    if (!userPosition) ordered.push(remaining.shift()!);
+    let cursor = origin;
     while (remaining.length) {
       remaining.sort(
         (a, b) =>
@@ -1360,22 +1664,84 @@ export default function SalesMapPage({
       );
       const next = remaining.shift()!;
       ordered.push(next);
-      cursor = next.location!;
+      cursor = {
+        label: next.organization,
+        address:
+          next.location!.roadAddress ||
+          next.location!.address ||
+          next.organization,
+        latitude: next.location!.latitude,
+        longitude: next.location!.longitude,
+      };
     }
+    setRouteOrigin(origin);
     setRouteOrder(ordered.map((item) => item.organization));
-    setRouteMessage(
-      userPosition
-        ? "현재 위치에서 가까운 순서로 추천했습니다."
-        : "첫 번째 선택 기관을 기준으로 가까운 순서로 추천했습니다.",
-    );
+    setRouteMessage(`${origin.label}에서 가까운 순서로 추천했습니다.`);
+    setRouteStartOpen(false);
     changeMobileView("map");
+    return true;
+  }
+
+  async function recommendRoute(startQuery: string, startLabel?: string) {
+    try {
+      setRouteCalculating(true);
+      setRouteMessage("출발지를 확인해 방문 순서를 계산하고 있습니다.");
+      const origin = await findRouteOrigin(startQuery, startLabel);
+      applyRouteRecommendation(origin);
+    } catch (caught) {
+      setRouteMessage(
+        caught instanceof Error
+          ? caught.message
+          : "방문 순서를 계산하지 못했습니다.",
+      );
+    } finally {
+      setRouteCalculating(false);
+    }
+  }
+
+  async function recommendRouteFromCurrentLocation() {
+    if (!navigator.geolocation) {
+      setRouteMessage("이 브라우저에서는 현재 위치를 사용할 수 없습니다.");
+      return;
+    }
+
+    try {
+      setRouteLocating(true);
+      setRouteCalculating(true);
+      setRouteMessage("현재 위치를 확인하고 방문 순서를 계산하고 있습니다.");
+      const position = await new Promise<GeolocationPosition>(
+        (resolve, reject) =>
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 12000,
+            maximumAge: 300000,
+          }),
+      );
+      setRouteStartInput("");
+      applyRouteRecommendation({
+        label: "내 위치",
+        address: "현재 기기 위치",
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      });
+    } catch (caught) {
+      const error = caught as GeolocationPositionError;
+      setRouteMessage(
+        error.code === 1
+          ? "현재 위치 권한이 필요합니다. 브라우저에서 위치를 허용한 뒤 다시 눌러 주세요."
+          : "현재 위치를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      );
+    } finally {
+      setRouteLocating(false);
+      setRouteCalculating(false);
+    }
   }
 
   async function runPlaceSearch(query = locationQuery) {
     const maps = sdkRef.current;
     if (!maps || !query.trim()) {
       setPlaceError("기관명이나 주소를 입력해 주세요.");
-      return false;
+      return;
     }
     const searchQuery = query.trim();
     setPlaceSearching(true);
@@ -1425,33 +1791,26 @@ export default function SalesMapPage({
       setPlaceSearching(false);
       if (results.length) {
         setPlaceResults(results);
-        return true;
+        return;
       }
       setPlaceResults([]);
       setPlaceError("검색 결과가 없습니다. 기관명 또는 정확한 주소로 다시 검색해 보세요.");
-      return false;
     } catch {
       setPlaceSearching(false);
       setPlaceResults([]);
       setPlaceError("위치 검색 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
-      return false;
-    }
-  }
-
-  async function runOrganizationPlaceSearch(item: OrganizationSummary) {
-    for (const query of buildOrganizationSearchQueries(item)) {
-      setLocationQuery(query);
-      if (await runPlaceSearch(query)) return;
     }
   }
 
   function openLocationSearch(item: OrganizationSummary) {
-    const query = buildOrganizationSearchQuery(item);
+    const query =
+      automaticLocationQueries(item)[0] ||
+      [item.region, item.organization].filter(Boolean).join(" ");
     setLocatingOrganization(item);
     setLocationQuery(query);
     setPlaceResults([]);
     setPlaceError("");
-    window.setTimeout(() => void runOrganizationPlaceSearch(item), 0);
+    window.setTimeout(() => void runPlaceSearch(query), 0);
   }
 
   async function persistLocation(
@@ -1518,21 +1877,12 @@ export default function SalesMapPage({
     ),
   ) as Record<VisibleMapStatus, number>;
   const mappedCount = eligibleOrganizations.filter((item) => item.location).length;
-  const mappedCountDisplay = locationsLoading
-    ? "…"
-    : locationsFetchSucceeded
-      ? mappedCount
-      : "확인 실패";
-  const mappedCountDescription = locationsLoading
-    ? "저장된 위치를 불러오는 중"
-    : locationsFetchSucceeded
-      ? `전체 ${eligibleOrganizations.length}개 기관`
-      : "저장된 위치 조회 실패";
   const unmappedCount = eligibleOrganizations.length - mappedCount;
   const showingUnmappedList =
     locationFilter === "위치 미등록" &&
     statusFilter === "전체" &&
     regionFilter === "전체 지역" &&
+    !nearbyRadius &&
     !search.trim();
   const selectedMappedCount = eligibleOrganizations.filter(
     (item) => item.location && activeSelected.includes(item.organization),
@@ -1562,7 +1912,7 @@ export default function SalesMapPage({
             않습니다.
           </p>
         </div>
-        {isAdmin ? (
+        {isOwner ? (
           <div className="map-key-entry">
             <label htmlFor="kakao-javascript-key">카카오 JavaScript 키</label>
             <div>
@@ -1601,8 +1951,8 @@ export default function SalesMapPage({
       <div className="sales-map-summary">
         <div>
           <span>지도 등록</span>
-          <strong>{mappedCountDisplay}</strong>
-          <small>{mappedCountDescription}</small>
+          <strong>{mappedCount}</strong>
+          <small>전체 {eligibleOrganizations.length}개 기관</small>
         </div>
         <div className="map-summary-progress">
           <span>진행 중</span>
@@ -1612,12 +1962,18 @@ export default function SalesMapPage({
         <div className="map-summary-complete">
           <span>완료 실적</span>
           <strong>{counts["완료"]}</strong>
-          <small>완공</small>
+          <small>완공·검수·교육 완료</small>
         </div>
         <div className="map-summary-selected">
-          <span>동선 선택</span>
-          <strong>{activeSelected.length}</strong>
-          <small>위치 확인 {selectedMappedCount}곳</small>
+          <span>{nearbyRadius ? "내 주변" : "동선 선택"}</span>
+          <strong>
+            {nearbyRadius ? filteredOrganizations.length : activeSelected.length}
+          </strong>
+          <small>
+            {nearbyRadius
+              ? `${nearbyRadius}km · 설치 완료 학교`
+              : `위치 확인 ${selectedMappedCount}곳`}
+          </small>
         </div>
       </div>
 
@@ -1634,15 +1990,13 @@ export default function SalesMapPage({
             <button type="button" onClick={downloadCampaignTemplate}>
               엑셀 양식 다운로드
             </button>
-            {isAdmin && (
-              <button
-                type="button"
-                className="campaign-import-button"
-                onClick={() => campaignFileRef.current?.click()}
-              >
-                엑셀 가져오기
-              </button>
-            )}
+            <button
+              type="button"
+              className="campaign-import-button"
+              onClick={() => campaignFileRef.current?.click()}
+            >
+              엑셀 가져오기
+            </button>
             <input
               ref={campaignFileRef}
               type="file"
@@ -1684,7 +2038,7 @@ export default function SalesMapPage({
               </span>
               {activeCampaign.notes && <p>{activeCampaign.notes}</p>}
             </div>
-            {isAdmin && (
+            {canManageCampaigns && (
               <button
                 type="button"
                 onClick={() => void removeCampaign(activeCampaign)}
@@ -1703,7 +2057,10 @@ export default function SalesMapPage({
               type="button"
               key={status}
               className={statusFilter === status ? "active" : ""}
-              onClick={() => setStatusFilter(status)}
+              onClick={() => {
+                clearNearbyFilter();
+                setStatusFilter(status);
+              }}
             >
               {status}
               {status !== "전체" && <span>{counts[status]}</span>}
@@ -1711,34 +2068,60 @@ export default function SalesMapPage({
           ))}
         </div>
         <div className="map-toolbar-actions">
-          {isAdmin && (
+          <button
+            type="button"
+            className={`auto-locate ${showingUnmappedList ? "active" : ""}`}
+            aria-pressed={showingUnmappedList}
+            onClick={() => {
+              clearNearbyFilter();
+              setFocusedOrganization("");
+              if (showingUnmappedList) {
+                setLocationFilter("전체 위치");
+                changeMobileView("list");
+                return;
+              }
+              setStatusFilter("전체");
+              setRegionFilter("전체 지역");
+              setLocationFilter("위치 미등록");
+              onSearchChange("");
+              changeMobileView("list");
+            }}
+            disabled={!unmappedCount && !showingUnmappedList}
+          >
+            {showingUnmappedList
+              ? "전체 기관 보기"
+              : unmappedCount
+                ? `미등록 ${unmappedCount}곳 보기`
+                : "위치 등록 완료"}
+          </button>
+        </div>
+      </div>
+
+      <div className="map-nearby-panel">
+        <div className="map-nearby-copy">
+          <strong>내 주변 설치학교</strong>
+          <span>현재 위치를 저장하지 않고 완료 학교만 거리순으로 표시합니다.</span>
+        </div>
+        <div className="map-nearby-actions" aria-label="내 주변 설치학교 반경">
+          {([30, 50, 100] as NearbyRadius[]).map((radius) => (
             <button
               type="button"
-              className={`auto-locate ${showingUnmappedList ? "active" : ""}`}
-              aria-pressed={showingUnmappedList}
-              onClick={() => {
-                setFocusedOrganization("");
-                if (showingUnmappedList) {
-                  setLocationFilter("전체 위치");
-                  changeMobileView("list");
-                  return;
-                }
-                setStatusFilter("전체");
-                setRegionFilter("전체 지역");
-                setLocationFilter("위치 미등록");
-                onSearchChange("");
-                changeMobileView("list");
-              }}
-              disabled={!unmappedCount && !showingUnmappedList}
+              className={nearbyRadius === radius ? "active" : ""}
+              aria-pressed={nearbyRadius === radius}
+              disabled={nearbyLocating}
+              key={radius}
+              onClick={() => void showNearbyInstalledSchools(radius)}
             >
-              {showingUnmappedList
-                ? "전체 기관 보기"
-                : unmappedCount
-                  ? `미등록 ${unmappedCount}곳 보기`
-                  : "위치 등록 완료"}
+              {nearbyLocating ? "위치 확인 중" : `${radius}km`}
+            </button>
+          ))}
+          {nearbyRadius && (
+            <button type="button" className="clear" onClick={clearNearbyFilter}>
+              해제
             </button>
           )}
         </div>
+        {nearbyMessage && <p>{nearbyMessage}</p>}
       </div>
 
       <div className="map-mobile-view-switch" aria-label="모바일 지도 화면 전환">
@@ -1756,7 +2139,10 @@ export default function SalesMapPage({
           aria-pressed={mobileView === "list"}
           onClick={() => changeMobileView("list")}
         >
-          목록·동선 <span>{activeSelected.length}</span>
+          목록·동선{" "}
+          <span>
+            {nearbyRadius ? filteredOrganizations.length : activeSelected.length}
+          </span>
         </button>
       </div>
 
@@ -1771,7 +2157,8 @@ export default function SalesMapPage({
               <input
                 value={search}
                 onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="학교·기관·주소 검색"
+                placeholder="기관명·담당자·주소·주제 검색"
+                aria-label="지도 기관명·담당자·주소·주제 검색"
               />
             </div>
             <div>
@@ -1825,6 +2212,8 @@ export default function SalesMapPage({
                     setSelected([]);
                     setRouteOrder([]);
                     setRouteMessage("");
+                    setRouteStartOpen(false);
+                    setRouteOrigin(null);
                   }}
                   disabled={!activeSelected.length}
                 >
@@ -1833,32 +2222,101 @@ export default function SalesMapPage({
                 <button
                   type="button"
                   className="route-recommend"
-                  onClick={() => void recommendRoute()}
+                  onClick={() => {
+                    setRouteStartOpen((current) => !current);
+                    setRouteMessage("출발지를 선택하거나 직접 입력해 주세요.");
+                  }}
                   disabled={selectedMappedCount < 2}
                 >
                   방문 순서 추천
                 </button>
               </div>
+              {routeStartOpen && (
+                <form
+                  className="route-start-picker"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void recommendRoute(routeStartInput);
+                  }}
+                >
+                  <div className="route-start-heading">
+                    <span>출발지 선택</span>
+                    <div className="route-start-options">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRouteStartInput(companyRouteOrigin.address);
+                          void recommendRoute(
+                            companyRouteOrigin.address,
+                            companyRouteOrigin.label,
+                          );
+                        }}
+                        disabled={routeCalculating}
+                      >
+                        <b aria-hidden="true">🏢</b> 위즈업 본사
+                      </button>
+                      <button
+                        type="button"
+                        className="route-current-location"
+                        onClick={() => void recommendRouteFromCurrentLocation()}
+                        disabled={routeCalculating}
+                      >
+                        <b aria-hidden="true">◎</b>
+                        {routeLocating ? "위치 확인 중" : "내 위치"}
+                      </button>
+                    </div>
+                  </div>
+                  <label>
+                    <span>다른 출발지</span>
+                    <div>
+                      <input
+                        value={routeStartInput}
+                        onChange={(event) =>
+                          setRouteStartInput(event.target.value)
+                        }
+                        placeholder="주소 또는 장소명 입력"
+                        autoFocus
+                      />
+                      <button
+                        type="submit"
+                        disabled={!routeStartInput.trim() || routeCalculating}
+                      >
+                        {routeCalculating ? "계산 중" : "이 주소로 추천"}
+                      </button>
+                    </div>
+                  </label>
+                  <small>{companyRouteOrigin.address}</small>
+                </form>
+              )}
               {routeMessage && <p>{routeMessage}</p>}
               {activeRouteOrder.length > 0 && (
-                <ol className="route-order">
-                  {activeRouteOrder.map((organization) => (
-                    <li key={organization}>
-                      <span>{organization}</span>
-                      <a
-                        href={`https://map.kakao.com/link/to/${encodeURIComponent(
-                          organization,
-                        )},${locationByOrganization.get(organization)!.latitude},${
-                          locationByOrganization.get(organization)!.longitude
-                        }`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        길찾기
-                      </a>
-                    </li>
-                  ))}
-                </ol>
+                <>
+                  {routeOrigin && (
+                    <div className="route-origin-summary">
+                      <span>출발</span>
+                      <strong>{routeOrigin.label}</strong>
+                      <small>{routeOrigin.address}</small>
+                    </div>
+                  )}
+                  <ol className="route-order">
+                    {activeRouteOrder.map((organization) => (
+                      <li key={organization}>
+                        <span>{organization}</span>
+                        <a
+                          href={`https://map.kakao.com/link/to/${encodeURIComponent(
+                            organization,
+                          )},${locationByOrganization.get(organization)!.latitude},${
+                            locationByOrganization.get(organization)!.longitude
+                          }`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          길찾기
+                        </a>
+                      </li>
+                    ))}
+                  </ol>
+                </>
               )}
           </div>
 
@@ -1898,13 +2356,18 @@ export default function SalesMapPage({
                         {item.region || "지역 미등록"} · {item.location
                           ? item.location.roadAddress || item.location.address
                           : campaignTarget?.address || "위치 미등록"}
+                        {nearbyOrigin &&
+                          nearbyDistanceByOrganization.has(item.organization) &&
+                          ` · ${nearbyDistanceByOrganization
+                            .get(item.organization)!
+                            .toFixed(1)}km`}
                       </small>
                     </span>
                   </button>
                   <span className={`map-row-status status-${item.status.replaceAll(" ", "-")}`}>
                     {item.status}
                   </span>
-                  {isAdmin && (
+                  {canEditLocations && (
                     <button
                       type="button"
                       className="map-location-button"
@@ -1963,7 +2426,10 @@ export default function SalesMapPage({
           {!sdkReady && !mapError && (
             <div className="map-canvas-message">카카오 지도를 불러오는 중입니다.</div>
           )}
-          {sdkReady && !mapError && !activeSelected.length && (
+          {sdkReady &&
+            !mapError &&
+            !activeSelected.length &&
+            !(nearbyOrigin && nearbyRadius) && (
             <div className="map-selection-hint">
               <span>표시할 기관을 목록에서 체크해 주세요.</span>
               <button type="button" onClick={() => changeMobileView("list")}>
@@ -1978,15 +2444,18 @@ export default function SalesMapPage({
               <button
                 type="button"
                 onClick={() => {
+                  document.getElementById("whizzup-kakao-map-sdk")?.remove();
                   kakaoLoader = null;
+                  sdkRef.current = null;
+                  mapRef.current = null;
                   setMapError("");
                   setSdkReady(false);
-                  setSdkRetry((current) => current + 1);
+                  setMapLoadAttempt((current) => current + 1);
                 }}
               >
-                다시 시도
+                지도 다시 불러오기
               </button>
-              {isAdmin && (
+              {isOwner && (
                 <button
                   type="button"
                   onClick={() => {
@@ -2258,7 +2727,8 @@ export default function SalesMapPage({
               )}
               {!placeSearching && !placeResults.length && (
                 <div className="empty-state large">
-                  검색어를 확인한 뒤 다시 검색해 주세요.
+                  카카오에서 위치를 찾지 못했습니다. 주소는 위치 미등록 상태로
+                  유지됩니다.
                 </div>
               )}
             </div>

@@ -1,4 +1,8 @@
 import postgres from "postgres";
+import {
+  VERCEL_SCHEMA_SQL,
+  VERCEL_SCHEMA_VERSION,
+} from "./vercel-schema";
 
 type QueryRow = Record<string, unknown>;
 
@@ -20,6 +24,7 @@ type PostgresResult<T extends QueryRow = QueryRow> = T[] & {
 
 const globalDatabase = globalThis as typeof globalThis & {
   whizzupPostgres?: ReturnType<typeof postgres>;
+  whizzupSchemaReady?: Promise<void>;
 };
 
 function databaseUrl() {
@@ -51,10 +56,41 @@ function getSqlClient() {
   return globalDatabase.whizzupPostgres;
 }
 
+function ensureVercelSchemaReady() {
+  if (!globalDatabase.whizzupSchemaReady) {
+    globalDatabase.whizzupSchemaReady = (async () => {
+      const sql = getSqlClient();
+      const migrationTable = (await sql.unsafe(
+        "SELECT to_regclass('public.vercel_schema_migrations')::text AS relation_name",
+      )) as QueryRow[];
+      if (migrationTable[0]?.relation_name) {
+        const current = (await sql.unsafe(
+          `SELECT 1 AS current
+           FROM public.vercel_schema_migrations
+           WHERE version = $1
+           LIMIT 1`,
+          [VERCEL_SCHEMA_VERSION],
+        )) as QueryRow[];
+        if (current.length > 0) return;
+      }
+      await sql.unsafe(VERCEL_SCHEMA_SQL);
+    })()
+      .catch((error) => {
+        globalDatabase.whizzupSchemaReady = undefined;
+        throw error;
+      });
+  }
+  return globalDatabase.whizzupSchemaReady;
+}
+
 export function normalizeSqlForPostgres(query: string) {
   let parameterIndex = 0;
   return query
     .replace(/\s+COLLATE\s+NOCASE/gi, "")
+    .replace(
+      /datetime\(\s*'now'\s*,\s*'-35 seconds'\s*\)/gi,
+      "(CURRENT_TIMESTAMP - INTERVAL '35 seconds')",
+    )
     .replace(/datetime\(([^)]+)\)/gi, "($1)::timestamptz")
     .replace(/\?/g, () => `$${++parameterIndex}`);
 }
@@ -71,6 +107,9 @@ class PreparedStatement {
   }
 
   private async execute<T extends QueryRow>(executor?: QueryExecutor) {
+    if (!executor && !this.executor) {
+      await ensureVercelSchemaReady();
+    }
     const queryExecutor =
       executor ??
       this.executor ??
@@ -82,7 +121,7 @@ class PreparedStatement {
     return rows;
   }
 
-  async all<T extends QueryRow = QueryRow>(): Promise<D1Result<T>> {
+  async all<T extends QueryRow = QueryRow>(): Promise<D1Result<T & QueryRow>> {
     const rows = await this.execute<T>();
     return {
       results: Array.from(rows),
@@ -91,7 +130,7 @@ class PreparedStatement {
     };
   }
 
-  async first<T extends QueryRow = QueryRow>(): Promise<T | null> {
+  async first<T extends QueryRow = QueryRow>(): Promise<(T & QueryRow) | null> {
     const rows = await this.execute<T>();
     return rows[0] ?? null;
   }
@@ -131,6 +170,7 @@ class PostgresDatabase {
       return results;
     }
 
+    await ensureVercelSchemaReady();
     const sql = getSqlClient();
     return sql.begin(async (transaction) => {
       const executor = transaction as unknown as QueryExecutor;
@@ -147,6 +187,7 @@ class PostgresDatabase {
   ): Promise<T> {
     if (this.executor) return operation(this);
 
+    await ensureVercelSchemaReady();
     const sql = getSqlClient();
     return sql.begin(async (transaction) =>
       operation(

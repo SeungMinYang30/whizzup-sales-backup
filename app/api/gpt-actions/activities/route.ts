@@ -3,6 +3,7 @@ import {
   getOAuthMember,
 } from "../../../../lib/collaboration";
 import { insertActivity } from "../../../../lib/records-store";
+import { institutionConfirmationResponse } from "../../../../lib/institution-names";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,8 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
+    const confirmation = institutionConfirmationResponse(error);
+    if (confirmation) return confirmation;
     if (error instanceof Error && error.message.includes("필수")) {
       return Response.json({ error: error.message }, { status: 400 });
     }

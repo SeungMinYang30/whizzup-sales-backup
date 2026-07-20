@@ -2,9 +2,37 @@ import { getD1 } from "../db";
 import { ensureCollaborationReady } from "./collaboration";
 import { regionFromAddress } from "./region-from-address";
 
-export async function ensureMapReady() {
+const createOrganizationLocationsSql = `
+  CREATE TABLE IF NOT EXISTS organization_locations (
+    organization TEXT PRIMARY KEY,
+    region TEXT NOT NULL DEFAULT '',
+    address TEXT NOT NULL DEFAULT '',
+    road_address TEXT NOT NULL DEFAULT '',
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    place_name TEXT NOT NULL DEFAULT '',
+    place_id TEXT NOT NULL DEFAULT '',
+    updated_by INTEGER,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )
+`;
+
+let mapReadyPromise: Promise<ReturnType<typeof getD1>> | null = null;
+
+async function initializeMap() {
+  const d1 = getD1();
   await ensureCollaborationReady();
-  return getD1();
+  await d1.batch([
+    d1.prepare(createOrganizationLocationsSql),
+    d1.prepare(
+      "CREATE INDEX IF NOT EXISTS organization_locations_region_idx ON organization_locations (region, organization)",
+    ),
+  ]);
+  return d1;
+}
+
+export function ensureMapReady() {
+  return Promise.resolve(getD1());
 }
 
 export async function resolveMappedRegion(

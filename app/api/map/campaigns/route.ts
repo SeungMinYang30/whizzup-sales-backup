@@ -1,7 +1,6 @@
 import {
   accessErrorResponse,
   requireApprovedMember,
-  requireMemberPermission,
 } from "../../../../lib/collaboration";
 import { ensureCampaignsReady } from "../../../../lib/campaign-store";
 import {
@@ -10,6 +9,7 @@ import {
   insertActivity,
 } from "../../../../lib/records-store";
 import { regionFromAddress } from "../../../../lib/region-from-address";
+import { institutionConfirmationResponse } from "../../../../lib/institution-names";
 
 export const dynamic = "force-dynamic";
 
@@ -49,40 +49,48 @@ export async function GET() {
     await requireApprovedMember();
     await ensureRecordsReady();
     const d1 = await ensureCampaignsReady();
-    const campaigns = await d1
-      .prepare(`
-        SELECT
-          c.*,
-          m.display_name AS created_by_name,
-          COUNT(t.id) AS target_count,
-          SUM(CASE WHEN t.assigned_member_id IS NOT NULL THEN 1 ELSE 0 END) AS assigned_count
-        FROM sales_campaigns c
-        LEFT JOIN members m ON m.id = c.created_by
-        LEFT JOIN sales_campaign_targets t ON t.campaign_id = c.id
-        GROUP BY c.id, m.display_name
-        ORDER BY c.created_at DESC, c.id DESC
-      `)
-      .all();
-    const targets = await d1
-      .prepare(`
-        SELECT
-          t.*,
-          m.display_name AS assigned_member_name
-        FROM sales_campaign_targets t
-        LEFT JOIN members m
-          ON m.id = t.assigned_member_id
-         AND m.status = 'approved'
-        ORDER BY t.campaign_id DESC, t.organization COLLATE NOCASE
-      `)
-      .all();
-    const members = await d1
-      .prepare(`
-        SELECT id, display_name, email
-        FROM members
-        WHERE status = 'approved'
-        ORDER BY display_name COLLATE NOCASE
-      `)
-      .all();
+    const [campaigns, targets, members] = await Promise.all([
+      d1
+        .prepare(`
+          SELECT
+            c.*,
+            m.display_name AS created_by_name,
+            COUNT(t.id) AS target_count,
+            SUM(CASE WHEN t.assigned_member_id IS NOT NULL THEN 1 ELSE 0 END) AS assigned_count
+          FROM sales_campaigns c
+          LEFT JOIN members m ON m.id = c.created_by
+          LEFT JOIN sales_campaign_targets t ON t.campaign_id = c.id
+          GROUP BY c.id
+          ORDER BY c.created_at DESC, c.id DESC
+        `)
+        .all(),
+      d1
+        .prepare(`
+          SELECT
+            t.*,
+            m.display_name AS assigned_member_name
+          FROM sales_campaign_targets t
+          LEFT JOIN members m
+            ON m.id = t.assigned_member_id
+           AND m.status = 'approved'
+           AND m.is_sales = 1
+          WHERE EXISTS (
+            SELECT 1
+            FROM activities a
+            WHERE a.organization = t.organization
+          )
+          ORDER BY t.campaign_id DESC, t.organization COLLATE NOCASE
+        `)
+        .all(),
+      d1
+        .prepare(`
+          SELECT id, display_name, email
+          FROM members
+          WHERE status = 'approved' AND is_sales = 1
+          ORDER BY display_name COLLATE NOCASE
+        `)
+        .all(),
+    ]);
     return Response.json({
       campaigns: campaigns.results,
       targets: targets.results,
@@ -95,13 +103,21 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const createdActivityIds: number[] = [];
+  const normalizedTargets: Array<CampaignTargetInput & { organization: string }> = [];
   let campaignId = 0;
   try {
-    const member = await requireMemberPermission("map:manage");
+    const member = await requireApprovedMember();
     const payload = (await request.json()) as {
       name?: unknown;
       notes?: unknown;
       targets?: CampaignTargetInput[];
+      institutionDecisions?: Record<
+        string,
+        {
+          confirmedOrganization?: string;
+          institutionSeparate?: boolean;
+        }
+      >;
     };
     const name = clean(payload.name).slice(0, 120);
     const notes = clean(payload.notes).slice(0, 1000);
@@ -148,7 +164,9 @@ export async function POST(request: Request) {
     if (!campaignId) throw new Error("영업 카테고리를 만들지 못했습니다.");
 
     const approvedMembers = await d1
-      .prepare("SELECT id FROM members WHERE status = 'approved'")
+      .prepare(
+        "SELECT id FROM members WHERE status = 'approved' AND is_sales = 1",
+      )
       .all<{ id: number }>();
     const approvedMemberIds = new Set(
       approvedMembers.results.map((row: { id: number }) => Number(row.id)),
@@ -160,6 +178,8 @@ export async function POST(request: Request) {
         approvedMemberIds.has(target.assignedMemberId)
           ? target.assignedMemberId
           : null;
+      const institutionDecision =
+        payload.institutionDecisions?.[target.organization] ?? {};
       const record = await insertActivity(
         {
           activityDate: localDate(),
@@ -182,11 +202,13 @@ export async function POST(request: Request) {
             .filter(Boolean)
             .join("\n"),
           progressManager: "",
+          ...institutionDecision,
         },
         member,
         "영업지도 엑셀 가져오기",
       );
       const activityId = Number(record.id);
+      const normalizedOrganization = clean(record.organization);
       createdActivityIds.push(activityId);
       await d1
         .prepare(`
@@ -197,7 +219,7 @@ export async function POST(request: Request) {
         `)
         .bind(
           campaignId,
-          target.organization,
+          normalizedOrganization,
           target.region,
           target.address,
           target.phone,
@@ -207,12 +229,17 @@ export async function POST(request: Request) {
           activityId,
         )
         .run();
+      normalizedTargets.push({
+        ...target,
+        organization: normalizedOrganization,
+      });
     }
 
     return Response.json(
       {
         campaign,
         targetCount: targets.length,
+        targets: normalizedTargets,
       },
       { status: 201 },
     );
@@ -243,6 +270,8 @@ export async function POST(request: Request) {
         // Preserve the original error response.
       }
     }
+    const confirmation = institutionConfirmationResponse(error);
+    if (confirmation) return confirmation;
     return accessErrorResponse(error);
   }
 }
@@ -276,12 +305,14 @@ export async function PUT(request: Request) {
     const d1 = await ensureCampaignsReady();
     if (assignedMemberId !== null) {
       const member = await d1
-        .prepare("SELECT id FROM members WHERE id = ? AND status = 'approved'")
+        .prepare(
+          "SELECT id FROM members WHERE id = ? AND status = 'approved' AND is_sales = 1",
+        )
         .bind(assignedMemberId)
         .first();
       if (!member) {
         return Response.json(
-          { error: "승인된 구성원만 담당자로 지정할 수 있습니다." },
+          { error: "영업 담당자로 등록된 구성원만 지정할 수 있습니다." },
           { status: 400 },
         );
       }
@@ -309,7 +340,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    await requireMemberPermission("map:manage");
+    await requireApprovedMember();
     const payload = (await request.json()) as { campaignId?: unknown };
     const campaignId = Number(payload.campaignId);
     if (!Number.isInteger(campaignId) || campaignId < 1) {

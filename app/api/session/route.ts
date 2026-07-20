@@ -1,6 +1,7 @@
 import {
   accessErrorResponse,
   ensureCollaborationReady,
+  isPrimaryOwner,
   requireMember,
 } from "../../../lib/collaboration";
 import { getOpenAIConfig } from "../../../lib/openai-config";
@@ -18,9 +19,9 @@ export async function GET() {
         sharedGptUrl: "",
         aiConfigured: false,
         aiModel: "",
+        canViewPresence: false,
       });
     }
-
     const d1 = await ensureCollaborationReady();
     const counts = await d1
       .prepare(`
@@ -34,7 +35,8 @@ export async function GET() {
     const gptUrl = await d1
       .prepare("SELECT value FROM app_settings WHERE key = 'shared_gpt_url'")
       .first<{ value: string }>();
-    const aiConfig = getOpenAIConfig();
+    const aiConfig = await getOpenAIConfig();
+    const canViewPresence = await isPrimaryOwner(member);
 
     return Response.json({
       member,
@@ -43,6 +45,7 @@ export async function GET() {
       sharedGptUrl: gptUrl?.value ?? "",
       aiConfigured: aiConfig.configured,
       aiModel: aiConfig.model,
+      canViewPresence,
     });
   } catch (error) {
     return accessErrorResponse(error);

@@ -55,7 +55,7 @@ test("activity and author writes share one transaction", async () => {
     new URL("lib/records-store.ts", root),
     "utf8",
   );
-  assert.match(recordsStore, /return d1\.transaction\(async \(transaction\)/);
+  assert.match(recordsStore, /await d1\.transaction\(async \(transaction\)/);
   assert.match(recordsStore, /transaction[\s\S]*INSERT INTO activities/);
   assert.match(recordsStore, /transaction[\s\S]*INSERT INTO activity_authors/);
 });
@@ -74,7 +74,7 @@ test("records, campaign, and map location GET handlers are read-only", async () 
     "utf8",
   );
   const recordsGet = recordsRoute.match(
-    /export async function GET\(\) \{([\s\S]*?)\r?\n\}\r?\n\r?\nexport async function POST/,
+    /export async function GET\([^)]*\) \{([\s\S]*?)\r?\n\}\r?\n\r?\nexport async function POST/,
   )?.[1];
   const campaignsGet = campaignsRoute.match(
     /export async function GET\(\) \{([\s\S]*?)\r?\n\}\r?\n\r?\nexport async function POST/,
@@ -94,7 +94,7 @@ test("records, campaign, and map location GET handlers are read-only", async () 
   assert.doesNotMatch(locationsGet, /syncRegionsFromMappedLocations/);
 });
 
-test("saved map locations remain visible while refresh state is honest", async () => {
+test("map locations stay limited to active institutions while refresh state is honest", async () => {
   const locationsRoute = await readFile(
     new URL("app/api/map/locations/route.ts", root),
     "utf8",
@@ -106,13 +106,10 @@ test("saved map locations remain visible while refresh state is honest", async (
 
   assert.match(
     locationsRoute,
-    /SELECT organization_locations\.\*\s+FROM organization_locations\s+ORDER BY organization COLLATE NOCASE/,
+    /SELECT organization_locations\.\*\s+FROM organization_locations\s+WHERE EXISTS\s*\(\s*SELECT 1 FROM activities/,
   );
-  assert.doesNotMatch(
-    locationsRoute,
-    /WHERE EXISTS\s*\(\s*SELECT 1 FROM activities/,
-  );
-  assert.match(salesMap, /const mappedCountDisplay = locationsLoading/);
-  assert.match(salesMap, /locationsFetchSucceeded\s*\?\s*mappedCount/);
-  assert.match(salesMap, /저장된 위치 조회 실패/);
+  assert.match(salesMap, /const \[locationsLoading,\s*setLocationsLoading\]/);
+  assert.match(salesMap, /setLocationsLoading\(false\)/);
+  assert.match(salesMap, /const mappedCount = eligibleOrganizations/);
+  assert.match(salesMap, /기관 위치를 불러오지 못했습니다/);
 });

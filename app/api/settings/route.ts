@@ -1,14 +1,14 @@
 import {
   accessErrorResponse,
   ensureCollaborationReady,
-  requireAdminMember,
+  requireMemberPermission,
 } from "../../../lib/collaboration";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    await requireAdminMember();
+    await requireMemberPermission("integration:manage");
     const d1 = await ensureCollaborationReady();
     const result = await d1
       .prepare("SELECT key, value FROM app_settings")
@@ -25,7 +25,7 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
-    const admin = await requireAdminMember();
+    const member = await requireMemberPermission("integration:manage");
     const payload = (await request.json()) as { sharedGptUrl?: string };
     const value = String(payload.sharedGptUrl ?? "").trim();
     if (
@@ -47,7 +47,7 @@ export async function PUT(request: Request) {
           updated_by = excluded.updated_by,
           updated_at = CURRENT_TIMESTAMP
       `)
-      .bind(value, admin.id)
+      .bind(value, member.id)
       .run();
     return Response.json({ ok: true, sharedGptUrl: value });
   } catch (error) {

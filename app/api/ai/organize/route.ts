@@ -5,12 +5,18 @@ import {
 import { getOpenAIConfig } from "../../../../lib/openai-config";
 import {
   ensureRecordsReady,
+  koreaTodayValue,
+  parseProgressScheduleEntries,
   serializeProgressSchedule,
 } from "../../../../lib/records-store";
+import {
+  institutionAliasKey,
+  preferFullInstitutionName,
+} from "../../../../lib/institution-names";
+import { productRecommendationContext } from "../../../../lib/product-ai-catalog";
+import { compactShareSummary } from "../../../../lib/share-text";
 
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
-export const maxDuration = 90;
 
 type ConversationMessage = {
   role: "user" | "assistant";
@@ -70,7 +76,7 @@ const statusValues = [
 ];
 const temperatureValues = ["높음", "중간", "낮음"];
 const awardStatusValues = ["미정", "위즈업 수주", "타업체 수주"];
-const executionTypeValues = ["미정", "직영", "컨소"];
+const executionTypeValues = ["직영", "컨소"];
 const awardStageValues = [
   "미정",
   "품의",
@@ -102,6 +108,59 @@ const equipmentProjectStatusValues = [
   "취소",
 ];
 
+const recommendationSchema = {
+  type: "object",
+  properties: {
+    meetingSummary: {
+      type: "string",
+      description:
+        "확인된 미팅·TM 사실만 2문장 이내로 요약. 없는 정보나 요약 기준에 대한 해설은 쓰지 않음",
+    },
+    interests: {
+      type: "array",
+      maxItems: 6,
+      items: { type: "string" },
+      description: "기관이 관심을 보인 항목과 해결해야 할 필요",
+    },
+    recommendedProducts: {
+      type: "array",
+      maxItems: 4,
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          reason: {
+            type: "string",
+            description: "미팅 내용과 연결한 추천 이유",
+          },
+        },
+        required: ["name", "reason"],
+        additionalProperties: false,
+      },
+    },
+    followUpQuestions: {
+      type: "array",
+      maxItems: 5,
+      items: { type: "string" },
+      description: "다음 연락에서 확인하면 좋은 구체적인 질문",
+    },
+    recommendedActions: {
+      type: "array",
+      maxItems: 5,
+      items: { type: "string" },
+      description: "담당자가 바로 실행할 수 있는 짧은 후속 행동",
+    },
+  },
+  required: [
+    "meetingSummary",
+    "interests",
+    "recommendedProducts",
+    "followUpQuestions",
+    "recommendedActions",
+  ],
+  additionalProperties: false,
+};
+
 const recordDraftSchema = {
   type: "object",
   properties: {
@@ -121,7 +180,11 @@ const recordDraftSchema = {
       description: "사용자가 말한 단위를 포함한 금액. 모르면 빈 문자열",
     },
     topic: { type: "string" },
-    summary: { type: "string" },
+    summary: {
+      type: "string",
+      description:
+        "확인된 일정·결정·후속 행동만 간결하게 요약. 없는 정보나 해설은 쓰지 않음",
+    },
     status: { type: "string", enum: statusValues },
     temperature: { type: "string", enum: temperatureValues },
     awardStatus: { type: "string", enum: awardStatusValues },
@@ -207,10 +270,16 @@ const recordDraftSchema = {
         additionalProperties: false,
       },
     },
+    contactRole: {
+      type: "string",
+      description:
+        "기관 인물의 명시된 역할. 공사 담당자, 회계 담당자, 행정 담당자처럼 입력에 나온 역할을 그대로 작성. 모르면 빈 문자열",
+    },
     contactName: { type: "string" },
     contactPhone: { type: "string" },
     contactEmail: { type: "string" },
     notes: { type: "string" },
+    recommendation: recommendationSchema,
   },
   required: [
     "activityDate",
@@ -239,10 +308,12 @@ const recordDraftSchema = {
     "equipmentProjectName",
     "equipmentProjectStatus",
     "equipmentItems",
+    "contactRole",
     "contactName",
     "contactPhone",
     "contactEmail",
     "notes",
+    "recommendation",
   ],
   additionalProperties: false,
 };
@@ -319,38 +390,6 @@ function compactMentionText(value: unknown) {
     .replace(/[^0-9a-z가-힣]/g, "");
 }
 
-function institutionAliasKey(value: string) {
-  const name = value.replace(/\s+/g, "").trim();
-  if (
-    name === "성남초병설유치원" ||
-    name === "성남초등학교병설유치원"
-  ) {
-    return "성남초병설유치원";
-  }
-  if (!name || /병설유치원|분교/.test(name)) return "";
-  return name
-    .replace(/초등학교$|초$/, "초")
-    .replace(/중학교$|중$/, "중")
-    .replace(/고등학교$|고$/, "고");
-}
-
-function preferFullInstitutionName(...values: string[]) {
-  if (
-    values.some(
-      (value) =>
-        value.replace(/\s+/g, "") === "성남초병설유치원" ||
-        value.replace(/\s+/g, "") === "성남초등학교병설유치원",
-    )
-  ) {
-    return "성남초 병설유치원";
-  }
-  return [...values].sort((a, b) => {
-    const aFull = /초등학교$|중학교$|고등학교$/.test(a) ? 1 : 0;
-    const bFull = /초등학교$|중학교$|고등학교$/.test(b) ? 1 : 0;
-    return bFull - aFull || b.length - a.length;
-  })[0];
-}
-
 function explicitProjectName(value: unknown, userText: string) {
   const projectName = String(value ?? "").trim();
   if (!projectName) return "";
@@ -381,10 +420,9 @@ function inferredEquipmentItemsFromSchedule(value: unknown) {
     "준공",
     "완공",
   ]);
-  return serializeProgressSchedule(value)
-    .split(/\r?\n/)
-    .map((line) => line.split("\t")[0]?.trim() ?? "")
-    .map((label) => {
+  const todayValue = koreaTodayValue();
+  return parseProgressScheduleEntries(serializeProgressSchedule(value))
+    .map(({ label, date }) => {
       const match = label.match(
         /^(.+?)\s*(?:설치|납품|시공)(?:\s*(?:중|완료|예정))?$/,
       );
@@ -397,11 +435,14 @@ function inferredEquipmentItemsFromSchedule(value: unknown) {
         awardedQty: 0,
         installedQty: 0,
         unit: "대",
-        status: /완료/.test(label) ? "설치 완료" : "설치 중",
+        status:
+          date < todayValue || /완료/.test(label)
+            ? "설치 완료"
+            : "설치 중",
         notes: "",
       };
     })
-    .filter((item) => item !== null);
+    .filter((item): item is NonNullable<typeof item> => item !== null);
 }
 
 function normalizeDraft(
@@ -413,8 +454,44 @@ function normalizeDraft(
       ? (value as Record<string, unknown>)
       : {};
   const progressSchedule = serializeProgressSchedule(draft.progressSchedule);
+  const explicitCall =
+    /(?:통화했|통화함|통화하여|통화했고|전화했|전화함|전화하여|전화로|TM\s*(?:진행|통화|했))/i.test(
+      userText,
+    );
+  const explicitMeeting =
+    /(?:방문했|방문하여|대면\s*(?:미팅|상담)|미팅했|미팅을\s*(?:진행|했))/i.test(
+      userText,
+    );
+  const category = String(draft.category ?? "");
+  const meetingActivityType =
+    category === "학교"
+      ? "학교 미팅"
+      : category === "협력사"
+        ? "협력사 미팅"
+        : category === "기관"
+          ? "기관 미팅"
+          : "방문 미팅";
+  const recommendation =
+    draft.recommendation && typeof draft.recommendation === "object"
+      ? (draft.recommendation as Record<string, unknown>)
+      : {};
   return {
     ...draft,
+    summary: compactShareSummary(draft.summary),
+    recommendation: {
+      ...recommendation,
+      meetingSummary: compactShareSummary(recommendation.meetingSummary),
+    },
+    activityType: explicitCall
+      ? "TM·통화"
+      : explicitMeeting
+        ? meetingActivityType
+        : draft.activityType,
+    contactMethod: explicitCall
+      ? "유선"
+      : explicitMeeting
+        ? "방문"
+        : draft.contactMethod,
     progressSchedule,
     equipmentProjectName: explicitProjectName(
       draft.equipmentProjectName,
@@ -516,10 +593,7 @@ function mergeProgressSchedules(...values: unknown[]) {
   return [...uniqueLines].join("\n");
 }
 
-function normalizeDrafts(
-  value: unknown,
-  userText = "",
-): Record<string, unknown>[] {
+function normalizeDrafts(value: unknown, userText = "") {
   if (!Array.isArray(value)) return [];
   const grouped = new Map<string, Record<string, unknown>>();
 
@@ -579,7 +653,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { apiKey, model, configured } = getOpenAIConfig();
+    const { apiKey, model, configured } = await getOpenAIConfig();
     if (!configured) {
       return Response.json(
         {
@@ -619,12 +693,14 @@ export async function POST(request: Request) {
 여러 기관의 표, 목록, 복사한 셀, 여러 줄 일정을 한 번에 받으면 drafts에 기관별로 한 항목씩 정확히 분리하세요.
 같은 기관이 여러 줄에 나오면 하나의 draft로 합치고 그 기관의 progressSchedule에 일정만 모으세요.
 직전 질문에서 사용자가 같은 기관이라고 확인했다면 기존의 축약하지 않은 정식 기관명을 사용하세요.
+기관명이 정정되거나 기존 기관명으로 확정되면 organization뿐 아니라 summary, nextAction, recommendation.meetingSummary 등 기관명을 언급하는 모든 필드에 최종 기관명을 동일하게 사용하세요. 이전 오타나 이전 명칭을 함께 쓰거나 남기지 마세요.
 같은 기관의 장비·물품은 equipmentItems에 품목별로 나누고 중복 품목은 하나로 합치세요.
 기관명에 "외 15건", "외 N건", "등 여러 곳" 같은 묶음 표현을 절대 사용하지 마세요.
 각 일정은 해당 기관에만 넣고, 같은 기관·일정명·날짜 조합은 한 번만 넣으세요.
 기관명이 없거나 어느 기관인지 판단할 수 없을 때만 needsClarification을 true로 하고 한 가지 짧은 질문을 하며 drafts는 빈 배열로 두세요.
 그 외에는 needsClarification을 false로 하고 assistantMessage에 "N개 기관으로 정리했습니다. 내용을 확인해 주세요."처럼 기관 수를 포함해 짧게 답하세요.
 전화·TM은 유선, 직접 대면은 방문, 화상은 온라인으로 정리하세요.
+사용자가 “통화했어”, “전화했어”, “TM 진행”처럼 이번에 실제로 한 활동을 직접 표현하면 그 표현을 가장 우선하세요. 다음 미팅 예정이나 미팅 제안이 함께 있어도 이번 활동이 통화라면 activityType은 반드시 TM·통화, contactMethod는 유선으로 정리하세요.
 수주 후 공사·설치·교육 일정이나 진행 상황을 기관·학교에 전달하고 공유한 기록이면 contactMethod를 진행 공유로 정리하세요.
 학교 영업이 계속 진행 중이면 활동유형은 학교 진행 중을 사용하세요.
 수주 후 "목공 6/17, 시스템 6/19" 같은 일정은 progressSchedule에 각각 나누어 넣으세요.
@@ -632,7 +708,7 @@ progressSchedule에 일정이 하나라도 있으면 위즈업이 수주한 건�
 현재 연도가 생략된 월/일은 ${todayInSeoul().slice(0, 4)}년으로 정리하세요.
 모르는 값은 추측하지 말고 빈 문자열로 두세요.
 타업체 수주인데 업체명을 모르면 awardStatus를 미정으로 두고 notes에 확인 필요라고 적으세요.
-사업방식은 executionType에 미정, 직영, 컨소 중 하나로 정리하고 컨소라면 consortiumCompany에 함께하는 업체명을 넣으세요.
+사업방식은 컨소와 업체명이 명시된 경우만 executionType을 컨소로 정리하고 consortiumCompany에 업체명을 넣으세요. 그 외에는 executionType을 반드시 직영으로 정리하세요.
 수주 현재 상태는 awardStage에 미정, 품의, 협상, 계약, 일정 조율, 완공, 검수, 교육 중 하나로 정리하세요.
 사용자가 제안·견적·수주·설치 장비나 물품을 말하면 equipmentItems에 반드시 정리하세요.
 equipmentProjectName은 사용자가 사업명이나 프로젝트명을 실제로 말한 경우에만 그대로 작성하세요. 사업명이 없으면 기관명·예산·주제·공사 일정으로 이름을 만들지 말고 반드시 빈 문자열로 두세요.
@@ -642,9 +718,21 @@ equipmentProjectStatus는 대화 전체를 보고 제안·견적·수주·발주
 각 품목은 제안 수량, 수주 수량, 설치 수량을 서로 덮어쓰지 말고 별도로 기록하세요.
 예를 들어 "전자칠판 3대 제안, 2대 수주해 1대 설치"는 proposedQty 3, awardedQty 2, installedQty 1입니다.
 수량을 모르면 0으로 두고, 품목 상태는 제안·견적·수주·발주·설치 중·설치 완료·미수주·취소 중 하나를 사용하세요.
-기관 담당자와 기관 메일은 contactName과 contactEmail에, 수주 후 진행을 맡는 사람은 progressManager에 정리하세요.
+기관 인물의 역할이 공사 담당자·회계 담당자·행정 담당자처럼 명시되면 contactRole에 그 역할을 그대로 넣고 이름·직책은 contactName에 넣으세요. contactRole/contactName에 분리해 넣은 “공사 담당자는 OOO로 확인됐다” 같은 문장은 summary와 recommendation.meetingSummary에서 반복하지 마세요.
+progressManager는 위즈업 내부에서 수주 후 진행을 맡는 사람으로, 기관의 contactRole/contactName과 절대 섞지 마세요. 기관 메일은 contactEmail에 정리하세요.
 사용자가 재연락 불필요 또는 완료라고 명시했을 때만 followUpRequired를 false로 두세요.
-summary는 기관별 핵심 사실만 1~2문장 이내의 한국어로 요약하세요.`,
+summary와 recommendation.meetingSummary에는 기관이 전달한 사실, 확정 일정, 결정 사항, 후속 행동만 1~2문장 이내로 요약하세요.
+summary와 recommendation.meetingSummary는 단톡 공유에 바로 쓸 수 있도록 “논의했습니다”, “확인했습니다”, “진행합니다” 같은 존댓말 보고체로 작성하세요. “논의했다”, “확인한다”, “진행함” 같은 반말·메모체 종결은 사용하지 마세요.
+“일정 확인이 핵심”, “별도 장비나 수주 정보 없음”, “추가 정보 없음”, “특이사항 없음”처럼 AI의 해설이나 입력에 없는 항목의 부재를 설명하는 문장은 절대 만들지 마세요.
+단, 기관이 특정 장비가 필요 없다고 전달했거나 미수주가 확정된 것처럼 실제 발언·결정에 포함된 부정 사실은 생략하지 마세요.
+각 draft의 recommendation에는 공식 기록을 자동 변경하지 않는 별도 영업 대응 제안을 작성하세요.
+추천 제품은 아래 내부 제품 자료에 있는 제품명만 사용하고, 미팅 내용에서 확인되는 필요와 연결되는 경우에만 최대 4개까지 추천하세요.
+근거가 부족하면 추천 제품을 비워 두고, 가격·인증·조달·성과는 절대 추측하지 마세요.
+후속 질문은 공간, 대상 연령, 예산 구분, 일정, 수량처럼 다음 영업에 실제 도움이 되는 질문으로 작성하세요.
+추천 행동은 담당자가 바로 실행할 수 있는 구체적이고 짧은 문장으로 작성하세요.
+
+[위즈업 내부 제품 자료]
+${productRecommendationContext()}`,
         input,
         text: {
           format: {
@@ -691,27 +779,25 @@ summary는 기관별 핵심 사실만 1~2문장 이내의 한국어로 요약하
         .map((item) => item.text),
       message,
     ].join("\n");
-    const drafts = normalizeDrafts(parsed.drafts, userProjectText).map(
-      (draft): Record<string, unknown> => {
-        const hasProgressSchedule = Boolean(
-          String(draft.progressSchedule ?? "").trim(),
-        );
-        return {
-          ...draft,
-          activityDate: postedDate,
-          dateConfidence: "대화시각 추정",
-          progressManager: member.displayName,
-          awardStatus: hasProgressSchedule ? "위즈업 수주" : draft.awardStatus,
-          equipmentProjectStatus:
-            hasProgressSchedule &&
-            ["제안", "견적"].includes(
-              String(draft.equipmentProjectStatus ?? ""),
-            )
-              ? "수주"
-              : draft.equipmentProjectStatus,
-        };
-      },
-    );
+    const drafts = normalizeDrafts(parsed.drafts, userProjectText).map<Record<string, unknown>>((draft) => {
+      const hasProgressSchedule = Boolean(
+        String(draft.progressSchedule ?? "").trim(),
+      );
+      return {
+        ...draft,
+        activityDate: postedDate,
+        dateConfidence: "대화시각 추정",
+        progressManager: member.isSales ? member.displayName : "",
+        awardStatus: hasProgressSchedule ? "위즈업 수주" : draft.awardStatus,
+        equipmentProjectStatus:
+          hasProgressSchedule &&
+          ["제안", "견적"].includes(
+            String(draft.equipmentProjectStatus ?? ""),
+          )
+            ? "수주"
+            : draft.equipmentProjectStatus,
+      };
+    });
     const d1 = await ensureRecordsReady();
     const existingOrganizations = await d1
       .prepare("SELECT DISTINCT organization FROM activities WHERE organization <> ''")

@@ -3,7 +3,11 @@ import {
   requireApprovedMember,
 } from "../../../lib/collaboration";
 import { ensureCampaignsReady } from "../../../lib/campaign-store";
-import { ensureEquipmentReady } from "../../../lib/equipment-store";
+import {
+  ensureEquipmentReady,
+  removeUnselectedLegacyAiEquipment,
+  syncEquipmentItemsFromProgressSchedule,
+} from "../../../lib/equipment-store";
 import { ensureMapReady } from "../../../lib/map-store";
 import { clean, ensureRecordsReady } from "../../../lib/records-store";
 
@@ -20,6 +24,7 @@ const projectStatuses = [
   "취소",
 ];
 const itemStatuses = [
+  "제안 예정",
   "제안",
   "견적",
   "수주",
@@ -165,6 +170,27 @@ async function readProjects(organization: string) {
   }));
 }
 
+async function syncOrganizationEquipmentSchedule(organization: string) {
+  if (!organization) return;
+  const d1 = await ensureRecordsReady();
+  const latestSchedule = await d1
+    .prepare(
+      `SELECT progress_schedule
+       FROM activities
+       WHERE organization = ? AND progress_schedule <> ''
+       ORDER BY COALESCE(activity_date, '') DESC, id DESC
+       LIMIT 1`,
+    )
+    .bind(organization)
+    .first<{ progress_schedule: string }>();
+  if (latestSchedule?.progress_schedule) {
+    await syncEquipmentItemsFromProgressSchedule(
+      organization,
+      latestSchedule.progress_schedule,
+    );
+  }
+}
+
 export async function GET(request: Request) {
   try {
     await requireApprovedMember();
@@ -192,6 +218,8 @@ export async function GET(request: Request) {
     if (!organization) {
       return Response.json({ error: "기관명이 필요합니다." }, { status: 400 });
     }
+    await removeUnselectedLegacyAiEquipment(organization);
+    await syncOrganizationEquipmentSchedule(organization);
     return Response.json({
       organization,
       projects: await readProjects(organization),
@@ -246,9 +274,9 @@ export async function POST(request: Request) {
         );
       }
       const project = await d1
-        .prepare("SELECT id FROM equipment_projects WHERE id = ?")
+        .prepare("SELECT id, organization FROM equipment_projects WHERE id = ?")
         .bind(projectId)
-        .first();
+        .first<{ id: number; organization: string }>();
       if (!project) {
         return Response.json({ error: "사업을 찾지 못했습니다." }, { status: 404 });
       }
@@ -285,13 +313,15 @@ export async function POST(request: Request) {
         )
         .bind(projectId)
         .run();
+      await syncOrganizationEquipmentSchedule(project.organization);
       return Response.json({ item }, { status: 201 });
     }
 
     if (kind === "ai-import") {
       const organization = clean(payload.organization).slice(0, 120);
       const budgetType = clean(payload.budgetType).slice(0, 120);
-      const projectName = clean(payload.projectName).slice(0, 160);
+      const requestedProjectName = clean(payload.projectName).slice(0, 160);
+      const projectName = (budgetType || requestedProjectName).slice(0, 160);
       const rawItems = Array.isArray(payload.items)
         ? payload.items
             .filter((item): item is Record<string, unknown> =>
@@ -320,7 +350,6 @@ export async function POST(request: Request) {
             `SELECT * FROM equipment_projects
              WHERE organization = ?
                AND (? = '' OR budget_type = ?)
-               AND notes LIKE '%AI 기록에서 자동 생성%'
              ORDER BY updated_at DESC, id DESC
              LIMIT 2`,
           )
@@ -408,17 +437,24 @@ export async function POST(request: Request) {
       await d1
         .prepare(
           `UPDATE equipment_projects
-           SET status = ?, budget_type = CASE WHEN ? = '' THEN budget_type ELSE ? END,
+           SET name = CASE WHEN ? = '' THEN name ELSE ? END,
+               status = ?, budget_type = CASE WHEN ? = '' THEN budget_type ELSE ? END,
                updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
         )
         .bind(
+          projectName,
+          projectName,
           progressiveProjectStatus(project.status, inferredStatus),
           budgetType,
           budgetType,
           Number(project.id),
         )
         .run();
+      await syncEquipmentItemsFromProgressSchedule(
+        organization,
+        clean(payload.progressSchedule),
+      );
       return Response.json({
         ok: true,
         projects: await readProjects(organization),
@@ -589,6 +625,13 @@ export async function PUT(request: Request) {
         )
         .bind(Number(item.project_id))
         .run();
+      const project = await d1
+        .prepare("SELECT organization FROM equipment_projects WHERE id = ?")
+        .bind(Number(item.project_id))
+        .first<{ organization: string }>();
+      if (project?.organization) {
+        await syncOrganizationEquipmentSchedule(project.organization);
+      }
       return Response.json({ item });
     }
 

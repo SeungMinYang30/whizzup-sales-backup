@@ -5,7 +5,7 @@ function yamlString(value: string) {
 }
 
 export async function GET(request: Request) {
-  const origin = process.env.APP_ORIGIN?.trim() || new URL(request.url).origin;
+  const origin = new URL(request.url).origin;
   const yaml = `openapi: 3.1.0
 info:
   title: WHIZZUP TM Meeting CRM
@@ -83,7 +83,7 @@ paths:
                   description: 위즈업 수주는 위즈업, 타업체 수주는 실제 수주 업체명, 미정은 빈 문자열
                 executionType:
                   type: string
-                  enum: [미정, 직영, 컨소]
+                  enum: [직영, 컨소]
                   description: 수주 사업의 진행 방식
                 consortiumCompany:
                   type: string
@@ -118,6 +118,9 @@ paths:
                 contactName:
                   type: string
                   description: 학교나 기관의 담당자 이름 또는 직책
+                contactRole:
+                  type: string
+                  description: 공사 담당자, 회계 담당자처럼 기관 인물의 명시된 역할
                 contactPhone:
                   type: string
                 contactEmail:

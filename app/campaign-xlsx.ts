@@ -1,4 +1,5 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import { canonicalInstitutionName } from "../lib/institution-names";
 
 export type CampaignImportRow = {
   organization: string;
@@ -250,7 +251,9 @@ function mapRows(rows: string[][]) {
   const mapped = rows
     .slice(headerRow + 1)
     .map((row) => ({
-      organization: valueAt(row, organizationIndex),
+      organization: canonicalInstitutionName(
+        valueAt(row, organizationIndex),
+      ),
       address: valueAt(row, addressIndex),
       phone: valueAt(row, phoneIndex),
       contactName: valueAt(row, contactNameIndex),

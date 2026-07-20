@@ -2,10 +2,10 @@ import { getD1 } from "../db";
 import { getChatGPTUser, type ChatGPTUser } from "../app/chatgpt-auth";
 
 export const MEMBER_PERMISSIONS = [
-  "members:manage",
   "records:manage",
-  "map:manage",
-  "data:export",
+  "members:manage",
+  "integration:manage",
+  "backup:manage",
 ] as const;
 
 export type MemberPermission = (typeof MEMBER_PERMISSIONS)[number];
@@ -17,6 +17,7 @@ export type Member = {
   role: "admin" | "assistant" | "member";
   permissions: MemberPermission[];
   status: "pending" | "approved" | "suspended";
+  isSales: boolean;
   createdAt: string;
   approvedAt: string | null;
   lastSeenAt: string;
@@ -34,8 +35,104 @@ export class AccessError extends Error {
 
 export const OAUTH_ACTIVITY_SCOPE = "activities:write";
 
-export async function ensureCollaborationReady() {
-  return getD1();
+const schemaStatements = [
+  `CREATE TABLE IF NOT EXISTS members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member',
+    permissions TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'pending',
+    is_sales INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    approved_at TEXT,
+    approved_by INTEGER,
+    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  "CREATE INDEX IF NOT EXISTS members_status_idx ON members (status, created_at)",
+  `CREATE TABLE IF NOT EXISTS activity_authors (
+    activity_id INTEGER PRIMARY KEY,
+    member_id INTEGER,
+    created_by_name TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS oauth_clients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id TEXT NOT NULL UNIQUE,
+    client_secret_hash TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_by INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    rotated_at TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS oauth_codes (
+    code_hash TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    member_id INTEGER NOT NULL,
+    redirect_uri TEXT NOT NULL,
+    scope TEXT NOT NULL DEFAULT 'activities:write',
+    code_challenge TEXT,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  "CREATE INDEX IF NOT EXISTS oauth_codes_expiry_idx ON oauth_codes (expires_at, used_at)",
+  `CREATE TABLE IF NOT EXISTS oauth_tokens (
+    access_token_hash TEXT PRIMARY KEY,
+    refresh_token_hash TEXT NOT NULL UNIQUE,
+    client_id TEXT NOT NULL,
+    member_id INTEGER NOT NULL,
+    scope TEXT NOT NULL DEFAULT 'activities:write',
+    expires_at TEXT NOT NULL,
+    refresh_expires_at TEXT NOT NULL,
+    revoked_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  "CREATE INDEX IF NOT EXISTS oauth_tokens_member_idx ON oauth_tokens (member_id, revoked_at)",
+  `CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_by INTEGER,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS api_credentials (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    encrypted_key TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    key_last4 TEXT NOT NULL,
+    model TEXT NOT NULL,
+    updated_by INTEGER,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+];
+
+let collaborationReadyPromise: Promise<ReturnType<typeof getD1>> | null = null;
+
+async function initializeCollaboration() {
+  const d1 = getD1();
+  await d1.batch(schemaStatements.map((statement) => d1.prepare(statement)));
+  const memberColumns = await d1
+    .prepare("PRAGMA table_info(members)")
+    .all<{ name: string }>();
+  if (!memberColumns.results.some((column) => column.name === "permissions")) {
+    await d1
+      .prepare(
+        "ALTER TABLE members ADD COLUMN permissions TEXT NOT NULL DEFAULT '[]'",
+      )
+      .run();
+  }
+  if (!memberColumns.results.some((column) => column.name === "is_sales")) {
+    await d1
+      .prepare(
+        "ALTER TABLE members ADD COLUMN is_sales INTEGER NOT NULL DEFAULT 0",
+      )
+      .run();
+  }
+  return d1;
+}
+
+export function ensureCollaborationReady() {
+  return Promise.resolve(getD1());
 }
 
 function mapMember(row: Record<string, unknown>): Member {
@@ -57,6 +154,7 @@ function mapMember(row: Record<string, unknown>): Member {
         : String(row.status) === "suspended"
           ? "suspended"
           : "pending",
+    isSales: Number(row.is_sales ?? 0) === 1,
     createdAt: String(row.created_at),
     approvedAt: row.approved_at ? String(row.approved_at) : null,
     lastSeenAt: String(row.last_seen_at),
@@ -103,23 +201,17 @@ export async function getOrCreateMember(identity: ChatGPTUser) {
         409,
       );
     }
-    await d1
+    const updated = await d1
       .prepare(`
         UPDATE members
         SET auth_user_id = COALESCE(auth_user_id, ?),
             last_seen_at = CURRENT_TIMESTAMP
         WHERE id = ?
-          AND (
-            auth_user_id IS NULL
-            OR last_seen_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes'
-          )
         RETURNING *
       `)
       .bind(identity.authUserId, Number(row.id))
-      .first<Record<string, unknown>>()
-      .then((updated) => {
-        if (updated) row = updated;
-      });
+      .first<Record<string, unknown>>();
+    if (updated) row = updated;
   }
 
   if (row && isBootstrapAdmin) {
@@ -175,6 +267,31 @@ export async function requireAdminMember() {
   return member;
 }
 
+export async function isPrimaryOwner(
+  member: Pick<Member, "id" | "role">,
+) {
+  if (member.role !== "admin") return false;
+  const d1 = await ensureCollaborationReady();
+  const owner = await d1
+    .prepare(
+      `SELECT id
+       FROM members
+       WHERE role = 'admin' AND status = 'approved'
+       ORDER BY id ASC
+       LIMIT 1`,
+    )
+    .first<{ id: number }>();
+  return Number(owner?.id) === member.id;
+}
+
+export async function requirePrimaryOwner() {
+  const member = await requireApprovedMember();
+  if (!(await isPrimaryOwner(member))) {
+    throw new AccessError("대표관리자 본인만 접속 현황을 확인할 수 있습니다.", 403);
+  }
+  return member;
+}
+
 export function normalizeMemberPermissions(value: unknown): MemberPermission[] {
   let source: unknown = value;
   if (typeof value === "string") {
@@ -206,17 +323,13 @@ export async function requireMemberPermission(permission: MemberPermission) {
   return member;
 }
 
-function clientAccessErrorResponse(error: AccessError) {
-  return Response.json({ error: error.message }, { status: error.status });
-}
-
 export function accessErrorResponse(error: unknown) {
   if (
     error instanceof AccessError &&
     error.status >= 400 &&
     error.status < 500
   ) {
-    return clientAccessErrorResponse(error);
+    return Response.json({ error: error.message }, { status: error.status });
   }
   console.error("Unhandled collaboration request error", error);
   return Response.json(
@@ -277,7 +390,8 @@ export async function getOAuthMember(request: Request) {
   const row = await d1
     .prepare(`
       SELECT
-        m.id, m.email, m.display_name, m.role, m.status,
+        m.id, m.email, m.display_name, m.role, m.permissions, m.status,
+        m.is_sales,
         m.created_at, m.approved_at, m.last_seen_at
       FROM oauth_tokens t
       JOIN members m ON m.id = t.member_id

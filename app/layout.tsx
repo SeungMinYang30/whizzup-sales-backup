@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
+import "./readability.css";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
@@ -16,6 +17,17 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title,
     description,
+    icons: {
+      icon: [
+        {
+          url: "/whizzup-mark.png",
+          type: "image/png",
+          sizes: "512x512",
+        },
+      ],
+      shortcut: "/whizzup-mark.png",
+      apple: "/whizzup-mark.png",
+    },
     openGraph: {
       title,
       description,

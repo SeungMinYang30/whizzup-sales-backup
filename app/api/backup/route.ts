@@ -1,0 +1,165 @@
+import {
+  ActivityCsvError,
+  createActivitiesCsv,
+  importActivityCsv,
+  inspectActivityCsv,
+} from "../../../lib/activity-csv";
+import {
+  BackupValidationError,
+  createFullBackup,
+  restoreFullBackup,
+  validateFullBackup,
+} from "../../../lib/backup-store";
+import {
+  accessErrorResponse,
+  requireMemberPermission,
+} from "../../../lib/collaboration";
+import {
+  createEmergencyRecoveryPackage,
+  createOfflineStandalonePackage,
+} from "../../../lib/recovery-packages";
+
+export const dynamic = "force-dynamic";
+
+const MAX_REQUEST_BYTES = 15 * 1024 * 1024;
+
+function todayValue() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function downloadHeaders(filename: string, contentType: string) {
+  return {
+    "Cache-Control": "no-store",
+    "Content-Type": contentType,
+    "Content-Disposition": `attachment; filename="${filename}"`,
+  };
+}
+
+function binaryDownload(bytes: Uint8Array, filename: string) {
+  const body = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+  return new Response(body, {
+    headers: downloadHeaders(filename, "application/zip"),
+  });
+}
+
+function validationErrorResponse(error: unknown) {
+  if (
+    error instanceof BackupValidationError ||
+    error instanceof ActivityCsvError
+  ) {
+    return Response.json({ error: error.message }, { status: 400 });
+  }
+  return accessErrorResponse(error);
+}
+
+export async function GET(request: Request) {
+  try {
+    await requireMemberPermission("backup:manage");
+    const kind = new URL(request.url).searchParams.get("kind") ?? "full";
+    if (kind === "activities-csv") {
+      const csv = await createActivitiesCsv();
+      return new Response(csv, {
+        headers: downloadHeaders(
+          `WHIZZUP_activities_${todayValue()}.csv`,
+          "text/csv; charset=utf-8",
+        ),
+      });
+    }
+    if (!["full", "emergency", "offline"].includes(kind)) {
+      return Response.json(
+        { error: "지원하지 않는 백업 종류입니다." },
+        { status: 400 },
+      );
+    }
+    const backup = await createFullBackup();
+    if (kind === "emergency") {
+      return binaryDownload(
+        createEmergencyRecoveryPackage(backup),
+        `WHIZZUP_emergency_recovery_${todayValue()}.zip`,
+      );
+    }
+    if (kind === "offline") {
+      return binaryDownload(
+        createOfflineStandalonePackage(backup),
+        `WHIZZUP_offline_edition_${todayValue()}.zip`,
+      );
+    }
+    return new Response(JSON.stringify(backup, null, 2), {
+      headers: downloadHeaders(
+        `WHIZZUP_full_backup_${todayValue()}.json`,
+        "application/json; charset=utf-8",
+      ),
+    });
+  } catch (error) {
+    return validationErrorResponse(error);
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const member = await requireMemberPermission("backup:manage");
+    const contentLength = Number(request.headers.get("content-length") ?? 0);
+    if (contentLength > MAX_REQUEST_BYTES) {
+      return Response.json(
+        { error: "업로드 파일이 너무 큽니다. 15MB 이하 파일을 사용해 주세요." },
+        { status: 413 },
+      );
+    }
+    const payload = (await request.json()) as {
+      action?: string;
+      backup?: unknown;
+      csv?: string;
+      confirmation?: string;
+      safetyBackupDownloaded?: boolean;
+    };
+
+    if (payload.action === "inspect-backup") {
+      const { inspection } = await validateFullBackup(payload.backup, member);
+      return Response.json({ inspection });
+    }
+    if (payload.action === "restore-backup") {
+      if (
+        payload.confirmation?.trim() !== "복원" ||
+        payload.safetyBackupDownloaded !== true
+      ) {
+        return Response.json(
+          {
+            error:
+              "현재 DB의 복원 직전 백업을 먼저 내려받고 ‘복원’을 입력해 주세요.",
+          },
+          { status: 400 },
+        );
+      }
+      const inspection = await restoreFullBackup(payload.backup, member);
+      return Response.json({ ok: true, inspection });
+    }
+    if (payload.action === "inspect-csv") {
+      if (typeof payload.csv !== "string") {
+        throw new ActivityCsvError("CSV 파일 내용이 없습니다.");
+      }
+      const inspection = await inspectActivityCsv(payload.csv);
+      return Response.json({ inspection });
+    }
+    if (payload.action === "import-csv") {
+      if (typeof payload.csv !== "string") {
+        throw new ActivityCsvError("CSV 파일 내용이 없습니다.");
+      }
+      const result = await importActivityCsv(payload.csv, member);
+      return Response.json({ ok: true, result });
+    }
+    return Response.json(
+      { error: "지원하지 않는 백업 작업입니다." },
+      { status: 400 },
+    );
+  } catch (error) {
+    return validationErrorResponse(error);
+  }
+}
