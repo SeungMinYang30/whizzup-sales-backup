@@ -802,32 +802,15 @@ ${productRecommendationContext()}`,
     const existingOrganizations = await d1
       .prepare("SELECT DISTINCT organization FROM activities WHERE organization <> ''")
       .all<{ organization: string }>();
-    const negativeAliasAnswer =
-      /^(아니|아니요|아닙니다|별도|다른)/.test(message) &&
-      history.some(
-        (item) =>
-          item.role === "assistant" && item.text.includes("같은 기관"),
-      );
-    if (!negativeAliasAnswer) {
-      for (const draft of drafts) {
-        const requested = String(draft.organization ?? "").trim();
-        const key = institutionAliasKey(requested);
-        if (!key) continue;
-        const aliases = existingOrganizations.results
-          .map((row) => String(row.organization).trim())
-          .filter(
-            (existing) =>
-              existing !== requested &&
-              institutionAliasKey(existing) === key,
-          );
-        if (aliases.length) {
-          const canonical = preferFullInstitutionName(requested, ...aliases);
-          return Response.json({
-            needsClarification: true,
-            assistantMessage: `입력한 기관: ${requested}\n기존 기관: ${canonical}\n두 이름을 같은 기관으로 합칠까요? 같으면 “네”, 별도 기관이면 “아니요”라고 알려주세요.`,
-            drafts: [],
-          });
-        }
+    for (const draft of drafts) {
+      const requested = String(draft.organization ?? "").trim();
+      const key = institutionAliasKey(requested);
+      if (!key) continue;
+      const exactAliases = existingOrganizations.results
+        .map((row) => String(row.organization).trim())
+        .filter((existing) => institutionAliasKey(existing) === key);
+      if (exactAliases.length) {
+        draft.organization = preferFullInstitutionName(...exactAliases);
       }
     }
     return Response.json({
