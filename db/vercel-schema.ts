@@ -1,4 +1,4 @@
-export const VERCEL_SCHEMA_VERSION = "202607200001_sites_v94_parallel";
+export const VERCEL_SCHEMA_VERSION = "202607200002_standby_replication";
 
 export const VERCEL_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS public.vercel_schema_migrations (
@@ -102,6 +102,20 @@ CREATE TABLE IF NOT EXISTS public.api_credentials (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS public.replication_sync_state (
+  id integer PRIMARY KEY CHECK (id = 1),
+  source_origin text NOT NULL DEFAULT '',
+  source_created_at timestamptz,
+  source_checksum text NOT NULL DEFAULT '',
+  source_counts_json text NOT NULL DEFAULT '{}',
+  status text NOT NULL DEFAULT 'idle'
+    CHECK (status IN ('idle', 'syncing', 'succeeded', 'failed')),
+  last_attempt_at timestamptz,
+  last_success_at timestamptz,
+  duration_ms integer,
+  error_message text NOT NULL DEFAULT ''
+);
+
 CREATE INDEX IF NOT EXISTS members_sales_idx
   ON public.members (status, is_sales, display_name);
 CREATE INDEX IF NOT EXISTS activities_organization_date_idx
@@ -143,6 +157,7 @@ ALTER TABLE public.manager_alert_acknowledgements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_review_acknowledgements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_assignment_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.api_credentials ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.replication_sync_state ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.vercel_schema_migrations
   FROM anon, authenticated;
@@ -155,6 +170,8 @@ REVOKE ALL ON public.activity_review_acknowledgements
 REVOKE ALL ON public.activity_assignment_history
   FROM anon, authenticated;
 REVOKE ALL ON public.api_credentials
+  FROM anon, authenticated;
+REVOKE ALL ON public.replication_sync_state
   FROM anon, authenticated;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public
   FROM anon, authenticated;

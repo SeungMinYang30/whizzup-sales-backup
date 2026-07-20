@@ -892,14 +892,7 @@ function insertStatement(
     .bind(...table.columns.map((column) => row[column] ?? null));
 }
 
-export async function restoreFullBackup(
-  input: unknown,
-  currentAdmin: Pick<Member, "id" | "email">,
-) {
-  const { backup, inspection } = await validateFullBackup(
-    input,
-    currentAdmin,
-  );
+async function replaceDatabaseFromBackup(backup: FullBackup) {
   const d1 = await ensureBackupReady();
   const statements = [
     d1.prepare("DELETE FROM activity_authors"),
@@ -965,5 +958,22 @@ export async function restoreFullBackup(
   });
 
   await d1.batch(statements);
+}
+
+export async function restoreFullBackup(
+  input: unknown,
+  currentAdmin: Pick<Member, "id" | "email">,
+) {
+  const { backup, inspection } = await validateFullBackup(
+    input,
+    currentAdmin,
+  );
+  await replaceDatabaseFromBackup(backup);
+  return inspection;
+}
+
+export async function restoreReplicaBackup(input: unknown) {
+  const { backup, inspection } = await validateFullBackup(input);
+  await replaceDatabaseFromBackup(backup);
   return inspection;
 }
