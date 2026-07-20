@@ -6090,19 +6090,10 @@ export default function CrmApp({
                       if (event.key !== "Enter" || event.nativeEvent.isComposing) {
                         return;
                       }
-                      if (event.ctrlKey) {
-                        event.preventDefault();
-                        const textarea = event.currentTarget;
-                        const lineBreakPosition = textarea.selectionStart + 1;
-                        setAiDraft(
-                          `${aiDraft.slice(0, textarea.selectionStart)}\n${aiDraft.slice(textarea.selectionEnd)}`,
-                        );
-                        requestAnimationFrame(() =>
-                          textarea.setSelectionRange(
-                            lineBreakPosition,
-                            lineBreakPosition,
-                          ),
-                        );
+                      const mobileTextEntry =
+                        window.innerWidth <= 900 &&
+                        window.matchMedia("(pointer: coarse)").matches;
+                      if (event.shiftKey || mobileTextEntry) {
                         return;
                       }
                       event.preventDefault();
@@ -6128,8 +6119,8 @@ export default function CrmApp({
                   </div>
                 </div>
                 <small>
-                  Enter는 AI 정리, Ctrl+Enter는 줄바꿈이며 저장 전 내용을 직접
-                  확인할 수 있습니다.
+                  PC는 Enter로 AI 정리, Shift+Enter로 줄바꿈합니다. 모바일은
+                  Enter로 줄바꿈하고 위 버튼을 눌러 AI 정리합니다.
                 </small>
                 {session?.aiConfigured === false && (
                   <div className="ai-connection-note">
