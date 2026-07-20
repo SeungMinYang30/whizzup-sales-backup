@@ -334,6 +334,22 @@ async function checksumBackup(backup: Omit<FullBackup, "checksum">) {
   return sha256Hex(canonicalJson(checksumSource(backup)));
 }
 
+export async function replicaContentChecksum(
+  backup: Pick<
+    FullBackup,
+    "formatVersion" | "schemaVersion" | "counts" | "data"
+  >,
+) {
+  return sha256Hex(
+    canonicalJson({
+      formatVersion: backup.formatVersion,
+      schemaVersion: backup.schemaVersion,
+      counts: backup.counts,
+      data: backup.data,
+    }),
+  );
+}
+
 function asInteger(value: unknown, label: string) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 1) {
@@ -878,47 +894,64 @@ export async function validateFullBackup(
   };
 }
 
-function insertStatement(
+const RESTORE_INSERT_CHUNK_SIZE = 100;
+
+function parseMemberPermissions(row: BackupRow) {
+  try {
+    const parsed = JSON.parse(String(row.permissions ?? "[]")) as unknown;
+    if (
+      !Array.isArray(parsed) ||
+      parsed.some((permission) => typeof permission !== "string")
+    ) {
+      throw new Error("invalid member permissions");
+    }
+    return parsed;
+  } catch {
+    throw new BackupValidationError(
+      "members.permissions 값이 권한 배열 형식이 아닙니다.",
+    );
+  }
+}
+
+function insertStatements(
   d1: ReturnType<typeof getD1>,
   table: (typeof BACKUP_TABLES)[number],
-  row: BackupRow,
+  rows: BackupRow[],
 ) {
-  const memberPermissions =
-    table.name === "members"
-      ? (() => {
-          const parsed = JSON.parse(String(row.permissions ?? "[]")) as unknown;
-          if (
-            !Array.isArray(parsed) ||
-            parsed.some((permission) => typeof permission !== "string")
-          ) {
-            throw new BackupValidationError(
-              "members.permissions 값이 권한 배열 형식이 아닙니다.",
-            );
-          }
-          return parsed;
-        })()
-      : [];
-  const placeholders = table.columns
-    .map((column) =>
-      table.name === "members" && column === "permissions"
-        ? memberPermissions.length > 0
-          ? `jsonb_build_array(${memberPermissions
-              .map(() => "?::text")
-              .join(", ")})`
-          : "'[]'::jsonb"
-        : "?",
-    )
-    .join(", ");
-  const parameters = table.columns.flatMap((column) =>
-    table.name === "members" && column === "permissions"
-      ? memberPermissions
-      : [row[column] ?? null],
-  );
-  return d1
-    .prepare(
-      `INSERT INTO ${table.name} (${table.columns.join(", ")}) VALUES (${placeholders})`,
-    )
-    .bind(...parameters);
+  const statements = [];
+  for (
+    let offset = 0;
+    offset < rows.length;
+    offset += RESTORE_INSERT_CHUNK_SIZE
+  ) {
+    const chunk = rows.slice(offset, offset + RESTORE_INSERT_CHUNK_SIZE);
+    const parameters: unknown[] = [];
+    const values = chunk.map((row) => {
+      const memberPermissions =
+        table.name === "members" ? parseMemberPermissions(row) : [];
+      const placeholders = table.columns.map((column) => {
+        if (table.name === "members" && column === "permissions") {
+          parameters.push(...memberPermissions);
+          return memberPermissions.length > 0
+            ? `jsonb_build_array(${memberPermissions
+                .map(() => "?::text")
+                .join(", ")})`
+            : "'[]'::jsonb";
+        }
+        parameters.push(row[column] ?? null);
+        return "?";
+      });
+      return `(${placeholders.join(", ")})`;
+    });
+    statements.push(
+      d1
+        .prepare(
+          `INSERT INTO ${table.name} (${table.columns.join(", ")}) VALUES ${values.join(", ")}`,
+        )
+        .bind(...parameters),
+    );
+  }
+  return statements;
 }
 
 async function replaceDatabaseFromBackup(backup: FullBackup) {
@@ -958,9 +991,9 @@ async function replaceDatabaseFromBackup(backup: FullBackup) {
   insertOrder.forEach((tableName) => {
     const table = BACKUP_TABLES.find((item) => item.name === tableName);
     if (!table) return;
-    backup.data[tableName].forEach((row) => {
-      statements.push(insertStatement(d1, table, row));
-    });
+    statements.push(
+      ...insertStatements(d1, table, backup.data[tableName]),
+    );
   });
 
   [
