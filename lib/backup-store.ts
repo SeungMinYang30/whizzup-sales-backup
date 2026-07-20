@@ -883,18 +883,40 @@ function insertStatement(
   table: (typeof BACKUP_TABLES)[number],
   row: BackupRow,
 ) {
+  const memberPermissions =
+    table.name === "members"
+      ? (() => {
+          const parsed = JSON.parse(String(row.permissions ?? "[]")) as unknown;
+          if (
+            !Array.isArray(parsed) ||
+            parsed.some((permission) => typeof permission !== "string")
+          ) {
+            throw new BackupValidationError(
+              "members.permissions 값이 권한 배열 형식이 아닙니다.",
+            );
+          }
+          return parsed;
+        })()
+      : [];
   const placeholders = table.columns
     .map((column) =>
       table.name === "members" && column === "permissions"
-        ? "?::jsonb"
+        ? memberPermissions.length > 0
+          ? `jsonb_build_array(${memberPermissions.map(() => "?").join(", ")})`
+          : "'[]'::jsonb"
         : "?",
     )
     .join(", ");
+  const parameters = table.columns.flatMap((column) =>
+    table.name === "members" && column === "permissions"
+      ? memberPermissions
+      : [row[column] ?? null],
+  );
   return d1
     .prepare(
       `INSERT INTO ${table.name} (${table.columns.join(", ")}) VALUES (${placeholders})`,
     )
-    .bind(...table.columns.map((column) => row[column] ?? null));
+    .bind(...parameters);
 }
 
 async function replaceDatabaseFromBackup(backup: FullBackup) {
