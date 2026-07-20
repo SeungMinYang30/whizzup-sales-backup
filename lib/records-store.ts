@@ -5,8 +5,10 @@ import {
   canonicalInstitutionName,
   findSimilarInstitutionMatches,
   findSimilarInstitutionNames,
+  INSTITUTION_ALIASES_SETTING_KEY,
   institutionAliasKey,
   isSameRegionInstitution,
+  rememberedInstitutionAlias,
   type InstitutionMatchCandidate,
   type InstitutionMatchContext,
   InstitutionConfirmationRequiredError,
@@ -144,6 +146,27 @@ export async function resolveInstitutionName(
         : confirmed;
     }
     return requested;
+  }
+
+  if (payload.institutionSeparate !== true) {
+    const aliasSetting = await d1
+      .prepare("SELECT value FROM app_settings WHERE key = ? LIMIT 1")
+      .bind(INSTITUTION_ALIASES_SETTING_KEY)
+      .first<{ value: string }>();
+    const remembered = rememberedInstitutionAlias(
+      requested,
+      aliasSetting?.value,
+    );
+    if (remembered) {
+      const rememberedKey = institutionAliasKey(remembered);
+      const rememberedOrganizations = existing.filter(
+        (organization) =>
+          institutionAliasKey(organization) === rememberedKey,
+      );
+      if (rememberedOrganizations.length) {
+        return preferFullInstitutionName(...rememberedOrganizations);
+      }
+    }
   }
 
   const requestedKey = institutionAliasKey(requested);
