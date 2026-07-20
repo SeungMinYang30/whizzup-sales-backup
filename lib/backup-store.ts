@@ -883,7 +883,13 @@ function insertStatement(
   table: (typeof BACKUP_TABLES)[number],
   row: BackupRow,
 ) {
-  const placeholders = table.columns.map(() => "?").join(", ");
+  const placeholders = table.columns
+    .map((column) =>
+      table.name === "members" && column === "permissions"
+        ? "?::jsonb"
+        : "?",
+    )
+    .join(", ");
   return d1
     .prepare(
       `INSERT INTO ${table.name} (${table.columns.join(", ")}) VALUES (${placeholders})`,
