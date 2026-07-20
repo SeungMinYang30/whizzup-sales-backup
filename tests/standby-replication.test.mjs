@@ -66,4 +66,7 @@ test("Supabase schedules a signed sync every five minutes", () => {
   assert.match(scheduler, /cron\.schedule/);
   assert.match(scheduler, /\*\/5 \* \* \* \*/);
   assert.match(scheduler, /Authorization/);
+  assert.match(syncRoute, /export async function DELETE/);
+  assert.match(scheduler, /removeStandbySchedule/);
+  assert.match(scheduler, /cron\.unschedule/);
 });

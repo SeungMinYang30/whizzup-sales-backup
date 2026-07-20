@@ -87,3 +87,18 @@ export async function configureStandbySchedule(input: {
     syncUrl: input.syncUrl,
   };
 }
+
+export async function removeStandbySchedule() {
+  const d1 = getD1();
+  const existingJobs = await d1
+    .prepare("SELECT jobid FROM cron.job WHERE jobname = ?")
+    .bind(JOB_NAME)
+    .all<CronJobRow>();
+  for (const job of existingJobs.results) {
+    await d1.prepare("SELECT cron.unschedule(?)").bind(job.jobid).run();
+  }
+  return {
+    jobName: JOB_NAME,
+    removed: existingJobs.results.length,
+  };
+}

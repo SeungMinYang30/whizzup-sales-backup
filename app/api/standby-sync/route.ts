@@ -8,7 +8,10 @@ import {
   markReplicationFailure,
   markReplicationSuccess,
 } from "../../../lib/replication-store";
-import { configureStandbySchedule } from "../../../lib/replication-scheduler";
+import {
+  configureStandbySchedule,
+  removeStandbySchedule,
+} from "../../../lib/replication-scheduler";
 
 export const dynamic = "force-dynamic";
 
@@ -172,4 +175,14 @@ export async function PUT(request: Request) {
     syncSecret,
   });
   return Response.json({ ok: true, schedule });
+}
+
+export async function DELETE(request: Request) {
+  if (!authorized(request)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return Response.json({
+    ok: true,
+    schedule: await removeStandbySchedule(),
+  });
 }
