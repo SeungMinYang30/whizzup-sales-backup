@@ -27,7 +27,9 @@ import {
 } from "../../../lib/map-store";
 import {
   canonicalInstitutionName,
+  INSTITUTION_ALIASES_SETTING_KEY,
   institutionConfirmationResponse,
+  updateInstitutionAliasSetting,
 } from "../../../lib/institution-names";
 import {
   canonicalProgressManagerName,
@@ -40,7 +42,11 @@ import {
 
 export const dynamic = "force-dynamic";
 
-async function mergeConfirmedInstitutionAlias(alias: string, canonical: string) {
+async function mergeConfirmedInstitutionAlias(
+  alias: string,
+  canonical: string,
+  memberId: number,
+) {
   if (!alias || !canonical || alias === canonical) return;
   const d1 = await ensureRecordsReady();
   await ensureEquipmentReady();
@@ -67,6 +73,15 @@ async function mergeConfirmedInstitutionAlias(alias: string, canonical: string) 
         .bind(project.source_id),
     ]);
   }
+  const currentAliasSetting = await d1
+    .prepare("SELECT value FROM app_settings WHERE key = ? LIMIT 1")
+    .bind(INSTITUTION_ALIASES_SETTING_KEY)
+    .first<{ value: string }>();
+  const nextAliasSetting = updateInstitutionAliasSetting(
+    currentAliasSetting?.value,
+    alias,
+    canonical,
+  );
   await d1.batch([
     d1
       .prepare(
@@ -128,6 +143,20 @@ async function mergeConfirmedInstitutionAlias(alias: string, canonical: string) 
          WHERE organization = ?`,
       )
       .bind(canonical, alias, canonical, alias),
+    d1
+      .prepare(
+        `INSERT INTO app_settings (key, value, updated_by, updated_at)
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(key) DO UPDATE SET
+           value = excluded.value,
+           updated_by = excluded.updated_by,
+           updated_at = CURRENT_TIMESTAMP`,
+      )
+      .bind(
+        INSTITUTION_ALIASES_SETTING_KEY,
+        nextAliasSetting,
+        memberId,
+      ),
   ]);
 }
 
@@ -386,6 +415,7 @@ export async function POST(request: Request) {
       await mergeConfirmedInstitutionAlias(
         requestedOrganization,
         clean(record.organization),
+        member.id,
       );
     }
     await syncEquipmentProjectFromRecord(equipmentSyncPayload(record), member.id);
@@ -585,6 +615,7 @@ export async function PUT(request: Request) {
       await mergeConfirmedInstitutionAlias(
         canonicalInstitutionName(payload.organization),
         clean(result.organization),
+        member.id,
       );
     }
     if (result) {
