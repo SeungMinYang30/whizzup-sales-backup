@@ -902,7 +902,9 @@ function insertStatement(
     .map((column) =>
       table.name === "members" && column === "permissions"
         ? memberPermissions.length > 0
-          ? `jsonb_build_array(${memberPermissions.map(() => "?").join(", ")})`
+          ? `jsonb_build_array(${memberPermissions
+              .map(() => "?::text")
+              .join(", ")})`
           : "'[]'::jsonb"
         : "?",
     )
