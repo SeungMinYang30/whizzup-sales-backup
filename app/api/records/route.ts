@@ -121,6 +121,16 @@ async function mergeConfirmedInstitutionAlias(
       .bind(canonical, alias),
     d1
       .prepare(
+        "DELETE FROM manager_alert_acknowledgements WHERE organization = ? AND member_id IN (SELECT member_id FROM manager_alert_acknowledgements WHERE organization = ?)",
+      )
+      .bind(alias, canonical),
+    d1
+      .prepare(
+        "UPDATE manager_alert_acknowledgements SET organization = ?, updated_at = CURRENT_TIMESTAMP WHERE organization = ?",
+      )
+      .bind(canonical, alias),
+    d1
+      .prepare(
         "DELETE FROM sales_campaign_targets WHERE organization = ? AND campaign_id IN (SELECT campaign_id FROM sales_campaign_targets WHERE organization = ?)",
       )
       .bind(alias, canonical),
