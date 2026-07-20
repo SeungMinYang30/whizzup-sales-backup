@@ -80,3 +80,19 @@ test("승인한 별칭은 저장되고 다음 기록 입력에서 먼저 적용�
   assert.match(recordsRoute, /updateInstitutionAliasSetting/);
   assert.match(recordsRoute, /ON CONFLICT\(key\) DO UPDATE SET/);
 });
+
+test("띄어쓰기만 다른 동일 기관은 채팅에서 다시 묻지 않고 기존 기관명으로 연결한다", async () => {
+  const root = new URL("../", import.meta.url);
+  const [aiRoute, crm] = await Promise.all([
+    readFile(new URL("app/api/ai/organize/route.ts", root), "utf8"),
+    readFile(new URL("app/crm-app.tsx", root), "utf8"),
+  ]);
+
+  assert.match(
+    aiRoute,
+    /draft\.organization = preferFullInstitutionName\(\.\.\.exactAliases\)/,
+  );
+  assert.doesNotMatch(aiRoute, /두 이름을 같은 기관으로 합칠까요/);
+  assert.match(crm, /event\.shiftKey \|\| mobileTextEntry/);
+  assert.match(crm, /모바일은\s+Enter로 줄바꿈/);
+});
