@@ -13,6 +13,7 @@ import {
   institutionAliasKey,
   preferFullInstitutionName,
 } from "../../../../lib/institution-names";
+import { resolveActivityDateFromMessage } from "../../../../lib/activity-date";
 import { productRecommendationContext } from "../../../../lib/product-ai-catalog";
 import { compactShareSummary } from "../../../../lib/share-text";
 
@@ -166,7 +167,8 @@ const recordDraftSchema = {
   properties: {
     activityDate: {
       type: "string",
-      description: "확인된 날짜를 YYYY-MM-DD로 작성. 모르면 빈 문자열",
+      description:
+        "실제 통화·미팅·활동 날짜를 YYYY-MM-DD로 작성. 입력 제목이나 본문에 날짜가 있으면 그 날짜를 사용하고, 공사·재연락·후속 일정 날짜와 혼동하지 않음",
     },
     dateConfidence: { type: "string", enum: dateConfidenceValues },
     activityType: { type: "string", enum: activityTypeValues },
@@ -690,6 +692,10 @@ export async function POST(request: Request) {
         instructions: `당신은 위즈업의 TM·미팅 영업 기록 정리 도우미입니다.
 오늘 날짜는 ${todayInSeoul()}입니다.
 사용자의 현재 메시지와 직전 대화만 근거로 기관별 영업 기록 초안을 만드세요.
+사용자가 입력 제목이나 본문에 실제 통화·미팅·업무 날짜를 적었다면 며칠 뒤에 기록하더라도 activityDate에는 반드시 그 날짜를 넣고 dateConfidence는 확정으로 두세요.
+예를 들어 "[2026년 6월 4일 성남 장안초등학교 미팅 내용 정리]"는 activityDate가 2026-06-04입니다. 오늘 날짜로 바꾸지 마세요.
+여러 기관에 공통 날짜가 제목에 한 번만 적혀 있으면 모든 draft에 그 날짜를 적용하고, 기관별 날짜가 따로 적혀 있으면 각 draft에 해당 날짜를 적용하세요.
+공사·설치·재연락·후속 일정 날짜는 activityDate가 아니라 progressSchedule 또는 followUpDate에 넣으세요.
 여러 기관의 표, 목록, 복사한 셀, 여러 줄 일정을 한 번에 받으면 drafts에 기관별로 한 항목씩 정확히 분리하세요.
 같은 기관이 여러 줄에 나오면 하나의 draft로 합치고 그 기관의 progressSchedule에 일정만 모으세요.
 직전 질문에서 사용자가 같은 기관이라고 확인했다면 기존의 축약하지 않은 정식 기관명을 사용하세요.
@@ -783,10 +789,14 @@ ${productRecommendationContext()}`,
       const hasProgressSchedule = Boolean(
         String(draft.progressSchedule ?? "").trim(),
       );
+      const resolvedActivityDate = resolveActivityDateFromMessage({
+        message: userProjectText,
+        aiDate: draft.activityDate,
+        today: postedDate,
+      });
       return {
         ...draft,
-        activityDate: postedDate,
-        dateConfidence: "대화시각 추정",
+        ...resolvedActivityDate,
         progressManager: member.isSales ? member.displayName : "",
         awardStatus: hasProgressSchedule ? "위즈업 수주" : draft.awardStatus,
         equipmentProjectStatus:
