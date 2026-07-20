@@ -1,8 +1,8 @@
 import { getD1 } from "../db";
 
-const JOB_NAME = "whizzup-standby-sync-every-5-minutes";
+const JOB_NAME = "whizzup-standby-sync-every-10-minutes";
 const VAULT_SECRET_NAME = "whizzup_standby_sync_secret";
-const CRON_EXPRESSION = "*/5 * * * *";
+const CRON_EXPRESSION = "*/10 * * * *";
 
 type VaultSecretRow = {
   id: string;

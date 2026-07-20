@@ -56,7 +56,7 @@ test("replication state is private from browser database roles", () => {
   );
 });
 
-test("Supabase schedules a signed sync every five minutes", () => {
+test("Supabase schedules a signed sync every ten minutes", () => {
   assert.match(syncRoute, /export async function PUT/);
   assert.match(syncRoute, /configureStandbySchedule/);
   assert.match(scheduler, /CREATE EXTENSION IF NOT EXISTS pg_cron/);
@@ -64,7 +64,7 @@ test("Supabase schedules a signed sync every five minutes", () => {
   assert.match(scheduler, /vault\.create_secret/);
   assert.match(scheduler, /vault\.update_secret/);
   assert.match(scheduler, /cron\.schedule/);
-  assert.match(scheduler, /\*\/5 \* \* \* \*/);
+  assert.match(scheduler, /\*\/10 \* \* \* \*/);
   assert.match(scheduler, /Authorization/);
   assert.match(syncRoute, /export async function DELETE/);
   assert.match(scheduler, /removeStandbySchedule/);
