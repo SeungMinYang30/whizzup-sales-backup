@@ -23,6 +23,12 @@ import {
   compactShareSummary,
   replaceOrganizationReferences,
 } from "./share-text";
+import { resolveOfficialSchoolName } from "./school-directory";
+import {
+  excludedInstitutionCandidates,
+  rememberInstitutionDecision,
+  type InstitutionRelationshipDecision,
+} from "./institution-decisions";
 
 const createTableSql = `
   CREATE TABLE IF NOT EXISTS activities (
@@ -70,8 +76,15 @@ export async function resolveInstitutionName(
   d1: ReturnType<typeof getD1>,
   payload: Record<string, unknown>,
 ) {
-  const requested = canonicalInstitutionName(payload.organization);
-  if (!requested) return "";
+  const requestedInput = canonicalInstitutionName(payload.organization);
+  if (!requestedInput) return "";
+  const officialSchool = await resolveOfficialSchoolName(
+    requestedInput,
+    clean(payload.region),
+  );
+  const requested = officialSchool?.name
+    ? canonicalInstitutionName(officialSchool.name)
+    : requestedInput;
 
   const organizationRows = await d1
     .prepare(
@@ -106,6 +119,35 @@ export async function resolveInstitutionName(
       topic: clean(row.topic),
       summary: clean(row.summary),
     }));
+
+  if (payload.institutionSeparate === true) {
+    const relationship = String(payload.institutionRelationship ?? "");
+    if (relationship === "related" && payload.relatedOrganization) {
+      await rememberInstitutionDecision(
+        d1,
+        requested,
+        payload.relatedOrganization,
+        "related",
+      );
+    }
+    if (relationship === "different") {
+      const rejected = Array.isArray(payload.institutionRejectedOrganizations)
+        ? payload.institutionRejectedOrganizations
+        : payload.relatedOrganization
+          ? [payload.relatedOrganization]
+          : [];
+      await Promise.all(
+        rejected.slice(0, 5).map((candidate) =>
+          rememberInstitutionDecision(
+            d1,
+            requested,
+            candidate,
+            "different" as InstitutionRelationshipDecision,
+          ),
+        ),
+      );
+    }
+  }
 
   const confirmed = canonicalInstitutionName(payload.confirmedOrganization);
   if (confirmed) {
@@ -147,6 +189,11 @@ export async function resolveInstitutionName(
     }
     return requested;
   }
+
+  const excludedCandidateKeys =
+    payload.institutionSeparate !== true
+      ? await excludedInstitutionCandidates(d1, requested)
+      : new Set<string>();
 
   if (payload.institutionSeparate !== true) {
     const aliasSetting = await d1
@@ -215,6 +262,10 @@ export async function resolveInstitutionName(
       });
     });
     const candidates = [...candidateMap.values()]
+      .filter(
+        (candidate) =>
+          !excludedCandidateKeys.has(institutionAliasKey(candidate.organization)),
+      )
       .sort(
         (left, right) =>
           right.score - left.score ||

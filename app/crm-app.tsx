@@ -374,7 +374,7 @@ const memberPermissionOptions: {
     id: "integration:manage",
     group: "operations",
     label: "API 등록·관리",
-    description: "OpenAI·카카오맵 API 등록과 연결 점검",
+    description: "OpenAI·카카오맵·학교정보 API 등록과 연결 점검",
   },
   {
     id: "backup:manage",
@@ -426,6 +426,15 @@ type KakaoSettingsStatus = {
   configured: boolean;
   source: "registered" | "server" | "none";
   javascriptKey: string;
+  keyLast4: string;
+  updatedAt: string;
+  serverFallbackConfigured: boolean;
+  serverFallbackLast4: string;
+};
+
+type SchoolDirectorySettingsStatus = {
+  configured: boolean;
+  source: "registered" | "server" | "none";
   keyLast4: string;
   updatedAt: string;
   serverFallbackConfigured: boolean;
@@ -2500,6 +2509,13 @@ export default function CrmApp({
   const [kakaoJavascriptKey, setKakaoJavascriptKey] = useState("");
   const [kakaoSettingsBusy, setKakaoSettingsBusy] = useState(false);
   const [kakaoConnectionMessage, setKakaoConnectionMessage] = useState("");
+  const [schoolDirectorySettings, setSchoolDirectorySettings] =
+    useState<SchoolDirectorySettingsStatus | null>(null);
+  const [schoolDirectoryApiKey, setSchoolDirectoryApiKey] = useState("");
+  const [schoolDirectorySettingsBusy, setSchoolDirectorySettingsBusy] =
+    useState(false);
+  const [schoolDirectoryConnectionMessage, setSchoolDirectoryConnectionMessage] =
+    useState("");
   const [aiDraft, setAiDraft] = useState("");
   const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
   const [aiPreviews, setAiPreviews] = useState<AiPreview[]>([]);
@@ -4166,16 +4182,22 @@ export default function CrmApp({
 
   async function loadIntegration() {
     try {
-      const [openAIResponse, kakaoResponse] = await Promise.all([
-        fetch("/api/openai-settings", { cache: "no-store" }),
-        fetch("/api/map/config", { cache: "no-store" }),
-      ]);
+      const [openAIResponse, kakaoResponse, schoolDirectoryResponse] =
+        await Promise.all([
+          fetch("/api/openai-settings", { cache: "no-store" }),
+          fetch("/api/map/config", { cache: "no-store" }),
+          fetch("/api/school-directory-settings", { cache: "no-store" }),
+        ]);
       const openAIPayload =
         (await openAIResponse.json()) as OpenAISettingsStatus & {
           error?: string;
         };
       const kakaoPayload =
         (await kakaoResponse.json()) as KakaoSettingsStatus & {
+          error?: string;
+        };
+      const schoolDirectoryPayload =
+        (await schoolDirectoryResponse.json()) as SchoolDirectorySettingsStatus & {
           error?: string;
         };
       if (!openAIResponse.ok) {
@@ -4188,6 +4210,12 @@ export default function CrmApp({
           kakaoPayload.error || "카카오맵 API 설정을 불러오지 못했습니다.",
         );
       }
+      if (!schoolDirectoryResponse.ok) {
+        throw new Error(
+          schoolDirectoryPayload.error ||
+            "나이스 학교정보 API 설정을 불러오지 못했습니다.",
+        );
+      }
       setOpenAISettings(openAIPayload);
       setOpenAIModel(openAIPayload.model || "gpt-5.4-mini");
       setOpenAIApiKey("");
@@ -4195,6 +4223,9 @@ export default function CrmApp({
       setKakaoSettings(kakaoPayload);
       setKakaoJavascriptKey("");
       setKakaoConnectionMessage("");
+      setSchoolDirectorySettings(schoolDirectoryPayload);
+      setSchoolDirectoryApiKey("");
+      setSchoolDirectoryConnectionMessage("");
     } catch (caught) {
       setToast(
         caught instanceof Error
@@ -4336,6 +4367,64 @@ export default function CrmApp({
       );
     } finally {
       setKakaoSettingsBusy(false);
+    }
+  }
+
+  async function manageSchoolDirectorySettings(
+    action: "test" | "save" | "revert",
+  ) {
+    if (action !== "revert" && schoolDirectoryApiKey.trim().length < 8) {
+      setSchoolDirectoryConnectionMessage("나이스 인증키를 다시 확인해 주세요.");
+      return;
+    }
+    if (
+      action === "revert" &&
+      !window.confirm("등록한 키를 지우고 서버의 기존 나이스 키로 되돌릴까요?")
+    ) {
+      return;
+    }
+    try {
+      setSchoolDirectorySettingsBusy(true);
+      setSchoolDirectoryConnectionMessage("");
+      const response = await fetch("/api/school-directory-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, apiKey: schoolDirectoryApiKey }),
+      });
+      const payload = (await response.json()) as {
+        keyLast4?: string;
+        status?: SchoolDirectorySettingsStatus;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || "학교정보 API 설정을 처리하지 못했습니다.");
+      }
+      if (action === "test") {
+        setSchoolDirectoryConnectionMessage(
+          `학교정보 연결 확인 완료 · 키 끝 ${payload.keyLast4 || ""}`,
+        );
+        return;
+      }
+      if (payload.status) setSchoolDirectorySettings(payload.status);
+      setSchoolDirectoryApiKey("");
+      setSchoolDirectoryConnectionMessage(
+        action === "save"
+          ? "나이스 학교정보 키를 저장했습니다."
+          : "서버의 기존 나이스 키로 되돌렸습니다.",
+      );
+      setToast(
+        action === "save"
+          ? "전국 학교정보 연결을 적용했습니다."
+          : "서버의 기존 학교정보 설정을 사용합니다.",
+      );
+    } catch (caught) {
+      setSchoolDirectoryConnectionMessage(
+        caught instanceof Error
+          ? caught.message
+          : "학교정보 API 설정을 처리하지 못했습니다.",
+      );
+    } finally {
+      setSchoolDirectorySettingsBusy(false);
     }
   }
 
@@ -7263,6 +7352,113 @@ export default function CrmApp({
                   포함되지 않습니다.
                 </p>
               </article>
+
+              <article className="panel openai-settings-card school-directory-settings-card">
+                <div className="openai-settings-heading">
+                  <div>
+                    <span className="section-kicker">NEIS SCHOOL API</span>
+                    <h2>전국 학교정보 연결</h2>
+                    <p>
+                      초·중·고·여고처럼 다르게 입력된 학교명을 나이스 공식
+                      학교정보와 대조합니다. 조회 결과는 저장해 반복 호출을 줄입니다.
+                    </p>
+                  </div>
+                  <span
+                    className={`openai-connection-status ${
+                      schoolDirectorySettings?.configured
+                        ? "connected"
+                        : "disconnected"
+                    }`}
+                  >
+                    <i />
+                    {schoolDirectorySettings?.configured
+                      ? "현재 연결됨"
+                      : "연결 필요"}
+                  </span>
+                </div>
+
+                <div className="openai-current-settings kakao-current-settings">
+                  <div>
+                    <span>사용 중인 설정</span>
+                    <strong>
+                      {schoolDirectorySettings?.source === "registered"
+                        ? "화면에서 등록한 나이스 키"
+                        : schoolDirectorySettings?.source === "server"
+                          ? "서버에 설정된 기존 나이스 키"
+                          : "등록되지 않음"}
+                    </strong>
+                    <small>
+                      {schoolDirectorySettings?.configured
+                        ? `키 끝 4자리 · ${schoolDirectorySettings.keyLast4 || "확인 불가"}`
+                        : "공식 학교정보 연결 전에도 기존 기관 비교는 작동합니다."}
+                    </small>
+                  </div>
+                  <div>
+                    <span>조회 방식</span>
+                    <strong>필요할 때만 조회</strong>
+                    <small>같은 검색 결과는 30일 동안 재사용합니다.</small>
+                  </div>
+                </div>
+
+                <div className="openai-registration-form kakao-registration-form">
+                  <label>
+                    <span>나이스 교육정보 API 인증키</span>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={schoolDirectoryApiKey}
+                      onChange={(event) =>
+                        setSchoolDirectoryApiKey(event.target.value)
+                      }
+                      placeholder="나이스 교육정보 개방 포털 인증키"
+                    />
+                    <small>
+                      키 원문은 다시 표시하지 않으며 공식 학교명 확인에만 사용합니다.
+                    </small>
+                  </label>
+                </div>
+
+                <div className="openai-settings-actions">
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={schoolDirectorySettingsBusy}
+                    onClick={() => void manageSchoolDirectorySettings("test")}
+                  >
+                    입력한 키 연결 테스트
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={schoolDirectorySettingsBusy}
+                    onClick={() => void manageSchoolDirectorySettings("save")}
+                  >
+                    학교정보 연결 저장
+                  </button>
+                  <button
+                    type="button"
+                    className="outline-danger"
+                    disabled={
+                      schoolDirectorySettingsBusy ||
+                      !schoolDirectorySettings?.serverFallbackConfigured ||
+                      schoolDirectorySettings.source === "server"
+                    }
+                    onClick={() => void manageSchoolDirectorySettings("revert")}
+                  >
+                    서버 기존 키로 되돌리기
+                  </button>
+                </div>
+                {schoolDirectoryConnectionMessage && (
+                  <p className="openai-connection-message" role="status">
+                    {schoolDirectoryConnectionMessage}
+                  </p>
+                )}
+                <p className="openai-security-note">
+                  인증키와 학교정보 캐시는 전체 DB 백업에 포함하지 않습니다.
+                  외부 조회가 지연되어도 영업 기록 저장은 계속할 수 있습니다.
+                </p>
+              </article>
+
 
               <article className="panel gpt-instruction-copy-card">
                 <div>
