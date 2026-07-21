@@ -18,6 +18,170 @@
   --shadow: 0 12px 34px rgba(32, 42, 59, 0.07);
 }
 
+.institution-confirmation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(5px);
+}
+
+.institution-confirmation-dialog {
+  width: min(560px, 100%);
+  max-height: min(760px, calc(100vh - 40px));
+  overflow: auto;
+  padding: 28px;
+  border: 1px solid #dbe3f0;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.25);
+}
+
+.institution-confirmation-eyebrow {
+  display: inline-flex;
+  margin-bottom: 8px;
+  color: #4f46e5;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.institution-confirmation-dialog h2 {
+  margin: 0;
+  color: #172033;
+  font-size: clamp(1.35rem, 3vw, 1.7rem);
+  line-height: 1.3;
+}
+
+.institution-confirmation-description {
+  margin: 10px 0 20px;
+  color: #64748b;
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+.institution-confirmation-requested,
+.institution-confirmation-candidate {
+  display: grid;
+  gap: 6px;
+  padding: 15px 16px;
+  border-radius: 15px;
+}
+
+.institution-confirmation-requested {
+  margin-bottom: 12px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+}
+
+.institution-confirmation-requested span,
+.institution-confirmation-candidate > span {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.institution-confirmation-requested strong,
+.institution-confirmation-candidate > strong {
+  color: #172033;
+  font-size: 1.05rem;
+}
+
+.institution-confirmation-candidates {
+  display: grid;
+  gap: 10px;
+}
+
+.institution-confirmation-candidate {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.institution-confirmation-candidate p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.institution-confirmation-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 7px;
+}
+
+.institution-confirmation-actions button,
+.institution-confirmation-separate {
+  min-height: 42px;
+  border-radius: 11px;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.institution-confirmation-primary {
+  border: 1px solid #4f46e5;
+  background: #4f46e5;
+  color: #fff;
+}
+
+.institution-confirmation-secondary {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+}
+
+.institution-confirmation-separate {
+  width: 100%;
+  margin-top: 12px;
+  border: 1px solid #e2e8f0;
+  background: transparent;
+  color: #64748b;
+}
+
+.institution-confirmation-actions button:hover,
+.institution-confirmation-separate:hover {
+  transform: translateY(-1px);
+}
+
+.institution-confirmation-actions button:focus-visible,
+.institution-confirmation-separate:focus-visible {
+  outline: 3px solid rgba(79, 70, 229, 0.24);
+  outline-offset: 2px;
+}
+
+.institution-confirmation-note {
+  display: block;
+  margin-top: 12px;
+  color: #94a3b8;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .institution-confirmation-overlay {
+    align-items: end;
+    padding: 0;
+  }
+
+  .institution-confirmation-dialog {
+    width: 100%;
+    max-height: 88vh;
+    padding: 22px 18px calc(20px + env(safe-area-inset-bottom));
+    border-radius: 22px 22px 0 0;
+  }
+
+  .institution-confirmation-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
 * { box-sizing: border-box; }
 html { background: var(--canvas); }
 body {

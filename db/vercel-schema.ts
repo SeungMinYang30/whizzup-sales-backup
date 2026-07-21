@@ -1,4 +1,4 @@
-export const VERCEL_SCHEMA_VERSION = "202607200002_standby_replication";
+export const VERCEL_SCHEMA_VERSION = "202607210003_institution_directory";
 
 export const VERCEL_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS public.vercel_schema_migrations (
@@ -102,6 +102,33 @@ CREATE TABLE IF NOT EXISTS public.api_credentials (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS public.school_directory_credentials (
+  id integer PRIMARY KEY CHECK (id = 1),
+  encrypted_key text NOT NULL,
+  iv text NOT NULL,
+  key_last4 text NOT NULL,
+  updated_by bigint REFERENCES public.members(id) ON DELETE SET NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.official_school_cache (
+  cache_key text PRIMARY KEY,
+  query_name text NOT NULL,
+  region text NOT NULL DEFAULT '',
+  results_json text NOT NULL DEFAULT '[]',
+  fetched_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.institution_name_decisions (
+  pair_key text PRIMARY KEY,
+  left_key text NOT NULL,
+  right_key text NOT NULL,
+  left_organization text NOT NULL,
+  right_organization text NOT NULL,
+  decision text NOT NULL CHECK (decision IN ('related', 'different')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS public.replication_sync_state (
   id integer PRIMARY KEY CHECK (id = 1),
   source_origin text NOT NULL DEFAULT '',
@@ -132,6 +159,12 @@ CREATE INDEX IF NOT EXISTS activity_review_ack_snoozed_idx
   ON public.activity_review_acknowledgements (member_id, snoozed_until);
 CREATE INDEX IF NOT EXISTS activity_assignment_history_activity_idx
   ON public.activity_assignment_history (activity_id, created_at);
+CREATE INDEX IF NOT EXISTS official_school_cache_fetched_idx
+  ON public.official_school_cache (fetched_at);
+CREATE INDEX IF NOT EXISTS institution_name_decisions_left_idx
+  ON public.institution_name_decisions (left_key);
+CREATE INDEX IF NOT EXISTS institution_name_decisions_right_idx
+  ON public.institution_name_decisions (right_key);
 
 DROP TRIGGER IF EXISTS ai_recommendations_touch_updated_at
   ON public.ai_recommendations;
@@ -157,6 +190,9 @@ ALTER TABLE public.manager_alert_acknowledgements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_review_acknowledgements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_assignment_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.api_credentials ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.school_directory_credentials ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.official_school_cache ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.institution_name_decisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.replication_sync_state ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.vercel_schema_migrations
@@ -170,6 +206,12 @@ REVOKE ALL ON public.activity_review_acknowledgements
 REVOKE ALL ON public.activity_assignment_history
   FROM anon, authenticated;
 REVOKE ALL ON public.api_credentials
+  FROM anon, authenticated;
+REVOKE ALL ON public.school_directory_credentials
+  FROM anon, authenticated;
+REVOKE ALL ON public.official_school_cache
+  FROM anon, authenticated;
+REVOKE ALL ON public.institution_name_decisions
   FROM anon, authenticated;
 REVOKE ALL ON public.replication_sync_state
   FROM anon, authenticated;

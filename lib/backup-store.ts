@@ -11,11 +11,16 @@ import { ensureActivityReviewsReady } from "./activity-reviews";
 import { ensureActivityAssignmentHistoryReady } from "./activity-assignment-history";
 import { ensureRecordsReady } from "./records-store";
 import { ensureAiRecommendationsReady } from "./ai-recommendations";
+import { ensureInstitutionDecisionsReady } from "./institution-decisions";
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-07-20";
-const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set(["2026-07-18"]);
+export const BACKUP_SCHEMA_VERSION = "2026-07-21-institution-directory";
+const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
+  "2026-07-18",
+  "2026-07-20",
+  "2026-07-21",
+]);
 export const BACKUP_MAX_ROWS = 20_000;
 
 type BackupRow = Record<string, unknown>;
@@ -155,6 +160,19 @@ export const BACKUP_TABLES = [
     orderBy: "key",
   },
   {
+    name: "institution_name_decisions",
+    columns: [
+      "pair_key",
+      "left_key",
+      "right_key",
+      "left_organization",
+      "right_organization",
+      "decision",
+      "updated_at",
+    ],
+    orderBy: "pair_key",
+  },
+  {
     name: "organization_locations",
     columns: [
       "organization",
@@ -284,7 +302,9 @@ async function ensureBackupReady() {
   await ensureManagerAlertsReady();
   await ensureActivityReviewsReady();
   await ensureActivityAssignmentHistoryReady();
-  return getD1();
+  const d1 = getD1();
+  await ensureInstitutionDecisionsReady(d1);
+  return d1;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -519,6 +539,11 @@ function validateRows(
     "설정 키",
   );
   assertUnique(
+    data.institution_name_decisions,
+    (row) => requiredText(row.pair_key, "institution_name_decisions.pair_key"),
+    "기관 관계 확인",
+  );
+  assertUnique(
     data.organization_locations,
     (row) => requiredText(row.organization, "organization_locations.organization"),
     "기관 위치",
@@ -748,6 +773,8 @@ export async function createFullBackup(): Promise<FullBackup> {
         "OAuth 인증코드·토큰·비밀키",
         "OPENAI_API_KEY 등 서버 환경 비밀값",
         "화면에서 등록한 OpenAI API 키",
+        "나이스 학교정보 API 인증키",
+        "다시 조회할 수 있는 공식 학교정보 임시 캐시",
       ],
     },
     counts,
@@ -824,7 +851,8 @@ export async function validateFullBackup(
       (table.name === "ai_recommendations" ||
         table.name === "manager_alert_acknowledgements" ||
         table.name === "activity_review_acknowledgements" ||
-        table.name === "activity_assignment_history") &&
+        table.name === "activity_assignment_history" ||
+        table.name === "institution_name_decisions") &&
       rows === undefined &&
       input.counts[table.name] === undefined
     ) {
@@ -968,6 +996,7 @@ async function replaceDatabaseFromBackup(backup: FullBackup) {
     d1.prepare("DELETE FROM equipment_projects"),
     d1.prepare("DELETE FROM sales_campaigns"),
     d1.prepare("DELETE FROM app_settings"),
+    d1.prepare("DELETE FROM institution_name_decisions"),
     d1.prepare("DELETE FROM activities"),
     d1.prepare("DELETE FROM members"),
   ];
@@ -979,6 +1008,7 @@ async function replaceDatabaseFromBackup(backup: FullBackup) {
     "activity_assignment_history",
     "activity_review_acknowledgements",
     "app_settings",
+    "institution_name_decisions",
     "organization_locations",
     "sales_campaigns",
     "equipment_projects",

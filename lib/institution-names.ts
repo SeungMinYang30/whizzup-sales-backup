@@ -69,11 +69,14 @@ function fullSchoolName(
  * 정규화한다. 서로 다른 기관일 수 있는 철자 차이는 이 함수에서 합치지 않는다.
  */
 export function canonicalInstitutionName(value: unknown) {
-  const name = tidyInstitutionName(value);
+  const name = tidyInstitutionName(value)
+    .replace(/\s*[·ㆍ]\s*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!name) return "";
 
   const annex = name.match(
-    /^(.+?)\s*(?:초등학교|초)\s*(?:병설(?:\s*유치원)?|유치원)$/,
+    /^(.+?)\s*(?:초등학교|초교|초)\s*(?:병설(?:\s*유치원)?|병유|유치원)$/,
   );
   if (annex?.[1]?.trim()) {
     return `${annex[1].trim()}초등학교 병설유치원`;
@@ -89,12 +92,58 @@ export function canonicalInstitutionName(value: unknown) {
     return `${boysHigh[1].trim()}남자고등학교`;
   }
 
+  const girlsMiddle = name.match(/^(.+?)\s*(?:여자중학교|여중)$/);
+  if (girlsMiddle?.[1]?.trim()) {
+    return `${girlsMiddle[1].trim()}여자중학교`;
+  }
+
+  const boysMiddle = name.match(/^(.+?)\s*(?:남자중학교|남중)$/);
+  if (boysMiddle?.[1]?.trim()) {
+    return `${boysMiddle[1].trim()}남자중학교`;
+  }
+
+  const elementaryMiddle = name.match(
+    /^(.+?)\s*(?:초중학교|초중|초등학교중학교)$/,
+  );
+  if (elementaryMiddle?.[1]?.trim()) {
+    return `${elementaryMiddle[1].trim()}초중학교`;
+  }
+
+  const middleHigh = name.match(/^(.+?)\s*(?:중고등학교|중고)$/);
+  if (middleHigh?.[1]?.trim()) {
+    return `${middleHigh[1].trim()}중고등학교`;
+  }
+
+  if (/(?:외고|과고|예고|체고|공고|상고|여상)$/.test(name.replace(/\s+/g, ""))) {
+    return name;
+  }
+
   return (
-    fullSchoolName(name, "초", "초등학교") ||
-    fullSchoolName(name, "중", "중학교") ||
-    fullSchoolName(name, "고", "고등학교") ||
+    fullSchoolName(name, "초(?:교)?", "초등학교") ||
+    fullSchoolName(name, "중(?:교)?", "중학교") ||
+    fullSchoolName(name, "고(?:교)?", "고등학교") ||
     name
   );
+}
+
+/** 나이스 공식 학교명 검색에 사용할 안전한 확장 후보를 만든다. */
+export function officialSchoolSearchTerms(value: unknown) {
+  const original = tidyInstitutionName(value).replace(/\s+/g, "").trim();
+  const canonical = canonicalInstitutionName(value).replace(/\s+/g, "");
+  const terms = new Set<string>([canonical]);
+  const expansions: Array<[RegExp, string]> = [
+    [/^(.+)외고$/, "$1외국어고등학교"],
+    [/^(.+)과고$/, "$1과학고등학교"],
+    [/^(.+)예고$/, "$1예술고등학교"],
+    [/^(.+)체고$/, "$1체육고등학교"],
+    [/^(.+)공고$/, "$1공업고등학교"],
+    [/^(.+)상고$/, "$1상업고등학교"],
+    [/^(.+)여상$/, "$1여자상업고등학교"],
+  ];
+  expansions.forEach(([pattern, replacement]) => {
+    if (pattern.test(original)) terms.add(original.replace(pattern, replacement));
+  });
+  return [...terms].filter(Boolean).slice(0, 3);
 }
 
 export function institutionAliasKey(value: unknown) {
@@ -165,7 +214,11 @@ export function preferFullInstitutionName(...values: string[]) {
 type InstitutionKind =
   | "annex-kindergarten"
   | "elementary"
+  | "elementary-middle"
+  | "girls-middle"
+  | "boys-middle"
   | "middle"
+  | "middle-high"
   | "girls-high"
   | "boys-high"
   | "high"
@@ -199,7 +252,11 @@ function institutionFacilityType(value: string) {
 
 function institutionKind(value: string): InstitutionKind {
   if (value.endsWith("초등학교 병설유치원")) return "annex-kindergarten";
+  if (value.endsWith("초중학교")) return "elementary-middle";
   if (value.endsWith("초등학교")) return "elementary";
+  if (value.endsWith("여자중학교")) return "girls-middle";
+  if (value.endsWith("남자중학교")) return "boys-middle";
+  if (value.endsWith("중고등학교")) return "middle-high";
   if (value.endsWith("중학교")) return "middle";
   if (value.endsWith("여자고등학교")) return "girls-high";
   if (value.endsWith("남자고등학교")) return "boys-high";
@@ -209,7 +266,7 @@ function institutionKind(value: string): InstitutionKind {
 
 function institutionBaseKey(value: string) {
   return institutionAliasKey(value).replace(
-    /초등학교병설유치원$|여자고등학교$|남자고등학교$|초등학교$|중학교$|고등학교$/,
+    /초등학교병설유치원$|여자고등학교$|남자고등학교$|여자중학교$|남자중학교$|초중학교$|중고등학교$|초등학교$|중학교$|고등학교$/,
     "",
   );
 }
@@ -397,6 +454,7 @@ export function findSimilarInstitutionNames(
             candidateBase.endsWith(requestedBase)) &&
             Math.abs(requestedBase.length - candidateBase.length) <= 4));
       const likelySuffixTypo =
+        requestedKind === candidateKind &&
         fullDistance <= 1 &&
         Math.max(requestedKey.length, institutionAliasKey(value).length) >= 6;
       return {
