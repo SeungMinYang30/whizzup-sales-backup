@@ -9,6 +9,12 @@ export type CampaignImportRow = {
   region: string;
   notes: string;
   assignedMemberName: string;
+  schoolLevel: string;
+  supplyItems: string;
+  budgetAmount: string;
+  reviewNote: string;
+  existingOrganizations: string[];
+  confirmedOrganization: string;
 };
 
 const headers = [
@@ -260,6 +266,12 @@ function mapRows(rows: string[][]) {
       region: valueAt(row, regionIndex),
       notes: valueAt(row, notesIndex),
       assignedMemberName: valueAt(row, assigneeIndex),
+      schoolLevel: "",
+      supplyItems: "",
+      budgetAmount: "",
+      reviewNote: "",
+      existingOrganizations: [],
+      confirmedOrganization: "",
     }))
     .filter((row) => row.organization);
   const deduplicated = [
@@ -283,3 +295,4 @@ export async function parseCampaignFile(file: File) {
     : parseXlsx(await file.arrayBuffer());
   return mapRows(rows);
 }
+

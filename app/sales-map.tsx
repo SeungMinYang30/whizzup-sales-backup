@@ -97,7 +97,19 @@ type CampaignMember = {
 type CampaignImportPreview = {
   fileName: string;
   rows: CampaignImportRow[];
+  source: "excel" | "pdf";
 };
+
+function campaignTargetNotes(row: CampaignImportRow) {
+  return [
+    row.notes,
+    row.schoolLevel && `학교급·기관 구분: ${row.schoolLevel}`,
+    row.supplyItems && `지원·공급 내용: ${row.supplyItems}`,
+    row.budgetAmount && `기관별 예산: ${row.budgetAmount}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 type RouteOrigin = {
   label: string;
@@ -515,6 +527,7 @@ export default function SalesMapPage({
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapLayoutRef = useRef<HTMLDivElement | null>(null);
   const campaignFileRef = useRef<HTMLInputElement | null>(null);
+  const campaignPdfRef = useRef<HTMLInputElement | null>(null);
   const mapRef = useRef<KakaoMapInstance | null>(null);
   const sdkRef = useRef<KakaoMapsApi | null>(null);
   const overlaysRef = useRef<KakaoOverlay[]>([]);
@@ -550,6 +563,10 @@ export default function SalesMapPage({
   const [campaignName, setCampaignName] = useState("");
   const [campaignNotes, setCampaignNotes] = useState("");
   const [campaignImporting, setCampaignImporting] = useState(false);
+  const [campaignPdfAnalyzing, setCampaignPdfAnalyzing] = useState(false);
+  const [campaignDeleteTarget, setCampaignDeleteTarget] =
+    useState<SalesCampaign | null>(null);
+  const [campaignDeleting, setCampaignDeleting] = useState(false);
   const [assignmentSaving, setAssignmentSaving] = useState<number | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [routeOrder, setRouteOrder] = useState<string[]>([]);
@@ -572,6 +589,17 @@ export default function SalesMapPage({
   const [placeError, setPlaceError] = useState("");
   const [locationSaving, setLocationSaving] = useState(false);
   const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (!campaignDeleteTarget || campaignDeleting) return;
+    const closeWithEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setCampaignDeleteTarget(null);
+    };
+    document.addEventListener("keydown", closeWithEscape);
+    return () => document.removeEventListener("keydown", closeWithEscape);
+  }, [campaignDeleteTarget, campaignDeleting]);
 
   async function loadCampaigns() {
     try {
@@ -1196,7 +1224,7 @@ export default function SalesMapPage({
     if (!file) return;
     try {
       const rows = await parseCampaignFile(file);
-      setCampaignImport({ fileName: file.name, rows });
+      setCampaignImport({ fileName: file.name, rows, source: "excel" });
       setCampaignName(
         file.name
           .replace(/\.(xlsx|csv)$/i, "")
@@ -1214,31 +1242,137 @@ export default function SalesMapPage({
     }
   }
 
+  async function handleCampaignPdf(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || campaignPdfAnalyzing) return;
+    try {
+      setCampaignPdfAnalyzing(true);
+      setNotice("PDF에서 사업명과 기관 목록을 분석하고 있습니다.");
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/map/campaigns/pdf", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json()) as {
+        campaignName?: string;
+        notes?: string;
+        rows?: CampaignImportRow[];
+        error?: string;
+      };
+      if (!response.ok || !payload.rows?.length) {
+        throw new Error(payload.error || "PDF에서 기관 목록을 찾지 못했습니다.");
+      }
+      setCampaignImport({
+        fileName: file.name,
+        rows: payload.rows,
+        source: "pdf",
+      });
+      setCampaignName(
+        payload.campaignName?.trim() ||
+          file.name.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ").trim(),
+      );
+      setCampaignNotes(payload.notes?.trim() || "");
+      setNotice("");
+    } catch (caught) {
+      setNotice(
+        caught instanceof Error
+          ? caught.message
+          : "PDF를 분석하지 못했습니다.",
+      );
+    } finally {
+      setCampaignPdfAnalyzing(false);
+    }
+  }
+
+  function updateCampaignImportRow(
+    index: number,
+    key: keyof CampaignImportRow,
+    value: string,
+  ) {
+    setCampaignImport((current) =>
+      current
+        ? {
+            ...current,
+            rows: current.rows.map((row, rowIndex) =>
+              rowIndex === index ? { ...row, [key]: value } : row,
+            ),
+          }
+        : current,
+    );
+  }
+
+  function removeCampaignImportRow(index: number) {
+    setCampaignImport((current) =>
+      current
+        ? {
+            ...current,
+            rows: current.rows.filter((_, rowIndex) => rowIndex !== index),
+          }
+        : current,
+    );
+  }
+
   async function geocodeCampaignRows(rows: CampaignImportRow[]) {
     const maps = sdkRef.current;
     if (!maps) return { saved: 0, unresolved: rows.length };
+    const mapSdk = maps;
     let saved = 0;
     let unresolved = 0;
-    for (const row of rows) {
-      if (locationByOrganization.has(row.organization)) continue;
-      if (!row.address) {
-        unresolved += 1;
-        continue;
-      }
-      const results = await new Promise<KakaoAddressResult[]>((resolve) => {
-        const geocoder = new maps.services.Geocoder();
-        geocoder.addressSearch(row.address, (found, status) => {
-          resolve(status === maps.services.Status.OK ? found : []);
+    const pendingRows = rows.filter(
+      (row) => !locationByOrganization.has(row.organization),
+    );
+
+    async function saveRowLocation(row: CampaignImportRow) {
+      let latitude = 0;
+      let longitude = 0;
+      let address = row.address;
+      let roadAddress = "";
+      let placeName = row.organization;
+      let placeId = `campaign-${row.organization}`.slice(0, 100);
+
+      if (row.address) {
+        const addressResults = await new Promise<KakaoAddressResult[]>((resolve) => {
+          const geocoder = new mapSdk.services.Geocoder();
+          geocoder.addressSearch(row.address, (found, status) => {
+            resolve(status === mapSdk.services.Status.OK ? found : []);
+          });
         });
-      });
-      const result = results[0];
-      if (!result) {
-        unresolved += 1;
-        continue;
+        const result = addressResults[0];
+        if (result) {
+          latitude = Number(result.y);
+          longitude = Number(result.x);
+          roadAddress = result.road_address?.address_name ?? "";
+          address =
+            result.address?.address_name || result.address_name || row.address;
+        }
       }
-      const roadAddress = result.road_address?.address_name ?? "";
-      const address =
-        result.address?.address_name || result.address_name || row.address;
+
+      if (!latitude || !longitude) {
+        const queries = [
+          [row.region, row.organization].filter(Boolean).join(" "),
+          row.organization,
+        ].filter((query, index, values) => query && values.indexOf(query) === index);
+        let place: KakaoPlace | undefined;
+        for (const query of queries) {
+          const found = await searchKakaoKeyword(mapSdk, query);
+          if (found.length) {
+            place = found[0];
+            break;
+          }
+        }
+        if (place) {
+          latitude = Number(place.y);
+          longitude = Number(place.x);
+          address = place.address_name || row.address;
+          roadAddress = place.road_address_name || "";
+          placeName = place.place_name || row.organization;
+          placeId = place.id || placeId;
+        }
+      }
+
+      if (!latitude || !longitude) return false;
       const response = await fetch("/api/map/locations", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1247,22 +1381,27 @@ export default function SalesMapPage({
           region: row.region,
           address,
           roadAddress,
-          latitude: Number(result.y),
-          longitude: Number(result.x),
-          placeName: row.organization,
-          placeId: `campaign-${row.organization}`.slice(0, 100),
+          latitude,
+          longitude,
+          placeName,
+          placeId,
         }),
       });
       const payload = (await response.json()) as {
         location?: Record<string, unknown>;
         error?: string;
       };
-      if (!response.ok || !payload.location) {
-        unresolved += 1;
-        continue;
-      }
+      if (!response.ok || !payload.location) return false;
       mergeSavedLocation(normalizeLocation(payload.location));
-      saved += 1;
+      return true;
+    }
+
+    for (let index = 0; index < pendingRows.length; index += 5) {
+      const results = await Promise.all(
+        pendingRows.slice(index, index + 5).map(saveRowLocation),
+      );
+      saved += results.filter(Boolean).length;
+      unresolved += results.filter((result) => !result).length;
     }
     return { saved, unresolved };
   }
@@ -1284,6 +1423,7 @@ export default function SalesMapPage({
       );
       const targetRows = campaignImport.rows.map((row) => ({
         ...row,
+        notes: campaignTargetNotes(row),
         assignedMemberId:
           memberByName.get(
             row.assignedMemberName
@@ -1293,13 +1433,28 @@ export default function SalesMapPage({
           memberByName.get(row.assignedMemberName.toLocaleLowerCase()) ??
           null,
       }));
+      const decisionRows =
+        campaignImport.source === "pdf"
+          ? campaignImport.rows
+          : campaignImport.rows.filter((row) => row.existingOrganizations.length);
+      const institutionDecisions = Object.fromEntries(
+        decisionRows
+          .map((row) => [
+            row.organization,
+            row.confirmedOrganization
+              ? { confirmedOrganization: row.confirmedOrganization }
+              : { institutionSeparate: true },
+          ]),
+      );
       const { response, payload: rawPayload } =
         await fetchWithInstitutionConfirmation("/api/map/campaigns", {
           method: "POST",
           body: {
-          name: campaignName.trim(),
-          notes: campaignNotes.trim(),
+            name: campaignName.trim(),
+            notes: campaignNotes.trim(),
+            importSource: campaignImport.source,
             targets: targetRows,
+            institutionDecisions,
           },
         });
       const payload = rawPayload as {
@@ -1312,8 +1467,10 @@ export default function SalesMapPage({
         throw new Error(payload.error || "영업 카테고리를 등록하지 못했습니다.");
       }
       const campaign = normalizeCampaign(payload.campaign);
-      await onRecordsChanged();
-      await loadCampaigns();
+      const rowsToMap = payload.targets?.length
+        ? payload.targets
+        : campaignImport.rows;
+      const targetCount = payload.targetCount ?? campaignImport.rows.length;
       setCampaignImport(null);
       setCampaignName("");
       setCampaignNotes("");
@@ -1325,15 +1482,25 @@ export default function SalesMapPage({
       setLocationFilter("전체 위치");
       onSearchChange("");
       changeMobileView("list");
-      const mapped = await geocodeCampaignRows(
-        payload.targets?.length ? payload.targets : campaignImport.rows,
-      );
-      if (mapped.saved) await onRecordsChanged();
+      setCampaignImporting(false);
       setNotice(
-        mapped.unresolved
-          ? `${payload.targetCount ?? campaignImport.rows.length}개 기관을 등록하고 ${mapped.saved}곳의 위치를 찾았습니다. ${mapped.unresolved}곳은 목록에서 위치를 확인해 주세요.`
-          : `${payload.targetCount ?? campaignImport.rows.length}개 기관과 지도 위치를 등록했습니다.`,
+        `${targetCount}개 기관 등록을 완료했습니다. 지도 위치는 뒤에서 자동으로 찾고 있습니다.`,
       );
+      void Promise.allSettled([onRecordsChanged(), loadCampaigns()]);
+      void geocodeCampaignRows(rowsToMap)
+        .then(async (mapped) => {
+          if (mapped.saved) await onRecordsChanged();
+          setNotice(
+            mapped.unresolved
+              ? `${targetCount}개 기관 등록 완료 · 지도 위치 ${mapped.saved}곳 확인 · ${mapped.unresolved}곳은 위치 확인이 필요합니다.`
+              : `${targetCount}개 기관과 지도 위치 등록을 완료했습니다.`,
+          );
+        })
+        .catch(() => {
+          setNotice(
+            `${targetCount}개 기관 등록은 완료했습니다. 지도 위치는 목록에서 다시 확인해 주세요.`,
+          );
+        });
     } catch (caught) {
       setNotice(
         caught instanceof Error
@@ -1403,19 +1570,19 @@ export default function SalesMapPage({
     }
   }
 
-  async function removeCampaign(campaign: SalesCampaign) {
-    if (
-      !window.confirm(
-        `${campaign.name} 카테고리를 삭제할까요?\n기관별 관리에 추가된 기록은 그대로 유지됩니다.`,
-      )
-    ) {
-      return;
-    }
+  async function removeCampaign(
+    campaign: SalesCampaign,
+    deleteRegisteredInstitutions: boolean,
+  ) {
     try {
+      setCampaignDeleting(true);
       const response = await fetch("/api/map/campaigns", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ campaignId: campaign.id }),
+        body: JSON.stringify({
+          campaignId: campaign.id,
+          deleteRegisteredInstitutions,
+        }),
       });
       const payload = (await response.json()) as {
         message?: string;
@@ -1424,8 +1591,9 @@ export default function SalesMapPage({
       if (!response.ok) {
         throw new Error(payload.error || "영업 카테고리를 삭제하지 못했습니다.");
       }
+      setCampaignDeleteTarget(null);
       selectCampaign("all");
-      await loadCampaigns();
+      await Promise.all([loadCampaigns(), onRecordsChanged()]);
       setNotice(payload.message || "영업 카테고리를 삭제했습니다.");
     } catch (caught) {
       setNotice(
@@ -1433,6 +1601,8 @@ export default function SalesMapPage({
           ? caught.message
           : "영업 카테고리를 삭제하지 못했습니다.",
       );
+    } finally {
+      setCampaignDeleting(false);
     }
   }
 
@@ -1987,6 +2157,21 @@ export default function SalesMapPage({
             </p>
           </div>
           <div className="sales-campaign-actions">
+            <button
+              type="button"
+              className="campaign-pdf-button"
+              onClick={() => campaignPdfRef.current?.click()}
+              disabled={campaignPdfAnalyzing}
+            >
+              {campaignPdfAnalyzing ? "PDF 분석 중" : "PDF로 등록"}
+            </button>
+            <input
+              ref={campaignPdfRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              onChange={(event) => void handleCampaignPdf(event)}
+              hidden
+            />
             <button type="button" onClick={downloadCampaignTemplate}>
               엑셀 양식 다운로드
             </button>
@@ -2041,7 +2226,7 @@ export default function SalesMapPage({
             {canManageCampaigns && (
               <button
                 type="button"
-                onClick={() => void removeCampaign(activeCampaign)}
+                onClick={() => setCampaignDeleteTarget(activeCampaign)}
               >
                 카테고리 삭제
               </button>
@@ -2563,6 +2748,67 @@ export default function SalesMapPage({
         </div>
       </div>
 
+      {campaignDeleteTarget && (
+        <div className="map-location-layer" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            className="map-location-backdrop"
+            aria-label="캠페인 삭제 창 닫기"
+            onClick={() => {
+              if (!campaignDeleting) setCampaignDeleteTarget(null);
+            }}
+          />
+          <section className="map-location-dialog campaign-delete-dialog">
+            <header>
+              <div>
+                <span className="section-kicker">CAMPAIGN DELETE</span>
+                <h2>이 캠페인을 어떻게 삭제할까요?</h2>
+                <p>{campaignDeleteTarget.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCampaignDeleteTarget(null)}
+                disabled={campaignDeleting}
+                aria-label="캠페인 삭제 창 닫기"
+              >
+                ×
+              </button>
+            </header>
+            <div className="campaign-delete-options">
+              <button
+                type="button"
+                onClick={() => void removeCampaign(campaignDeleteTarget, false)}
+                disabled={campaignDeleting}
+              >
+                <strong>캠페인만 삭제</strong>
+                <span>지도 카테고리만 지우고 기관과 기존 영업 기록은 유지합니다.</span>
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={() => void removeCampaign(campaignDeleteTarget, true)}
+                disabled={campaignDeleting}
+              >
+                <strong>캠페인과 등록 기관 함께 삭제</strong>
+                <span>
+                  이 캠페인이 만든 등록 기록만 지웁니다. 다른 영업 기록이 있는
+                  기관은 삭제되지 않습니다.
+                </span>
+              </button>
+            </div>
+            <footer>
+              <button
+                type="button"
+                onClick={() => setCampaignDeleteTarget(null)}
+                disabled={campaignDeleting}
+              >
+                취소
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
       {campaignImport && (
         <div className="map-location-layer" role="dialog" aria-modal="true">
           <button
@@ -2574,7 +2820,9 @@ export default function SalesMapPage({
             }}
           />
           <form
-            className="campaign-import-dialog"
+            className={`campaign-import-dialog ${
+              campaignImport.source === "pdf" ? "campaign-pdf-dialog" : ""
+            }`}
             onSubmit={(event) => {
               event.preventDefault();
               void importCampaign();
@@ -2582,15 +2830,21 @@ export default function SalesMapPage({
           >
             <header>
               <div>
-                <span className="section-kicker">EXCEL IMPORT</span>
-                <h2>영업 카테고리 만들기</h2>
+                <span className="section-kicker">
+                  {campaignImport.source === "pdf" ? "PDF REVIEW" : "EXCEL IMPORT"}
+                </span>
+                <h2>
+                  {campaignImport.source === "pdf"
+                    ? "PDF 분석 결과 확인"
+                    : "영업 카테고리 만들기"}
+                </h2>
                 <p>
                   {campaignImport.fileName} · 기관 {campaignImport.rows.length}곳
                 </p>
               </div>
               <button
                 type="button"
-                aria-label="엑셀 가져오기 닫기"
+                aria-label="카테고리 가져오기 닫기"
                 onClick={() => setCampaignImport(null)}
                 disabled={campaignImporting}
               >
@@ -2619,31 +2873,141 @@ export default function SalesMapPage({
               </label>
             </div>
             <div className="campaign-import-guide">
-              등록하면 모든 기관이 <strong>기관별 관리</strong>에도 자동 추가되고,
-              주소가 있는 기관은 카카오 지도에서 위치를 자동으로 찾습니다.
-            </div>
-            <div className="campaign-import-preview">
-              <div className="campaign-preview-head">
-                <span>기관명</span>
-                <span>주소</span>
-                <span>전화번호</span>
-                <span>영업 담당자</span>
-              </div>
-              {campaignImport.rows.slice(0, 7).map((row) => (
-                <div
-                  className="campaign-preview-row"
-                  key={`${row.organization}-${row.address}`}
-                >
-                  <strong>{row.organization}</strong>
-                  <span>{row.address || "미입력"}</span>
-                  <span>{row.phone || "미입력"}</span>
-                  <span>{row.assignedMemberName || "가져온 뒤 배정"}</span>
-                </div>
-              ))}
-              {campaignImport.rows.length > 7 && (
-                <p>외 {campaignImport.rows.length - 7}개 기관</p>
+              {campaignImport.source === "pdf" ? (
+                <>
+                  <strong>아직 저장되지 않았습니다.</strong> 사업명과 기관별 인식
+                  내용을 수정한 뒤 최종 등록해 주세요. 같은 기관은 기존 기록에
+                  연결되고, 주소가 있으면 지도 위치를 자동으로 찾습니다.
+                </>
+              ) : (
+                <>
+                  등록하면 모든 기관이 <strong>기관별 관리</strong>에도 자동 추가되고,
+                  주소가 있는 기관은 카카오 지도에서 위치를 자동으로 찾습니다.
+                </>
               )}
             </div>
+            {campaignImport.source === "pdf" ? (
+              <div className="campaign-pdf-preview">
+                <div className="campaign-pdf-preview-head">
+                  <span>기관명</span>
+                  <span>지원청·지역</span>
+                  <span>학교급</span>
+                  <span>지원·공급 내용</span>
+                  <span>기관별 예산</span>
+                  <span>기존 기관 확인</span>
+                  <span>확인할 내용</span>
+                  <span aria-hidden="true" />
+                </div>
+                {campaignImport.rows.map((row, index) => (
+                  <div className="campaign-pdf-preview-row" key={`${index}-${row.organization}`}>
+                    <input
+                      value={row.organization}
+                      onChange={(event) =>
+                        updateCampaignImportRow(index, "organization", event.target.value)
+                      }
+                      aria-label={`${index + 1}번 기관명`}
+                      required
+                    />
+                    <input
+                      value={row.region}
+                      onChange={(event) =>
+                        updateCampaignImportRow(index, "region", event.target.value)
+                      }
+                      aria-label={`${row.organization} 지원청 또는 지역`}
+                      placeholder="미입력"
+                    />
+                    <input
+                      value={row.schoolLevel}
+                      onChange={(event) =>
+                        updateCampaignImportRow(index, "schoolLevel", event.target.value)
+                      }
+                      aria-label={`${row.organization} 학교급`}
+                      placeholder="미입력"
+                    />
+                    <textarea
+                      value={row.supplyItems}
+                      onChange={(event) =>
+                        updateCampaignImportRow(index, "supplyItems", event.target.value)
+                      }
+                      aria-label={`${row.organization} 지원 또는 공급 내용`}
+                      placeholder="미입력"
+                      rows={2}
+                    />
+                    <input
+                      value={row.budgetAmount}
+                      onChange={(event) =>
+                        updateCampaignImportRow(index, "budgetAmount", event.target.value)
+                      }
+                      aria-label={`${row.organization} 기관별 예산`}
+                      placeholder="미입력"
+                    />
+                    {row.existingOrganizations.length ? (
+                      <select
+                        value={row.confirmedOrganization}
+                        onChange={(event) =>
+                          updateCampaignImportRow(
+                            index,
+                            "confirmedOrganization",
+                            event.target.value,
+                          )
+                        }
+                        aria-label={`${row.organization} 기존 기관 연결`}
+                      >
+                        <option value="">신규·별도 기관</option>
+                        {row.existingOrganizations.map((organization) => (
+                          <option value={organization} key={organization}>
+                            기존 {organization}과 연결
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="campaign-new-institution">신규 기관</span>
+                    )}
+                    <textarea
+                      className={row.reviewNote ? "needs-review" : ""}
+                      value={row.reviewNote}
+                      onChange={(event) =>
+                        updateCampaignImportRow(index, "reviewNote", event.target.value)
+                      }
+                      aria-label={`${row.organization} 확인할 내용`}
+                      placeholder="확인 사항 없음"
+                      rows={2}
+                    />
+                    <button
+                      type="button"
+                      className="campaign-row-remove"
+                      onClick={() => removeCampaignImportRow(index)}
+                      aria-label={`${row.organization} 제외`}
+                    >
+                      제외
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="campaign-import-preview">
+                <div className="campaign-preview-head">
+                  <span>기관명</span>
+                  <span>주소</span>
+                  <span>전화번호</span>
+                  <span>영업 담당자</span>
+                </div>
+                {campaignImport.rows.slice(0, 7).map((row) => (
+                  <div
+                    className="campaign-preview-row"
+                    key={`${row.organization}-${row.address}`}
+                  >
+                    <strong>{row.organization}</strong>
+                    <span>{row.address || "미입력"}</span>
+                    <span>{row.phone || "미입력"}</span>
+                    <span>{row.assignedMemberName || "가져온 뒤 배정"}</span>
+                  </div>
+                ))}
+                {campaignImport.rows.length > 7 && (
+                  <p>외 {campaignImport.rows.length - 7}개 기관</p>
+                )}
+              </div>
+            )}
             <footer>
               <button
                 type="button"
@@ -2655,7 +3019,11 @@ export default function SalesMapPage({
               <button
                 type="submit"
                 className="campaign-import-submit"
-                disabled={!campaignName.trim() || campaignImporting}
+                disabled={
+                  !campaignName.trim() ||
+                  !campaignImport.rows.length ||
+                  campaignImporting
+                }
               >
                 {campaignImporting
                   ? "기관·위치 등록 중"

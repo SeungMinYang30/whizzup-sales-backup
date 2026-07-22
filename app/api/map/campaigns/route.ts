@@ -110,6 +110,7 @@ export async function POST(request: Request) {
     const payload = (await request.json()) as {
       name?: unknown;
       notes?: unknown;
+      importSource?: unknown;
       targets?: CampaignTargetInput[];
       institutionDecisions?: Record<
         string,
@@ -121,6 +122,10 @@ export async function POST(request: Request) {
     };
     const name = clean(payload.name).slice(0, 120);
     const notes = clean(payload.notes).slice(0, 1000);
+    const fromPdf = clean(payload.importSource) === "pdf";
+    const sourceName = fromPdf
+      ? "영업지도 PDF 가져오기"
+      : "영업지도 엑셀 가져오기";
     const targets = [
       ...new Map(
         (Array.isArray(payload.targets) ? payload.targets : [])
@@ -180,11 +185,13 @@ export async function POST(request: Request) {
           : null;
       const institutionDecision =
         payload.institutionDecisions?.[target.organization] ?? {};
+      const reviewedNewPdfInstitution =
+        fromPdf && institutionDecision.institutionSeparate === true;
       const record = await insertActivity(
         {
           activityDate: localDate(),
           dateConfidence: "확정",
-          activityType: "영업 대상",
+          activityType: fromPdf ? "사업 대상 등록" : "영업 대상",
           category: "영업 캠페인",
           contactMethod: "기타",
           region: target.region,
@@ -197,15 +204,17 @@ export async function POST(request: Request) {
           nextAction: "담당자 배정 및 첫 컨택",
           contactName: target.contactName,
           contactPhone: target.phone,
-          sourceChat: "영업지도 엑셀 가져오기",
+          sourceChat: sourceName,
           notes: [target.address && `주소: ${target.address}`, target.notes]
             .filter(Boolean)
             .join("\n"),
           progressManager: "",
+          skipOfficialSchoolLookup: fromPdf,
+          skipInstitutionStateLookup: reviewedNewPdfInstitution,
           ...institutionDecision,
         },
         member,
-        "영업지도 엑셀 가져오기",
+        sourceName,
       );
       const activityId = Number(record.id);
       const normalizedOrganization = clean(record.organization);
@@ -341,8 +350,13 @@ export async function PUT(request: Request) {
 export async function DELETE(request: Request) {
   try {
     await requireApprovedMember();
-    const payload = (await request.json()) as { campaignId?: unknown };
+    const payload = (await request.json()) as {
+      campaignId?: unknown;
+      deleteRegisteredInstitutions?: unknown;
+    };
     const campaignId = Number(payload.campaignId);
+    const deleteRegisteredInstitutions =
+      payload.deleteRegisteredInstitutions === true;
     if (!Number.isInteger(campaignId) || campaignId < 1) {
       return Response.json(
         { error: "삭제할 영업 카테고리를 선택해 주세요." },
@@ -360,17 +374,117 @@ export async function DELETE(request: Request) {
         { status: 404 },
       );
     }
-    await d1.batch([
-      d1
+    if (deleteRegisteredInstitutions) {
+      const targetRows = await d1
+        .prepare(
+          `SELECT organization, activity_id
+           FROM sales_campaign_targets
+           WHERE campaign_id = ?`,
+        )
+        .bind(campaignId)
+        .all<{ organization: string; activity_id: number | null }>();
+      const activityIds = [
+        ...new Set(
+          targetRows.results
+            .map((row) => Number(row.activity_id))
+            .filter((id) => Number.isInteger(id) && id > 0),
+        ),
+      ];
+      const organizations = [
+        ...new Set(
+          targetRows.results
+            .map((row) => clean(row.organization))
+            .filter(Boolean),
+        ),
+      ];
+
+      if (activityIds.length) {
+        const placeholders = activityIds.map(() => "?").join(", ");
+        await d1.batch([
+          d1
+            .prepare(
+              `DELETE FROM ai_recommendations WHERE activity_id IN (${placeholders})`,
+            )
+            .bind(...activityIds),
+          d1
+            .prepare(
+              `DELETE FROM activity_authors WHERE activity_id IN (${placeholders})`,
+            )
+            .bind(...activityIds),
+          d1
+            .prepare(
+              `DELETE FROM activity_assignment_history WHERE activity_id IN (${placeholders})`,
+            )
+            .bind(...activityIds),
+          d1
+            .prepare(
+              `DELETE FROM activity_review_acknowledgements WHERE activity_id IN (${placeholders})`,
+            )
+            .bind(...activityIds),
+        ]);
+      }
+      await d1
         .prepare("DELETE FROM sales_campaign_targets WHERE campaign_id = ?")
-        .bind(campaignId),
-      d1.prepare("DELETE FROM sales_campaigns WHERE id = ?").bind(campaignId),
-    ]);
+        .bind(campaignId)
+        .run();
+      if (activityIds.length) {
+        const placeholders = activityIds.map(() => "?").join(", ");
+        await d1
+          .prepare(`DELETE FROM activities WHERE id IN (${placeholders})`)
+          .bind(...activityIds)
+          .run();
+      }
+      await d1
+        .prepare("DELETE FROM sales_campaigns WHERE id = ?")
+        .bind(campaignId)
+        .run();
+
+      for (let index = 0; index < organizations.length; index += 50) {
+        const chunk = organizations.slice(index, index + 50);
+        const placeholders = chunk.map(() => "?").join(", ");
+        await d1.batch([
+          d1
+            .prepare(
+              `DELETE FROM organization_locations
+               WHERE organization IN (${placeholders})
+                 AND NOT EXISTS (
+                   SELECT 1 FROM activities
+                   WHERE activities.organization = organization_locations.organization
+                 )
+                 AND NOT EXISTS (
+                   SELECT 1 FROM sales_campaign_targets
+                   WHERE sales_campaign_targets.organization = organization_locations.organization
+                 )`,
+            )
+            .bind(...chunk),
+          d1
+            .prepare(
+              `DELETE FROM manager_alert_acknowledgements
+               WHERE organization IN (${placeholders})
+                 AND NOT EXISTS (
+                   SELECT 1 FROM activities
+                   WHERE activities.organization = manager_alert_acknowledgements.organization
+                 )`,
+            )
+            .bind(...chunk),
+        ]);
+      }
+    } else {
+      await d1.batch([
+        d1
+          .prepare("DELETE FROM sales_campaign_targets WHERE campaign_id = ?")
+          .bind(campaignId),
+        d1.prepare("DELETE FROM sales_campaigns WHERE id = ?").bind(campaignId),
+      ]);
+    }
     return Response.json({
       ok: true,
-      message: `${campaign.name} 카테고리를 삭제했습니다. 기관별 기록은 유지됩니다.`,
+      message: deleteRegisteredInstitutions
+        ? `${campaign.name} 캠페인과 이 캠페인이 만든 기관 등록 기록을 삭제했습니다. 다른 영업 기록이 있는 기관은 유지됩니다.`
+        : `${campaign.name} 캠페인만 삭제했습니다. 기관별 기록은 유지됩니다.`,
     });
   } catch (error) {
     return accessErrorResponse(error);
   }
 }
+

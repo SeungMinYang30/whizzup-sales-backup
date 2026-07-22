@@ -8,6 +8,7 @@ import {
 } from "./institution-names";
 import { ensureMapReady } from "./map-store";
 import { ensureRecordsReady } from "./records-store";
+import { ensureQuotationDocumentsReady } from "./quotation-documents";
 
 export type InstitutionMergeCounts = {
   organization: string;
@@ -85,6 +86,7 @@ export async function inspectInstitutionMerge(organizations: string[]) {
     ensureMapReady(),
     ensureCampaignsReady(),
     ensureAiRecommendationsReady(),
+    ensureQuotationDocumentsReady(),
   ]);
   const counts = await Promise.all(
     organizations.map((organization) => countsForOrganization(organization)),
@@ -109,6 +111,7 @@ export async function mergeInstitutionRecords(
     ensureMapReady(),
     ensureCampaignsReady(),
     ensureAiRecommendationsReady(),
+    ensureQuotationDocumentsReady(),
   ]);
   const duplicates = await d1
     .prepare(
@@ -212,6 +215,11 @@ export async function mergeInstitutionRecords(
       .bind(canonical, alias, canonical, alias),
     d1
       .prepare(
+        "UPDATE quotation_documents SET organization = ? WHERE organization = ?",
+      )
+      .bind(canonical, alias),
+    d1
+      .prepare(
         `INSERT INTO app_settings (key, value, updated_by, updated_at)
          VALUES (?, ?, ?, CURRENT_TIMESTAMP)
          ON CONFLICT(key) DO UPDATE SET
@@ -227,3 +235,4 @@ export async function mergeInstitutionRecords(
   ]);
   return countsForOrganization(canonical);
 }
+

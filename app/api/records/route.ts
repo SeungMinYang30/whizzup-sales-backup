@@ -38,6 +38,12 @@ import {
   compactShareSummary,
   replaceOrganizationReferences,
 } from "../../../lib/share-text";
+import { ensureQuotationDocumentsReady } from "../../../lib/quotation-documents";
+import {
+  createTrashBatch,
+  ensureTrashReady,
+  type TrashSnapshot,
+} from "../../../lib/trash-store";
 
 export const dynamic = "force-dynamic";
 
@@ -423,6 +429,7 @@ export async function PUT(request: Request) {
         .first();
       if (!oldOrganizationStillExists) {
         await ensureAiRecommendationsReady();
+        await ensureQuotationDocumentsReady();
         await d1.batch([
           d1
             .prepare(
@@ -484,6 +491,11 @@ export async function PUT(request: Request) {
                WHERE organization = ?`,
             )
             .bind(organization, previous.organization),
+          d1
+            .prepare(
+              "UPDATE quotation_documents SET organization = ? WHERE organization = ?",
+            )
+            .bind(organization, previous.organization),
         ]);
       }
     }
@@ -524,9 +536,163 @@ export async function PUT(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function PATCH(request: Request) {
   try {
     await requireApprovedMember();
+    const payload = (await request.json()) as Record<string, unknown>;
+    const ids = Array.isArray(payload.ids)
+      ? [...new Set(payload.ids.map(Number))].filter(
+          (id) => Number.isInteger(id) && id > 0,
+        )
+      : [];
+    const budgetType = clean(payload.budgetType).slice(0, 120);
+    const budgetAmount = clean(payload.budgetAmount).slice(0, 120);
+    const followUpDate = clean(payload.followUpDate).slice(0, 10);
+    const nextAction = clean(payload.nextAction).slice(0, 500);
+    const requestedStatus = clean(payload.status).slice(0, 40);
+    const requestedAwardStatus = clean(payload.awardStatus).slice(0, 40);
+    const requestedAwardCompany = clean(payload.awardCompany).slice(0, 120);
+    const applyFields = new Set(
+      Array.isArray(payload.applyFields)
+        ? payload.applyFields.map(clean)
+        : ["budget"],
+    );
+    const allowedFields = new Set([
+      "budget",
+      "progressManager",
+      "followUpDate",
+      "nextAction",
+      "status",
+      "awardStatus",
+    ]);
+    const onlyEmpty = payload.onlyEmpty !== false;
+    if (!ids.length || ids.length > 500) {
+      return Response.json(
+        { error: "한 번에 변경할 기록을 1~500건 선택해 주세요." },
+        { status: 400 },
+      );
+    }
+    if (
+      !applyFields.size ||
+      [...applyFields].some((field) => !allowedFields.has(field))
+    ) {
+      return Response.json(
+        { error: "일괄 변경할 항목을 올바르게 선택해 주세요." },
+        { status: 400 },
+      );
+    }
+    const d1 = await ensureRecordsReady();
+    const registeredSalesNames = await listRegisteredSalesNames(d1);
+    const progressManager = canonicalProgressManagerName(
+      payload.progressManager,
+      registeredSalesNames,
+    );
+    if (
+      (applyFields.has("budget") && !budgetType && !budgetAmount) ||
+      (applyFields.has("progressManager") &&
+        (!progressManager || !registeredSalesNames.includes(progressManager))) ||
+      (applyFields.has("followUpDate") && !/^\d{4}-\d{2}-\d{2}$/.test(followUpDate)) ||
+      (applyFields.has("nextAction") && !nextAction) ||
+      (applyFields.has("status") && !requestedStatus) ||
+      (applyFields.has("awardStatus") &&
+        !["미정", "위즈업 수주", "타업체 수주"].includes(requestedAwardStatus)) ||
+      (applyFields.has("awardStatus") &&
+        requestedAwardStatus === "타업체 수주" &&
+        !requestedAwardCompany)
+    ) {
+      return Response.json(
+        { error: "선택한 일괄 변경 항목의 입력값을 확인해 주세요." },
+        { status: 400 },
+      );
+    }
+    await d1.batch(
+      ids.map((id) =>
+        d1
+          .prepare(`UPDATE activities SET
+            budget_type = CASE
+              WHEN ? = 0 OR ? = '' THEN budget_type
+              WHEN ? = 1 AND TRIM(COALESCE(budget_type, '')) <> '' THEN budget_type
+              ELSE ? END,
+            budget_amount = CASE
+              WHEN ? = 0 OR ? = '' THEN budget_amount
+              WHEN ? = 1 AND TRIM(COALESCE(budget_amount, '')) <> '' THEN budget_amount
+              ELSE ? END,
+            progress_manager = CASE
+              WHEN ? = 0 THEN progress_manager
+              WHEN ? = 1 AND TRIM(COALESCE(progress_manager, '')) <> '' THEN progress_manager
+              ELSE ? END,
+            follow_up_date = CASE
+              WHEN ? = 0 THEN follow_up_date
+              WHEN ? = 1 AND TRIM(COALESCE(follow_up_date, '')) <> '' THEN follow_up_date
+              ELSE ? END,
+            follow_up_required = CASE
+              WHEN ? = 1 AND (? = 0 OR TRIM(COALESCE(follow_up_date, '')) = '') THEN 1
+              ELSE follow_up_required END,
+            next_action = CASE
+              WHEN ? = 0 THEN next_action
+              WHEN ? = 1 AND TRIM(COALESCE(next_action, '')) <> '' THEN next_action
+              ELSE ? END,
+            status = CASE
+              WHEN ? = 1 AND ? = '위즈업 수주' THEN '수주 후 진행'
+              WHEN ? = 1 AND ? = '타업체 수주' THEN '영업 종료'
+              WHEN ? = 1 AND ? = '미정' AND status IN ('수주 후 진행', '영업 종료') THEN '진행 중'
+              WHEN ? = 1 THEN ?
+              ELSE status END,
+            award_status = CASE WHEN ? = 1 THEN ? ELSE award_status END,
+            award_company = CASE
+              WHEN ? = 0 THEN award_company
+              WHEN ? = '위즈업 수주' THEN '위즈업'
+              WHEN ? = '타업체 수주' THEN ?
+              ELSE '' END,
+            updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?`)
+          .bind(
+            applyFields.has("budget") ? 1 : 0,
+            budgetType,
+            onlyEmpty ? 1 : 0,
+            budgetType,
+            applyFields.has("budget") ? 1 : 0,
+            budgetAmount,
+            onlyEmpty ? 1 : 0,
+            budgetAmount,
+            applyFields.has("progressManager") ? 1 : 0,
+            onlyEmpty ? 1 : 0,
+            progressManager,
+            applyFields.has("followUpDate") ? 1 : 0,
+            onlyEmpty ? 1 : 0,
+            followUpDate,
+            applyFields.has("followUpDate") ? 1 : 0,
+            onlyEmpty ? 1 : 0,
+            applyFields.has("nextAction") ? 1 : 0,
+            onlyEmpty ? 1 : 0,
+            nextAction,
+            applyFields.has("awardStatus") ? 1 : 0,
+            requestedAwardStatus,
+            applyFields.has("awardStatus") ? 1 : 0,
+            requestedAwardStatus,
+            applyFields.has("awardStatus") ? 1 : 0,
+            requestedAwardStatus,
+            applyFields.has("status") ? 1 : 0,
+            requestedStatus,
+            applyFields.has("awardStatus") ? 1 : 0,
+            requestedAwardStatus,
+            applyFields.has("awardStatus") ? 1 : 0,
+            requestedAwardStatus,
+            requestedAwardStatus,
+            requestedAwardCompany,
+            id,
+          ),
+      ),
+    );
+    return Response.json({ updatedIds: ids });
+  } catch (error) {
+    return accessErrorResponse(error);
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const member = await requireApprovedMember();
     const payload = (await request.json()) as {
       id?: number;
       ids?: unknown[];
@@ -569,33 +735,153 @@ export async function DELETE(request: Request) {
     await ensureAiRecommendationsReady();
     await ensureActivityAssignmentHistoryReady();
     await ensureActivityReviewsReady();
+    await ensureTrashReady();
     const selected = ids.length ? ids : organizations;
     const chunks = Array.from(
       { length: Math.ceil(selected.length / 50) },
       (_, index) => selected.slice(index * 50, index * 50 + 50),
     );
-    let deletedCount = 0;
-    const locationCleanupCandidates = new Set(organizations);
+
+    const activityRows: Record<string, unknown>[] = [];
     for (const chunk of chunks) {
       const placeholders = chunk.map(() => "?").join(", ");
       const whereClause = ids.length
         ? `id IN (${placeholders})`
         : `organization IN (${placeholders})`;
-      if (ids.length) {
-        const affectedOrganizations = await d1
-          .prepare(
-            `SELECT DISTINCT organization FROM activities WHERE ${whereClause}`,
-          )
-          .bind(...chunk)
-          .all<{ organization: string }>();
-        affectedOrganizations.results.forEach((row) => {
-          if (row.organization) locationCleanupCandidates.add(row.organization);
-        });
-      }
-      const count = await d1
-        .prepare(`SELECT COUNT(*) AS count FROM activities WHERE ${whereClause}`)
+      const result = await d1
+        .prepare(`SELECT * FROM activities WHERE ${whereClause}`)
         .bind(...chunk)
-        .first<{ count: number }>();
+        .all<Record<string, unknown>>();
+      activityRows.push(...result.results);
+    }
+    const deletedCount = activityRows.length;
+    const selectedActivityIds = activityRows
+      .map((row) => Number(row.id))
+      .filter((id) => Number.isSafeInteger(id) && id > 0);
+    const affectedOrganizations = [
+      ...new Set(
+        activityRows
+          .map((row) => clean(row.organization))
+          .filter(Boolean),
+      ),
+    ];
+    const selectedCountByOrganization = new Map<string, number>();
+    activityRows.forEach((row) => {
+      const organization = clean(row.organization);
+      if (!organization) return;
+      selectedCountByOrganization.set(
+        organization,
+        (selectedCountByOrganization.get(organization) || 0) + 1,
+      );
+    });
+    const totalCountByOrganization = new Map<string, number>();
+    for (let index = 0; index < affectedOrganizations.length; index += 50) {
+      const chunk = affectedOrganizations.slice(index, index + 50);
+      const placeholders = chunk.map(() => "?").join(", ");
+      const result = await d1
+        .prepare(
+          `SELECT organization, COUNT(*) AS count
+           FROM activities
+           WHERE organization IN (${placeholders})
+           GROUP BY organization`,
+        )
+        .bind(...chunk)
+        .all<{ organization: string; count: number }>();
+      result.results.forEach((row) =>
+        totalCountByOrganization.set(row.organization, Number(row.count) || 0),
+      );
+    }
+    const cleanupOrganizations = organizations.length
+      ? organizations
+      : affectedOrganizations.filter(
+          (organization) =>
+            (selectedCountByOrganization.get(organization) || 0) >=
+            (totalCountByOrganization.get(organization) || 0),
+        );
+
+    const snapshot: TrashSnapshot = { tables: { activities: activityRows } };
+    const loadRows = async (
+      table: string,
+      column: string,
+      values: Array<string | number>,
+    ) => {
+      const rows: Record<string, unknown>[] = [];
+      for (let index = 0; index < values.length; index += 50) {
+        const chunk = values.slice(index, index + 50);
+        const placeholders = chunk.map(() => "?").join(", ");
+        const result = await d1
+          .prepare(`SELECT * FROM ${table} WHERE ${column} IN (${placeholders})`)
+          .bind(...chunk)
+          .all<Record<string, unknown>>();
+        rows.push(...result.results);
+      }
+      snapshot.tables[table] = rows;
+      return rows;
+    };
+    await Promise.all([
+      loadRows("activity_authors", "activity_id", selectedActivityIds),
+      loadRows(
+        "activity_assignment_history",
+        "activity_id",
+        selectedActivityIds,
+      ),
+      loadRows(
+        "activity_review_acknowledgements",
+        "activity_id",
+        selectedActivityIds,
+      ),
+      loadRows("ai_recommendations", "activity_id", selectedActivityIds),
+      loadRows(
+        "organization_locations",
+        "organization",
+        cleanupOrganizations,
+      ),
+      loadRows(
+        "sales_campaign_targets",
+        "organization",
+        cleanupOrganizations,
+      ),
+    ]);
+    const projectRows = await loadRows(
+      "equipment_projects",
+      "organization",
+      cleanupOrganizations,
+    );
+    await loadRows(
+      "equipment_items",
+      "project_id",
+      projectRows
+        .map((row) => Number(row.id))
+        .filter((id) => Number.isSafeInteger(id) && id > 0),
+    );
+    const snapshotRowCount = Object.values(snapshot.tables).reduce(
+      (total, rows) => total + rows.length,
+      0,
+    );
+    let trashBatchId = "";
+    if (snapshotRowCount > 0) {
+      const displayName = organizations.length
+        ? organizations.length === 1
+          ? organizations[0]
+          : `${organizations.slice(0, 2).join(", ")} 외 ${Math.max(0, organizations.length - 2)}곳`
+        : activityRows.length === 1
+          ? `${clean(activityRows[0].organization) || "기관"} 기록`
+          : `활동 기록 ${activityRows.length}건`;
+      trashBatchId = await createTrashBatch(
+        d1,
+        member,
+        organizations.length ? "institution" : "record",
+        displayName,
+        organizations.length || activityRows.length,
+        snapshot,
+      );
+    }
+
+    for (const chunk of chunks) {
+      const placeholders = chunk.map(() => "?").join(", ");
+      const whereClause = ids.length
+        ? `id IN (${placeholders})`
+        : `organization IN (${placeholders})`;
       await d1.batch([
         d1
           .prepare(
@@ -625,9 +911,7 @@ export async function DELETE(request: Request) {
           .prepare(`DELETE FROM activities WHERE ${whereClause}`)
           .bind(...chunk),
       ]);
-      deletedCount += Number(count?.count ?? 0);
     }
-    const cleanupOrganizations = [...locationCleanupCandidates];
     const cleanupChunks = Array.from(
       { length: Math.ceil(cleanupOrganizations.length / 50) },
       (_, index) => cleanupOrganizations.slice(index * 50, index * 50 + 50),
@@ -684,8 +968,10 @@ export async function DELETE(request: Request) {
       ok: true,
       deletedCount,
       deletedOrganizations: organizations.length,
+      trashBatchId,
     });
   } catch (error) {
     return accessErrorResponse(error);
   }
 }
+

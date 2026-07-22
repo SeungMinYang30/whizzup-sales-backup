@@ -17,6 +17,7 @@ export type InstitutionDecision = {
   institutionRelationship?: "related" | "different";
   relatedOrganization?: string;
   institutionRejectedOrganizations?: string[];
+  cancelled?: boolean;
 };
 
 function requestInstitutionDecision(
@@ -66,11 +67,9 @@ function requestInstitutionDecision(
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        finish({
-          institutionSeparate: true,
-          institutionRelationship: "different",
-          institutionRejectedOrganizations: candidates,
-        });
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        finish({ cancelled: true });
       }
     };
 
@@ -183,6 +182,9 @@ export async function fetchWithInstitutionConfirmation(
       decision = await requestInstitutionDecision(payload);
       decisions.set(requested, decision);
     }
+    if (decision.cancelled) {
+      throw new Error("기관 연결 확인을 취소했습니다. 입력 내용을 다시 확인해 주세요.");
+    }
 
     body = {
       ...body,
@@ -197,3 +199,4 @@ export async function fetchWithInstitutionConfirmation(
     };
   }
 }
+

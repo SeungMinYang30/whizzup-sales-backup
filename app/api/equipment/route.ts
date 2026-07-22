@@ -34,6 +34,7 @@ const itemStatuses = [
   "미수주",
   "취소",
 ];
+const protectionStatuses = ["신청 필요", "신청 완료"];
 
 function cleanStatus(value: unknown, values: string[], fallback: string) {
   const requested = clean(value);
@@ -44,6 +45,40 @@ function cleanQuantity(value: unknown) {
   const quantity = Number(value);
   if (!Number.isFinite(quantity)) return 0;
   return Math.min(999_999, Math.max(0, Math.round(quantity)));
+}
+
+function cleanUnitPrice(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  return Math.min(100_000_000_000, Math.round(amount));
+}
+
+function cleanConsortiumSettlement(payload: Record<string, unknown>) {
+  const executionType = clean(payload.executionType) === "컨소" ? "컨소" : "직영";
+  const commissionInputType =
+    clean(payload.commissionInputType) === "amount" ? "amount" : "rate";
+  const requestedRate = Number(payload.commissionRate);
+  const requestedConsortiumRate = Number(payload.consortiumCommissionRate);
+  const requestedAmount = Number(payload.consortiumPaymentAmount);
+  return {
+    executionType,
+    commissionInputType,
+    commissionRate:
+      Number.isFinite(requestedRate)
+        ? Math.min(1, Math.max(0, requestedRate))
+        : null,
+    consortiumCommissionRate:
+      executionType === "컨소" && commissionInputType === "rate" &&
+      Number.isFinite(requestedConsortiumRate)
+        ? Math.min(1, Math.max(0, requestedConsortiumRate))
+        : null,
+    consortiumPaymentAmount:
+      executionType === "컨소" && commissionInputType === "amount" &&
+      Number.isFinite(requestedAmount)
+        ? Math.min(100_000_000_000, Math.max(0, Math.round(requestedAmount)))
+        : null,
+  };
 }
 
 function inferItemStatus(item: Record<string, unknown>) {
@@ -193,8 +228,38 @@ async function syncOrganizationEquipmentSchedule(organization: string) {
 
 export async function GET(request: Request) {
   try {
-    await requireApprovedMember();
+    const member = await requireApprovedMember();
     const searchParams = new URL(request.url).searchParams;
+    if (searchParams.get("protection") === "1") {
+      await ensureRecordsReady();
+      const d1 = await ensureEquipmentReady();
+      const items = await d1
+        .prepare(
+          `WITH latest_activities AS (
+             SELECT organization, progress_manager,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY organization
+                      ORDER BY COALESCE(activity_date, '') DESC, id DESC
+                    ) AS row_number
+             FROM activities
+           )
+           SELECT i.*, p.organization, p.name AS project_name,
+                  COALESCE(a.progress_manager, '') AS progress_manager
+           FROM equipment_items i
+           JOIN equipment_projects p ON p.id = i.project_id
+           LEFT JOIN latest_activities a
+             ON a.organization = p.organization AND a.row_number = 1
+           WHERE COALESCE(i.protection_status, '신청 필요') <> '신청 완료'
+             AND (
+               trim(COALESCE(a.progress_manager, '')) = trim(?)
+               OR (trim(COALESCE(a.progress_manager, '')) = '' AND p.created_by = ?)
+             )
+           ORDER BY p.updated_at DESC, i.updated_at DESC, i.id DESC`,
+        )
+        .bind(member.displayName, member.id)
+        .all();
+      return Response.json({ items: items.results });
+    }
     if (searchParams.get("summary") === "1") {
       const d1 = await ensureEquipmentReady();
       const summaries = await d1
@@ -286,12 +351,16 @@ export async function POST(request: Request) {
         )
         .bind(projectId)
         .first<{ next_order: number }>();
+      const settlement = cleanConsortiumSettlement(payload);
       const item = await d1
         .prepare(
           `INSERT INTO equipment_items (
             project_id, product_name, specification, proposed_qty, awarded_qty,
-            installed_qty, unit, status, notes, sort_order
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            installed_qty, unit, status, notes, catalog_unit_price, execution_type,
+            commission_input_type, commission_rate, consortium_commission_rate,
+            consortium_payment_amount,
+            sort_order
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           RETURNING *`,
         )
         .bind(
@@ -304,6 +373,12 @@ export async function POST(request: Request) {
           clean(payload.unit).slice(0, 20) || "대",
           inferItemStatus(payload),
           clean(payload.notes).slice(0, 1_000),
+          cleanUnitPrice(payload.catalogUnitPrice),
+          settlement.executionType,
+          settlement.commissionInputType,
+          settlement.commissionRate,
+          settlement.consortiumCommissionRate,
+          settlement.consortiumPaymentAmount,
           Number(sortOrder?.next_order ?? 0),
         )
         .first();
@@ -315,6 +390,105 @@ export async function POST(request: Request) {
         .run();
       await syncOrganizationEquipmentSchedule(project.organization);
       return Response.json({ item }, { status: 201 });
+    }
+
+    if (kind === "catalog-items") {
+      const projectId = Number(payload.projectId);
+      const requestedItems = Array.isArray(payload.items)
+        ? payload.items
+            .filter((item): item is Record<string, unknown> =>
+              Boolean(item && typeof item === "object"),
+            )
+            .slice(0, 100)
+        : [];
+      if (!Number.isInteger(projectId) || projectId < 1 || !requestedItems.length) {
+        return Response.json(
+          { error: "사업과 추가할 제품을 확인해 주세요." },
+          { status: 400 },
+        );
+      }
+      const project = await d1
+        .prepare("SELECT id, organization FROM equipment_projects WHERE id = ?")
+        .bind(projectId)
+        .first<{ id: number; organization: string }>();
+      if (!project) {
+        return Response.json({ error: "사업을 찾지 못했습니다." }, { status: 404 });
+      }
+      const sortOrder = await d1
+        .prepare(
+          "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM equipment_items WHERE project_id = ?",
+        )
+        .bind(projectId)
+        .first<{ next_order: number }>();
+      let added = 0;
+      let skipped = 0;
+      for (const [index, source] of requestedItems.entries()) {
+        const productName = clean(source.productName).slice(0, 180);
+        const specification = clean(source.specification).slice(0, 180);
+        const catalogItemId = clean(source.catalogItemId).slice(0, 160);
+        if (!productName) {
+          skipped += 1;
+          continue;
+        }
+        const existing = await d1
+          .prepare(
+            `SELECT id FROM equipment_items
+             WHERE project_id = ?
+               AND (
+                 (? <> '' AND catalog_item_id = ?)
+                 OR (lower(product_name) = lower(?) AND specification = ?)
+               )
+             LIMIT 1`,
+          )
+          .bind(
+            projectId,
+            catalogItemId,
+            catalogItemId,
+            productName,
+            specification,
+          )
+          .first();
+        if (existing) {
+          skipped += 1;
+          continue;
+        }
+        const settlement = cleanConsortiumSettlement(source);
+        await d1
+          .prepare(
+            `INSERT INTO equipment_items (
+              project_id, product_name, specification, proposed_qty, awarded_qty,
+              installed_qty, unit, status, notes, catalog_item_id,
+              catalog_unit_price, catalog_note, execution_type,
+              commission_input_type, commission_rate, consortium_commission_rate,
+              consortium_payment_amount, protection_status, sort_order
+            ) VALUES (?, ?, ?, 0, 0, 0, '대', '제안 예정', '', ?, ?, ?, ?, ?, ?, ?, ?, '신청 필요', ?)`,
+          )
+          .bind(
+            projectId,
+            productName,
+            specification,
+            catalogItemId,
+            cleanUnitPrice(source.catalogUnitPrice),
+            clean(source.catalogNote).slice(0, 1_000),
+            settlement.executionType,
+            settlement.commissionInputType,
+            settlement.commissionRate,
+            settlement.consortiumCommissionRate,
+            settlement.consortiumPaymentAmount,
+            Number(sortOrder?.next_order ?? 0) + index,
+          )
+          .run();
+        added += 1;
+      }
+      if (added) {
+        await d1
+          .prepare(
+            "UPDATE equipment_projects SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+          )
+          .bind(projectId)
+          .run();
+      }
+      return Response.json({ ok: true, added, skipped }, { status: 201 });
     }
 
     if (kind === "ai-import") {
@@ -595,11 +769,16 @@ export async function PUT(request: Request) {
       if (!productName) {
         return Response.json({ error: "품목명을 입력해 주세요." }, { status: 400 });
       }
+      const settlement = cleanConsortiumSettlement(payload);
       const item = await d1
         .prepare(
           `UPDATE equipment_items SET
             product_name = ?, specification = ?, proposed_qty = ?, awarded_qty = ?,
-            installed_qty = ?, unit = ?, status = ?, notes = ?,
+            installed_qty = ?, unit = ?, status = ?, notes = ?, catalog_unit_price = ?,
+            execution_type = ?,
+            commission_input_type = ?, commission_rate = ?,
+            consortium_commission_rate = ?,
+            consortium_payment_amount = ?,
             updated_at = CURRENT_TIMESTAMP
            WHERE id = ?
            RETURNING *`,
@@ -613,6 +792,12 @@ export async function PUT(request: Request) {
           clean(payload.unit).slice(0, 20) || "대",
           inferItemStatus(payload),
           clean(payload.notes).slice(0, 1_000),
+          cleanUnitPrice(payload.catalogUnitPrice),
+          settlement.executionType,
+          settlement.commissionInputType,
+          settlement.commissionRate,
+          settlement.consortiumCommissionRate,
+          settlement.consortiumPaymentAmount,
           id,
         )
         .first<Record<string, unknown>>();
@@ -631,6 +816,30 @@ export async function PUT(request: Request) {
         .first<{ organization: string }>();
       if (project?.organization) {
         await syncOrganizationEquipmentSchedule(project.organization);
+      }
+      return Response.json({ item });
+    }
+
+    if (kind === "protection") {
+      const protectionStatus = cleanStatus(
+        payload.protectionStatus,
+        protectionStatuses,
+        "신청 필요",
+      );
+      const item = await d1
+        .prepare(
+          `UPDATE equipment_items SET
+             protection_status = ?,
+             protection_completed_at = CASE WHEN ? = '신청 완료'
+               THEN CURRENT_TIMESTAMP ELSE NULL END,
+             updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?
+           RETURNING *`,
+        )
+        .bind(protectionStatus, protectionStatus, id)
+        .first<Record<string, unknown>>();
+      if (!item) {
+        return Response.json({ error: "품목을 찾지 못했습니다." }, { status: 404 });
       }
       return Response.json({ item });
     }

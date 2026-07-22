@@ -2,6 +2,7 @@
 
 import {
   ChangeEvent,
+  Fragment,
   FormEvent,
   useEffect,
   useMemo,
@@ -16,10 +17,19 @@ import {
   type ActivityImportValues,
 } from "./activity-xlsx";
 import DataBackupPage from "./data-backup-page";
+import HoldemLounge from "./holdem-lounge";
 import { fetchWithInstitutionConfirmation } from "./institution-confirmation";
+import ProductCatalogPage from "./product-catalog-page";
+import QuotationDocuments from "./quotation-documents";
 import SalesMapPage from "./sales-map";
+import TrashPage from "./trash-page";
 import { resolveRegisteredSalesName } from "../lib/sales-names";
 import { isSameRegionInstitution } from "../lib/institution-names";
+import { inheritInstitutionState } from "../lib/institution-state-carryover";
+import {
+  calculateEquipmentFinance,
+  equipmentSettlementQuantity,
+} from "../lib/equipment-finance";
 import {
   compactShareSummary,
   formalizeShareSummary,
@@ -63,6 +73,10 @@ type Activity = {
   createdAt: string;
   updatedAt: string;
 };
+
+function isPdfCampaignRegistration(record: Pick<Activity, "sourceChat">) {
+  return record.sourceChat === "영업지도 PDF 가져오기";
+}
 
 type FormState = Omit<
   Activity,
@@ -124,6 +138,41 @@ type AiPreview = FormState & {
 type EquipmentItem = EquipmentItemDraft & {
   id: number;
   projectId: number;
+  catalogItemId: string;
+  catalogUnitPrice: number | null;
+  catalogNote: string;
+  executionType: "직영" | "컨소";
+  commissionInputType: "rate" | "amount";
+  commissionRate: number | null;
+  consortiumCommissionRate: number | null;
+  consortiumPaymentAmount: number | null;
+  protectionStatus: "신청 필요" | "신청 완료";
+  protectionCompletedAt: string;
+};
+type ProductCatalogChoice = {
+  id: string;
+  name: string;
+  specification: string;
+  unitPrice: number | null;
+  commissionRate: number | null;
+  note: string;
+  reference: string;
+};
+type EquipmentSettlementDraft = {
+  executionType: "직영" | "컨소";
+  wizupCommissionRateInput: string;
+  commissionInputType: "rate" | "amount";
+  consortiumInputValue: string;
+};
+type ProtectionReviewItem = {
+  id: number;
+  projectId: number;
+  organization: string;
+  projectName: string;
+  productName: string;
+  specification: string;
+  progressManager: string;
+  protectionStatus: "신청 필요" | "신청 완료";
 };
 type EquipmentProject = {
   id: number;
@@ -142,8 +191,11 @@ type View =
   | "schedules"
   | "organizations"
   | "awards"
+  | "products"
   | "map"
+  | "lounge"
   | "team"
+  | "trash"
   | "backup"
   | "integration";
 
@@ -253,7 +305,7 @@ type ManagerIssueFilter =
 type TeamPeriod = 7 | 30 | "all";
 type ScheduleRange = 14 | 30 | "all";
 type TeamMetricFocus = "all" | "active" | "attention";
-type TeamDetailMode = "activity" | "attention";
+type TeamDetailMode = "activity" | "attention" | "conversion";
 
 type ManagerAlertAcknowledgement = {
   organization: string;
@@ -374,7 +426,7 @@ const memberPermissionOptions: {
     id: "integration:manage",
     group: "operations",
     label: "API 등록·관리",
-    description: "OpenAI·카카오맵·학교정보 API 등록과 연결 점검",
+    description: "OpenAI·카카오맵 API 등록과 연결 점검",
   },
   {
     id: "backup:manage",
@@ -502,6 +554,7 @@ const navItems: { id: View; label: string; mark: string }[] = [
   { id: "dashboard", label: "대시보드", mark: "D" },
   { id: "followup", label: "기관별 관리", mark: "F" },
   { id: "awards", label: "수주 관리", mark: "W" },
+  { id: "products", label: "제품·견적 관리", mark: "P" },
   { id: "map", label: "영업·수주 지도", mark: "M" },
 ];
 
@@ -512,6 +565,8 @@ const statusOptions = [
   "후속 완료",
   "장기 추적",
   "대기",
+  "수주 후 진행",
+  "영업 종료",
   "완료",
 ];
 
@@ -527,17 +582,6 @@ const awardStageOptions = [
 ];
 
 const completedAwardStages = new Set(["완공"]);
-const equipmentItemStatuses = [
-  "제안 예정",
-  "제안",
-  "견적",
-  "수주",
-  "발주",
-  "설치 중",
-  "설치 완료",
-  "미수주",
-  "취소",
-];
 const availableViews = new Set<View>([
   "dashboard",
   "records",
@@ -545,17 +589,17 @@ const availableViews = new Set<View>([
   "schedules",
   "organizations",
   "awards",
+  "products",
   "map",
+  "lounge",
   "team",
+  "trash",
   "backup",
   "integration",
 ]);
-const managementViews = new Set<View>([
+const presentationHiddenViews = new Set<View>([
   "records",
   "organizations",
-  "team",
-  "integration",
-  "backup",
 ]);
 const presentationModeStorageKey = "whizzup-presentation-mode";
 
@@ -659,7 +703,58 @@ function normalizeEquipmentItem(
     unit: String(row.unit ?? "") || "대",
     status: String(row.status ?? "") || "제안",
     notes: String(row.notes ?? ""),
+    catalogItemId: String(value("catalogItemId", "catalog_item_id")),
+    catalogUnitPrice:
+      value("catalogUnitPrice", "catalog_unit_price") === null ||
+      value("catalogUnitPrice", "catalog_unit_price") === ""
+        ? null
+        : Number(value("catalogUnitPrice", "catalog_unit_price")),
+    catalogNote: String(value("catalogNote", "catalog_note")),
+    executionType:
+      String(value("executionType", "execution_type")) === "컨소"
+        ? "컨소"
+        : "직영",
+    commissionInputType:
+      String(value("commissionInputType", "commission_input_type")) === "amount"
+        ? "amount"
+        : "rate",
+    commissionRate:
+      value("commissionRate", "commission_rate") === null ||
+      value("commissionRate", "commission_rate") === ""
+        ? null
+        : Number(value("commissionRate", "commission_rate")),
+    consortiumCommissionRate:
+      value("consortiumCommissionRate", "consortium_commission_rate") === null ||
+      value("consortiumCommissionRate", "consortium_commission_rate") === ""
+        ? null
+        : Number(
+            value("consortiumCommissionRate", "consortium_commission_rate"),
+          ),
+    consortiumPaymentAmount:
+      value("consortiumPaymentAmount", "consortium_payment_amount") === null ||
+      value("consortiumPaymentAmount", "consortium_payment_amount") === ""
+        ? null
+        : Number(value("consortiumPaymentAmount", "consortium_payment_amount")),
+    protectionStatus:
+      String(value("protectionStatus", "protection_status")) === "신청 완료"
+        ? "신청 완료"
+        : "신청 필요",
+    protectionCompletedAt: String(
+      value("protectionCompletedAt", "protection_completed_at"),
+    ),
   };
+}
+
+function storedEquipmentFinance(item: EquipmentItem) {
+  return calculateEquipmentFinance({
+    unitPrice: item.catalogUnitPrice,
+    quantity: equipmentSettlementQuantity(item),
+    executionType: item.executionType,
+    commissionInputType: item.commissionInputType,
+    commissionRate: item.commissionRate,
+    consortiumCommissionRate: item.consortiumCommissionRate,
+    consortiumPaymentAmount: item.consortiumPaymentAmount,
+  });
 }
 
 function normalizeEquipmentProject(
@@ -851,6 +946,21 @@ function formatDate(value: string) {
   if (parts.length === 2) return `${parts[0]}.${parts[1]}`;
   if (parts.length === 3) return `${parts[0]}.${parts[1]}.${parts[2]}`;
   return value;
+}
+
+function formatInputTime(value: string) {
+  if (!value || /^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+  const normalized = value.includes("T")
+    ? value
+    : `${value.replace(" ", "T")}Z`;
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return "";
+  return `입력 ${date.toLocaleTimeString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })}`;
 }
 
 function activityToForm(record: Activity): FormState {
@@ -1068,9 +1178,9 @@ function buildActivityShareText(
     activity?.organization || recommendation?.organization || "기관";
   const activityType = activity?.activityType || "미팅·TM";
   const rawSummary =
-    recommendation?.meetingSummary ||
     activity?.summary ||
     activity?.topic ||
+    recommendation?.meetingSummary ||
     "미팅·TM 내용을 기록했습니다.";
   const contactRole = resolveContactRole(
     activity?.contactRole,
@@ -1189,9 +1299,9 @@ function collectAiBatchShareDetails(
 
   group.forEach(({ activity, recommendation }) => {
     const rawSummary =
-      recommendation?.meetingSummary ||
       activity.summary ||
       activity.topic ||
+      recommendation?.meetingSummary ||
       "미팅·TM 내용을 기록했습니다.";
     const contactRole = resolveContactRole(
       activity.contactRole,
@@ -1574,7 +1684,7 @@ function automaticProgressManagement(value: string) {
   if (items.length > 0 && !hasCurrentOrFutureSchedule) {
     const latestDueLabel = dueItems.at(-1)?.label ?? "";
     return {
-      status: "결과 확인",
+      status: "수주 후 진행",
       awardStage: /검수/.test(latestDueLabel)
         ? "검수"
         : /교육/.test(latestDueLabel)
@@ -1582,7 +1692,7 @@ function automaticProgressManagement(value: string) {
           : "일정 조율",
     };
   }
-  return { status: "진행 중", awardStage: "일정 조율" };
+  return { status: "수주 후 진행", awardStage: "일정 조율" };
 }
 
 function mergeEquipmentDrafts(
@@ -1710,8 +1820,26 @@ function formatScheduleDate(value: string) {
 function statusClass(status: string) {
   if (status.includes("완료")) return "done";
   if (status.includes("재접촉")) return "urgent";
-  if (status.includes("장기") || status.includes("대기")) return "muted";
+  if (
+    status.includes("장기") ||
+    status.includes("대기") ||
+    status.includes("영업 종료")
+  ) return "muted";
   return "active";
+}
+
+function displaySalesStatus(record: Activity) {
+  if (
+    record.status === "수주 후 진행" &&
+    record.awardStage &&
+    record.awardStage !== "미정"
+  ) {
+    return `수주 후 진행 · ${record.awardStage}`;
+  }
+  if (record.status === "영업 종료" && record.awardStatus === "타업체 수주") {
+    return "영업 종료 · 타업체 수주";
+  }
+  return record.status;
 }
 
 function displayContactMethod(record: Activity) {
@@ -1833,12 +1961,19 @@ async function requestActivityReviewAcknowledgements() {
 const emptyEquipmentItemDraft: EquipmentItemDraft = {
   productName: "",
   specification: "",
-  proposedQty: 0,
+  proposedQty: 1,
   awardedQty: 0,
   installedQty: 0,
   unit: "대",
   status: "제안",
   notes: "",
+};
+
+const emptyEquipmentSettlementDraft: EquipmentSettlementDraft = {
+  executionType: "직영",
+  wizupCommissionRateInput: "",
+  commissionInputType: "rate",
+  consortiumInputValue: "",
 };
 
 async function requestEquipmentProjects(organization: string) {
@@ -1854,6 +1989,60 @@ async function requestEquipmentProjects(organization: string) {
     throw new Error(payload.error || "품목 기록을 불러오지 못했습니다.");
   }
   return (payload.projects ?? []).map(normalizeEquipmentProject);
+}
+
+async function requestProductCatalogChoices() {
+  const response = await fetch("/api/product-catalog", { cache: "no-store" });
+  const payload = (await response.json()) as {
+    products?: Record<string, unknown>[];
+    error?: string;
+  };
+  if (!response.ok) {
+    throw new Error(payload.error || "제품 목록을 불러오지 못했습니다.");
+  }
+  return (payload.products ?? [])
+    .map((row): ProductCatalogChoice => ({
+      id: String(row.id ?? ""),
+      name: String(row.name ?? ""),
+      specification: String(row.specification ?? ""),
+      unitPrice:
+        row.unitPrice === null || row.unitPrice === undefined
+          ? null
+          : Number(row.unitPrice),
+      commissionRate:
+        row.commissionRate === null || row.commissionRate === undefined
+          ? null
+          : Number(row.commissionRate),
+      note: String(row.note ?? ""),
+      reference: String(row.reference ?? ""),
+    }))
+    .filter((product) => product.id && product.name);
+}
+
+async function requestProtectionReviewItems() {
+  const response = await fetch("/api/equipment?protection=1", {
+    cache: "no-store",
+  });
+  const payload = (await response.json()) as {
+    items?: Record<string, unknown>[];
+    error?: string;
+  };
+  if (!response.ok) {
+    throw new Error(payload.error || "영업보호 점검 항목을 불러오지 못했습니다.");
+  }
+  return (payload.items ?? []).map((row): ProtectionReviewItem => ({
+    id: Number(row.id),
+    projectId: Number(row.project_id ?? row.projectId),
+    organization: String(row.organization ?? ""),
+    projectName: String(row.project_name ?? row.projectName ?? ""),
+    productName: String(row.product_name ?? row.productName ?? ""),
+    specification: String(row.specification ?? ""),
+    progressManager: String(row.progress_manager ?? row.progressManager ?? ""),
+    protectionStatus:
+      String(row.protection_status ?? row.protectionStatus) === "신청 완료"
+        ? "신청 완료"
+        : "신청 필요",
+  }));
 }
 
 async function saveAiEquipmentPreview(preview: AiPreview) {
@@ -1899,6 +2088,23 @@ function OrganizationEquipmentManager({
   const [itemDraft, setItemDraft] = useState<EquipmentItemDraft>({
     ...emptyEquipmentItemDraft,
   });
+  const [itemSettlementDraft, setItemSettlementDraft] =
+    useState<EquipmentSettlementDraft>({ ...emptyEquipmentSettlementDraft });
+  const [itemUnitPriceDraft, setItemUnitPriceDraft] = useState("");
+  const [itemCommissionLocked, setItemCommissionLocked] = useState(false);
+  const [itemEntryMode, setItemEntryMode] = useState<"catalog" | "manual">(
+    "catalog",
+  );
+  const [catalogProducts, setCatalogProducts] = useState<
+    ProductCatalogChoice[]
+  >([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState("");
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [selectedCatalogIds, setSelectedCatalogIds] = useState<string[]>([]);
+  const [catalogSettlementDrafts, setCatalogSettlementDrafts] = useState<
+    Record<string, EquipmentSettlementDraft>
+  >({});
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -1952,32 +2158,282 @@ function OrganizationEquipmentManager({
     if (!response.ok) {
       throw new Error(payload.error || "품목 정보를 저장하지 못했습니다.");
     }
+    return payload;
+  }
+
+  async function loadCatalog() {
+    if (catalogProducts.length || catalogLoading) return;
+    setCatalogLoading(true);
+    setCatalogError("");
+    try {
+      setCatalogProducts(await requestProductCatalogChoices());
+    } catch (error) {
+      setCatalogError(
+        error instanceof Error ? error.message : "제품 목록을 불러오지 못했습니다.",
+      );
+    } finally {
+      setCatalogLoading(false);
+    }
   }
 
   function openNewItem(projectId: number) {
     setEditingItemId(null);
     setItemProjectId(projectId);
+    setItemEntryMode("catalog");
+    setCatalogSearch("");
+    setSelectedCatalogIds([]);
+    setCatalogSettlementDrafts({});
     setItemDraft({ ...emptyEquipmentItemDraft });
+    setItemSettlementDraft({ ...emptyEquipmentSettlementDraft });
+    setItemUnitPriceDraft("");
+    setItemCommissionLocked(false);
+    void loadCatalog();
   }
 
   function openItemEdit(item: EquipmentItem) {
     setEditingItemId(item.id);
     setItemProjectId(item.projectId);
+    setItemEntryMode("manual");
     setItemDraft({
       productName: item.productName,
       specification: item.specification,
-      proposedQty: item.proposedQty,
+      proposedQty: equipmentSettlementQuantity(item),
       awardedQty: item.awardedQty,
       installedQty: item.installedQty,
       unit: item.unit,
       status: item.status,
       notes: item.notes,
     });
+    setItemSettlementDraft({
+      executionType: item.executionType,
+      wizupCommissionRateInput:
+        item.commissionRate === null
+          ? ""
+          : String(Number((item.commissionRate * 100).toFixed(2))),
+      commissionInputType: item.commissionInputType,
+      consortiumInputValue:
+        item.executionType !== "컨소"
+          ? ""
+          : item.commissionInputType === "amount"
+            ? formatMoneyInput(String(item.consortiumPaymentAmount ?? ""))
+            : item.consortiumCommissionRate === null
+              ? ""
+              : String(
+                  Number((item.consortiumCommissionRate * 100).toFixed(2)),
+                ),
+    });
+    setItemCommissionLocked(Boolean(item.catalogItemId));
+    setItemUnitPriceDraft(
+      item.catalogUnitPrice === null
+        ? ""
+        : formatMoneyInput(String(item.catalogUnitPrice)),
+    );
+  }
+
+  const normalizedCatalogSearch = catalogSearch
+    .normalize("NFKC")
+    .toLocaleLowerCase("ko-KR")
+    .replace(/\s+/g, "");
+  const visibleCatalogProducts = catalogProducts
+    .filter((product) => {
+      if (!normalizedCatalogSearch) return true;
+      return [
+        product.name,
+        product.specification,
+        product.note,
+        product.reference,
+      ]
+        .join(" ")
+        .normalize("NFKC")
+        .toLocaleLowerCase("ko-KR")
+        .replace(/\s+/g, "")
+        .includes(normalizedCatalogSearch);
+    });
+
+  function defaultCatalogSettlement(
+    product: ProductCatalogChoice,
+  ): EquipmentSettlementDraft {
+    return {
+      executionType: "직영",
+      wizupCommissionRateInput:
+        product.commissionRate === null
+          ? ""
+          : String(Number((product.commissionRate * 100).toFixed(2))),
+      commissionInputType: "rate",
+      consortiumInputValue: "",
+    };
+  }
+
+  function toggleCatalogProduct(product: ProductCatalogChoice) {
+    const checked = selectedCatalogIds.includes(product.id);
+    setSelectedCatalogIds((current) =>
+      checked
+        ? current.filter((id) => id !== product.id)
+        : [...current, product.id],
+    );
+    if (!checked && !catalogSettlementDrafts[product.id]) {
+      setCatalogSettlementDrafts((current) => ({
+        ...current,
+        [product.id]: defaultCatalogSettlement(product),
+      }));
+    }
+  }
+
+  function updateCatalogSettlement(
+    product: ProductCatalogChoice,
+    patch: Partial<EquipmentSettlementDraft>,
+  ) {
+    setCatalogSettlementDrafts((current) => ({
+      ...current,
+      [product.id]: {
+        ...(current[product.id] ?? defaultCatalogSettlement(product)),
+        ...patch,
+      },
+    }));
+  }
+
+  async function addCatalogItems() {
+    if (!itemProjectId || !selectedCatalogIds.length || busy) return;
+    const selected = catalogProducts.filter((product) =>
+      selectedCatalogIds.includes(product.id),
+    );
+    const invalid = selected.find((product) => {
+      const settlement =
+        catalogSettlementDrafts[product.id] ?? defaultCatalogSettlement(product);
+      const wizupRate = Number(settlement.wizupCommissionRateInput);
+      if (!Number.isFinite(wizupRate) || wizupRate <= 0 || wizupRate > 100) {
+        return true;
+      }
+      if (settlement.executionType !== "컨소") return false;
+      const consortiumValue =
+        settlement.commissionInputType === "amount"
+          ? parseMoneyAmount(settlement.consortiumInputValue)
+          : Number(settlement.consortiumInputValue);
+      const wizupCommission =
+        (product.unitPrice ?? 0) * (wizupRate / 100);
+      return !Number.isFinite(consortiumValue) || consortiumValue <= 0 ||
+        (settlement.commissionInputType === "rate" &&
+          consortiumValue > wizupRate) ||
+        (settlement.commissionInputType === "amount" &&
+          product.unitPrice !== null && consortiumValue > wizupCommission);
+    });
+    if (invalid) {
+      onToast(
+        invalid.commissionRate === null
+          ? `${invalid.name}은 제품·견적 관리에서 수수료율을 먼저 등록해 주세요.`
+          : `${invalid.name}의 컨소 지급값을 확인해 주세요.`,
+      );
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await equipmentRequest("POST", {
+        kind: "catalog-items",
+        projectId: itemProjectId,
+        items: selected.map((product) => {
+          const settlement =
+            catalogSettlementDrafts[product.id] ??
+            defaultCatalogSettlement(product);
+          return {
+            catalogItemId: product.id,
+            productName: product.name,
+            specification: product.specification,
+            catalogUnitPrice: product.unitPrice,
+            catalogNote: [product.note, product.reference]
+              .filter(Boolean)
+              .join(" · "),
+            executionType: settlement.executionType,
+            commissionInputType: settlement.commissionInputType,
+            commissionRate: Number(settlement.wizupCommissionRateInput) / 100,
+            consortiumCommissionRate:
+              settlement.executionType === "컨소" &&
+              settlement.commissionInputType === "rate"
+                ? Number(settlement.consortiumInputValue) / 100
+                : null,
+            consortiumPaymentAmount:
+              settlement.executionType === "컨소" &&
+              settlement.commissionInputType === "amount"
+                ? parseMoneyAmount(settlement.consortiumInputValue)
+                : null,
+          };
+        }),
+      });
+      await refreshEquipment();
+      setItemProjectId(null);
+      setSelectedCatalogIds([]);
+      setCatalogSettlementDrafts({});
+      const added = Number((result as { added?: unknown }).added ?? 0);
+      const skipped = Number((result as { skipped?: unknown }).skipped ?? 0);
+      onToast(
+        skipped
+          ? `${added}개 품목을 추가했고, 이미 있는 ${skipped}개는 제외했습니다.`
+          : `${added}개 품목을 추가했습니다.`,
+      );
+    } catch (error) {
+      onToast(
+        error instanceof Error ? error.message : "제품을 추가하지 못했습니다.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateProtection(item: EquipmentItem) {
+    if (busy) return;
+    const nextStatus =
+      item.protectionStatus === "신청 완료" ? "신청 필요" : "신청 완료";
+    setBusy(true);
+    try {
+      await equipmentRequest("PUT", {
+        kind: "protection",
+        id: item.id,
+        protectionStatus: nextStatus,
+      });
+      await refreshEquipment();
+      onToast(`영업보호를 ${nextStatus}로 변경했습니다.`);
+    } catch (error) {
+      onToast(
+        error instanceof Error
+          ? error.message
+          : "영업보호 상태를 변경하지 못했습니다.",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveItem(event: FormEvent) {
     event.preventDefault();
     if (!itemProjectId || !itemDraft.productName.trim() || busy) return;
+    const wizupRate = Number(itemSettlementDraft.wizupCommissionRateInput);
+    if (!Number.isFinite(wizupRate) || wizupRate <= 0 || wizupRate > 100) {
+      onToast("위즈업 수수료율을 확인해 주세요.");
+      return;
+    }
+    const consortiumValue =
+      itemSettlementDraft.commissionInputType === "amount"
+        ? parseMoneyAmount(itemSettlementDraft.consortiumInputValue)
+        : Number(itemSettlementDraft.consortiumInputValue);
+    if (
+      itemSettlementDraft.executionType === "컨소" &&
+      (!Number.isFinite(consortiumValue) || consortiumValue <= 0 ||
+        (itemSettlementDraft.commissionInputType === "rate" &&
+          consortiumValue > wizupRate))
+    ) {
+      onToast("컨소 지급률은 위즈업 수수료율보다 클 수 없습니다.");
+      return;
+    }
+    const unitPrice = parseMoneyAmount(itemUnitPriceDraft);
+    const settlementQuantity = equipmentSettlementQuantity(itemDraft);
+    if (
+      itemSettlementDraft.executionType === "컨소" &&
+      itemSettlementDraft.commissionInputType === "amount" &&
+      unitPrice > 0 &&
+      consortiumValue > unitPrice * settlementQuantity * (wizupRate / 100)
+    ) {
+      onToast("컨소 지급은 위즈업이 받는 수수료 금액을 넘을 수 없습니다.");
+      return;
+    }
     setBusy(true);
     try {
       await equipmentRequest(editingItemId ? "PUT" : "POST", {
@@ -1985,11 +2441,28 @@ function OrganizationEquipmentManager({
         id: editingItemId ?? undefined,
         projectId: itemProjectId,
         ...itemDraft,
+        catalogUnitPrice: unitPrice > 0 ? unitPrice : null,
+        executionType: itemSettlementDraft.executionType,
+        commissionInputType: itemSettlementDraft.commissionInputType,
+        commissionRate: wizupRate / 100,
+        consortiumCommissionRate:
+          itemSettlementDraft.executionType === "컨소" &&
+          itemSettlementDraft.commissionInputType === "rate"
+            ? consortiumValue / 100
+            : null,
+        consortiumPaymentAmount:
+          itemSettlementDraft.executionType === "컨소" &&
+          itemSettlementDraft.commissionInputType === "amount"
+            ? consortiumValue
+            : null,
       });
       await refreshEquipment();
       setItemProjectId(null);
       setEditingItemId(null);
       setItemDraft({ ...emptyEquipmentItemDraft });
+      setItemSettlementDraft({ ...emptyEquipmentSettlementDraft });
+      setItemUnitPriceDraft("");
+      setItemCommissionLocked(false);
       onToast(editingItemId ? "품목을 수정했습니다." : "품목을 추가했습니다.");
     } catch (error) {
       onToast(
@@ -2018,6 +2491,224 @@ function OrganizationEquipmentManager({
     }
   }
 
+  function closeItemEditor() {
+    setItemProjectId(null);
+    setEditingItemId(null);
+    setItemSettlementDraft({ ...emptyEquipmentSettlementDraft });
+    setItemUnitPriceDraft("");
+    setItemCommissionLocked(false);
+  }
+
+  function currentEquipmentDraftFinance() {
+    const wizupRate = Number(itemSettlementDraft.wizupCommissionRateInput);
+    const consortiumInput =
+      itemSettlementDraft.commissionInputType === "amount"
+        ? parseMoneyAmount(itemSettlementDraft.consortiumInputValue)
+        : Number(itemSettlementDraft.consortiumInputValue);
+    return calculateEquipmentFinance({
+      unitPrice: parseMoneyAmount(itemUnitPriceDraft),
+      quantity: equipmentSettlementQuantity(itemDraft),
+      executionType: itemSettlementDraft.executionType,
+      commissionInputType: itemSettlementDraft.commissionInputType,
+      commissionRate: Number.isFinite(wizupRate) ? wizupRate / 100 : null,
+      consortiumCommissionRate:
+        itemSettlementDraft.executionType === "컨소" &&
+        itemSettlementDraft.commissionInputType === "rate" &&
+        Number.isFinite(consortiumInput)
+          ? consortiumInput / 100
+          : null,
+      consortiumPaymentAmount:
+        itemSettlementDraft.executionType === "컨소" &&
+        itemSettlementDraft.commissionInputType === "amount"
+          ? consortiumInput
+          : null,
+    });
+  }
+
+  function renderSettlementCalculation() {
+    const finance = currentEquipmentDraftFinance();
+    return (
+      <div className="equipment-settlement-calculation">
+        <span>
+          위즈업 수수료 <b>{finance.wizupCommission.toLocaleString("ko-KR")}원</b>
+        </span>
+        <span>
+          컨소 지급 <b>{finance.consortiumPayment.toLocaleString("ko-KR")}원</b>
+        </span>
+        <span>
+          마진 <b>{finance.marginAmount.toLocaleString("ko-KR")}원</b>
+        </span>
+      </div>
+    );
+  }
+
+  function renderEquipmentItemForm() {
+
+    return (
+      <form className="equipment-item-form" onSubmit={saveItem}>
+        {editingItemId && (
+          <div className="equipment-edit-heading">
+            <strong>{itemDraft.productName} 수정</strong>
+            <span>이 품목의 금액과 수수료를 바로 수정합니다.</span>
+          </div>
+        )}
+        <label className="equipment-product-field">
+          <span>품목명 *</span>
+          <input
+            required
+            value={itemDraft.productName}
+            onChange={(event) =>
+              setItemDraft({ ...itemDraft, productName: event.target.value })
+            }
+            placeholder="예: 전자칠판 86인치"
+          />
+        </label>
+        <label className="equipment-spec-field">
+          <span>규격·모델</span>
+          <input
+            value={itemDraft.specification}
+            onChange={(event) =>
+              setItemDraft({ ...itemDraft, specification: event.target.value })
+            }
+            placeholder="모델명 또는 규격"
+          />
+        </label>
+        <label className="equipment-price-field">
+          <span>제품 단가</span>
+          <div className="equipment-money-field">
+            <input
+              inputMode="numeric"
+              value={itemUnitPriceDraft}
+              onChange={(event) =>
+                setItemUnitPriceDraft(
+                  formatMoneyInput(event.target.value.replace(/[^\d,]/g, "")),
+                )
+              }
+              placeholder="0"
+            />
+            <i>원</i>
+          </div>
+        </label>
+        <label className="equipment-quantity-field">
+          <span>수량</span>
+          <input
+            type="number"
+            min="1"
+            value={itemDraft.proposedQty}
+            onChange={(event) =>
+              setItemDraft({
+                ...itemDraft,
+                proposedQty: Math.max(1, Number(event.target.value) || 1),
+              })
+            }
+          />
+        </label>
+        <label className="equipment-wizup-commission-field">
+          <span>위즈업 수수료율</span>
+          <div className="equipment-money-field">
+            <input
+              inputMode="decimal"
+              readOnly={itemCommissionLocked && Boolean(itemSettlementDraft.wizupCommissionRateInput)}
+              value={itemSettlementDraft.wizupCommissionRateInput}
+              onChange={(event) =>
+                setItemSettlementDraft({
+                  ...itemSettlementDraft,
+                  wizupCommissionRateInput: event.target.value.replace(/[^\d.]/g, ""),
+                })
+              }
+              placeholder="0"
+            />
+            <i>%</i>
+          </div>
+          {itemCommissionLocked && (
+            <small>제품·견적 관리의 수수료율이 자동 적용됩니다.</small>
+          )}
+        </label>
+        <label className="equipment-execution-field">
+          <span>사업방식</span>
+          <select
+            value={itemSettlementDraft.executionType}
+            onChange={(event) =>
+              setItemSettlementDraft({
+                ...itemSettlementDraft,
+                executionType: event.target.value === "컨소" ? "컨소" : "직영",
+              })
+            }
+          >
+            <option value="직영">직영</option>
+            <option value="컨소">컨소</option>
+          </select>
+        </label>
+        {itemSettlementDraft.executionType === "컨소" && (
+          <>
+            <label className="equipment-commission-type-field">
+              <span>컨소 지급방식</span>
+              <select
+                value={itemSettlementDraft.commissionInputType}
+                onChange={(event) =>
+                  setItemSettlementDraft({
+                    ...itemSettlementDraft,
+                    commissionInputType:
+                      event.target.value === "amount" ? "amount" : "rate",
+                    consortiumInputValue: "",
+                  })
+                }
+              >
+                <option value="rate">퍼센트</option>
+                <option value="amount">금액</option>
+              </select>
+            </label>
+            <label className="equipment-commission-value-field">
+              <span>
+                {itemSettlementDraft.commissionInputType === "rate"
+                  ? "컨소 지급률"
+                  : "컨소 지급"}
+              </span>
+              <div className="equipment-money-field">
+                <input
+                  inputMode="decimal"
+                  value={itemSettlementDraft.consortiumInputValue}
+                  onChange={(event) =>
+                    setItemSettlementDraft({
+                      ...itemSettlementDraft,
+                      consortiumInputValue:
+                        itemSettlementDraft.commissionInputType === "amount"
+                          ? formatMoneyInput(
+                              event.target.value.replace(/[^\d,]/g, ""),
+                            )
+                          : event.target.value.replace(/[^\d.]/g, ""),
+                    })
+                  }
+                  placeholder="0"
+                />
+                <i>
+                  {itemSettlementDraft.commissionInputType === "rate" ? "%" : "원"}
+                </i>
+              </div>
+            </label>
+          </>
+        )}
+        {renderSettlementCalculation()}
+        <label className="equipment-item-notes">
+          <span>품목 메모</span>
+          <input
+            value={itemDraft.notes}
+            onChange={(event) =>
+              setItemDraft({ ...itemDraft, notes: event.target.value })
+            }
+            placeholder="색상, 설치 위치, 변경 사항 등"
+          />
+        </label>
+        <div className="equipment-form-actions">
+          <button type="button" onClick={closeItemEditor}>취소</button>
+          <button type="submit" className="equipment-save" disabled={busy}>
+            {busy ? "저장 중…" : editingItemId ? "품목 수정" : "품목 추가"}
+          </button>
+        </div>
+      </form>
+    );
+  }
+
   return (
     <section className="equipment-section">
       <div className="history-section-heading equipment-section-heading">
@@ -2040,17 +2731,31 @@ function OrganizationEquipmentManager({
       ) : (
         <div className="equipment-project-list">
           {projects.map((project) => {
-            const proposedKinds = project.items.filter(
-              (item) => item.proposedQty > 0,
+            const protectionPendingKinds = project.items.filter(
+              (item) => item.protectionStatus === "신청 필요",
             ).length;
-            const awardedKinds = project.items.filter(
-              (item) => item.awardedQty > 0,
-            ).length;
-            const installingKinds = project.items.filter(
-              (item) =>
-                item.installedQty > 0 ||
-                ["발주", "설치 중", "설치 완료"].includes(item.status),
-            ).length;
+            const projectFinance = project.items.reduce(
+              (total, item) => {
+                const finance = storedEquipmentFinance(item);
+                return {
+                  totalAmount: total.totalAmount + finance.totalAmount,
+                  wizupCommission:
+                    total.wizupCommission + finance.wizupCommission,
+                  consortiumPayment:
+                    total.consortiumPayment + finance.consortiumPayment,
+                  marginAmount: total.marginAmount + finance.marginAmount,
+                };
+              },
+              {
+                totalAmount: 0,
+                wizupCommission: 0,
+                consortiumPayment: 0,
+                marginAmount: 0,
+              },
+            );
+            const projectMarginRate = projectFinance.totalAmount
+              ? (projectFinance.marginAmount / projectFinance.totalAmount) * 100
+              : 0;
             return (
               <article className="equipment-project-card" key={project.id}>
                 <header>
@@ -2065,53 +2770,115 @@ function OrganizationEquipmentManager({
                   </div>
                 </header>
                 <div className="equipment-project-summary">
-                  <span>제안 <b>{proposedKinds}</b>종</span>
-                  <span>수주 <b>{awardedKinds}</b>종</span>
-                  <span>설치·진행 <b>{installingKinds}</b>종</span>
+                  <span className={protectionPendingKinds ? "needs-protection" : ""}>
+                    {protectionPendingKinds ? (
+                      <>영업보호 <b>{protectionPendingKinds}</b>건 필요</>
+                    ) : (
+                      "영업보호 확인 완료"
+                    )}
+                  </span>
                 </div>
+                {project.items.length > 0 && (
+                  <div className="equipment-finance-summary">
+                    <div>
+                      <span>총 금액</span>
+                      <strong>{projectFinance.totalAmount.toLocaleString("ko-KR")}원</strong>
+                    </div>
+                    <div>
+                      <span>총 위즈업 수수료</span>
+                      <strong>{projectFinance.wizupCommission.toLocaleString("ko-KR")}원</strong>
+                    </div>
+                    <div>
+                      <span>총 컨소 지급</span>
+                      <strong>{projectFinance.consortiumPayment.toLocaleString("ko-KR")}원</strong>
+                    </div>
+                    <div className="margin">
+                      <span>총 마진 금액</span>
+                      <strong>{projectFinance.marginAmount.toLocaleString("ko-KR")}원</strong>
+                    </div>
+                    <div>
+                      <span>총 마진율</span>
+                      <strong>{projectMarginRate.toFixed(1)}%</strong>
+                    </div>
+                  </div>
+                )}
 
                 <div className="equipment-item-head">
                   <span>품목·규격</span>
-                  <span>제안</span>
-                  <span>수주</span>
-                  <span>설치</span>
-                  <span>상태</span>
+                  <span>영업보호</span>
                   <span />
                 </div>
                 <div className="equipment-item-list">
                   {project.items.length === 0 && (
                     <p className="equipment-no-items">
-                      품목을 추가하면 제안·수주·설치 수량이 여기에 표시됩니다.
+                      품목을 추가하면 금액과 마진이 여기에 표시됩니다.
                     </p>
                   )}
-                  {project.items.map((item) => (
-                    <div className="equipment-item-row" key={item.id}>
+                  {project.items.map((item) => {
+                    const finance = storedEquipmentFinance(item);
+                    return (
+                    <Fragment key={item.id}>
+                    <div className={`equipment-item-row ${
+                      editingItemId === item.id ? "editing" : ""
+                    }`}>
                       <div className="equipment-item-name">
                         <strong>{item.productName}</strong>
-                        {(item.specification || item.notes) && (
+                        {(item.specification ||
+                          item.catalogNote ||
+                          item.catalogUnitPrice !== null ||
+                          item.notes) && (
                           <small>
-                            {item.specification}
-                            {item.specification && item.notes ? " · " : ""}
-                            {item.notes}
+                            {[
+                              item.specification,
+                              item.catalogNote,
+                              item.catalogUnitPrice === null
+                                ? ""
+                                : `${item.catalogUnitPrice.toLocaleString("ko-KR")}원`,
+                              item.notes,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
                           </small>
                         )}
+                        <div className="equipment-item-settlement">
+                          <span>{item.executionType}</span>
+                          <span>
+                            {item.commissionRate === null
+                              ? "위즈업 수수료율 미등록"
+                              : `위즈업 수수료율 ${Number(
+                                  item.commissionRate * 100,
+                                ).toFixed(1)}%`}
+                          </span>
+                          {item.executionType === "컨소" && (
+                            <>
+                              <span>
+                                {item.commissionInputType === "amount"
+                                  ? `금액 입력 ${Number(
+                                      item.consortiumPaymentAmount ?? 0,
+                                    ).toLocaleString("ko-KR")}원`
+                                  : `컨소 지급률 ${Number(
+                                      (item.consortiumCommissionRate ?? 0) * 100,
+                                    ).toFixed(1)}%`}
+                              </span>
+                              <span>
+                                컨소 지급 {finance.consortiumPayment.toLocaleString("ko-KR")}원
+                              </span>
+                            </>
+                          )}
+                          <span>위즈업 수수료 {finance.wizupCommission.toLocaleString("ko-KR")}원</span>
+                          <b>마진 {finance.marginAmount.toLocaleString("ko-KR")}원</b>
+                        </div>
                       </div>
-                      <span>
-                        {item.proposedQty > 0
-                          ? `${item.proposedQty}${item.unit}`
-                          : ""}
-                      </span>
-                      <span>
-                        {item.awardedQty > 0
-                          ? `${item.awardedQty}${item.unit}`
-                          : ""}
-                      </span>
-                      <span>
-                        {item.installedQty > 0
-                          ? `${item.installedQty}${item.unit}`
-                          : ""}
-                      </span>
-                      <em>{item.status}</em>
+                      <button
+                        type="button"
+                        className={`equipment-protection ${
+                          item.protectionStatus === "신청 완료" ? "complete" : "pending"
+                        }`}
+                        disabled={busy}
+                        onClick={() => void updateProtection(item)}
+                      >
+                        {item.protectionStatus}
+                      </button>
                       <div className="equipment-item-actions">
                         <button
                           type="button"
@@ -2128,11 +2895,240 @@ function OrganizationEquipmentManager({
                         </button>
                       </div>
                     </div>
-                  ))}
+                    {editingItemId === item.id && itemProjectId === project.id && (
+                      <div className="equipment-entry-panel equipment-entry-panel-inline">
+                        {renderEquipmentItemForm()}
+                      </div>
+                    )}
+                    </Fragment>
+                    );
+                  })}
                 </div>
 
-                {itemProjectId === project.id ? (
+                {itemProjectId === project.id && editingItemId === null ? (
+                  <div
+                    className="equipment-entry-panel"
+                    id={`equipment-item-editor-${project.id}`}
+                  >
+                    <>
+                      <div className="equipment-entry-tabs">
+                        <button
+                          type="button"
+                          className={itemEntryMode === "catalog" ? "active" : ""}
+                          onClick={() => {
+                            setItemEntryMode("catalog");
+                            void loadCatalog();
+                          }}
+                        >
+                          제품 목록에서 선택
+                        </button>
+                        <button
+                          type="button"
+                          className={itemEntryMode === "manual" ? "active" : ""}
+                          onClick={() => setItemEntryMode("manual")}
+                        >
+                          직접 입력
+                        </button>
+                      </div>
+                    </>
+                    {itemEntryMode === "catalog" ? (
+                      <div className="equipment-catalog-picker">
+                        <div className="equipment-catalog-search">
+                          <input
+                            value={catalogSearch}
+                            onChange={(event) => setCatalogSearch(event.target.value)}
+                            placeholder="제품명·업체명·규격·조달번호 검색"
+                            autoFocus
+                          />
+                          <span>
+                            {selectedCatalogIds.length
+                              ? `${selectedCatalogIds.length}개 선택`
+                              : `${catalogProducts.length}개 제품`}
+                          </span>
+                        </div>
+                        {catalogLoading ? (
+                          <p className="equipment-catalog-message">
+                            제품 목록을 불러오고 있습니다…
+                          </p>
+                        ) : catalogError ? (
+                          <p className="equipment-catalog-message error">
+                            {catalogError}
+                          </p>
+                        ) : (
+                          <div className="equipment-catalog-results">
+                            {visibleCatalogProducts.map((product) => {
+                              const checked = selectedCatalogIds.includes(product.id);
+                              const settlement =
+                                catalogSettlementDrafts[product.id] ??
+                                defaultCatalogSettlement(product);
+                              const inputAmount =
+                                settlement.commissionInputType === "amount"
+                                  ? parseMoneyAmount(settlement.consortiumInputValue)
+                                  : null;
+                              const finance = calculateEquipmentFinance({
+                                unitPrice: product.unitPrice,
+                                quantity: 1,
+                                executionType: settlement.executionType,
+                                commissionInputType: settlement.commissionInputType,
+                                commissionRate:
+                                  Number(settlement.wizupCommissionRateInput) / 100,
+                                consortiumCommissionRate:
+                                  settlement.commissionInputType === "rate"
+                                    ? Number(settlement.consortiumInputValue) / 100
+                                    : null,
+                                consortiumPaymentAmount: inputAmount,
+                              });
+                              return (
+                                <div
+                                  key={product.id}
+                                  className={`equipment-catalog-option ${
+                                    checked ? "selected" : ""
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`${product.name} 선택`}
+                                    checked={checked}
+                                    onChange={() => toggleCatalogProduct(product)}
+                                  />
+                                  <span>
+                                    <strong>{product.name}</strong>
+                                    <small>
+                                      {[product.specification, product.note, product.reference]
+                                        .filter(Boolean)
+                                        .join(" · ") || "상세 정보 미등록"}
+                                    </small>
+                                  </span>
+                                  {checked && (
+                                    <div className="equipment-catalog-settlement">
+                                      <span className="equipment-catalog-wizup-rate">
+                                        위즈업 수수료율 {settlement.wizupCommissionRateInput || "미등록"}%
+                                      </span>
+                                      <select
+                                        aria-label={`${product.name} 사업방식`}
+                                        value={settlement.executionType}
+                                        onChange={(event) =>
+                                          updateCatalogSettlement(product, {
+                                            executionType:
+                                              event.target.value === "컨소"
+                                                ? "컨소"
+                                                : "직영",
+                                          })
+                                        }
+                                      >
+                                        <option value="직영">직영</option>
+                                        <option value="컨소">컨소</option>
+                                      </select>
+                                      {settlement.executionType === "컨소" && (
+                                        <>
+                                          <select
+                                            aria-label={`${product.name} 컨소 지급방식`}
+                                            value={settlement.commissionInputType}
+                                            onChange={(event) =>
+                                              updateCatalogSettlement(product, {
+                                                commissionInputType:
+                                                  event.target.value === "amount"
+                                                    ? "amount"
+                                                    : "rate",
+                                                consortiumInputValue: "",
+                                              })
+                                            }
+                                          >
+                                            <option value="rate">퍼센트</option>
+                                            <option value="amount">금액</option>
+                                          </select>
+                                          <label>
+                                            <input
+                                              inputMode="decimal"
+                                              aria-label={`${product.name} ${
+                                                settlement.commissionInputType === "rate"
+                                                  ? "컨소 지급률"
+                                                  : "컨소 지급"
+                                              }`}
+                                              value={settlement.consortiumInputValue}
+                                              onChange={(event) =>
+                                                updateCatalogSettlement(product, {
+                                                  consortiumInputValue:
+                                                    settlement.commissionInputType === "amount"
+                                                      ? formatMoneyInput(
+                                                          event.target.value.replace(
+                                                            /[^\d,]/g,
+                                                            "",
+                                                          ),
+                                                        )
+                                                      : event.target.value.replace(
+                                                          /[^\d.]/g,
+                                                          "",
+                                                        ),
+                                                })
+                                              }
+                                              placeholder={
+                                                settlement.commissionInputType === "rate"
+                                                  ? "컨소 지급률"
+                                                  : "컨소 지급"
+                                              }
+                                            />
+                                            <span>
+                                              {settlement.commissionInputType === "rate"
+                                                ? "%"
+                                                : "원"}
+                                            </span>
+                                          </label>
+                                          <small className="equipment-settlement-preview">
+                                            위즈업 수수료 {finance.wizupCommission.toLocaleString("ko-KR")}원
+                                            · 컨소 지급 {finance.consortiumPayment.toLocaleString("ko-KR")}원
+                                            · 마진 {finance.marginAmount.toLocaleString("ko-KR")}원
+                                          </small>
+                                        </>
+                                      )}
+                                    </div>
+                                  )}
+                                  <b>
+                                    {product.unitPrice === null
+                                      ? "금액 미등록"
+                                      : `${product.unitPrice.toLocaleString("ko-KR")}원`}
+                                  </b>
+                                </div>
+                              );
+                            })}
+                            {!visibleCatalogProducts.length && (
+                              <p className="equipment-catalog-message">
+                                검색 결과가 없습니다. 직접 입력을 이용해 주세요.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        <div className="equipment-form-actions equipment-catalog-actions">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setItemProjectId(null);
+                              setSelectedCatalogIds([]);
+                              setCatalogSettlementDrafts({});
+                            }}
+                          >
+                            취소
+                          </button>
+                          <button
+                            type="button"
+                            className="equipment-save"
+                            disabled={busy || selectedCatalogIds.length === 0}
+                            onClick={() => void addCatalogItems()}
+                          >
+                            {busy
+                              ? "추가 중…"
+                              : `선택한 ${selectedCatalogIds.length}개 품목 추가`}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
                   <form className="equipment-item-form" onSubmit={saveItem}>
+                    {editingItemId && (
+                      <div className="equipment-edit-heading">
+                        <strong>{itemDraft.productName} 수정</strong>
+                        <span>품목 금액과 컨소 정보를 변경합니다.</span>
+                      </div>
+                    )}
                     <label className="equipment-product-field">
                       <span>품목명 *</span>
                       <input
@@ -2160,52 +3156,131 @@ function OrganizationEquipmentManager({
                         placeholder="모델명 또는 규격"
                       />
                     </label>
-                    {[
-                      ["제안 수량", "proposedQty"],
-                      ["수주 수량", "awardedQty"],
-                      ["설치 수량", "installedQty"],
-                    ].map(([label, field]) => (
-                      <label key={field}>
-                        <span>{label}</span>
+                    <label className="equipment-price-field">
+                      <span>제품 단가</span>
+                      <div className="equipment-money-field">
                         <input
-                          type="number"
-                          min="0"
-                          value={itemDraft[field as keyof EquipmentItemDraft]}
+                          inputMode="numeric"
+                          value={itemUnitPriceDraft}
                           onChange={(event) =>
-                            setItemDraft({
-                              ...itemDraft,
-                              [field]: Math.max(0, Number(event.target.value) || 0),
+                            setItemUnitPriceDraft(
+                              formatMoneyInput(
+                                event.target.value.replace(/[^\d,]/g, ""),
+                              ),
+                            )
+                          }
+                          placeholder="0"
+                        />
+                        <i>원</i>
+                      </div>
+                    </label>
+                    <label className="equipment-wizup-commission-field">
+                      <span>위즈업 수수료율</span>
+                      <div className="equipment-money-field">
+                        <input
+                          inputMode="decimal"
+                          value={itemSettlementDraft.wizupCommissionRateInput}
+                          onChange={(event) =>
+                            setItemSettlementDraft({
+                              ...itemSettlementDraft,
+                              wizupCommissionRateInput: event.target.value.replace(
+                                /[^\d.]/g,
+                                "",
+                              ),
                             })
                           }
+                          placeholder="0"
                         />
-                      </label>
-                    ))}
-                    <label>
-                      <span>단위</span>
-                      <input
-                        value={itemDraft.unit}
-                        onChange={(event) =>
-                          setItemDraft({ ...itemDraft, unit: event.target.value })
-                        }
-                        placeholder="대, 식, 세트"
-                      />
+                        <i>%</i>
+                      </div>
                     </label>
-                    <label>
-                      <span>진행 상태</span>
+                    <label className="equipment-execution-field">
+                      <span>사업방식</span>
                       <select
-                        value={itemDraft.status}
+                        value={itemSettlementDraft.executionType}
                         onChange={(event) =>
-                          setItemDraft({
-                            ...itemDraft,
-                            status: event.target.value,
+                          setItemSettlementDraft({
+                            ...itemSettlementDraft,
+                            executionType:
+                              event.target.value === "컨소" ? "컨소" : "직영",
                           })
                         }
                       >
-                        {equipmentItemStatuses.map((status) => (
-                          <option key={status}>{status}</option>
-                        ))}
+                        <option value="직영">직영</option>
+                        <option value="컨소">컨소</option>
                       </select>
                     </label>
+                    {itemSettlementDraft.executionType === "컨소" && (
+                      <>
+                        <label className="equipment-commission-type-field">
+                          <span>컨소 지급방식</span>
+                          <select
+                            value={itemSettlementDraft.commissionInputType}
+                            onChange={(event) =>
+                              setItemSettlementDraft({
+                                ...itemSettlementDraft,
+                                commissionInputType:
+                                  event.target.value === "amount"
+                                    ? "amount"
+                                    : "rate",
+                                consortiumInputValue: "",
+                              })
+                            }
+                          >
+                            <option value="rate">퍼센트</option>
+                            <option value="amount">금액</option>
+                          </select>
+                        </label>
+                        <label className="equipment-commission-value-field">
+                          <span>
+                            {itemSettlementDraft.commissionInputType === "rate"
+                              ? "컨소 지급률"
+                              : "컨소 지급"}
+                          </span>
+                          <div className="equipment-money-field">
+                            <input
+                              inputMode="decimal"
+                              value={itemSettlementDraft.consortiumInputValue}
+                              onChange={(event) =>
+                                setItemSettlementDraft({
+                                  ...itemSettlementDraft,
+                                  consortiumInputValue:
+                                    itemSettlementDraft.commissionInputType === "amount"
+                                      ? formatMoneyInput(
+                                          event.target.value.replace(/[^\d,]/g, ""),
+                                        )
+                                      : event.target.value.replace(/[^\d.]/g, ""),
+                                })
+                              }
+                              placeholder="0"
+                            />
+                            <i>
+                              {itemSettlementDraft.commissionInputType === "rate"
+                                ? "%"
+                                : "원"}
+                            </i>
+                          </div>
+                        </label>
+                      </>
+                    )}
+                    <label className="equipment-quantity-field">
+                      <span>수량</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={itemDraft.proposedQty}
+                        onChange={(event) =>
+                          setItemDraft({
+                            ...itemDraft,
+                            proposedQty: Math.max(
+                              1,
+                              Number(event.target.value) || 1,
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                    {renderSettlementCalculation()}
                     <label className="equipment-item-notes">
                       <span>품목 메모</span>
                       <input
@@ -2222,6 +3297,8 @@ function OrganizationEquipmentManager({
                         onClick={() => {
                           setItemProjectId(null);
                           setEditingItemId(null);
+                          setItemSettlementDraft({ ...emptyEquipmentSettlementDraft });
+                          setItemUnitPriceDraft("");
                         }}
                       >
                         취소
@@ -2235,7 +3312,9 @@ function OrganizationEquipmentManager({
                       </button>
                     </div>
                   </form>
-                ) : (
+                    )}
+                  </div>
+                ) : editingItemId && itemProjectId === project.id ? null : (
                   <button
                     type="button"
                     className="equipment-add-item"
@@ -2256,15 +3335,18 @@ function OrganizationEquipmentManager({
 function OrganizationAiRecommendations({
   organization,
   onOpen,
+  onDelete,
 }: {
   organization: string;
   onOpen: (recommendation: AiRecommendationRecord) => void;
+  onDelete: (recommendation: AiRecommendationRecord) => Promise<boolean>;
 }) {
   const [state, setState] = useState<{
     organization: string;
     recommendations: AiRecommendationRecord[];
     loading: boolean;
   }>({ organization: "", recommendations: [], loading: true });
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -2318,7 +3400,7 @@ function OrganizationAiRecommendations({
             recommendation.appliedActions.length;
           return (
             <article key={recommendation.id}>
-              <div>
+              <div className="history-ai-recommendation-copy">
                 <strong>
                   {recommendation.meetingSummary || "AI 대응 제안"}
                 </strong>
@@ -2327,9 +3409,31 @@ function OrganizationAiRecommendations({
                   {appliedCount > 0 ? ` · ${appliedCount}개 반영됨` : " · 미반영"}
                 </small>
               </div>
-              <button type="button" onClick={() => onOpen(recommendation)}>
-                제안 열기
-              </button>
+              <div className="history-ai-recommendation-actions">
+                <button type="button" onClick={() => onOpen(recommendation)}>
+                  제안 열기
+                </button>
+                <button
+                  type="button"
+                  className="delete-ai-recommendation"
+                  disabled={deletingId === recommendation.id}
+                  onClick={async () => {
+                    setDeletingId(recommendation.id);
+                    const deleted = await onDelete(recommendation);
+                    if (deleted) {
+                      setState((current) => ({
+                        ...current,
+                        recommendations: current.recommendations.filter(
+                          (item) => item.id !== recommendation.id,
+                        ),
+                      }));
+                    }
+                    setDeletingId(null);
+                  }}
+                >
+                  {deletingId === recommendation.id ? "삭제 중…" : "삭제"}
+                </button>
+              </div>
             </article>
           );
         })}
@@ -2438,6 +3542,37 @@ export default function CrmApp({
     useState<InstitutionMergePreview | null>(null);
   const [institutionMergeTarget, setInstitutionMergeTarget] = useState("");
   const [institutionMergeBusy, setInstitutionMergeBusy] = useState(false);
+  const [institutionDeleteBusy, setInstitutionDeleteBusy] = useState(false);
+  const [institutionBudgetOpen, setInstitutionBudgetOpen] = useState(false);
+  const [institutionBudgetType, setInstitutionBudgetType] = useState("");
+  const [institutionBudgetAmount, setInstitutionBudgetAmount] = useState("");
+  const [institutionBulkBudgetEnabled, setInstitutionBulkBudgetEnabled] =
+    useState(true);
+  const [institutionBulkManagerEnabled, setInstitutionBulkManagerEnabled] =
+    useState(false);
+  const [institutionBulkProgressManager, setInstitutionBulkProgressManager] =
+    useState("");
+  const [institutionBulkFollowUpEnabled, setInstitutionBulkFollowUpEnabled] =
+    useState(false);
+  const [institutionBulkFollowUpDate, setInstitutionBulkFollowUpDate] =
+    useState("");
+  const [institutionBulkNextActionEnabled, setInstitutionBulkNextActionEnabled] =
+    useState(false);
+  const [institutionBulkNextAction, setInstitutionBulkNextAction] =
+    useState("");
+  const [institutionBulkStatusEnabled, setInstitutionBulkStatusEnabled] =
+    useState(false);
+  const [institutionBulkStatus, setInstitutionBulkStatus] =
+    useState("진행 중");
+  const [institutionBulkAwardEnabled, setInstitutionBulkAwardEnabled] =
+    useState(false);
+  const [institutionBulkAwardStatus, setInstitutionBulkAwardStatus] =
+    useState("미정");
+  const [institutionBulkAwardCompany, setInstitutionBulkAwardCompany] =
+    useState("");
+  const [institutionBudgetOnlyEmpty, setInstitutionBudgetOnlyEmpty] =
+    useState(true);
+  const [institutionBudgetBusy, setInstitutionBudgetBusy] = useState(false);
   const [selectedAwardIds, setSelectedAwardIds] = useState<number[]>([]);
   const [view, setView] = useState<View>("dashboard");
   const [mapVisited, setMapVisited] = useState(false);
@@ -2482,6 +3617,7 @@ export default function CrmApp({
   const [activityImportProgress, setActivityImportProgress] = useState("");
   const activityImportInputRef = useRef<HTMLInputElement | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [inheritedFormOrganization, setInheritedFormOrganization] = useState("");
   const formOrganizationSourceRef = useRef("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
@@ -2546,6 +3682,8 @@ export default function CrmApp({
     useState<AiRecommendationSelection>(emptyAiRecommendationSelection);
   const [aiRecommendationApplying, setAiRecommendationApplying] =
     useState(false);
+  const [aiRecommendationDeleting, setAiRecommendationDeleting] =
+    useState(false);
   const aiDraftInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [detailOrganization, setDetailOrganization] = useState<string | null>(
     null,
@@ -2578,6 +3716,14 @@ export default function CrmApp({
     useState<number | null>(null);
   const [activityReviewTransferTargets, setActivityReviewTransferTargets] =
     useState<Record<number, string>>({});
+  const [protectionReviewItems, setProtectionReviewItems] = useState<
+    ProtectionReviewItem[]
+  >([]);
+  const [protectionReviewsLoading, setProtectionReviewsLoading] =
+    useState(false);
+  const [protectionReviewSavingIds, setProtectionReviewSavingIds] = useState<
+    number[]
+  >([]);
   const sessionRole = session?.member.role;
   const sessionStatus = session?.member.status;
   const isOwner = session?.member.role === "admin";
@@ -2614,6 +3760,11 @@ export default function CrmApp({
           label: "구성원 관리",
           mark: "T",
         },
+        isOwner && {
+          id: "trash" as View,
+          label: "휴지통",
+          mark: "R",
+        },
         canManageIntegration && {
           id: "integration" as View,
           label: "API 등록·관리",
@@ -2634,6 +3785,11 @@ export default function CrmApp({
         } => Boolean(item),
       )
     : [];
+  const visibleManagementNavItems = presentationMode
+    ? managementNavItems.filter(
+        (item) => !presentationHiddenViews.has(item.id),
+      )
+    : managementNavItems;
 
   async function loadRecords(scope?: RecordsScope) {
     try {
@@ -2718,6 +3874,21 @@ export default function CrmApp({
     }
   }
 
+  async function loadProtectionReviews() {
+    try {
+      setProtectionReviewsLoading(true);
+      setProtectionReviewItems(await requestProtectionReviewItems());
+    } catch (caught) {
+      setToast(
+        caught instanceof Error
+          ? caught.message
+          : "영업보호 점검 항목을 불러오지 못했습니다.",
+      );
+    } finally {
+      setProtectionReviewsLoading(false);
+    }
+  }
+
   useEffect(() => {
     let active = true;
     const recordsPromise = requestRecords("dashboard")
@@ -2733,6 +3904,7 @@ export default function CrmApp({
         setSessionLoading(false);
         if (nextSession.member.status === "approved") {
           void loadActivityReviewAssignees();
+          void loadProtectionReviews();
           const { nextRecords, recordsError } = await recordsPromise;
           if (!active) return;
           if (recordsError) throw recordsError;
@@ -2906,10 +4078,11 @@ export default function CrmApp({
         state?.whizzupView ||
         (availableViews.has(hashView) ? hashView : "dashboard");
       if (
-        (presentationMode && managementViews.has(nextView)) ||
+        (presentationMode && presentationHiddenViews.has(nextView)) ||
         ((nextView === "organizations" || nextView === "records") &&
           !canManageRecords) ||
         (nextView === "team" && !canManageMembers) ||
+        (nextView === "trash" && !isOwner) ||
         (nextView === "integration" && !canManageIntegration) ||
         (nextView === "backup" && !canManageBackup)
       ) {
@@ -3014,6 +4187,7 @@ export default function CrmApp({
     const keyword = search.trim().toLowerCase();
     const sourceRecords = view === "awards" ? latestAwardRecords : records;
     return sourceRecords.filter((record) => {
+      if (isPdfCampaignRegistration(record)) return false;
       if (view === "followup" && !record.followUpRequired) return false;
       if (view === "awards" && record.awardStatus === "미정") return false;
       if (
@@ -3138,6 +4312,7 @@ export default function CrmApp({
   const dashboardRecentRecords = useMemo(
     () =>
       [...records]
+        .filter((record) => !isPdfCampaignRegistration(record))
         .sort(
           (a, b) =>
             b.activityDate.localeCompare(a.activityDate) ||
@@ -3206,9 +4381,18 @@ export default function CrmApp({
       activityReviewFields(record).length === 0 ||
       isActivityReviewProcessed(record),
   ).length;
-  const formProgressManagement = automaticProgressManagement(
+  const automaticFormProgressManagement = automaticProgressManagement(
     form.progressSchedule,
   );
+  const formProgressManagement = automaticFormProgressManagement
+    ? {
+        ...automaticFormProgressManagement,
+        status:
+          form.awardStatus === "타업체 수주"
+            ? "영업 종료"
+            : automaticFormProgressManagement.status,
+      }
+    : null;
   const followupAlertEnd = new Date(today);
   followupAlertEnd.setDate(today.getDate() + 2);
   const followupAlertEndValue = toLocalDateValue(followupAlertEnd);
@@ -3324,7 +4508,11 @@ export default function CrmApp({
     () =>
       detailOrganization
         ? records
-            .filter((record) => record.organization === detailOrganization)
+            .filter(
+              (record) =>
+                record.organization === detailOrganization &&
+                !isPdfCampaignRegistration(record),
+            )
             .sort((a, b) => {
               if (a.activityDate !== b.activityDate) {
                 return b.activityDate.localeCompare(a.activityDate);
@@ -3335,6 +4523,29 @@ export default function CrmApp({
     [records, detailOrganization],
   );
   const detailLatest = detailHistory[0] ?? null;
+  const detailCampaignRegistration = useMemo(
+    () =>
+      detailOrganization
+        ? records
+            .filter(
+              (record) =>
+                record.organization === detailOrganization &&
+                isPdfCampaignRegistration(record),
+            )
+            .sort((a, b) => b.id - a.id)[0] ?? null
+        : null,
+    [records, detailOrganization],
+  );
+  const detailDisplayRecord = detailLatest ?? detailCampaignRegistration;
+  const detailCurrentSchedules = detailDisplayRecord
+    ? parseProgressSchedule(detailDisplayRecord.progressSchedule)
+        .filter((item) => item.date >= todayValue)
+        .sort(
+          (left, right) =>
+            left.date.localeCompare(right.date) ||
+            left.label.localeCompare(right.label, "ko-KR"),
+        )
+    : [];
   const latestRecords = new Map<string, Activity>();
   records.forEach((record) => {
     const current = latestRecords.get(record.organization);
@@ -3362,23 +4573,27 @@ export default function CrmApp({
 
   const progressSchedules = useMemo(() => {
     const scheduleMap = new Map<string, ProgressScheduleItem[]>();
+    const latestByOrganization = new Map<string, Activity>();
     records.forEach((record) => {
+      const current = latestByOrganization.get(record.organization);
+      if (
+        !current ||
+        record.activityDate > current.activityDate ||
+        (record.activityDate === current.activityDate && record.id > current.id)
+      ) {
+        latestByOrganization.set(record.organization, record);
+      }
+    });
+    latestByOrganization.forEach((record) => {
       if (isBundledOrganization(record.organization)) {
         return;
       }
-      const current = scheduleMap.get(record.organization) ?? [];
-      parseProgressSchedule(record.progressSchedule).forEach((item) => {
-        if (
-          !current.some(
-            (existing) =>
-              existing.date === item.date && existing.label === item.label,
-          )
-        ) {
-          current.push(item);
-        }
-      });
+      const current = parseProgressSchedule(record.progressSchedule).sort(
+        (left, right) =>
+          left.date.localeCompare(right.date) ||
+          left.label.localeCompare(right.label, "ko-KR"),
+      );
       if (current.length) {
-        current.sort((a, b) => a.date.localeCompare(b.date));
         scheduleMap.set(record.organization, current);
       }
     });
@@ -3873,9 +5088,39 @@ export default function CrmApp({
     [teamAttentionItems],
   );
 
+  const teamConversionRecords = useMemo(
+    () =>
+      teamPeriodLatestRecords
+        .filter((record) => {
+          if (record.awardStatus !== "위즈업 수주") return false;
+          const manager = resolveRegisteredSalesName(
+            record.progressManager,
+            registeredSalesNames,
+          );
+          return (
+            selectedTeamMember === "전체" ||
+            manager === selectedTeamMember
+          );
+        })
+        .sort(
+          (left, right) =>
+            right.activityDate.localeCompare(left.activityDate) ||
+            right.id - left.id,
+        ),
+    [
+      registeredSalesNames,
+      selectedTeamMember,
+      teamPeriodLatestRecords,
+    ],
+  );
+
   const teamDetailRecords =
-    view === "records" && teamDetailMode === "attention"
-      ? teamAttentionItems.map((item) => item.record)
+    view === "records"
+      ? teamDetailMode === "attention"
+        ? teamAttentionItems.map((item) => item.record)
+        : teamDetailMode === "conversion"
+          ? teamConversionRecords
+          : displayedRecords
       : displayedRecords;
 
   function openNew() {
@@ -3887,7 +5132,29 @@ export default function CrmApp({
     setActivityImportRows([]);
     setActivityImportError("");
     setActivityImportProgress("");
+    setInheritedFormOrganization("");
     setForm({ ...emptyForm, activityDate: new Date().toISOString().slice(0, 10) });
+    setModalOpen(true);
+  }
+
+  function openNewForOrganization(record: Activity) {
+    setEditingId(null);
+    setCreatingAward(false);
+    formOrganizationSourceRef.current = "";
+    setRecordEntryMode("manual");
+    setActivityImportFileName("");
+    setActivityImportRows([]);
+    setActivityImportError("");
+    setActivityImportProgress("");
+    setInheritedFormOrganization(record.organization);
+    setForm({
+      ...emptyForm,
+      activityDate: new Date().toISOString().slice(0, 10),
+      organization: record.organization,
+      region: record.region,
+      topic: record.topic,
+      progressManager: record.progressManager,
+    });
     setModalOpen(true);
   }
 
@@ -3896,6 +5163,7 @@ export default function CrmApp({
     setCreatingAward(true);
     formOrganizationSourceRef.current = "";
     setRecordEntryMode("manual");
+    setInheritedFormOrganization("");
     setForm({
       ...emptyForm,
       activityDate: new Date().toISOString().slice(0, 10),
@@ -3916,11 +5184,13 @@ export default function CrmApp({
     setCreatingAward(false);
     formOrganizationSourceRef.current = record.organization;
     setRecordEntryMode("manual");
+    setInheritedFormOrganization("");
     setForm(activityToForm(record));
     setModalOpen(true);
   }
 
   function updateFormOrganization(nextOrganization: string) {
+    setInheritedFormOrganization("");
     setForm((current) => {
       const canonical = nextOrganization.trim();
       const sourceOrganizations = [
@@ -3959,6 +5229,32 @@ export default function CrmApp({
       }
       return updated;
     });
+  }
+
+  function inheritLatestInstitutionDetails() {
+    if (editingId) return;
+    const organization = form.organization.trim();
+    if (!organization) {
+      setInheritedFormOrganization("");
+      return;
+    }
+
+    const latest = records
+      .filter((record) => record.organization.trim() === organization)
+      .sort(
+        (left, right) =>
+          right.activityDate.localeCompare(left.activityDate) ||
+          right.id - left.id,
+      )[0];
+    if (!latest) {
+      setInheritedFormOrganization("");
+      return;
+    }
+
+    setForm((current) =>
+      inheritInstitutionState(current, latest, { inheritFormDefaults: true }),
+    );
+    setInheritedFormOrganization(latest.organization);
   }
 
   function reviewActivityImportRows(rows: ActivityImportRow[]) {
@@ -4483,10 +5779,11 @@ export default function CrmApp({
 
   async function selectView(nextView: View) {
     if (
-      (presentationMode && managementViews.has(nextView)) ||
+      (presentationMode && presentationHiddenViews.has(nextView)) ||
       ((nextView === "organizations" || nextView === "records") &&
         !canManageRecords) ||
       (nextView === "team" && !canManageMembers) ||
+      (nextView === "trash" && !isOwner) ||
       (nextView === "integration" && !canManageIntegration) ||
       (nextView === "backup" && !canManageBackup)
     ) {
@@ -4515,7 +5812,7 @@ export default function CrmApp({
     if (!isOwner) return;
     if (enabled) {
       window.sessionStorage.setItem(presentationModeStorageKey, "active");
-      if (managementViews.has(view)) {
+      if (presentationHiddenViews.has(view)) {
         navigateTo("dashboard", { replace: true });
       }
     } else {
@@ -4526,7 +5823,7 @@ export default function CrmApp({
     setMobileNav(false);
     setToast(
       enabled
-        ? "시연 모드를 시작했습니다. 운영 도구와 사용자 정보를 숨겼습니다. 종료하려면 Esc 키를 누르세요."
+        ? "시연 모드를 시작했습니다. 팀 업무 현황과 관리자 영업점검을 숨겼습니다."
         : "시연 모드를 종료했습니다.",
     );
   }
@@ -4995,6 +6292,63 @@ export default function CrmApp({
     }
   }
 
+  async function deleteAiRecommendationRecord(
+    recommendation: AiRecommendationRecord,
+  ) {
+    if (aiRecommendationDeleting) return false;
+    const confirmed = window.confirm(
+      "이 AI 대응 제안만 삭제할까요?\n원래 영업 기록과 이미 반영한 사업·품목은 그대로 유지됩니다.",
+    );
+    if (!confirmed) return false;
+
+    setAiRecommendationDeleting(true);
+    try {
+      const response = await fetch("/api/ai/recommendations", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recommendationId: recommendation.id }),
+      });
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "AI 대응 제안을 삭제하지 못했습니다.");
+      }
+
+      setAiRecommendationBatch((current) =>
+        current.map((item) =>
+          item.recommendation?.id === recommendation.id
+            ? {
+                ...item,
+                recommendation: null,
+                recommendationPending: false,
+              }
+            : item,
+        ),
+      );
+      if (aiRecommendationPanel?.id === recommendation.id) {
+        setAiRecommendationPanel(null);
+        setAiRecommendationActivity(null);
+        setAiRecommendationExpanded(false);
+        setAiRecommendationSelection(emptyAiRecommendationSelection);
+      }
+      setToast(
+        "AI 대응 제안만 삭제했습니다. 원래 영업 기록은 그대로 유지됩니다.",
+      );
+      return true;
+    } catch (caught) {
+      setToast(
+        caught instanceof Error
+          ? caught.message
+          : "AI 대응 제안을 삭제하지 못했습니다.",
+      );
+      return false;
+    } finally {
+      setAiRecommendationDeleting(false);
+    }
+  }
+
   async function saveAiPreviewBatch() {
     if (!aiPreviews.length || aiBatchSaving) return;
     const invalidDraft = aiPreviews.find(
@@ -5273,11 +6627,229 @@ export default function CrmApp({
       });
       if (!response.ok) throw new Error("삭제하지 못했습니다.");
       setRecords((current) => current.filter((item) => item.id !== record.id));
-      setToast("기록을 삭제했습니다.");
+      setToast("기록을 휴지통으로 이동했습니다. 관리자가 30일 안에 복원할 수 있습니다.");
       return true;
     } catch (caught) {
       setToast(caught instanceof Error ? caught.message : "삭제하지 못했습니다.");
       return false;
+    }
+  }
+
+  async function removeSelectedInstitutions() {
+    const organizations = [
+      ...new Set(
+        selectedInstitutionIds
+          .map((id) => records.find((record) => record.id === id)?.organization)
+          .filter((organization): organization is string => Boolean(organization)),
+      ),
+    ];
+    if (!organizations.length || institutionDeleteBusy) {
+      setToast("삭제할 기관을 한 곳 이상 선택해 주세요.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `선택한 ${organizations.length}개 기관을 삭제할까요?\n\n해당 기관의 활동 기록·일정·지도 위치·사업 품목은 휴지통으로 이동되며, 관리자가 30일 안에 복원할 수 있습니다.`,
+    );
+    if (!confirmed) return;
+
+    try {
+      setInstitutionDeleteBusy(true);
+      const response = await fetch("/api/records", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizations }),
+      });
+      const payload = (await response.json()) as {
+        deletedCount?: number;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || "선택한 기관을 삭제하지 못했습니다.");
+      }
+      const deletedOrganizations = new Set(organizations);
+      setRecords((current) =>
+        current.filter(
+          (record) => !deletedOrganizations.has(record.organization),
+        ),
+      );
+      if (detailOrganization && deletedOrganizations.has(detailOrganization)) {
+        setDetailOrganization(null);
+      }
+      setSelectedInstitutionIds([]);
+      setToast(
+        `${organizations.length}개 기관과 연결된 기록 ${payload.deletedCount ?? 0}건을 휴지통으로 이동했습니다.`,
+      );
+    } catch (caught) {
+      setToast(
+        caught instanceof Error
+          ? caught.message
+          : "선택한 기관을 삭제하지 못했습니다.",
+      );
+    } finally {
+      setInstitutionDeleteBusy(false);
+    }
+  }
+
+  async function saveSelectedInstitutionBudgets() {
+    if (!selectedInstitutionIds.length || institutionBudgetBusy) return;
+    const budgetType = institutionBudgetType.trim();
+    const budgetAmount = formatMoneyInput(institutionBudgetAmount);
+    const applyFields = [
+      institutionBulkBudgetEnabled && "budget",
+      institutionBulkManagerEnabled && "progressManager",
+      institutionBulkFollowUpEnabled && "followUpDate",
+      institutionBulkNextActionEnabled && "nextAction",
+      institutionBulkStatusEnabled && "status",
+      institutionBulkAwardEnabled && "awardStatus",
+    ].filter((field): field is string => Boolean(field));
+    if (!applyFields.length) {
+      setToast("일괄 변경할 항목을 한 개 이상 선택해 주세요.");
+      return;
+    }
+    if (institutionBulkBudgetEnabled && !budgetType && !budgetAmount) {
+      setToast("예산명 또는 예산금액을 입력해 주세요.");
+      return;
+    }
+    if (institutionBulkManagerEnabled && !institutionBulkProgressManager) {
+      setToast("진행 담당자를 선택해 주세요.");
+      return;
+    }
+    if (institutionBulkFollowUpEnabled && !institutionBulkFollowUpDate) {
+      setToast("재연락 예정일을 선택해 주세요.");
+      return;
+    }
+    if (institutionBulkNextActionEnabled && !institutionBulkNextAction.trim()) {
+      setToast("다음 행동을 입력해 주세요.");
+      return;
+    }
+    if (
+      institutionBulkAwardEnabled &&
+      institutionBulkAwardStatus === "타업체 수주" &&
+      !institutionBulkAwardCompany.trim()
+    ) {
+      setToast("타업체 수주 업체명을 입력해 주세요.");
+      return;
+    }
+    const targetCount = selectedInstitutionIds.length;
+    const modeText = institutionBudgetOnlyEmpty
+      ? "비어 있는 항목에만 입력"
+      : "기존 예산 정보까지 변경";
+    if (
+      !window.confirm(
+        `선택한 ${targetCount}개 기관을 일괄 수정할까요?\n\n${applyFields.length}개 항목을 ${modeText}합니다.${institutionBulkStatusEnabled ? "\n영업 진행 상태는 선택 기관 모두 변경됩니다." : ""}`,
+      )
+    ) {
+      return;
+    }
+    try {
+      setInstitutionBudgetBusy(true);
+      const response = await fetch("/api/records", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: selectedInstitutionIds,
+          budgetType,
+          budgetAmount,
+          progressManager: institutionBulkProgressManager,
+          followUpDate: institutionBulkFollowUpDate,
+          nextAction: institutionBulkNextAction.trim(),
+          status: institutionBulkStatus,
+          awardStatus: institutionBulkAwardStatus,
+          awardCompany: institutionBulkAwardCompany.trim(),
+          applyFields,
+          onlyEmpty: institutionBudgetOnlyEmpty,
+        }),
+      });
+      const payload = (await response.json()) as {
+        updatedIds?: number[];
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || "예산 정보를 일괄 저장하지 못했습니다.");
+      }
+      const updatedIds = new Set(payload.updatedIds ?? selectedInstitutionIds);
+      setRecords((current) =>
+        current.map((record) => {
+          if (!updatedIds.has(record.id)) return record;
+          return {
+            ...record,
+            budgetType:
+              budgetType &&
+              (!institutionBudgetOnlyEmpty || !record.budgetType.trim())
+                ? budgetType
+                : record.budgetType,
+            budgetAmount:
+              budgetAmount &&
+              (!institutionBudgetOnlyEmpty || !record.budgetAmount.trim())
+                ? budgetAmount
+                : record.budgetAmount,
+            progressManager:
+              institutionBulkManagerEnabled &&
+              (!institutionBudgetOnlyEmpty || !record.progressManager.trim())
+                ? institutionBulkProgressManager
+                : record.progressManager,
+            followUpRequired:
+              institutionBulkFollowUpEnabled
+                ? true
+                : record.followUpRequired,
+            followUpDate:
+              institutionBulkFollowUpEnabled &&
+              (!institutionBudgetOnlyEmpty || !record.followUpDate.trim())
+                ? institutionBulkFollowUpDate
+                : record.followUpDate,
+            nextAction:
+              institutionBulkNextActionEnabled &&
+              (!institutionBudgetOnlyEmpty || !record.nextAction.trim())
+                ? institutionBulkNextAction.trim()
+                : record.nextAction,
+            status: institutionBulkAwardEnabled
+              ? institutionBulkAwardStatus === "위즈업 수주"
+                ? "수주 후 진행"
+                : institutionBulkAwardStatus === "타업체 수주"
+                  ? "영업 종료"
+                  : record.status === "수주 후 진행" ||
+                      record.status === "영업 종료"
+                    ? "진행 중"
+                    : record.status
+              : institutionBulkStatusEnabled
+                ? institutionBulkStatus
+                : record.status,
+            awardStatus: institutionBulkAwardEnabled
+              ? institutionBulkAwardStatus
+              : record.awardStatus,
+            awardCompany: institutionBulkAwardEnabled
+              ? institutionBulkAwardStatus === "위즈업 수주"
+                ? "위즈업"
+                : institutionBulkAwardStatus === "타업체 수주"
+                  ? institutionBulkAwardCompany.trim()
+                  : ""
+              : record.awardCompany,
+          };
+        }),
+      );
+      setInstitutionBudgetOpen(false);
+      setInstitutionBudgetType("");
+      setInstitutionBudgetAmount("");
+      setInstitutionBulkProgressManager("");
+      setInstitutionBulkFollowUpDate("");
+      setInstitutionBulkNextAction("");
+      setInstitutionBulkManagerEnabled(false);
+      setInstitutionBulkFollowUpEnabled(false);
+      setInstitutionBulkNextActionEnabled(false);
+      setInstitutionBulkStatusEnabled(false);
+      setInstitutionBulkAwardEnabled(false);
+      setInstitutionBulkAwardStatus("미정");
+      setInstitutionBulkAwardCompany("");
+      setSelectedInstitutionIds([]);
+      setToast(`${targetCount}개 기관을 일괄 수정했습니다.`);
+    } catch (caught) {
+      setToast(
+        caught instanceof Error
+          ? caught.message
+          : "예산 정보를 일괄 저장하지 못했습니다.",
+      );
+    } finally {
+      setInstitutionBudgetBusy(false);
     }
   }
 
@@ -5486,6 +7058,41 @@ export default function CrmApp({
     setActivityReviewOpen(true);
     void loadActivityReviews();
     void loadActivityReviewAssignees();
+    void loadProtectionReviews();
+  }
+
+  async function completeProtectionReview(item: ProtectionReviewItem) {
+    if (protectionReviewSavingIds.includes(item.id)) return;
+    setProtectionReviewSavingIds((current) => [...current, item.id]);
+    try {
+      const response = await fetch("/api/equipment", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "protection",
+          id: item.id,
+          protectionStatus: "신청 완료",
+        }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "영업보호 상태를 변경하지 못했습니다.");
+      }
+      setProtectionReviewItems((current) =>
+        current.filter((entry) => entry.id !== item.id),
+      );
+      setToast("영업보호 신청 완료로 변경했습니다.");
+    } catch (caught) {
+      setToast(
+        caught instanceof Error
+          ? caught.message
+          : "영업보호 상태를 변경하지 못했습니다.",
+      );
+    } finally {
+      setProtectionReviewSavingIds((current) =>
+        current.filter((id) => id !== item.id),
+      );
+    }
   }
 
   function updateActivityReviewDraft(
@@ -5959,10 +7566,16 @@ export default function CrmApp({
               ? activeAwardsOnly
                 ? "진행 중 수주"
                 : "수주 관리"
+              : view === "products"
+                ? "제품·견적 관리"
               : view === "map"
                 ? "영업·수주 지도"
+              : view === "lounge"
+                ? "사내 휴게실"
               : view === "team"
                 ? "구성원 관리"
+                : view === "trash"
+                  ? "휴지통"
                 : view === "backup"
                   ? "데이터 백업·복구"
                   : "API 등록·관리";
@@ -6112,14 +7725,13 @@ export default function CrmApp({
               {item.label}
             </button>
           ))}
-          {!presentationMode &&
-            (managementNavItems.length > 0 || isOwner) && (
+          {(visibleManagementNavItems.length > 0 || isOwner) && (
             <div className="admin-nav-group">
               <p>
                 운영 도구
                 <span>{isOwner ? "대표관리자" : "보조관리자"}</span>
               </p>
-              {managementNavItems.map((item) => (
+              {visibleManagementNavItems.map((item) => (
                 <button
                   className={`admin-nav-item ${view === item.id ? "active" : ""}`}
                   key={item.id}
@@ -6137,60 +7749,76 @@ export default function CrmApp({
             )}
         </nav>
 
-        {!presentationMode && (
-          <>
-            <div className="sidebar-note">
-              <span className="privacy-dot" />
-              <div>
-                <strong>승인된 구성원 전용</strong>
-                <p>ChatGPT 로그인과 관리자 승인을 모두 확인합니다.</p>
+        <>
+          <div className="sidebar-note">
+            <span className="privacy-dot" />
+            <div>
+              <strong>승인된 구성원 전용</strong>
+              <p>ChatGPT 로그인과 관리자 승인을 모두 확인합니다.</p>
+            </div>
+          </div>
+          <div className="profile-menu" ref={profileMenuRef}>
+            <button
+              type="button"
+              className="profile"
+              aria-haspopup="menu"
+              aria-expanded={profileMenuOpen}
+              onClick={() => setProfileMenuOpen((current) => !current)}
+            >
+              <span className="avatar">
+                {session.member.displayName.slice(0, 1)}
+              </span>
+              <span className="profile-copy">
+                <strong>{session.member.displayName}</strong>
+                <span>
+                  {session.member.role === "admin"
+                    ? "대표관리자"
+                    : session.member.role === "assistant"
+                      ? "보조관리자"
+                      : "구성원"}
+                </span>
+              </span>
+              <span className="profile-chevron" aria-hidden="true">
+                {profileMenuOpen ? "⌃" : "⌄"}
+              </span>
+            </button>
+            {profileMenuOpen && (
+              <div className="profile-popover" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setProfileMenuOpen(false);
+                    void selectView("lounge");
+                  }}
+                >
+                  <strong>♣ 사내 휴게실</strong>
+                  <span>몽글이·콩이와 가볍게 홀덤을 즐겨보세요.</span>
+                </button>
+                {isOwner && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={presentationMode ? "presentation-active" : ""}
+                    onClick={() => updatePresentationMode(!presentationMode)}
+                  >
+                    <strong>
+                      {presentationMode ? "시연 모드 종료" : "시연 모드 시작"}
+                    </strong>
+                    <span>
+                      {presentationMode
+                        ? "숨겼던 두 관리 메뉴를 다시 표시합니다."
+                        : "팀 업무 현황과 관리자 영업점검만 숨깁니다."}
+                    </span>
+                  </button>
+                )}
+                <a href={signOutPath} role="menuitem">
+                  로그아웃
+                </a>
               </div>
-            </div>
-            <div className="profile-menu" ref={profileMenuRef}>
-              <button
-                type="button"
-                className="profile"
-                aria-haspopup="menu"
-                aria-expanded={profileMenuOpen}
-                onClick={() => setProfileMenuOpen((current) => !current)}
-              >
-                <span className="avatar">
-                  {session.member.displayName.slice(0, 1)}
-                </span>
-                <span className="profile-copy">
-                  <strong>{session.member.displayName}</strong>
-                  <span>
-                    {session.member.role === "admin"
-                      ? "대표관리자"
-                      : session.member.role === "assistant"
-                        ? "보조관리자"
-                        : "구성원"}
-                  </span>
-                </span>
-                <span className="profile-chevron" aria-hidden="true">
-                  {profileMenuOpen ? "⌃" : "⌄"}
-                </span>
-              </button>
-              {profileMenuOpen && (
-                <div className="profile-popover" role="menu">
-                  {isOwner && (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => updatePresentationMode(true)}
-                    >
-                      <strong>시연 모드 시작</strong>
-                      <span>발표 중 운영 도구와 사용자 정보를 숨깁니다.</span>
-                    </button>
-                  )}
-                  <a href={signOutPath} role="menuitem">
-                    로그아웃
-                  </a>
-                </div>
-              )}
-            </div>
-          </>
-        )}
+            )}
+          </div>
+        </>
       </aside>
 
       {mobileNav && <button className="nav-scrim" aria-label="메뉴 닫기" onClick={() => setMobileNav(false)} />}
@@ -6200,7 +7828,7 @@ export default function CrmApp({
           <button className="menu-button" onClick={() => setMobileNav(true)} aria-label="메뉴 열기">
             ☰
           </button>
-          {view !== "dashboard" && view !== "map" && (
+          {view !== "dashboard" && view !== "map" && view !== "trash" && (
             <div className="global-search">
               <span>⌕</span>
               <input
@@ -6213,6 +7841,8 @@ export default function CrmApp({
                 placeholder={
                   view === "organizations"
                     ? "기관명, 진행 담당자, 점검 사유 검색"
+                    : view === "products"
+                      ? "품명, 규격, 단가, 비고, 수수료율 검색"
                     : "기관명, 담당자, 주제 검색"
                 }
                 aria-label="통합 검색"
@@ -6228,7 +7858,7 @@ export default function CrmApp({
           </div>
         </header>
 
-        <div className={`content ${view === "followup" || view === "map" || view === "backup" || view === "records" || view === "organizations" ? "content-wide" : ""}`}>
+        <div className={`content ${view === "followup" || view === "map" || view === "backup" || view === "trash" || view === "records" || view === "organizations" || view === "products" ? "content-wide" : ""}`}>
           <div className="page-heading">
             <div>
               <p className="eyebrow">TM · MEETING MANAGEMENT</p>
@@ -6236,6 +7866,8 @@ export default function CrmApp({
               <p>
                 {view === "team"
                   ? "가입 승인, 역할·권한, 영업 담당자와 실시간 접속 현황을 관리합니다."
+                  : view === "trash"
+                    ? "관리자만 삭제된 항목을 30일 안에 복원하거나 영구 삭제할 수 있습니다."
                   : view === "backup"
                     ? "전체 업무 데이터를 안전하게 보관하고, 필요할 때 검증 후 복원합니다."
                    : view === "integration"
@@ -6244,8 +7876,12 @@ export default function CrmApp({
                       ? activeAwardsOnly
                         ? "완공·검수·교육이 모두 끝나지 않은 수주 건만 모아 확인합니다."
                         : "위즈업 수주와 타업체 수주 결과를 함께 관리합니다."
+                      : view === "products"
+                        ? "표준 견적서의 제품 정보와 단가·수수료율을 한곳에서 확인합니다."
                       : view === "map"
                         ? "기관 위치와 진행 상태를 확인하고, 방문할 학교를 선택해 영업 동선을 계획합니다."
+                      : view === "lounge"
+                        ? "가상 칩으로 가볍게 쉬어가는 승인 구성원 전용 공간입니다."
                       : view === "schedules"
                         ? "기본 30일 일정을 확인하고 필요하면 14일 또는 전체 일정으로 전환합니다."
                       : view === "records"
@@ -6278,7 +7914,9 @@ export default function CrmApp({
             </div>
           )}
 
-          {view === "dashboard" && (
+          {view === "lounge" ? (
+            <HoldemLounge displayName={session.member.displayName} />
+          ) : view === "dashboard" && (
             <>
               <section className="ai-record-panel" aria-labelledby="ai-record-title">
                 <div className="ai-record-copy">
@@ -6481,7 +8119,7 @@ export default function CrmApp({
 
               <section
                 className={`my-record-review-card ${
-                  pendingActivityReviewRecords.length
+                  pendingActivityReviewRecords.length || protectionReviewItems.length
                     ? "needs-review"
                     : "is-complete"
                 }`}
@@ -6495,9 +8133,9 @@ export default function CrmApp({
                     <span className="section-kicker">MY RECORD CHECK</span>
                     <h2 id="my-record-review-title">내 기록 점검</h2>
                     <p>
-                      {pendingActivityReviewRecords.length
-                        ? "내가 진행 담당자인 기록에서 비어 있거나 확인이 필요한 항목만 보완합니다."
-                        : "내가 진행 담당자인 최근 기록에서 확인이 필요한 항목이 없습니다."}
+                      {pendingActivityReviewRecords.length || protectionReviewItems.length
+                        ? "기록 보완과 영업보호 신청이 필요한 품목을 한곳에서 확인합니다."
+                        : "내가 진행 담당자인 기록과 영업보호 품목에 확인할 내용이 없습니다."}
                     </p>
                   </div>
                 </div>
@@ -6509,6 +8147,9 @@ export default function CrmApp({
                     보완 필요 <b>{pendingActivityReviewRecords.length}</b>건
                   </span>
                   <span>
+                    영업보호 필요 <b>{protectionReviewItems.length}</b>건
+                  </span>
+                  <span>
                     오늘 확인 완료{" "}
                     <b>{completedTodayActivityReviewCount}</b>건
                   </span>
@@ -6517,14 +8158,14 @@ export default function CrmApp({
                   type="button"
                   onClick={openActivityReview}
                   disabled={
-                    activityReviewsLoading ||
-                    pendingActivityReviewRecords.length === 0
+                    activityReviewsLoading || protectionReviewsLoading ||
+                    pendingActivityReviewRecords.length + protectionReviewItems.length === 0
                   }
                 >
-                  {activityReviewsLoading
+                  {activityReviewsLoading || protectionReviewsLoading
                     ? "점검 상태 확인 중…"
-                    : pendingActivityReviewRecords.length
-                      ? "기록 점검하기"
+                    : pendingActivityReviewRecords.length || protectionReviewItems.length
+                      ? "확인할 업무 보기"
                       : "점검 완료"}
                 </button>
               </section>
@@ -6621,7 +8262,12 @@ export default function CrmApp({
             </div>
           )}
 
-          {view === "map" ? null : view === "schedules" ? (
+          {view === "map" || view === "lounge" ? null : view === "products" ? (
+            <ProductCatalogPage
+              search={search}
+              canCreateQuotation={isOwner}
+            />
+          ) : view === "schedules" ? (
             <section className="panel schedule-panel schedule-list-page">
               <div className="panel-header">
                 <div>
@@ -7103,6 +8749,11 @@ export default function CrmApp({
                 )}
               </article>
             </section>
+          ) : view === "trash" && isOwner ? (
+            <TrashPage
+              onDataChanged={loadRecords}
+              notify={setToast}
+            />
           ) : view === "backup" ? (
             <DataBackupPage
               onDataChanged={loadRecords}
@@ -7459,7 +9110,6 @@ export default function CrmApp({
                 </p>
               </article>
 
-
               <article className="panel gpt-instruction-copy-card">
                 <div>
                   <span className="section-kicker">AI ORGANIZE GUIDE</span>
@@ -7632,7 +9282,7 @@ export default function CrmApp({
                         <th>진행 담당자</th>
                         <th>최근 접촉</th>
                         <th>다음 행동</th>
-                        <th>현재 상태</th>
+                        <th>영업 진행 상태</th>
                         <th>점검 사유</th>
                         <th><span className="sr-only">상세</span></th>
                       </tr>
@@ -7719,7 +9369,7 @@ export default function CrmApp({
                             </td>
                             <td>
                               <span className={`status-pill ${statusClass(record.status)}`}>
-                                {record.status}
+                                {displaySalesStatus(record)}
                               </span>
                               <small>{record.awardStatus}</small>
                             </td>
@@ -7835,6 +9485,21 @@ export default function CrmApp({
                   </h2>
                 </div>
                 <div className="records-heading-actions">
+                  <button
+                    type="button"
+                    className="institution-budget-button"
+                    disabled={selectedInstitutionIds.length === 0}
+                    onClick={() =>
+                      setInstitutionBudgetOpen((current) => !current)
+                    }
+                    title="선택한 기관의 담당자·예산·재연락·다음 행동·상태를 한 번에 수정합니다."
+                  >
+                    {`선택 기관 일괄 수정${
+                      selectedInstitutionIds.length > 0
+                        ? ` ${selectedInstitutionIds.length}`
+                        : ""
+                    }`}
+                  </button>
                   {canManageRecords && (
                     <button
                       type="button"
@@ -7855,6 +9520,26 @@ export default function CrmApp({
                           }`}
                     </button>
                   )}
+                  {canDeleteRecords && (
+                    <button
+                      type="button"
+                      className="institution-bulk-delete-button"
+                      disabled={
+                        selectedInstitutionIds.length === 0 ||
+                        institutionDeleteBusy
+                      }
+                      onClick={() => void removeSelectedInstitutions()}
+                      title="선택한 기관과 연결된 모든 업무 기록을 삭제합니다."
+                    >
+                      {institutionDeleteBusy
+                        ? "삭제 중…"
+                        : `선택 기관 삭제${
+                            selectedInstitutionIds.length > 0
+                              ? ` ${selectedInstitutionIds.length}`
+                              : ""
+                          }`}
+                    </button>
+                  )}
                   {canExportData && (
                     <button
                       type="button"
@@ -7868,7 +9553,166 @@ export default function CrmApp({
                   )}
                   <span className="record-count">{followupRows.length}곳</span>
                 </div>
+                <div className="institution-mobile-header-actions">
+                  <span className="record-count">{followupRows.length}곳</span>
+                  {canExportData && (
+                    <button
+                      type="button"
+                      className="institution-mobile-export"
+                      onClick={exportInstitutionWorkbook}
+                    >
+                      엑셀
+                    </button>
+                  )}
+                </div>
               </div>
+              {selectedInstitutionIds.length > 0 && (
+                <div
+                  className="institution-mobile-selection-bar"
+                  role="toolbar"
+                  aria-label="선택 기관 작업"
+                >
+                  <div className="institution-mobile-selection-summary">
+                    <strong>{selectedInstitutionIds.length}곳 선택</strong>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedInstitutionIds([]);
+                        setInstitutionBudgetOpen(false);
+                      }}
+                    >
+                      선택 해제
+                    </button>
+                  </div>
+                  <div className="institution-mobile-selection-actions">
+                    <button
+                      type="button"
+                      className="edit"
+                      onClick={() =>
+                        setInstitutionBudgetOpen((current) => !current)
+                      }
+                    >
+                      여러 기관 수정
+                    </button>
+                    {canManageRecords && (
+                      <button
+                        type="button"
+                        className="merge"
+                        disabled={
+                          selectedInstitutionIds.length !== 2 ||
+                          institutionMergeBusy
+                        }
+                        onClick={() => void openInstitutionMerge()}
+                      >
+                        {institutionMergeBusy ? "확인 중…" : "두 기관 합치기"}
+                      </button>
+                    )}
+                    {canDeleteRecords && (
+                      <button
+                        type="button"
+                        className="delete"
+                        disabled={institutionDeleteBusy}
+                        onClick={() => void removeSelectedInstitutions()}
+                      >
+                        {institutionDeleteBusy ? "삭제 중…" : "선택 삭제"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {institutionBudgetOpen && selectedInstitutionIds.length > 0 && (
+                <div className="institution-budget-bulk" role="region" aria-label="선택 기관 일괄 수정">
+                  <div className="institution-budget-bulk-heading">
+                    <div>
+                      <strong>선택한 {selectedInstitutionIds.length}개 기관 일괄 수정</strong>
+                      <span>변경할 항목만 체크한 뒤 입력해 주세요.</span>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="기관 일괄 수정 닫기"
+                      onClick={() => setInstitutionBudgetOpen(false)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="institution-bulk-editor-grid">
+                    <section className={institutionBulkManagerEnabled ? "enabled" : ""}>
+                      <label className="institution-bulk-toggle"><input type="checkbox" checked={institutionBulkManagerEnabled} onChange={(event) => setInstitutionBulkManagerEnabled(event.target.checked)} /><strong>진행 담당자</strong></label>
+                      <select disabled={!institutionBulkManagerEnabled} value={institutionBulkProgressManager} onChange={(event) => setInstitutionBulkProgressManager(event.target.value)}>
+                        <option value="">담당자 선택</option>
+                        {registeredSalesNames.map((name) => <option key={name}>{name}</option>)}
+                      </select>
+                    </section>
+                    <section className={institutionBulkBudgetEnabled ? "enabled" : ""}>
+                      <label className="institution-bulk-toggle"><input type="checkbox" checked={institutionBulkBudgetEnabled} onChange={(event) => setInstitutionBulkBudgetEnabled(event.target.checked)} /><strong>예산</strong></label>
+                      <div className="institution-bulk-pair">
+                        <input disabled={!institutionBulkBudgetEnabled} value={institutionBudgetType} onChange={(event) => setInstitutionBudgetType(event.target.value)} placeholder="예산명" />
+                        <input disabled={!institutionBulkBudgetEnabled} inputMode="decimal" value={institutionBudgetAmount} onChange={(event) => setInstitutionBudgetAmount(formatMoneyInput(event.target.value))} placeholder="예산금액" />
+                      </div>
+                    </section>
+                    <section className={institutionBulkFollowUpEnabled ? "enabled" : ""}>
+                      <label className="institution-bulk-toggle"><input type="checkbox" checked={institutionBulkFollowUpEnabled} onChange={(event) => setInstitutionBulkFollowUpEnabled(event.target.checked)} /><strong>재연락 예정일</strong></label>
+                      <input type="date" disabled={!institutionBulkFollowUpEnabled} value={institutionBulkFollowUpDate} onChange={(event) => setInstitutionBulkFollowUpDate(event.target.value)} />
+                    </section>
+                    <section className={institutionBulkNextActionEnabled ? "enabled" : ""}>
+                      <label className="institution-bulk-toggle"><input type="checkbox" checked={institutionBulkNextActionEnabled} onChange={(event) => setInstitutionBulkNextActionEnabled(event.target.checked)} /><strong>다음 행동</strong></label>
+                      <input disabled={!institutionBulkNextActionEnabled} value={institutionBulkNextAction} onChange={(event) => setInstitutionBulkNextAction(event.target.value)} placeholder="예: 담당자 확인 후 제안서 발송" />
+                    </section>
+                    <section className={institutionBulkStatusEnabled ? "enabled" : ""}>
+                      <label className="institution-bulk-toggle"><input type="checkbox" checked={institutionBulkStatusEnabled} onChange={(event) => setInstitutionBulkStatusEnabled(event.target.checked)} /><strong>영업 진행 상태</strong><small>선택 기관 모두 변경</small></label>
+                      <select disabled={!institutionBulkStatusEnabled} value={institutionBulkStatus} onChange={(event) => setInstitutionBulkStatus(event.target.value)}>
+                        {statusOptions.map((status) => <option key={status}>{status}</option>)}
+                      </select>
+                    </section>
+                    <section className={institutionBulkAwardEnabled ? "enabled" : ""}>
+                      <label className="institution-bulk-toggle"><input type="checkbox" checked={institutionBulkAwardEnabled} onChange={(event) => setInstitutionBulkAwardEnabled(event.target.checked)} /><strong>수주 구분</strong><small>영업 상태 자동 연동</small></label>
+                      <div className="institution-bulk-pair">
+                        <select disabled={!institutionBulkAwardEnabled} value={institutionBulkAwardStatus} onChange={(event) => { const awardStatus = event.target.value; setInstitutionBulkAwardStatus(awardStatus); if (awardStatus !== "타업체 수주") setInstitutionBulkAwardCompany(""); }}>
+                          <option>미정</option>
+                          <option>위즈업 수주</option>
+                          <option>타업체 수주</option>
+                        </select>
+                        <input disabled={!institutionBulkAwardEnabled || institutionBulkAwardStatus !== "타업체 수주"} value={institutionBulkAwardStatus === "위즈업 수주" ? "위즈업" : institutionBulkAwardCompany} onChange={(event) => setInstitutionBulkAwardCompany(event.target.value)} placeholder="타업체명" />
+                      </div>
+                    </section>
+                  </div>
+                  <div className="institution-budget-bulk-fields institution-bulk-footer">
+                    <label className="institution-budget-mode">
+                      <input
+                        type="checkbox"
+                        checked={institutionBudgetOnlyEmpty}
+                        onChange={(event) =>
+                          setInstitutionBudgetOnlyEmpty(event.target.checked)
+                        }
+                      />
+                      <span>
+                        <strong>미등록 항목에만 입력</strong>
+                        <small>수주 구분은 영업 진행 상태와 자동 연동됩니다.</small>
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      className="institution-budget-save"
+                      disabled={
+                        institutionBudgetBusy ||
+                        !(
+                          institutionBulkBudgetEnabled ||
+                          institutionBulkManagerEnabled ||
+                          institutionBulkFollowUpEnabled ||
+                          institutionBulkNextActionEnabled ||
+                          institutionBulkStatusEnabled
+                          || institutionBulkAwardEnabled
+                        )
+                      }
+                      onClick={() => void saveSelectedInstitutionBudgets()}
+                    >
+                      {institutionBudgetBusy
+                        ? "적용 중…"
+                        : `${selectedInstitutionIds.length}개 기관에 적용`}
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="filter-row">
                 <div className="inline-search">
                   <span>⌕</span>
@@ -8356,16 +10200,39 @@ export default function CrmApp({
                                 </strong>
                               </td>
                               <td>
-                                <strong>
-                                  {metric.conversionRate === null
-                                    ? "—"
-                                    : `${metric.conversionRate}%`}
-                                </strong>
-                                <small>
-                                  {metric.conversionOrganizationCount
-                                    ? `${metric.conversionWonCount} / ${metric.conversionOrganizationCount}곳`
-                                    : "진행 기관 없음"}
-                                </small>
+                                <button
+                                  type="button"
+                                  className="team-conversion-button"
+                                  disabled={metric.conversionWonCount === 0}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setSelectedTeamMember(metric.name);
+                                    setTeamMetricFocus("all");
+                                    setTeamDetailMode("conversion");
+                                    document
+                                      .getElementById("team-detail-panel")
+                                      ?.scrollIntoView({
+                                        behavior: "smooth",
+                                        block: "start",
+                                      });
+                                  }}
+                                  aria-label={
+                                    metric.conversionWonCount
+                                      ? `${metric.name} 수주 기관 ${metric.conversionWonCount}곳 보기`
+                                      : `${metric.name} 수주 기관 없음`
+                                  }
+                                >
+                                  <strong>
+                                    {metric.conversionRate === null
+                                      ? "—"
+                                      : `${metric.conversionRate}%`}
+                                  </strong>
+                                  <small>
+                                    {metric.conversionOrganizationCount
+                                      ? `${metric.conversionWonCount} / ${metric.conversionOrganizationCount}곳`
+                                      : "진행 기관 없음"}
+                                  </small>
+                                </button>
                               </td>
                               <td>
                                 <button
@@ -8439,6 +10306,10 @@ export default function CrmApp({
                           ? selectedTeamMember !== "전체"
                             ? `${selectedTeamMember} · 확인 필요 업무`
                             : "팀 전체 확인 필요 업무"
+                          : teamDetailMode === "conversion"
+                            ? selectedTeamMember !== "전체"
+                              ? `${selectedTeamMember} · 수주 전환 기관`
+                              : "팀 전체 수주 전환 기관"
                         : selectedTeamMember !== "전체"
                           ? `${selectedTeamMember} · ${teamPeriodLabel} 상세 기록`
                           : `${teamPeriodLabel} 팀 상세 기록`}
@@ -8447,6 +10318,12 @@ export default function CrmApp({
                     <p className="team-detail-mode-copy">
                       선택한 기간 안에서 확인이 필요한 재연락·필수 정보
                       업무입니다.
+                    </p>
+                  )}
+                  {view === "records" && teamDetailMode === "conversion" && (
+                    <p className="team-detail-mode-copy">
+                      {teamPeriodLabel} 기준 위즈업 수주로 전환된 기관입니다.
+                      기관을 누르면 상세 내용과 이전 기록을 확인할 수 있습니다.
                     </p>
                   )}
                 </div>
@@ -8472,7 +10349,7 @@ export default function CrmApp({
                       수주 등록
                     </button>
                   )}
-                  {view === "records" && teamDetailMode === "attention" && (
+                  {view === "records" && teamDetailMode !== "activity" && (
                     <button
                       type="button"
                       className="team-detail-reset"
@@ -8489,12 +10366,14 @@ export default function CrmApp({
                       ? `최신 ${dashboardRecentRecords.length}건`
                       : view === "records" && teamDetailMode === "attention"
                         ? `${teamAttentionItems.length}건`
+                        : view === "records" && teamDetailMode === "conversion"
+                          ? `${teamConversionRecords.length}곳`
                         : `${filtered.length}건`}
                   </span>
                 </div>
               </div>
               {view !== "dashboard" &&
-                !(view === "records" && teamDetailMode === "attention") && (
+                !(view === "records" && teamDetailMode !== "activity") && (
                 <div className="filter-row">
                   <div className="inline-search"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="목록에서 검색" /></div>
                   {view !== "awards" && (
@@ -8583,7 +10462,7 @@ export default function CrmApp({
                         <th>수주 업체</th>
                         <th>수주 금액</th>
                         <th>진행 담당자</th>
-                        <th>현재 상태</th>
+                        <th>수주 진행 상태</th>
                         <th>진행 내용</th>
                         <th>관리</th>
                       </tr>
@@ -8697,28 +10576,30 @@ export default function CrmApp({
                             view === "dashboard"
                               ? "dashboard-activity-row"
                               : view === "records" &&
-                                  teamDetailMode === "attention"
-                                ? "team-attention-row"
+                                  teamDetailMode !== "activity"
+                                ? teamDetailMode === "attention"
+                                  ? "team-attention-row"
+                                  : "team-conversion-row"
                                 : undefined
                           }
                           tabIndex={
                             view === "dashboard" ||
                             (view === "records" &&
-                              teamDetailMode === "attention")
+                              teamDetailMode !== "activity")
                               ? 0
                               : undefined
                           }
                           aria-label={
                             view === "dashboard" ||
                             (view === "records" &&
-                              teamDetailMode === "attention")
+                              teamDetailMode !== "activity")
                               ? `${record.organization} 상세와 이전 이력 보기`
                               : undefined
                           }
                           onClick={
                             view === "dashboard" ||
                             (view === "records" &&
-                              teamDetailMode === "attention")
+                              teamDetailMode !== "activity")
                               ? (event) => {
                                   if (
                                     (event.target as HTMLElement).closest(
@@ -8734,7 +10615,7 @@ export default function CrmApp({
                           onKeyDown={
                             view === "dashboard" ||
                             (view === "records" &&
-                              teamDetailMode === "attention")
+                              teamDetailMode !== "activity")
                               ? (event) => {
                                   if (
                                     event.target !== event.currentTarget ||
@@ -8815,7 +10696,7 @@ export default function CrmApp({
                               </strong>
                             </td>
                           )}
-                          <td><span className={`status-pill ${statusClass(record.status)}`}>{record.status}</span></td>
+                          <td><span className={`status-pill ${statusClass(record.status)}`}>{displaySalesStatus(record)}</span></td>
                           <td>
                             {record.awardStatus === "미정" ? (
                               <span className="award-pill pending">미정</span>
@@ -8839,6 +10720,8 @@ export default function CrmApp({
                     ? dashboardRecentRecords.length === 0
                     : view === "records" && teamDetailMode === "attention"
                       ? teamAttentionItems.length === 0
+                      : view === "records" && teamDetailMode === "conversion"
+                        ? teamConversionRecords.length === 0
                       : filtered.length === 0) && (
                     <div className="empty-state large">
                       {view === "dashboard"
@@ -8846,6 +10729,9 @@ export default function CrmApp({
                         : view === "records" &&
                             teamDetailMode === "attention"
                           ? "현재 확인 필요 업무가 없습니다."
+                          : view === "records" &&
+                              teamDetailMode === "conversion"
+                            ? "선택한 기간에 수주로 전환된 기관이 없습니다."
                           : "조건에 맞는 기록이 없습니다."}
                     </div>
                   )}
@@ -8873,7 +10759,7 @@ export default function CrmApp({
                   : `${aiBatchOrganizationTotal}개 기관 저장 완료!`}
               </h2>
               <p>
-                기록과 전체 공유 문구를 먼저 보여드리고, 기관별 AI 추천은
+                입력한 사실을 정리한 전체 공유 문구를 먼저 보여드리고, 기관별 AI 추천은
                 준비되는 대로 채워집니다.
               </p>
             </div>
@@ -8893,7 +10779,7 @@ export default function CrmApp({
                 <div>
                   <span>단톡방 전체 공유용</span>
                   <strong>
-                    저장된 {aiBatchOrganizationTotal}개 기관을 한 번에
+                    입력한 {aiBatchOrganizationTotal}개 기관의 사실만 한 번에
                     정리했어요
                   </strong>
                 </div>
@@ -8908,7 +10794,7 @@ export default function CrmApp({
                     setIncludeAiSuggestionsInBatchShare(event.target.checked)
                   }
                 />
-                <span>기관별 AI 추천 제품·대응도 전체 공유 문구에 포함</span>
+                <span>필요할 때만 기관별 AI 추천 제품·대응 추가</span>
               </label>
               <div className="ai-share-actions">
                 <button
@@ -9069,7 +10955,7 @@ export default function CrmApp({
               <div className="ai-share-card-heading">
                 <div>
                   <span>단톡방 공유용</span>
-                  <strong>확인된 기록만 보기 좋게 정리했어요</strong>
+                  <strong>입력한 사실만 보기 좋게 정리했어요</strong>
                 </div>
                 <span className="ai-share-ready">복사 준비 완료</span>
               </div>
@@ -9082,7 +10968,7 @@ export default function CrmApp({
                     setIncludeAiSuggestionsInShare(event.target.checked)
                   }
                 />
-                <span>AI 추천 제품·대응도 공유 문구에 포함</span>
+                <span>필요할 때만 AI 추천 제품·대응 추가</span>
               </label>
               <div className="ai-share-actions">
                 <button
@@ -9282,8 +11168,21 @@ export default function CrmApp({
             </button>
             <button
               type="button"
+              className="ai-recommendation-delete-button"
+              disabled={aiRecommendationDeleting}
+              onClick={() =>
+                void deleteAiRecommendationRecord(aiRecommendationPanel)
+              }
+            >
+              {aiRecommendationDeleting ? "삭제 중…" : "제안 삭제"}
+            </button>
+            <button
+              type="button"
               className="primary-button"
-              disabled={aiRecommendationExpanded && aiRecommendationApplying}
+              disabled={
+                aiRecommendationDeleting ||
+                (aiRecommendationExpanded && aiRecommendationApplying)
+              }
               onClick={() =>
                 aiRecommendationExpanded
                   ? void applyAiRecommendationSelection()
@@ -9300,7 +11199,7 @@ export default function CrmApp({
         </aside>
       )}
 
-      {detailOrganization && detailLatest && (
+      {detailOrganization && detailDisplayRecord && (
         <div
           className="history-layer"
           role="dialog"
@@ -9318,8 +11217,10 @@ export default function CrmApp({
                 <span className="section-kicker">ORGANIZATION HISTORY</span>
                 <h2 id="history-title">{detailOrganization}</h2>
                 <p>
-                  {detailLatest.region || "지역 미입력"} ·{" "}
-                  {detailHistory.length}건의 컨택 기록
+                  {detailDisplayRecord.region || "지역 미입력"} ·{" "}
+                  {detailLatest
+                    ? `${detailHistory.length}건의 컨택 기록`
+                    : "캠페인 대상 등록 · 아직 컨택 기록 없음"}
                 </p>
               </div>
               <button
@@ -9333,48 +11234,94 @@ export default function CrmApp({
             </div>
 
             <div className="history-body">
-              <section className="history-summary-grid" aria-label="최신 컨택 요약">
+              <section className="history-summary-grid" aria-label="기관 최신 정보 요약">
                 <div>
-                  <span>최종 컨택일</span>
-                  <strong>{formatDate(detailLatest.activityDate)}</strong>
+                  <span>{detailLatest ? "최종 컨택일" : "캠페인 등록일"}</span>
+                  <strong>{formatDate(detailDisplayRecord.activityDate)}</strong>
                 </div>
                 <div>
-                  <span>컨택 유형</span>
-                  <strong>{displayContactMethod(detailLatest)}</strong>
+                  <span>{detailLatest ? "컨택 유형" : "등록 유형"}</span>
+                  <strong>
+                    {detailLatest
+                      ? displayContactMethod(detailDisplayRecord)
+                      : detailDisplayRecord.activityType}
+                  </strong>
                 </div>
                 <div>
                   <span>예산</span>
-                  <strong>{detailLatest.budgetType || "미정"}</strong>
-                  <small>{formatMoneyInput(detailLatest.budgetAmount) || "금액 미정"}</small>
+                  <strong>{detailDisplayRecord.budgetType || "미정"}</strong>
+                  <small>
+                    {formatMoneyInput(detailDisplayRecord.budgetAmount) || "금액 미정"}
+                  </small>
                 </div>
                 <div>
-                  <span>{detailLatest.contactRole || "기관 담당자"}</span>
-                  <strong>{detailLatest.contactName || "미등록"}</strong>
-                  <small>{detailLatest.contactEmail || "기관 메일 미등록"}</small>
+                  <span>{detailDisplayRecord.contactRole || "기관 담당자"}</span>
+                  <strong>{detailDisplayRecord.contactName || "미등록"}</strong>
+                  <small>{detailDisplayRecord.contactEmail || "기관 메일 미등록"}</small>
                 </div>
                 <div>
                   <span>상태 · 수주</span>
-                  <strong>{detailLatest.status}</strong>
+                  <strong>{detailDisplayRecord.status}</strong>
                   <small>
-                    {detailLatest.awardStatus}
-                    {detailLatest.awardCompany
-                      ? ` · ${detailLatest.awardCompany}`
+                    {detailDisplayRecord.awardStatus}
+                    {detailDisplayRecord.awardCompany
+                      ? ` · ${detailDisplayRecord.awardCompany}`
                       : ""}
                   </small>
                 </div>
                 <div>
                   <span>사업방식</span>
-                  <strong>{detailLatest.executionType || "미정"}</strong>
+                  <strong>{detailDisplayRecord.executionType || "미정"}</strong>
                   <small>
-                    {detailLatest.executionType === "컨소"
-                      ? detailLatest.consortiumCompany || "컨소 업체 미등록"
+                    {detailDisplayRecord.executionType === "컨소"
+                      ? detailDisplayRecord.consortiumCompany || "컨소 업체 미등록"
                       : "직영/컨소 구분"}
                   </small>
                 </div>
                 <div>
                   <span>진행 담당자</span>
-                  <strong>{detailLatest.progressManager || "미등록"}</strong>
+                  <strong>{detailDisplayRecord.progressManager || "미등록"}</strong>
                 </div>
+              </section>
+
+              <section className="organization-current-schedule">
+                <div className="history-section-heading">
+                  <div>
+                    <span className="section-kicker">CURRENT SCHEDULE</span>
+                    <h3>현재 진행 일정</h3>
+                  </div>
+                  <span>{detailCurrentSchedules.length}건</span>
+                </div>
+                {detailCurrentSchedules.length > 0 ? (
+                  <div className="organization-current-schedule-list">
+                    {detailCurrentSchedules.map((item) => (
+                      <div key={`${item.label}-${item.date}`}>
+                        <time dateTime={item.date}>
+                          {formatDate(item.date)}
+                        </time>
+                        <strong>{item.label}</strong>
+                        <small>
+                          {item.date === todayValue ? "오늘 일정" : "예정"}
+                        </small>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="organization-current-schedule-empty">
+                    오늘 이후 등록된 진행 일정이 없습니다.
+                  </p>
+                )}
+                {detailLatest && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDetailOrganization(null);
+                      openEdit(detailLatest);
+                    }}
+                  >
+                    일정 직접 수정
+                  </button>
+                )}
               </section>
 
               <OrganizationAiRecommendations
@@ -9383,54 +11330,66 @@ export default function CrmApp({
                   setDetailOrganization(null);
                   openAiRecommendation(recommendation);
                 }}
+                onDelete={deleteAiRecommendationRecord}
               />
 
               <OrganizationEquipmentManager
                 organization={detailOrganization}
-                latestRecord={detailLatest}
+                latestRecord={detailDisplayRecord}
+                onToast={setToast}
+              />
+
+              <QuotationDocuments
+                organization={detailOrganization}
                 onToast={setToast}
               />
 
               <section className="history-latest">
                 <div className="history-section-heading">
                   <div>
-                    <span className="section-kicker">LATEST CONTACT</span>
-                    <h3>최근 컨택 상세</h3>
+                    <span className="section-kicker">
+                      {detailLatest ? "LATEST CONTACT" : "CAMPAIGN REGISTRATION"}
+                    </span>
+                    <h3>{detailLatest ? "최근 컨택 상세" : "캠페인 등록 정보"}</h3>
                   </div>
                   <button
                     onClick={() => {
                       setDetailOrganization(null);
-                      openEdit(detailLatest);
+                      if (detailLatest) {
+                        openEdit(detailLatest);
+                      } else {
+                        openNewForOrganization(detailDisplayRecord);
+                      }
                     }}
                   >
-                    최신 기록 수정
+                    {detailLatest ? "최신 기록 수정" : "첫 TM·미팅 기록 입력"}
                   </button>
                 </div>
                 <dl>
                   <div>
                     <dt>주제</dt>
-                    <dd>{detailLatest.topic || "입력 없음"}</dd>
+                    <dd>{detailDisplayRecord.topic || "입력 없음"}</dd>
                   </div>
                   <div>
                     <dt>내용</dt>
-                    <dd>{detailLatest.summary || "입력 없음"}</dd>
+                    <dd>{detailDisplayRecord.summary || "입력 없음"}</dd>
                   </div>
                   <div>
                     <dt>다음 행동</dt>
-                    <dd>{detailLatest.nextAction || "미정"}</dd>
+                    <dd>{detailDisplayRecord.nextAction || "미정"}</dd>
                   </div>
                   <div>
                     <dt>재연락</dt>
                     <dd>
-                      {detailLatest.followUpDate
-                        ? formatDate(detailLatest.followUpDate)
+                      {detailDisplayRecord.followUpDate
+                        ? formatDate(detailDisplayRecord.followUpDate)
                         : "일정 미정"}
                     </dd>
                   </div>
-                  {detailLatest.notes && (
+                  {detailDisplayRecord.notes && (
                     <div>
                       <dt>메모</dt>
-                      <dd>{detailLatest.notes}</dd>
+                      <dd>{detailDisplayRecord.notes}</dd>
                     </div>
                   )}
                 </dl>
@@ -9445,10 +11404,16 @@ export default function CrmApp({
                   <span>{detailHistory.length}건</span>
                 </div>
                 <div className="history-timeline">
+                  {detailHistory.length === 0 && (
+                    <div className="empty-state">등록된 컨택 기록이 없습니다.</div>
+                  )}
                   {detailHistory.map((record, index) => (
                     <article className="history-event" key={record.id}>
                       <div className="history-event-date">
                         <b>{formatDate(record.activityDate)}</b>
+                        {formatInputTime(record.createdAt) && (
+                          <small>{formatInputTime(record.createdAt)}</small>
+                        )}
                         <span>{index === 0 ? "최신" : String(index + 1).padStart(2, "0")}</span>
                       </div>
                       <div className="history-event-main">
@@ -9459,7 +11424,7 @@ export default function CrmApp({
                             </span>
                             <span className="type-pill">{record.activityType}</span>
                             <span className={`status-pill ${statusClass(record.status)}`}>
-                              {record.status}
+                              {displaySalesStatus(record)}
                             </span>
                           </div>
                           <div className="history-event-actions">
@@ -9518,8 +11483,8 @@ export default function CrmApp({
                 <span className="section-kicker">MY RECORD CHECK</span>
                 <h2 id="record-review-title">내 기록 점검</h2>
                 <p>
-                  최근 7일 동안 내가 진행 담당자인 기록에서 필요한 항목만
-                  보여드립니다.
+                  내가 진행 담당자인 기록 보완과 영업보호 신청 필요 품목을
+                  함께 보여드립니다.
                 </p>
               </div>
               <button
@@ -9534,13 +11499,59 @@ export default function CrmApp({
             <div className="record-review-body">
               <div className="record-review-guide">
                 <strong>
-                  보완 필요 {pendingActivityReviewRecords.length}건
+                  확인 필요{" "}
+                  {pendingActivityReviewRecords.length + protectionReviewItems.length}건
                 </strong>
                 <span>
-                  알고 있는 내용만 입력하고, 아직 모르는 항목은 현재 정보로
-                  확인하거나 내일 다시 볼 수 있습니다.
+                  영업보호는 신청한 뒤 바로 완료 처리할 수 있으며, 기록은 알고
+                  있는 내용만 보완하면 됩니다.
                 </span>
               </div>
+              {protectionReviewItems.length > 0 && (
+                <section className="protection-review-section">
+                  <header>
+                    <div>
+                      <span className="section-kicker">SALES PROTECTION</span>
+                      <h3>영업보호 신청 필요</h3>
+                    </div>
+                    <b>{protectionReviewItems.length}건</b>
+                  </header>
+                  <div className="protection-review-list">
+                    {protectionReviewItems.map((item) => {
+                      const isSaving = protectionReviewSavingIds.includes(item.id);
+                      return (
+                        <article className="protection-review-item" key={item.id}>
+                          <div>
+                            <span>{item.organization} · {item.projectName}</span>
+                            <strong>{item.productName}</strong>
+                            {item.specification && <small>{item.specification}</small>}
+                          </div>
+                          <div className="protection-review-actions">
+                            <button
+                              type="button"
+                              className="protection-open-organization"
+                              onClick={() => {
+                                setActivityReviewOpen(false);
+                                setDetailOrganization(item.organization);
+                              }}
+                            >
+                              기관 보기
+                            </button>
+                            <button
+                              type="button"
+                              className="protection-complete"
+                              disabled={isSaving}
+                              onClick={() => void completeProtectionReview(item)}
+                            >
+                              {isSaving ? "변경 중…" : "신청 완료"}
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
               {pendingActivityReviewRecords.map((record) => {
                 const fields = activityReviewFields(record);
                 const draft = activityReviewDrafts[record.id] ?? {};
@@ -9756,8 +11767,9 @@ export default function CrmApp({
                   </article>
                 );
               })}
-              {!activityReviewsLoading &&
-                pendingActivityReviewRecords.length === 0 && (
+              {!activityReviewsLoading && !protectionReviewsLoading &&
+                pendingActivityReviewRecords.length === 0 &&
+                protectionReviewItems.length === 0 && (
                   <div className="record-review-empty">
                     <span>✓</span>
                     <strong>점검할 기록이 없습니다</strong>
@@ -10083,7 +12095,21 @@ export default function CrmApp({
                 <>
               <div className="form-section-title"><span>01</span><strong>기본 정보</strong></div>
               <div className="form-grid">
-                <label className="span-2"><span>기관·파트너명 *</span><input required value={form.organization} onChange={(event) => updateFormOrganization(event.target.value)} placeholder="예: 창경초등학교" /></label>
+                <label className="span-2">
+                  <span>기관·파트너명 *</span>
+                  <input
+                    required
+                    value={form.organization}
+                    onChange={(event) => updateFormOrganization(event.target.value)}
+                    onBlur={inheritLatestInstitutionDetails}
+                    placeholder="예: 창경초등학교"
+                  />
+                  {inheritedFormOrganization && (
+                    <small className="automatic-field-note">
+                      이 기관의 최근 기록에서 비어 있는 정보를 불러왔습니다.
+                    </small>
+                  )}
+                </label>
                 <label><span>활동 날짜</span><input type="date" value={form.activityDate.length === 10 ? form.activityDate : ""} onChange={(event) => setForm({ ...form, activityDate: event.target.value })} /></label>
                 <label><span>활동 유형 *</span><select required value={form.activityType} onChange={(event) => setForm({ ...form, activityType: event.target.value })}>{typeOptions.map((type) => <option key={type}>{type}</option>)}</select></label>
                 <label><span>기관 구분</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option>학교</option><option>기관</option><option>협력사</option><option>내부</option><option>기타</option></select></label>
@@ -10098,7 +12124,7 @@ export default function CrmApp({
                 <label><span>예산 금액</span><input inputMode="decimal" value={form.budgetAmount} onChange={(event) => setForm({ ...form, budgetAmount: formatMoneyInput(event.target.value) })} placeholder="예: 2,480만원" /></label>
                 <label className="span-2"><span>내용 요약</span><textarea rows={3} value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} placeholder="통화나 미팅에서 논의한 핵심 내용을 입력하세요." /></label>
                 <label>
-                  <span>진행 상태</span>
+                  <span>영업 진행 상태</span>
                   <select
                     disabled={Boolean(formProgressManagement)}
                     value={formProgressManagement?.status ?? form.status}
@@ -10140,7 +12166,10 @@ export default function CrmApp({
                       setForm({
                         ...form,
                         progressSchedule,
-                        status: management?.status ?? form.status,
+                        status:
+                          awardStatus === "타업체 수주"
+                            ? "영업 종료"
+                            : management?.status ?? form.status,
                         awardStage:
                           management?.awardStage ?? form.awardStage,
                         awardStatus,
@@ -10211,6 +12240,15 @@ export default function CrmApp({
                       setForm({
                         ...form,
                         awardStatus,
+                        status:
+                          awardStatus === "위즈업 수주"
+                            ? "수주 후 진행"
+                            : awardStatus === "타업체 수주"
+                              ? "영업 종료"
+                              : form.status === "수주 후 진행" ||
+                                  form.status === "영업 종료"
+                                ? "진행 중"
+                                : form.status,
                         awardCompany:
                           awardStatus === "위즈업 수주"
                             ? "위즈업"
@@ -10247,7 +12285,7 @@ export default function CrmApp({
                   />
                 </label>
                 <label>
-                  <span>현재 상태</span>
+                  <span>수주 진행 단계</span>
                   <select
                     disabled={Boolean(formProgressManagement)}
                     value={

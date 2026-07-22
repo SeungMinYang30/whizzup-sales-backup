@@ -23,6 +23,11 @@ import {
   compactShareSummary,
   replaceOrganizationReferences,
 } from "./share-text";
+import {
+  inheritInstitutionState,
+  mergeInstitutionStateSnapshots,
+  type InstitutionStateSnapshot,
+} from "./institution-state-carryover";
 import { resolveOfficialSchoolName } from "./school-directory";
 import {
   excludedInstitutionCandidates,
@@ -78,10 +83,19 @@ export async function resolveInstitutionName(
 ) {
   const requestedInput = canonicalInstitutionName(payload.organization);
   if (!requestedInput) return "";
-  const officialSchool = await resolveOfficialSchoolName(
-    requestedInput,
-    clean(payload.region),
-  );
+  if (
+    payload.skipOfficialSchoolLookup === true &&
+    payload.institutionSeparate === true
+  ) {
+    return requestedInput;
+  }
+  const officialSchool =
+    payload.skipOfficialSchoolLookup === true
+      ? null
+      : await resolveOfficialSchoolName(
+          requestedInput,
+          clean(payload.region),
+        );
   const requested = officialSchool?.name
     ? canonicalInstitutionName(officialSchool.name)
     : requestedInput;
@@ -351,6 +365,38 @@ export function parseProgressScheduleEntries(
   );
 }
 
+function progressScheduleLabelKey(label: string) {
+  return label
+    .toLocaleLowerCase("ko-KR")
+    .replace(/\s+/g, "")
+    .replace(/(?:일정|예정|진행)$/g, "");
+}
+
+/** 새 채팅에 같은 일정명이 들어오면 날짜를 교체하고, 다른 일정은 유지합니다. */
+export function mergeProgressSchedules(previous: unknown, incoming: unknown) {
+  const previousItems = parseProgressScheduleEntries(
+    serializeProgressSchedule(previous),
+  );
+  const incomingItems = parseProgressScheduleEntries(
+    serializeProgressSchedule(incoming),
+  );
+  if (!incomingItems.length) return serializeProgressSchedule(previous);
+  const merged = new Map(
+    previousItems.map((item) => [progressScheduleLabelKey(item.label), item]),
+  );
+  incomingItems.forEach((item) =>
+    merged.set(progressScheduleLabelKey(item.label), item),
+  );
+  return [...merged.values()]
+    .sort(
+      (left, right) =>
+        left.date.localeCompare(right.date) ||
+        left.label.localeCompare(right.label, "ko-KR"),
+    )
+    .map((item) => `${item.label}\t${item.date}`)
+    .join("\n");
+}
+
 export function resolveProgressScheduleManagement(
   payload: Record<string, unknown>,
   todayValue = koreaTodayValue(),
@@ -360,9 +406,17 @@ export function resolveProgressScheduleManagement(
   const requestedAwardStatus = clean(payload.awardStatus) || "미정";
   const requestedAwardStage = clean(payload.awardStage) || "미정";
   if (!progressSchedule) {
+    const status =
+      requestedAwardStatus === "위즈업 수주"
+        ? requestedStatus === "완료"
+          ? "완료"
+          : "수주 후 진행"
+        : requestedAwardStatus === "타업체 수주"
+          ? "영업 종료"
+          : requestedStatus;
     return {
       progressSchedule,
-      status: requestedStatus,
+      status,
       awardStatus: requestedAwardStatus,
       awardStage: requestedAwardStage,
     };
@@ -386,13 +440,16 @@ export function resolveProgressScheduleManagement(
   );
   const latestDueLabel = dueEntries.at(-1)?.label ?? "";
 
-  let status = "진행 중";
+  let status =
+    requestedAwardStatus === "타업체 수주"
+      ? "영업 종료"
+      : "수주 후 진행";
   let awardStage = "일정 조율";
   if (constructionCompleted && inspectionCompleted && trainingCompleted) {
     status = "완료";
     awardStage = "완공";
   } else if (entries.length > 0 && !hasCurrentOrFutureSchedule) {
-    status = "결과 확인";
+    status = "수주 후 진행";
     if (/검수/.test(latestDueLabel)) awardStage = "검수";
     if (/교육/.test(latestDueLabel)) awardStage = "교육";
   }
@@ -589,16 +646,67 @@ export async function insertActivity(
   if (!organization || !activityType) {
     throw new Error("기관명과 활동유형은 필수입니다.");
   }
-  const scheduleManagement = resolveProgressScheduleManagement(payload);
-  const managedPayload = { ...payload, ...scheduleManagement };
+  const lightweightSystemRecord = payload.skipInstitutionStateLookup === true;
+  const previousStateRows = lightweightSystemRecord
+    ? { results: [] as InstitutionStateSnapshot[] }
+    : await d1
+        .prepare(
+          `SELECT
+         category,
+         region,
+         budget_type AS budgetType,
+         budget_amount AS budgetAmount,
+         status,
+         temperature,
+         award_status AS awardStatus,
+         award_company AS awardCompany,
+         execution_type AS executionType,
+         consortium_company AS consortiumCompany,
+         award_stage AS awardStage,
+         progress_manager AS progressManager,
+         follow_up_required AS followUpRequired,
+         follow_up_date AS followUpDate,
+         next_action AS nextAction,
+         progress_schedule AS progressSchedule,
+         contact_role AS contactRole,
+         contact_name AS contactName,
+         contact_phone AS contactPhone,
+         contact_email AS contactEmail
+       FROM activities
+       WHERE organization = ?
+       ORDER BY activity_date DESC, id DESC
+       LIMIT 50`,
+        )
+        .bind(organization)
+        .all<InstitutionStateSnapshot>();
+  const previousState = mergeInstitutionStateSnapshots(
+    previousStateRows.results ?? [],
+  );
+  const inheritedPayload = inheritInstitutionState(payload, previousState);
+  const requestedProgressSchedule = serializeProgressSchedule(
+    payload.progressSchedule,
+  );
+  if (requestedProgressSchedule && previousState?.progressSchedule) {
+    inheritedPayload.progressSchedule = mergeProgressSchedules(
+      previousState.progressSchedule,
+      requestedProgressSchedule,
+    );
+  }
+  const scheduleManagement =
+    resolveProgressScheduleManagement(inheritedPayload);
+  const managedPayload = { ...inheritedPayload, ...scheduleManagement };
   const award = resolveAward(managedPayload);
   const awardManagement = resolveAwardManagement(managedPayload);
-  const registeredSalesNames = await listRegisteredSalesNames(d1);
+  const registeredSalesNames = lightweightSystemRecord
+    ? []
+    : await listRegisteredSalesNames(d1);
 
-  const region = await resolveMappedRegion(
-    organization,
-    clean(payload.region),
-  );
+  const region = lightweightSystemRecord
+    ? clean(inheritedPayload.region)
+    : await resolveMappedRegion(
+        organization,
+        clean(inheritedPayload.region),
+      );
   const record = await d1.transaction(async (transaction) => {
     const saved = await transaction
       .prepare(`
@@ -616,33 +724,33 @@ export async function insertActivity(
         clean(payload.activityDate) || null,
         clean(payload.dateConfidence) || "확정",
         activityType,
-        clean(payload.category) || "기타",
+        clean(inheritedPayload.category) || "기타",
         clean(payload.contactMethod),
         region,
         organization,
-        clean(payload.budgetType),
-        clean(payload.budgetAmount),
+        clean(inheritedPayload.budgetType),
+        clean(inheritedPayload.budgetAmount),
         clean(finalizedText(payload.topic)),
         compactShareSummary(finalizedText(payload.summary)),
         scheduleManagement.status,
-        clean(payload.temperature) || "중간",
+        clean(inheritedPayload.temperature) || "중간",
         award.awardStatus,
         award.awardCompany,
         awardManagement.executionType,
         awardManagement.consortiumCompany,
         awardManagement.awardStage,
         canonicalProgressManagerName(
-          payload.progressManager,
+          inheritedPayload.progressManager,
           registeredSalesNames,
         ),
-        payload.followUpRequired === false ? 0 : 1,
-        clean(payload.followUpDate) || null,
-        clean(finalizedText(payload.nextAction)),
+        inheritedPayload.followUpRequired === false ? 0 : 1,
+        clean(inheritedPayload.followUpDate) || null,
+        clean(finalizedText(inheritedPayload.nextAction)),
         finalizedText(scheduleManagement.progressSchedule),
-        clean(payload.contactRole),
-        clean(payload.contactName),
-        clean(payload.contactPhone),
-        clean(payload.contactEmail),
+        clean(inheritedPayload.contactRole),
+        clean(inheritedPayload.contactName),
+        clean(inheritedPayload.contactPhone),
+        clean(inheritedPayload.contactEmail),
         clean(payload.sourceChat) || defaultSource,
         clean(finalizedText(payload.notes)),
       )
