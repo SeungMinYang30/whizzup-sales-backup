@@ -15,11 +15,13 @@ import { ensureInstitutionDecisionsReady } from "./institution-decisions";
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-07-21-institution-directory";
+export const BACKUP_SCHEMA_VERSION = "2026-07-22-equipment-dual-commission";
 const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
   "2026-07-18",
   "2026-07-20",
   "2026-07-21",
+  "2026-07-21-institution-directory",
+  "2026-07-22-equipment-consortium",
 ]);
 export const BACKUP_MAX_ROWS = 20_000;
 
@@ -246,11 +248,33 @@ export const BACKUP_TABLES = [
       "unit",
       "status",
       "notes",
+      "catalog_item_id",
+      "catalog_unit_price",
+      "catalog_note",
+      "execution_type",
+      "commission_input_type",
+      "commission_rate",
+      "consortium_commission_rate",
+      "consortium_payment_amount",
+      "protection_status",
+      "protection_completed_at",
       "sort_order",
       "created_at",
       "updated_at",
     ],
     orderBy: "id",
+  },
+  {
+    name: "holdem_weekly_scores",
+    columns: [
+      "member_id",
+      "week_start",
+      "best_chips",
+      "games_played",
+      "wins",
+      "updated_at",
+    ],
+    orderBy: "week_start, member_id",
   },
 ] as const satisfies readonly BackupTableDefinition[];
 
@@ -852,7 +876,8 @@ export async function validateFullBackup(
         table.name === "manager_alert_acknowledgements" ||
         table.name === "activity_review_acknowledgements" ||
         table.name === "activity_assignment_history" ||
-        table.name === "institution_name_decisions") &&
+        table.name === "institution_name_decisions" ||
+        table.name === "holdem_weekly_scores") &&
       rows === undefined &&
       input.counts[table.name] === undefined
     ) {
@@ -870,12 +895,31 @@ export async function validateFullBackup(
               ? { ...row, is_sales: 0 }
               : row,
           )
-        : table.name === "activities"
-          ? rows.map((row) =>
-              isPlainObject(row) && !("contact_role" in row)
-                ? { ...row, contact_role: "" }
-                : row,
-            )
+          : table.name === "activities"
+            ? rows.map((row) =>
+                isPlainObject(row) && !("contact_role" in row)
+                  ? { ...row, contact_role: "" }
+                  : row,
+              )
+          : table.name === "equipment_items" &&
+              input.schemaVersion !== BACKUP_SCHEMA_VERSION
+            ? rows.map((row) =>
+                isPlainObject(row)
+                  ? {
+                      ...row,
+                      catalog_item_id: "",
+                      catalog_unit_price: null,
+                      catalog_note: "",
+                      execution_type: "직영",
+                      commission_input_type: "rate",
+                      commission_rate: null,
+                      consortium_commission_rate: null,
+                      consortium_payment_amount: null,
+                      protection_status: "신청 필요",
+                      protection_completed_at: null,
+                    }
+                  : row,
+              )
           : rows
     ) as BackupRow[];
     counts[table.name] = rows.length;
@@ -985,6 +1029,7 @@ function insertStatements(
 async function replaceDatabaseFromBackup(backup: FullBackup) {
   const d1 = await ensureBackupReady();
   const statements = [
+    d1.prepare("DELETE FROM holdem_weekly_scores"),
     d1.prepare("DELETE FROM activity_authors"),
     d1.prepare("DELETE FROM activity_assignment_history"),
     d1.prepare("DELETE FROM activity_review_acknowledgements"),
@@ -1003,6 +1048,7 @@ async function replaceDatabaseFromBackup(backup: FullBackup) {
 
   const insertOrder: BackupTableName[] = [
     "members",
+    "holdem_weekly_scores",
     "manager_alert_acknowledgements",
     "activities",
     "activity_assignment_history",
