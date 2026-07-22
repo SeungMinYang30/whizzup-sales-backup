@@ -1,4 +1,4 @@
-export const VERCEL_SCHEMA_VERSION = "202607210003_institution_directory";
+export const VERCEL_SCHEMA_VERSION = "202607220004_equipment_dual_commission_backup";
 
 export const VERCEL_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS public.vercel_schema_migrations (
@@ -11,6 +11,18 @@ ALTER TABLE public.members
 
 ALTER TABLE public.activities
   ADD COLUMN IF NOT EXISTS contact_role text NOT NULL DEFAULT '';
+
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS catalog_item_id text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS catalog_unit_price bigint,
+  ADD COLUMN IF NOT EXISTS catalog_note text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS execution_type text NOT NULL DEFAULT '직영',
+  ADD COLUMN IF NOT EXISTS commission_input_type text NOT NULL DEFAULT 'rate',
+  ADD COLUMN IF NOT EXISTS commission_rate double precision,
+  ADD COLUMN IF NOT EXISTS consortium_commission_rate double precision,
+  ADD COLUMN IF NOT EXISTS consortium_payment_amount bigint,
+  ADD COLUMN IF NOT EXISTS protection_status text NOT NULL DEFAULT '신청 필요',
+  ADD COLUMN IF NOT EXISTS protection_completed_at timestamptz;
 
 DO $$
 BEGIN
@@ -143,6 +155,17 @@ CREATE TABLE IF NOT EXISTS public.replication_sync_state (
   error_message text NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS public.holdem_weekly_scores (
+  member_id bigint NOT NULL
+    REFERENCES public.members(id) ON DELETE CASCADE,
+  week_start text NOT NULL,
+  best_chips integer NOT NULL DEFAULT 1000,
+  games_played integer NOT NULL DEFAULT 0,
+  wins integer NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (member_id, week_start)
+);
+
 CREATE INDEX IF NOT EXISTS members_sales_idx
   ON public.members (status, is_sales, display_name);
 CREATE INDEX IF NOT EXISTS activities_organization_date_idx
@@ -194,6 +217,7 @@ ALTER TABLE public.school_directory_credentials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.official_school_cache ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.institution_name_decisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.replication_sync_state ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.holdem_weekly_scores ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.vercel_schema_migrations
   FROM anon, authenticated;
@@ -214,6 +238,8 @@ REVOKE ALL ON public.official_school_cache
 REVOKE ALL ON public.institution_name_decisions
   FROM anon, authenticated;
 REVOKE ALL ON public.replication_sync_state
+  FROM anon, authenticated;
+REVOKE ALL ON public.holdem_weekly_scores
   FROM anon, authenticated;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public
   FROM anon, authenticated;
