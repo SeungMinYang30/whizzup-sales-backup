@@ -1649,7 +1649,7 @@ export async function insertActivity(
       clean(payload.activityDate) || null,
       clean(payload.dateConfidence) || "확정",
       activityType,
-      clean(inheritedPayload.category) || "기타",
+      clean(inheritedPayload.category),
       clean(payload.contactMethod),
       region,
       organization,

@@ -185,6 +185,25 @@ test("공동사업 예산은 활성 표준 예산명과 연도·차수로 구분
   assert.match(periodMigration, /ADD `joint_round`/);
 });
 
+test("공동사업 연결은 등록된 실제 기관만 사용하고 없는 주관·설치기관은 먼저 등록하게 한다", () => {
+  assert.match(modal, /\+ 새 주관기관 등록/);
+  assert.match(modal, /\+ 새 설치기관 등록/);
+  assert.match(modal, /등록된 기관을 선택하거나 새 기관을 먼저 등록/);
+  assert.match(modal, /공동사업 차수는 이 공동사업의 연도별 묶음 기준/);
+  assert.match(store, /등록된 주관기관을 선택해 주세요/);
+  assert.match(store, /실제 기관 기록을 찾지 못했습니다/);
+  assert.doesNotMatch(store, /uniqueMembers\.unshift\(\{[\s\S]*organization: sponsorOrganization/);
+});
+
+test("기관 상세의 새 사업은 기관명을 잠그고 현재 차수 기록과 전체 기록을 구분한다", () => {
+  assert.match(crm, /lockedOrganization: inheritedFormOrganization/);
+  assert.match(crm, /새 사업에서는 기관명을 변경할 수 없습니다/);
+  assert.match(crm, /readOnly=\{Boolean\(inheritedFormOrganization\)\}/);
+  assert.match(crm, />현재 차수 기록</);
+  assert.match(crm, />전체 기록</);
+  assert.match(crm, /detailVisibleHistory/);
+});
+
 test("양쪽 화면은 저장된 활동·선정명단 ID만 사용하고 이름·연도로 다시 추정하지 않는다", () => {
   assert.match(store, /const scopeCondition = campaignId/);
   assert.match(store, /jp\.campaign_id = \?/);

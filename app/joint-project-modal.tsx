@@ -67,6 +67,7 @@ export default function JointProjectModal({
   budgetGroupId = null,
   budgetType = "",
   initialProjectYear,
+  onCreateInstitution,
   onClose,
   onSaved,
 }: {
@@ -77,6 +78,7 @@ export default function JointProjectModal({
   budgetGroupId?: number | null;
   budgetType?: string;
   initialProjectYear?: number | null;
+  onCreateInstitution?: (organization: string) => void;
   onClose: () => void;
   onSaved: () => Promise<void> | void;
 }) {
@@ -118,7 +120,7 @@ export default function JointProjectModal({
     )[0];
     return selected && sponsorScore(selected.organization) > 0
       ? selected.organization
-      : "";
+      : normalizedCandidates[0]?.organization ?? "";
   }, [normalizedCandidates]);
   const existingProjectId = useMemo(() => {
     const ids = [
@@ -146,6 +148,8 @@ export default function JointProjectModal({
   const [error, setError] = useState("");
   const [activityAmbiguities, setActivityAmbiguities] = useState<ActivityLinkAmbiguity[]>([]);
   const [activitySelections, setActivitySelections] = useState<Record<string, string>>({});
+  const [extraMembers, setExtraMembers] = useState<JointProjectCandidate[]>([]);
+  const [siteOrganizationDraft, setSiteOrganizationDraft] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -172,6 +176,8 @@ export default function JointProjectModal({
     setError("");
     setActivityAmbiguities([]);
     setActivitySelections({});
+    setExtraMembers([]);
+    setSiteOrganizationDraft("");
     setCatalogLoading(true);
     void fetch("/api/budget-catalog", { cache: "no-store" })
       .then(async (response) => {
@@ -215,13 +221,13 @@ export default function JointProjectModal({
     (item) => item.organization === sponsorOrganization,
   );
   const memberCandidates = [
-    ...(sponsorCandidate &&
-    !normalizedCandidates.some(
-      (item) => item.organization === sponsorCandidate.organization,
-    )
-      ? [sponsorCandidate]
-      : []),
-    ...normalizedCandidates,
+    ...new Map(
+      [
+        ...(sponsorCandidate ? [sponsorCandidate] : []),
+        ...normalizedCandidates,
+        ...extraMembers,
+      ].map((item) => [amountKey(item), item]),
+    ).values(),
   ];
   const siteCandidates = memberCandidates.filter(
     (item) => item.organization !== sponsorOrganization,
@@ -282,6 +288,7 @@ export default function JointProjectModal({
   async function save() {
     if (
       !sponsorOrganization ||
+      !sponsorCandidate ||
       !selectedBudget ||
       !projectYear ||
       siteCandidates.length < 1 ||
@@ -344,6 +351,29 @@ export default function JointProjectModal({
     } finally {
       setBusy(false);
     }
+  }
+
+  function addExistingSite() {
+    const matched = sponsorOptions.find(
+      (item) => item.organization === siteOrganizationDraft.trim(),
+    );
+    if (!matched) {
+      setError("등록된 기관을 선택하거나 새 기관을 먼저 등록해 주세요.");
+      return;
+    }
+    if (matched.organization === sponsorOrganization) {
+      setError("주관기관과 설치기관이 같으면 별도 공동사업 연결이 필요하지 않습니다.");
+      return;
+    }
+    setExtraMembers((current) => [
+      ...new Map([...current, matched].map((item) => [amountKey(item), item])).values(),
+    ]);
+    setMemberAmounts((current) => ({
+      ...current,
+      [amountKey(matched)]: current[amountKey(matched)] ?? "",
+    }));
+    setSiteOrganizationDraft("");
+    setError("");
   }
 
   return (
@@ -444,6 +474,10 @@ export default function JointProjectModal({
                   <option key={round} value={round}>{round}차</option>
                 ))}
               </select>
+              <small>
+                공동사업 차수는 이 공동사업의 연도별 묶음 기준입니다. 각 기관의
+                1차·2차 사업 차수는 변경하지 않고 별도로 연결합니다.
+              </small>
             </label>
           </div>
           <label className="joint-project-field">
@@ -464,9 +498,46 @@ export default function JointProjectModal({
               ))}
             </datalist>
             {!existingProjectId && (
-              <small>현재 등록된 기관 중 주관기관을 검색해 선택해 주세요.</small>
+              <>
+                <small>현재 등록된 기관 중 주관기관을 검색해 선택해 주세요.</small>
+                {sponsorOrganization.trim() && !sponsorCandidate && onCreateInstitution && (
+                  <button
+                    type="button"
+                    className="joint-project-inline-action"
+                    onClick={() => onCreateInstitution(sponsorOrganization.trim())}
+                  >
+                    + 새 주관기관 등록
+                  </button>
+                )}
+              </>
             )}
           </label>
+          {!existingProjectId && (
+            <div className="joint-project-add-site">
+              <label className="joint-project-field">
+                <span>설치기관 검색·추가</span>
+                <input
+                  list="joint-project-sponsor-options"
+                  value={siteOrganizationDraft}
+                  onChange={(event) => setSiteOrganizationDraft(event.target.value)}
+                  placeholder="기존 기관명 검색·선택"
+                />
+              </label>
+              <button type="button" onClick={addExistingSite}>기존 기관 추가</button>
+              {siteOrganizationDraft.trim() &&
+                !sponsorOptions.some(
+                  (item) => item.organization === siteOrganizationDraft.trim(),
+                ) &&
+                onCreateInstitution && (
+                  <button
+                    type="button"
+                    onClick={() => onCreateInstitution(siteOrganizationDraft.trim())}
+                  >
+                    + 새 설치기관 등록
+                  </button>
+                )}
+            </div>
+          )}
           <section className="joint-project-members">
             <header>
               <div>

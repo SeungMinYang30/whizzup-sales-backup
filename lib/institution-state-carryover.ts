@@ -71,7 +71,7 @@ const inheritedTextFields = [
 ] as const satisfies readonly (keyof InstitutionStateSnapshot)[];
 
 const newRecordDefaults: Partial<Record<keyof InstitutionStateSnapshot, unknown>> = {
-  category: "학교",
+  category: "",
   status: "진행 중",
   temperature: "중간",
   awardStatus: "미정",

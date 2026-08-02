@@ -11,6 +11,11 @@ import {
 } from "../lib/activity-budgets.ts";
 import { resolveUniqueExistingInstitutionName } from "../lib/institution-names.ts";
 
+const crmSource = await readFile(
+  new URL("../app/crm-app.tsx", import.meta.url),
+  "utf8",
+);
+
 test("keeps multiple budgets in one activity while retaining the legacy primary budget", () => {
   const budgets = activityBudgetsFromRecord({
     budget_type: "지능형 과학실",
@@ -119,6 +124,14 @@ test("an ambiguous abbreviated institution never inherits another institution's 
     ],
   );
   assert.equal(resolved, "");
+});
+
+test("pre- and post-award lists show compact budget names and amounts without replacing contract amounts", () => {
+  assert.match(crmSource, /예산 · 금액/);
+  assert.match(crmSource, /names\.length > 1[\s\S]*외 \$\{names\.length - 1\}개/);
+  assert.match(crmSource, /className="budget-amount"/);
+  assert.match(crmSource, />계약금액</);
+  assert.match(crmSource, /title=\{compactBudgetDisplayForRecord\(record\)\.title\}/);
 });
 
 test("the one-time SQL retrofit preserves the confirmed multi-budget round atomically", async () => {

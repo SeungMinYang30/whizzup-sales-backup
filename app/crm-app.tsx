@@ -1515,7 +1515,7 @@ const emptyForm: FormState = {
   activityDate: new Date().toISOString().slice(0, 10),
   dateConfidence: "확정",
   activityType: "TM·통화",
-  category: "학교",
+  category: "",
   contactMethod: "유선",
   region: "",
   organization: "",
@@ -6003,6 +6003,8 @@ export default function CrmApp({
     useState<Record<string, string>>({});
   const [institutionMergeBusy, setInstitutionMergeBusy] = useState(false);
   const [jointProjectOpen, setJointProjectOpen] = useState(false);
+  const [jointProjectSeedCandidates, setJointProjectSeedCandidates] =
+    useState<JointProjectCandidate[] | null>(null);
   const [institutionDeleteBusy, setInstitutionDeleteBusy] = useState(false);
   const [institutionBudgetOpen, setInstitutionBudgetOpen] = useState(false);
   const [institutionBudgetType, setInstitutionBudgetType] = useState("");
@@ -6272,6 +6274,7 @@ export default function CrmApp({
   const [selectedActivityDetail, setSelectedActivityDetail] =
     useState<Activity | null>(null);
   const [detailBusinessRound, setDetailBusinessRound] = useState(1);
+  const [detailHistoryScope, setDetailHistoryScope] = useState<"round" | "all">("round");
   const [detailInlineField, setDetailInlineField] =
     useState<DetailInlineField | null>(null);
   const [detailInlineDraft, setDetailInlineDraft] =
@@ -7096,7 +7099,7 @@ export default function CrmApp({
             ? `${new Intl.NumberFormat("ko-KR", {
                 maximumFractionDigits: 2,
               }).format(summary.totalAmount / 10_000)}만원`
-            : "예산금액 미정",
+            : "금액 미입력",
         detail:
           summary.missingAmountCount > 0
             ? `금액 미입력 ${summary.missingAmountCount.toLocaleString("ko-KR")}건`
@@ -7126,7 +7129,7 @@ export default function CrmApp({
       return {
         label:
           manualDisplay ||
-          (hasExplicitBudgetAmount(manualValue) ? manualValue : "예산금액 미정"),
+          (hasExplicitBudgetAmount(manualValue) ? manualValue : "금액 미입력"),
         detail: manualDisplay ? "" : "금액 미입력 1건",
         status: manualDisplay ? "manual" : "missing",
       };
@@ -7161,6 +7164,27 @@ export default function CrmApp({
           ? `품목·견적 자동 합계 · 금액 미입력 ${quoteSummary.quoteMissingAmountItemCount.toLocaleString("ko-KR")}건 확인 필요`
           : "",
       status: quoteSummary?.quoteStatus === "partial" ? "partial" : "auto",
+    };
+  };
+  const compactBudgetDisplayForRecord = (record: Activity) => {
+    const summary = summarizeActivityBudgets(record.budgets);
+    const fallbackName =
+      record.jointProjectBudgetType ||
+      record.budgetType ||
+      record.budgetOriginalName ||
+      "예산 미등록";
+    const names = summary.names.length > 0 ? summary.names : [fallbackName];
+    const amount = budgetAmountDisplayForRecord(record);
+    return {
+      name:
+        names.length > 1
+          ? `${names[0]} 외 ${names.length - 1}개`
+          : names[0] === "미정"
+            ? "예산 미등록"
+            : names[0],
+      amount: amount.label,
+      detail: amount.detail,
+      title: names.join(" + "),
     };
   };
   const activityDetailFactValueForRecord = (
@@ -7534,6 +7558,7 @@ export default function CrmApp({
     [records, selectedAwardIds],
   );
   const selectedJointProjectCandidates = useMemo<JointProjectCandidate[]>(() => {
+    if (jointProjectSeedCandidates) return jointProjectSeedCandidates;
     const selectedIds = view === "awards" ? selectedAwardIds : selectedInstitutionIds;
     return selectedIds
       .map((id) => records.find((record) => record.id === id))
@@ -7547,7 +7572,7 @@ export default function CrmApp({
         jointProjectId: record.jointProjectId ?? null,
         jointProjectName: record.jointProjectName ?? "",
       }));
-  }, [records, selectedAwardIds, selectedInstitutionIds, view]);
+  }, [jointProjectSeedCandidates, records, selectedAwardIds, selectedInstitutionIds, view]);
   const jointProjectSponsorOptions = useMemo<JointProjectCandidate[]>(() => {
     const latest = new Map<string, Activity>();
     [...records]
@@ -8066,6 +8091,8 @@ export default function CrmApp({
       ),
     [detailHistory, selectedDetailBusinessRound],
   );
+  const detailVisibleHistory =
+    detailHistoryScope === "all" ? detailHistory : detailBusinessHistory;
   const detailLatest = detailBusinessHistory[0] ?? null;
   const detailCampaignRegistration = useMemo(
     () => {
@@ -9567,6 +9594,15 @@ export default function CrmApp({
     setDetailInlineDraft((current) =>
       current ? { ...current, ...updates } : current,
     );
+  }
+
+  function openNewForUnregisteredOrganization(organization: string) {
+    const name = organization.trim();
+    setJointProjectOpen(false);
+    setJointProjectSeedCandidates(null);
+    setDetailOrganization(null);
+    openNew();
+    setForm((current) => ({ ...current, organization: name, category: "" }));
   }
 
   function applyDetailJointProjectSponsorContact() {
@@ -12257,6 +12293,15 @@ export default function CrmApp({
       setToast("기관명을 입력해 주세요.");
       return;
     }
+    if (
+      inheritedFormOrganization &&
+      institutionAliasKey(form.organization) !==
+        institutionAliasKey(inheritedFormOrganization)
+    ) {
+      setToast("새 사업에서는 기관명을 변경할 수 없습니다. 기관명 수정은 기관 상세에서 진행해 주세요.");
+      setForm((current) => ({ ...current, organization: inheritedFormOrganization }));
+      return;
+    }
     if (["협력사 수주", "타업체 수주"].includes(form.awardStatus) && !form.awardCompany.trim()) {
       setToast("협력사·타업체 수주의 수주업체를 입력해 주세요.");
       return;
@@ -12489,13 +12534,16 @@ export default function CrmApp({
             syncBusinessRoundBudgets,
           }
         : { ...normalizedForm, awardStageManual, syncBusinessRoundBudgets };
+      const lockedRecordPayload = inheritedFormOrganization
+        ? { ...baseRecordPayload, lockedOrganization: inheritedFormOrganization }
+        : baseRecordPayload;
       const recordPayload = institutionNameChanged
         ? {
-            ...baseRecordPayload,
+            ...lockedRecordPayload,
             confirmInstitutionRename: true,
             standardBudgetOnly: true,
           }
-        : { ...baseRecordPayload, standardBudgetOnly: true };
+        : { ...lockedRecordPayload, standardBudgetOnly: true };
       const { response, payload } =
         await fetchWithInstitutionConfirmation("/api/records", {
           method: editingId ? "PUT" : "POST",
@@ -16901,7 +16949,7 @@ export default function CrmApp({
                                 {organization.name}
                               </strong>
                               <small>
-                                {record.region || record.category || "지역 미등록"}
+                                {record.region || "지역 미등록"}
                                 {organization.highOpportunity
                                   ? " · 주요 영업 기회"
                                   : ""}
@@ -17587,8 +17635,7 @@ export default function CrmApp({
                       <th>기관명</th>
                       <th>기관 담당자</th>
                       <th>기관 메일</th>
-                      <th>예산</th>
-                      <th>예산금액</th>
+                      <th>예산 · 금액</th>
                       <th>내용 요약</th>
                       <th>사업방식</th>
                       <th>영업 진행상황</th>
@@ -17602,7 +17649,6 @@ export default function CrmApp({
                           record,
                           priorAward,
                           salesProgress,
-                          budgetAmountDisplay,
                           group,
                         },
                         index,
@@ -17705,10 +17751,16 @@ export default function CrmApp({
                             {record.contactEmail || "미등록"}
                           </span>
                         </td>
-                        <td>
-                          <span className="budget-cell">
-                            {record.jointProjectBudgetType || budgetNamesForRecord(record)}
+                        <td className="budget-summary-cell">
+                          <span
+                            className="budget-cell budget-summary-name"
+                            title={compactBudgetDisplayForRecord(record).title}
+                          >
+                            {compactBudgetDisplayForRecord(record).name}
                           </span>
+                          <strong className="budget-amount">
+                            {compactBudgetDisplayForRecord(record).amount}
+                          </strong>
                           {record.budgetMatchStatus &&
                             !["auto", "approved", "excluded"].includes(
                               record.budgetMatchStatus,
@@ -17721,14 +17773,9 @@ export default function CrmApp({
                                 )}
                               </small>
                             )}
-                        </td>
-                        <td>
-                          <strong className="budget-amount">
-                            {budgetAmountDisplay.label}
-                          </strong>
-                          {budgetAmountDisplay.detail && (
+                          {compactBudgetDisplayForRecord(record).detail && (
                             <small className="budget-amount-source">
-                              {budgetAmountDisplay.detail}
+                              {compactBudgetDisplayForRecord(record).detail}
                             </small>
                           )}
                         </td>
@@ -18459,7 +18506,7 @@ export default function CrmApp({
                         <th>수주일</th>
                         <th>지역</th>
                         <th>기관</th>
-                        <th>예산</th>
+                        <th>예산 · 금액</th>
                         <th>계약금액</th>
                         <th>사업방식</th>
                         <th>수주업체</th>
@@ -18567,7 +18614,7 @@ export default function CrmApp({
                               {awardPageGroupByPrimaryId.get(record.id)?.sponsorOrganization || record.organization}
                             </strong>
                             <small>
-                              {record.businessRound}차 사업 · {record.category || "기관 구분 미정"}
+                              {record.businessRound}차 사업
                             </small>
                             {record.jointProjectId && (
                               <>
@@ -18595,12 +18642,16 @@ export default function CrmApp({
                               <span className="resale-active-badge">재영업 진행 중</span>
                             )}
                           </td>
-                          <td>
-                            <strong className="award-budget-name">
-                              {(record.jointProjectBudgetType || budgetNamesForRecord(record)) === "미정"
-                                ? "예산 미등록"
-                                : record.jointProjectBudgetType || budgetNamesForRecord(record)}
+                          <td className="budget-summary-cell">
+                            <strong
+                              className="award-budget-name budget-summary-name"
+                              title={compactBudgetDisplayForRecord(record).title}
+                            >
+                              {compactBudgetDisplayForRecord(record).name}
                             </strong>
+                            <span className="budget-amount">
+                              {compactBudgetDisplayForRecord(record).amount}
+                            </span>
                             <small>
                               {hasResolvedStandardBudget(record)
                                 ? "표준 예산"
@@ -18764,7 +18815,7 @@ export default function CrmApp({
                             </td>
                           )}
                           <td><span className="date-cell">{formatDate(record.activityDate)}</span></td>
-                          <td><strong className="org-name">{record.organization}</strong><small>{record.category}</small></td>
+                          <td><strong className="org-name">{record.organization}</strong></td>
                           <td><span className="type-pill">{record.activityType}</span></td>
                           <td>
                             {view === "dashboard" ? (
@@ -18987,6 +19038,7 @@ export default function CrmApp({
                       onClick={() => {
                         cancelDetailInlineEdit();
                         setDetailBusinessRound(round);
+                        setDetailHistoryScope("round");
                       }}
                     >
                       <strong>{round}차 사업</strong>
@@ -19017,6 +19069,29 @@ export default function CrmApp({
                   setDetailOrganization(member.organization);
                 }}
               />
+              {detailLatest && !detailDisplayRecord.jointProjectId && (
+                <div className="history-joint-project-action">
+                  <div>
+                    <strong>주관기관과 설치기관이 다른 사업인가요?</strong>
+                    <span>같은 기관이면 연결하지 않아도 됩니다. 다른 기관일 때만 사업 관계를 연결합니다.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJointProjectSeedCandidates([{
+                        organization: detailDisplayRecord.organization,
+                        businessRound: selectedDetailBusinessRound,
+                        activityId: detailDisplayRecord.id,
+                        budgetAmount: parseMoneyAmount(detailDisplayRecord.budgetAmount) || null,
+                        budgetType: detailDisplayRecord.budgetType,
+                      }]);
+                      setJointProjectOpen(true);
+                    }}
+                  >
+                    + 설치기관 연결
+                  </button>
+                </div>
+              )}
               <section className="history-summary-grid" aria-label="기관 최신 정보 요약">
                 <div>
                   <span>{detailLatest ? "최종 컨택일" : "캠페인 등록일"}</span>
@@ -19739,16 +19814,28 @@ export default function CrmApp({
                     <span className="section-kicker">FULL TIMELINE</span>
                     <h3>이전 히스토리</h3>
                   </div>
-                  <span>{detailHistory.length}건</span>
+                  <div className="history-scope-toggle" role="group" aria-label="히스토리 범위">
+                    <button
+                      type="button"
+                      className={detailHistoryScope === "round" ? "active" : ""}
+                      onClick={() => setDetailHistoryScope("round")}
+                    >현재 차수 기록</button>
+                    <button
+                      type="button"
+                      className={detailHistoryScope === "all" ? "active" : ""}
+                      onClick={() => setDetailHistoryScope("all")}
+                    >전체 기록</button>
+                    <span>{detailVisibleHistory.length}건</span>
+                  </div>
                 </div>
                 <div className="history-timeline">
-                  {detailHistory.length === 0 && (
+                  {detailVisibleHistory.length === 0 && (
                     <div className="empty-state">등록된 컨택 기록이 없습니다.</div>
                   )}
-                  {detailHistory.map((record, index) => {
+                  {detailVisibleHistory.map((record, index) => {
                     const contactStatus = postAwardContactStatus(
                       record,
-                      detailHistory,
+                      detailVisibleHistory,
                     );
                     const displayedStatus =
                       contactStatus || displaySalesStatus(record);
@@ -19772,7 +19859,9 @@ export default function CrmApp({
                               {displayedStatus}
                             </span>
                             <span className="business-round-pill">
-                              {record.businessRound}차 사업
+                              {record.businessRound > 0
+                                ? `${record.businessRound}차 사업`
+                                : "차수 미지정"}
                             </span>
                           </div>
                           <div className="history-event-actions">
@@ -20712,11 +20801,7 @@ export default function CrmApp({
         budgetGroupId={
           selectedJointProjectCandidates.length
             ? records.find(
-                (record) =>
-                  record.id ===
-                  (view === "awards"
-                    ? selectedAwardIds[0]
-                    : selectedInstitutionIds[0]),
+                (record) => record.id === selectedJointProjectCandidates[0]?.activityId,
               )?.budgetGroupId ?? null
             : null
         }
@@ -20729,19 +20814,21 @@ export default function CrmApp({
             records
               .find(
                 (record) =>
-                  record.id ===
-                  (view === "awards"
-                    ? selectedAwardIds[0]
-                    : selectedInstitutionIds[0]),
+                  record.id === selectedJointProjectCandidates[0]?.activityId,
               )
               ?.activityDate.slice(0, 4),
           ) || new Date().getFullYear()
         }
-        onClose={() => setJointProjectOpen(false)}
+        onCreateInstitution={openNewForUnregisteredOrganization}
+        onClose={() => {
+          setJointProjectOpen(false);
+          setJointProjectSeedCandidates(null);
+        }}
         onSaved={async () => {
           await loadRecords("full");
           setSelectedInstitutionIds([]);
           setSelectedAwardIds([]);
+          setJointProjectSeedCandidates(null);
           setToast("공동사업 관계를 연결했습니다. 기관별 원래 기록은 그대로 유지됩니다.");
         }}
       />
@@ -21490,19 +21577,22 @@ export default function CrmApp({
                   <BufferedInput
                     required
                     value={form.organization}
+                    readOnly={Boolean(inheritedFormOrganization)}
                     onCommit={updateFormOrganization}
-                    onBlur={(event) =>
-                      inheritLatestInstitutionDetails(
-                        event.currentTarget.value,
-                        form.region,
-                      )
-                    }
+                    onBlur={(event) => {
+                      if (!inheritedFormOrganization) {
+                        inheritLatestInstitutionDetails(
+                          event.currentTarget.value,
+                          form.region,
+                        );
+                      }
+                    }}
                     placeholder="예: 창경초등학교"
                   />
                   {inheritedFormOrganization && (
                     <small className="automatic-field-note">
-                      {inheritedFormOrganization}의 같은 사업 차수에서 기존 예산과
-                      비어 있는 정보를 불러왔습니다.
+                      새 사업은 {inheritedFormOrganization}에 추가됩니다. 기관명은 여기서
+                      변경할 수 없으며, 같은 사업 차수의 기존 예산과 비어 있는 정보를 불러왔습니다.
                     </small>
                   )}
                 </label>

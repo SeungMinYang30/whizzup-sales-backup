@@ -576,7 +576,15 @@ export async function createActivityRecord(
   payload: Record<string, unknown>,
   member: Awaited<ReturnType<typeof requireApprovedMember>>,
 ) {
-    if (payload.standardBudgetOnly === true) {
+  const lockedOrganization = clean(payload.lockedOrganization);
+  if (
+    lockedOrganization &&
+    canonicalInstitutionName(payload.organization) !==
+      canonicalInstitutionName(lockedOrganization)
+  ) {
+    throw new Error("새 사업에서는 기관명을 변경할 수 없습니다.");
+  }
+  if (payload.standardBudgetOnly === true) {
       const d1 = await ensureRecordsReady();
       await ensureBudgetNamesReady();
       const requestedBudgets = Array.isArray(payload.budgets)
@@ -670,7 +678,8 @@ export async function POST(request: Request) {
     if (
       error instanceof Error &&
       (error.message.includes("필수") ||
-        error.message.includes("활성 표준 예산명"))
+        error.message.includes("활성 표준 예산명") ||
+        error.message.includes("기관명을 변경할 수 없습니다"))
     ) {
       return Response.json({ error: error.message }, { status: 400 });
     }
@@ -682,6 +691,17 @@ export async function PUT(request: Request) {
   try {
     const member = await requireApprovedMember();
     const payload = (await request.json()) as Record<string, unknown>;
+    const lockedOrganization = clean(payload.lockedOrganization);
+    if (
+      lockedOrganization &&
+      canonicalInstitutionName(payload.organization) !==
+        canonicalInstitutionName(lockedOrganization)
+    ) {
+      return Response.json(
+        { error: "새 사업에서는 기관명을 변경할 수 없습니다." },
+        { status: 400 },
+      );
+    }
     const id = Number(payload.id);
     if (!Number.isInteger(id) || id < 1) {
       return Response.json(
@@ -905,7 +925,7 @@ export async function PUT(request: Request) {
         clean(payload.activityDate) || null,
         clean(payload.dateConfidence) || "확정",
         activityType,
-        clean(payload.category) || "기타",
+        clean(payload.category),
         clean(payload.contactMethod),
         region,
         organization,

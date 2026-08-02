@@ -249,7 +249,7 @@ const columns = [
   ["businessRound", "사업 차수", false, "같은 기관의 신규 사업은 2, 3처럼 구분합니다. 미입력 시 1차입니다.", "1", 12],
   ["activityType", "활동 유형", true, "선택값 안내 시트의 활동 유형 중 하나를 입력합니다.", "TM·통화", 16],
   ["summary", "상담 내용", true, "통화·미팅에서 확인한 핵심 내용을 입력합니다.", "전자칠판 교체 계획 확인, 다음 주 제안서 전달", 46],
-  ["category", "기관 구분", false, "미입력 시 학교로 저장됩니다.", "학교", 14],
+  ["category", "기관 구분(선택)", false, "기존 파일 호환용 선택 항목입니다. 비워도 됩니다.", "", 14],
   ["region", "지역", false, "예: 경기 성남, 충북 청주", "경기 성남", 16],
   ["contactMethod", "컨택 유형", false, "미입력 시 유선으로 저장됩니다.", "유선", 14],
   ["topic", "주제", false, "제품, 사업명 또는 논의 주제를 입력합니다.", "전자칠판 교체", 24],
@@ -926,7 +926,7 @@ function mapRows(rows: string[][], awardMode = false): ActivityImportRow[] {
         dateConfidence:
           awardMode && activityDate.endsWith("-01") ? "연월 확인" : "확정",
         activityType: awardMode ? "수주" : valueAt(row, "activityType"),
-        category: valueAt(row, "category") || "학교",
+        category: valueAt(row, "category"),
         contactMethod: awardMode
           ? "기타"
           : valueAt(row, "contactMethod") || "유선",
@@ -1024,7 +1024,7 @@ function mapRows(rows: string[][], awardMode = false): ActivityImportRow[] {
       if (awardMode && !values.awardCompany) {
         warnings.push("수주업체가 없어 수주 구분을 미정으로 저장합니다.");
       }
-      if (!categories.includes(values.category)) {
+      if (values.category && !categories.includes(values.category)) {
         errors.push("기관 구분을 선택값 안내에 맞춰 입력해 주세요.");
       }
       if (!contactMethods.includes(values.contactMethod)) {

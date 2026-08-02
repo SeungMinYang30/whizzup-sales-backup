@@ -1039,15 +1039,7 @@ export async function createJointProject(
     throw new Error("주관기관과 설치기관을 합해 두 곳 이상 선택해 주세요.");
   }
   if (!uniqueMembers.some((item) => item.organization === sponsorOrganization)) {
-    uniqueMembers.unshift({
-      organization: sponsorOrganization,
-      institutionKey: "",
-      businessRound: 1,
-      role: "sponsor",
-      activityId: null,
-      campaignTargetId: null,
-      budgetAmount: null,
-    });
+    throw new Error("등록된 주관기관을 선택해 주세요. 없는 기관은 먼저 새 기관으로 등록해 주세요.");
   }
   if (!uniqueMembers.some((item) => item.role === "site")) {
     throw new Error("설치기관을 한 곳 이상 선택해 주세요.");
@@ -1117,6 +1109,14 @@ export async function createJointProject(
   }
   if (ambiguities.length) {
     throw new JointProjectActivityAmbiguityError(ambiguities);
+  }
+  const unlinkedMember = uniqueMembers.find(
+    (item) => !positiveId(item.activityId) && !positiveId(item.campaignTargetId),
+  );
+  if (unlinkedMember) {
+    throw new Error(
+      `${unlinkedMember.organization}의 실제 기관 기록을 찾지 못했습니다. 기관을 먼저 등록한 뒤 연결해 주세요.`,
+    );
   }
   const name = `${sponsorOrganization} · ${budgetType} · ${selectedProjectYear}년 ${selectedJointRound}차`;
   const conflictConditions = uniqueMembers

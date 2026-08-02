@@ -92,7 +92,7 @@ test("새 기록에 직접 입력한 값은 이전 정보보다 우선한다", (
 test("입력 화면의 초기 선택값은 최근 기관 값으로 바꾼다", () => {
   const result = inheritInstitutionState(
     {
-      category: "학교",
+      category: "",
       status: "진행 중",
       temperature: "중간",
       executionType: "직영",
