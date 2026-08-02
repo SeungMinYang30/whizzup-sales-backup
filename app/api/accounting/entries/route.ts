@@ -24,6 +24,8 @@ import {
   upcomingWhizzupAwardRows,
 } from "../../../../lib/analytics-business-rounds";
 import { automaticCollectionStatus } from "../../../../lib/collection-analytics";
+import { groupAccountingJointProjects } from "../../../../lib/accounting-joint-projects";
+import { ensureJointProjectsReady } from "../../../../lib/joint-projects";
 import {
   calculateRegisteredQuote,
   isRegisteredQuoteItemAmount,
@@ -99,6 +101,14 @@ type ActivitySource = {
   expectedProfit: number;
   expectedCommission: number;
   expectedConsortiumSettlement: number;
+  jointProjectId: number | null;
+  jointProjectName: string;
+  jointProjectSponsor: string;
+  jointProjectSponsorKey: string;
+  jointProjectRole: "sponsor" | "site" | "";
+  jointProjectBudgetType: string;
+  jointProjectYear: number | null;
+  jointProjectRound: number | null;
 };
 
 type Receipt = {
@@ -140,7 +150,8 @@ async function loadActivitySources(
   d1: D1Database,
   scope: "completed" | "upcoming" = "completed",
 ) {
-  const [activityResult, projectResult] = await Promise.all([
+  await ensureJointProjectsReady();
+  const [activityResult, projectResult, jointProjectResult] = await Promise.all([
     d1.prepare(`
       SELECT
         a.id AS activity_id,
@@ -194,7 +205,39 @@ async function loadActivitySources(
         ON linked_activity.id = ep.activity_id
       ORDER BY ep.id, ei.sort_order, ei.id
     `).all<Record<string, unknown>>(),
+    d1.prepare(`
+      SELECT
+        jpm.activity_id,
+        jpm.role,
+        jp.id AS joint_project_id,
+        jp.name AS joint_project_name,
+        jp.sponsor_organization AS joint_project_sponsor,
+        jp.budget_type AS joint_project_budget_type,
+        jp.project_year AS joint_project_year,
+        jp.joint_round AS joint_project_round,
+        sponsor.institution_key AS joint_project_sponsor_key
+      FROM joint_project_members jpm
+      JOIN joint_projects jp ON jp.id = jpm.project_id
+      LEFT JOIN joint_project_members sponsor
+        ON sponsor.project_id = jp.id
+       AND sponsor.role = 'sponsor'
+      WHERE jp.status = 'active'
+        AND jpm.activity_id IS NOT NULL
+      ORDER BY jp.id DESC, jpm.id DESC
+    `).all<Record<string, unknown>>(),
   ]);
+
+  const jointProjectsByActivityId = new Map<
+    number,
+    Record<string, unknown>[]
+  >();
+  jointProjectResult.results.forEach((row) => {
+    const activityId = Number(row.activity_id ?? 0);
+    if (!activityId) return;
+    const rows = jointProjectsByActivityId.get(activityId) ?? [];
+    rows.push(row);
+    jointProjectsByActivityId.set(activityId, rows);
+  });
 
   const sources = new Map<number, ActivitySource>();
   const sourcesByBusinessKey = new Map<string, ActivitySource>();
@@ -223,6 +266,11 @@ async function loadActivitySources(
     const groupedActivityIds = Array.isArray(row.grouped_activity_ids)
       ? row.grouped_activity_ids.map(Number).filter(Number.isInteger)
       : [activityId];
+    const jointProject =
+      jointProjectsByActivityId.get(activityId)?.[0] ??
+      groupedActivityIds.flatMap(
+        (id) => jointProjectsByActivityId.get(id) ?? [],
+      )[0];
     if (
       (authoritativeActivityCountByBusiness.get(businessKey) ?? 0) >
       groupedActivityIds.length
@@ -261,6 +309,31 @@ async function loadActivitySources(
       expectedProfit: 0,
       expectedCommission: 0,
       expectedConsortiumSettlement: 0,
+      jointProjectId: jointProject
+        ? Number(jointProject.joint_project_id)
+        : null,
+      jointProjectName: String(jointProject?.joint_project_name ?? ""),
+      jointProjectSponsor: String(
+        jointProject?.joint_project_sponsor ?? "",
+      ),
+      jointProjectSponsorKey: String(
+        jointProject?.joint_project_sponsor_key ?? "",
+      ),
+      jointProjectRole:
+        String(jointProject?.role ?? "") === "sponsor"
+          ? "sponsor"
+          : String(jointProject?.role ?? "") === "site"
+            ? "site"
+            : "",
+      jointProjectBudgetType: String(
+        jointProject?.joint_project_budget_type ?? "",
+      ),
+      jointProjectYear: jointProject
+        ? Number(jointProject.joint_project_year) || null
+        : null,
+      jointProjectRound: jointProject
+        ? normalizeBusinessRound(jointProject.joint_project_round)
+        : null,
     };
     sourcesByBusinessKey.set(businessKey, source);
     groupedActivityIds.forEach((id) => sources.set(id, source));
@@ -684,6 +757,14 @@ function mapEntry(
     expectedProfit: source.expectedProfit,
     expectedCommission: source.expectedCommission,
     expectedConsortiumSettlement: source.expectedConsortiumSettlement,
+    jointProjectId: source.jointProjectId,
+    jointProjectName: source.jointProjectName,
+    jointProjectSponsor: source.jointProjectSponsor,
+    jointProjectSponsorKey: source.jointProjectSponsorKey,
+    jointProjectRole: source.jointProjectRole,
+    jointProjectBudgetType: source.jointProjectBudgetType,
+    jointProjectYear: source.jointProjectYear,
+    jointProjectRound: source.jointProjectRound,
     expectedContributionMargin: amounts.contributionMargin,
     commissionCollectedAmount: amounts.collectedAmount,
     receivableBalance: amounts.receivableBalance,
@@ -902,8 +983,19 @@ async function readUpcomingEntries() {
     expectedSettlementDeficit: source.expectedSettlementDeficit,
     sourceItems: source.items,
     sourceProjects: [...source.projects.values()],
+    jointProjectId: source.jointProjectId,
+    jointProjectName: source.jointProjectName,
+    jointProjectSponsor: source.jointProjectSponsor,
+    jointProjectSponsorKey: source.jointProjectSponsorKey,
+    jointProjectRole: source.jointProjectRole,
+    jointProjectBudgetType: source.jointProjectBudgetType,
+    jointProjectYear: source.jointProjectYear,
+    jointProjectRound: source.jointProjectRound,
   }));
-  const upcomingSummary = upcomingEntries.reduce(
+  const groupedUpcomingEntries = groupAccountingJointProjects(upcomingEntries).map(
+    (group) => group.representative,
+  );
+  const upcomingSummary = groupedUpcomingEntries.reduce(
     (summary, entry) => {
       summary.expectedPartnerCommission += entry.expectedPartnerCommission;
       summary.expectedDirectSalesCollection +=
@@ -921,11 +1013,11 @@ async function readUpcomingEntries() {
     },
     {
       organizationCount: new Set(
-        upcomingEntries.map((entry) =>
+        groupedUpcomingEntries.map((entry) =>
           analyticsBusinessRoundKey(entry.organization, 1).split("\u001f")[0],
         ),
       ).size,
-      businessCount: upcomingEntries.length,
+      businessCount: groupedUpcomingEntries.length,
       expectedPartnerCommission: 0,
       expectedDirectSalesCollection: 0,
       expectedDirectMargin: 0,

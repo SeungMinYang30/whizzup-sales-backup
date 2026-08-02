@@ -10,6 +10,12 @@ import {
   sumReceiptsForPeriod,
   type CounterpartyCollectionSummary,
 } from "../lib/collection-analytics";
+import {
+  accountingBusinessTitle,
+  accountingJointProjectSubtitle,
+  groupAccountingJointProjects,
+  type AccountingJointGroup,
+} from "../lib/accounting-joint-projects";
 
 type SourceItem = {
   id: number;
@@ -91,6 +97,14 @@ export type AccountingEntry = {
   accountingStatus: string;
   needsCollection: boolean;
   receipts: Receipt[];
+  jointProjectId: number | null;
+  jointProjectName: string;
+  jointProjectSponsor: string;
+  jointProjectSponsorKey: string;
+  jointProjectRole: "sponsor" | "site" | "";
+  jointProjectBudgetType: string;
+  jointProjectYear: number | null;
+  jointProjectRound: number | null;
 };
 
 type UpcomingAccountingEntry = {
@@ -117,6 +131,14 @@ type UpcomingAccountingEntry = {
   expectedSettlementDeficit: number;
   sourceItems: SourceItem[];
   sourceProjects: SourceProject[];
+  jointProjectId: number | null;
+  jointProjectName: string;
+  jointProjectSponsor: string;
+  jointProjectSponsorKey: string;
+  jointProjectRole: "sponsor" | "site" | "";
+  jointProjectBudgetType: string;
+  jointProjectYear: number | null;
+  jointProjectRound: number | null;
 };
 
 type UpcomingAccountingSummary = {
@@ -330,8 +352,6 @@ export default function AccountingPage({
   const [upcomingEntries, setUpcomingEntries] = useState<
     UpcomingAccountingEntry[]
   >([]);
-  const [upcomingSummary, setUpcomingSummary] =
-    useState<UpcomingAccountingSummary | null>(null);
   const [tab, setTab] = useState<AccountingWorkspaceTab>(initialTab);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -348,6 +368,10 @@ export default function AccountingPage({
   );
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedCounterpartyKey, setSelectedCounterpartyKey] = useState("");
+  const [selectedJointProject, setSelectedJointProject] = useState<{
+    scope: "upcoming" | "collections";
+    key: string;
+  } | null>(null);
   const [editingReceiptId, setEditingReceiptId] = useState<number | null>(null);
   const [receiptAmount, setReceiptAmount] = useState("");
   const [receiptDate, setReceiptDate] = useState(today());
@@ -379,16 +403,13 @@ export default function AccountingPage({
       setEntries(payload.entries ?? []);
       const upcomingPayload = (await upcomingResponse.json()) as {
         upcomingEntries?: UpcomingAccountingEntry[];
-        upcomingSummary?: UpcomingAccountingSummary;
         error?: string;
       };
       if (upcomingResponse.ok) {
         setUpcomingEntries(upcomingPayload.upcomingEntries ?? []);
-        setUpcomingSummary(upcomingPayload.upcomingSummary ?? null);
         setError("");
       } else {
         setUpcomingEntries([]);
-        setUpcomingSummary(null);
         setError(
           upcomingPayload.error || "입금 예정 목록을 불러오지 못했습니다.",
         );
@@ -446,42 +467,72 @@ export default function AccountingPage({
     () => entries.filter((entry) => !entry.workflowExcluded),
     [entries],
   );
+  const activeEntryGroups = useMemo(
+    () => groupAccountingJointProjects(activeEntries),
+    [activeEntries],
+  );
+  const allEntryGroups = useMemo(
+    () => groupAccountingJointProjects(entries),
+    [entries],
+  );
+  const activeDisplayEntries = useMemo(
+    () => activeEntryGroups.map((group) => group.representative),
+    [activeEntryGroups],
+  );
   const collectionAnalysisEntries = useMemo(
     () =>
-      activeEntries.map((entry) => ({
+      activeDisplayEntries.map((entry) => ({
         ...entry,
         expectedCommission: collectionTarget(entry),
       })),
-    [activeEntries],
+    [activeDisplayEntries],
   );
-  const filteredUpcomingEntries = useMemo(() => {
+  const upcomingGroups = useMemo(
+    () => groupAccountingJointProjects(upcomingEntries),
+    [upcomingEntries],
+  );
+  const filteredUpcomingGroups = useMemo(() => {
     const keyword = upcomingSearch.trim().toLocaleLowerCase("ko-KR");
-    return upcomingEntries
+    return upcomingGroups
       .filter(
-        (entry) =>
+        (group) =>
           !keyword ||
-          `${entry.organization} ${entry.region} ${entry.budgetType} ${entry.progressManager} ${entry.awardStage}`
+          [group.representative, ...group.members]
+            .map(
+              (entry) =>
+                `${entry.organization} ${entry.region} ${entry.budgetType} ${entry.progressManager} ${entry.awardStage}`,
+            )
+            .join(" ")
             .toLocaleLowerCase("ko-KR")
             .includes(keyword),
       )
       .sort(
         (left, right) =>
-          left.activityDate.localeCompare(right.activityDate) ||
-          left.organization.localeCompare(right.organization, "ko-KR"),
+          left.representative.activityDate.localeCompare(
+            right.representative.activityDate,
+          ) ||
+          left.representative.organization.localeCompare(
+            right.representative.organization,
+            "ko-KR",
+          ),
       );
-  }, [upcomingEntries, upcomingSearch]);
+  }, [upcomingGroups, upcomingSearch]);
+  const filteredUpcomingEntries = useMemo(
+    () => filteredUpcomingGroups.map((group) => group.representative),
+    [filteredUpcomingGroups],
+  );
   const upcomingTotals = useMemo<UpcomingAccountingSummary>(() => {
-    if (upcomingSummary) return upcomingSummary;
+    const displayEntries = upcomingGroups.map((group) => group.representative);
     const total = (field: keyof UpcomingAccountingEntry) =>
-      upcomingEntries.reduce((sum, entry) => {
+      displayEntries.reduce((sum, entry) => {
         const value = entry[field];
         return sum + (typeof value === "number" && Number.isFinite(value) ? value : 0);
       }, 0);
     return {
       organizationCount: new Set(
-        upcomingEntries.map((entry) => entry.organization.trim()).filter(Boolean),
+        displayEntries.map((entry) => entry.organization.trim()).filter(Boolean),
       ).size,
-      businessCount: upcomingEntries.length,
+      businessCount: displayEntries.length,
       expectedPartnerCommission: total("expectedPartnerCommission"),
       expectedDirectSalesCollection: total("expectedDirectSalesCollection"),
       expectedDirectMargin: total("expectedDirectMargin"),
@@ -491,23 +542,32 @@ export default function AccountingPage({
       expectedCollectionTotal: total("expectedCollectionTotal"),
       expectedSettlementDeficit: total("expectedSettlementDeficit"),
     };
-  }, [upcomingEntries, upcomingSummary]);
+  }, [upcomingGroups]);
   const periodEntries = useMemo(
     () =>
-      activeEntries.filter(
+      activeDisplayEntries.filter(
         (entry) =>
           yearFilter === "전체 연도" ||
           entry.activityDate.startsWith(yearFilter),
       ),
-    [activeEntries, yearFilter],
+    [activeDisplayEntries, yearFilter],
   );
-  const filteredEntries = useMemo(() => {
+  const collectionDisplayGroups = showExcluded
+    ? allEntryGroups
+    : activeEntryGroups;
+  const filteredEntryGroups = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase("ko-KR");
-    return (showExcluded ? entries : activeEntries)
-      .filter((entry) => {
+    return collectionDisplayGroups
+      .filter((group) => {
+        const entry = group.representative;
         if (
           keyword &&
-          !`${entry.organization} ${entry.region} ${entry.budgetType} ${entry.progressManager} ${entry.consortiumCompany}`
+          ![entry, ...group.members]
+            .map(
+              (member) =>
+                `${member.organization} ${member.region} ${member.budgetType} ${member.progressManager} ${member.consortiumCompany}`,
+            )
+            .join(" ")
             .toLocaleLowerCase("ko-KR")
             .includes(keyword)
         ) {
@@ -523,17 +583,28 @@ export default function AccountingPage({
       })
       .sort((left, right) =>
         focus === "needsCollection"
-          ? left.activityDate.localeCompare(right.activityDate) ||
-            left.organization.localeCompare(right.organization, "ko-KR")
-          : right.activityDate.localeCompare(left.activityDate),
+          ? left.representative.activityDate.localeCompare(
+              right.representative.activityDate,
+            ) ||
+            left.representative.organization.localeCompare(
+              right.representative.organization,
+              "ko-KR",
+            )
+          : right.representative.activityDate.localeCompare(
+              left.representative.activityDate,
+            ),
       );
-  }, [activeEntries, entries, focus, search, showExcluded, yearFilter]);
+  }, [collectionDisplayGroups, focus, search, yearFilter]);
+  const filteredEntries = useMemo(
+    () => filteredEntryGroups.map((group) => group.representative),
+    [filteredEntryGroups],
+  );
 
   const summary = useMemo(
     () => ({
       needsCollection: periodEntries.filter((entry) => entry.needsCollection).length,
       collected: sumReceiptsForPeriod(
-        receiptsFromEntries(activeEntries),
+        receiptsFromEntries(activeDisplayEntries),
         analysisYear,
       ),
       receivable: aggregateCounterpartyCollections(
@@ -544,12 +615,12 @@ export default function AccountingPage({
         0,
       ),
     }),
-    [activeEntries, analysisYear, collectionAnalysisEntries, periodEntries],
+    [activeDisplayEntries, analysisYear, collectionAnalysisEntries, periodEntries],
   );
 
   const allReceipts = useMemo(
-    () => receiptsFromEntries(activeEntries),
-    [activeEntries],
+    () => receiptsFromEntries(activeDisplayEntries),
+    [activeDisplayEntries],
   );
   const counterpartyRows = useMemo(
     () =>
@@ -574,6 +645,18 @@ export default function AccountingPage({
   }, [counterpartyRows, counterpartySearch]);
   const selectedCounterparty =
     counterpartyRows.find((row) => row.key === selectedCounterpartyKey) ?? null;
+  const selectedUpcomingJointGroup =
+    selectedJointProject?.scope === "upcoming"
+      ? upcomingGroups.find(
+          (group) => group.key === selectedJointProject.key,
+        ) ?? null
+      : null;
+  const selectedCollectionJointGroup =
+    selectedJointProject?.scope === "collections"
+      ? activeEntryGroups.find(
+          (group) => group.key === selectedJointProject.key,
+        ) ?? null
+      : null;
   const periodCollectionAmount = useMemo(
     () => sumReceiptsForPeriod(allReceipts, analysisYear),
     [allReceipts, analysisYear],
@@ -627,14 +710,24 @@ export default function AccountingPage({
     selectedEntryIds.has(entry.id),
   );
   const allFilteredSelected =
-    filteredEntries.length > 0 &&
-    filteredEntries.every((entry) => selectedEntryIds.has(entry.id));
+    filteredEntryGroups.length > 0 &&
+    filteredEntryGroups.every((group) =>
+      group.members.every(
+        (entry) => entry.id !== undefined && selectedEntryIds.has(entry.id),
+      ),
+    );
 
-  function toggleEntrySelection(entryId: number) {
+  function toggleEntrySelection(group: AccountingJointGroup<AccountingEntry>) {
     setSelectedEntryIds((current) => {
       const next = new Set(current);
-      if (next.has(entryId)) next.delete(entryId);
-      else next.add(entryId);
+      const entryIds = group.members
+        .map((entry) => entry.id)
+        .filter((id): id is number => id !== undefined);
+      const allSelected = entryIds.every((id) => next.has(id));
+      entryIds.forEach((id) => {
+        if (allSelected) next.delete(id);
+        else next.add(id);
+      });
       return next;
     });
   }
@@ -642,9 +735,11 @@ export default function AccountingPage({
   function toggleFilteredSelection() {
     setSelectedEntryIds((current) => {
       const next = new Set(current);
-      filteredEntries.forEach((entry) => {
-        if (allFilteredSelected) next.delete(entry.id);
-        else next.add(entry.id);
+      filteredEntryGroups.forEach((group) => {
+        group.members.forEach((entry) => {
+          if (allFilteredSelected) next.delete(entry.id);
+          else next.add(entry.id);
+        });
       });
       return next;
     });
@@ -705,6 +800,19 @@ export default function AccountingPage({
 
   function openEditor(entry: AccountingEntry) {
     setSelectedId(entry.id);
+    setSelectedJointProject(null);
+    resetReceiptForm();
+  }
+
+  function openJointProject(
+    group:
+      | AccountingJointGroup<AccountingEntry>
+      | AccountingJointGroup<UpcomingAccountingEntry>,
+    scope: "upcoming" | "collections",
+  ) {
+    if (!group.isJointProject) return;
+    setSelectedId(null);
+    setSelectedJointProject({ scope, key: group.key });
     resetReceiptForm();
   }
 
@@ -713,6 +821,7 @@ export default function AccountingPage({
     setSearch("");
     setFocus(nextFocus);
     setSelectedId(null);
+    setSelectedJointProject(null);
     window.requestAnimationFrame(() =>
       listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
     );
@@ -724,11 +833,13 @@ export default function AccountingPage({
     setYearFilter("전체 연도");
     setFocus("all");
     setSelectedId(null);
+    setSelectedJointProject(null);
   }
 
   function openUpcoming() {
     setTab("upcoming");
     setSelectedId(null);
+    setSelectedJointProject(null);
     window.requestAnimationFrame(() =>
       listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
     );
@@ -738,6 +849,18 @@ export default function AccountingPage({
     row: CounterpartyCollectionSummary<AccountingEntry>,
   ) {
     setSelectedCounterpartyKey(row.key);
+  }
+
+  function openCounterpartyAward(entry: AccountingEntry) {
+    setSelectedCounterpartyKey("");
+    const group = activeEntryGroups.find(
+      (candidate) => candidate.representative.businessKey === entry.businessKey,
+    );
+    if (group?.isJointProject) {
+      openJointProject(group, "collections");
+      return;
+    }
+    openEditor(entry);
   }
 
   function editReceipt(receipt: Receipt) {
@@ -1111,17 +1234,30 @@ export default function AccountingPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUpcomingEntries.map((entry) => (
-                      <tr key={entry.businessKey}>
+                    {filteredUpcomingGroups.map((group) => {
+                      const entry = group.representative;
+                      return (
+                      <tr
+                        key={group.key}
+                        className={group.isJointProject ? "accounting-joint-row" : ""}
+                        onClick={() => openJointProject(group, "upcoming")}
+                      >
                         <td className="accounting-date-cell">
                           {entry.activityDate || "—"}
                         </td>
                         <td className="accounting-organization-cell">
                           <strong>{entry.organization}</strong>
-                          <small>
-                            {entry.region || "지역 미등록"} ·{" "}
-                            {entry.businessRound}차 사업
-                          </small>
+                          {group.isJointProject ? (
+                            <>
+                              <small>{accountingJointProjectSubtitle(entry)}</small>
+                              <small>{group.members.length.toLocaleString()}곳 · 클릭해 기관별 보기</small>
+                            </>
+                          ) : (
+                            <small>
+                              {entry.region || "지역 미등록"} ·{" "}
+                              {entry.businessRound}차 사업
+                            </small>
+                          )}
                         </td>
                         <td>
                           <span className="accounting-status-pill">
@@ -1171,23 +1307,33 @@ export default function AccountingPage({
                           )}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
                 <div className="accounting-upcoming-mobile-list">
-                  {filteredUpcomingEntries.map((entry) => (
+                  {filteredUpcomingGroups.map((group) => {
+                    const entry = group.representative;
+                    return (
                     <article
-                      className="accounting-upcoming-mobile-card"
-                      key={`mobile-${entry.businessKey}`}
+                      className={`accounting-upcoming-mobile-card${group.isJointProject ? " accounting-joint-row" : ""}`}
+                      key={`mobile-${group.key}`}
                       aria-label={`${entry.organization} 입금 예정`}
+                      onClick={() => openJointProject(group, "upcoming")}
                     >
                       <header>
                         <div>
                           <h3>{entry.organization}</h3>
-                          <small>
-                            {entry.activityDate || "날짜 미등록"} ·{" "}
-                            {entry.region || "지역 미등록"} · {entry.businessRound}차 사업
-                          </small>
+                          {group.isJointProject ? (
+                            <small>
+                              {accountingJointProjectSubtitle(entry)} · {group.members.length.toLocaleString()}곳
+                            </small>
+                          ) : (
+                            <small>
+                              {entry.activityDate || "날짜 미등록"} ·{" "}
+                              {entry.region || "지역 미등록"} · {entry.businessRound}차 사업
+                            </small>
+                          )}
                         </div>
                         <span className="accounting-status-pill">
                           {entry.awardStage || "미정"}
@@ -1251,7 +1397,8 @@ export default function AccountingPage({
                         )}
                       </footer>
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
                 {!loading && !filteredUpcomingEntries.length && (
                   <div className="empty-state accounting-empty-state">
@@ -1367,11 +1514,20 @@ export default function AccountingPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredEntries.map((entry) => (
+                  {filteredEntryGroups.map((group) => {
+                    const entry = group.representative;
+                    const groupSelected = group.members.every(
+                      (member) => member.id !== undefined && selectedEntryIds.has(member.id),
+                    );
+                    return (
                     <tr
-                      key={entry.id}
-                      className={entry.workflowExcluded ? "workflow-excluded" : ""}
-                      onClick={() => openEditor(entry)}
+                      key={group.key}
+                      className={`${entry.workflowExcluded ? "workflow-excluded" : ""}${group.isJointProject ? " accounting-joint-row" : ""}`.trim()}
+                      onClick={() =>
+                        group.isJointProject
+                          ? openJointProject(group, "collections")
+                          : openEditor(entry)
+                      }
                     >
                       <td
                         className="accounting-select-cell"
@@ -1380,14 +1536,21 @@ export default function AccountingPage({
                         <input
                           type="checkbox"
                           aria-label={`${entry.organization} 선택`}
-                          checked={selectedEntryIds.has(entry.id)}
-                          onChange={() => toggleEntrySelection(entry.id)}
+                          checked={groupSelected}
+                          onChange={() => toggleEntrySelection(group)}
                         />
                       </td>
                       <td className="accounting-date-cell">{entry.activityDate || "—"}</td>
                       <td className="accounting-organization-cell">
                         <strong>{entry.organization}</strong>
-                        <small>{entry.businessRound}차 사업 · {entry.executionType}</small>
+                        {group.isJointProject ? (
+                          <>
+                            <small>{accountingJointProjectSubtitle(entry)}</small>
+                            <small>{group.members.length.toLocaleString()}곳 · 클릭해 기관별 보기</small>
+                          </>
+                        ) : (
+                          <small>{entry.businessRound}차 사업 · {entry.executionType}</small>
+                        )}
                       </td>
                       <td className="accounting-manager-cell">{entry.progressManager || "미등록"}</td>
                       <td className="accounting-money-cell">
@@ -1427,7 +1590,8 @@ export default function AccountingPage({
                         </span>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
               {!loading && !filteredEntries.length && (
@@ -1886,7 +2050,7 @@ export default function AccountingPage({
                   <article key={award.entry.id}>
                     <header>
                       <div>
-                        <strong>{award.entry.businessRound}차 사업</strong>
+                        <strong>{accountingBusinessTitle(award.entry)}</strong>
                         <span>{award.entry.activityDate || "수주일 미등록"}</span>
                       </div>
                       <span className="accounting-status-pill">{award.status}</span>
@@ -1931,12 +2095,190 @@ export default function AccountingPage({
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        setSelectedCounterpartyKey("");
-                        openEditor(award.entry);
-                      }}
+                      onClick={() => openCounterpartyAward(award.entry)}
                     >
                       이 수주의 수금 관리 열기
+                    </button>
+                  </article>
+                ))}
+              </section>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {selectedUpcomingJointGroup && (
+        <div
+          className="accounting-editor-layer"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${selectedUpcomingJointGroup.representative.organization} 공동사업 입금 예정 상세`}
+        >
+          <button
+            className="accounting-editor-backdrop"
+            aria-label="공동사업 입금 예정 상세 닫기"
+            onClick={() => setSelectedJointProject(null)}
+          />
+          <aside className="accounting-editor accounting-joint-detail">
+            <header>
+              <div>
+                <span className="section-kicker">JOINT PROJECT</span>
+                <h2>{selectedUpcomingJointGroup.representative.organization}</h2>
+                <p>{accountingJointProjectSubtitle(selectedUpcomingJointGroup.representative)}</p>
+              </div>
+              <button
+                type="button"
+                aria-label="닫기"
+                onClick={() => setSelectedJointProject(null)}
+              >
+                ×
+              </button>
+            </header>
+            <div className="accounting-editor-body">
+              <section>
+                <h3>입금 예정 합계</h3>
+                <div className="accounting-reference-grid">
+                  <span>
+                    <small>납품 완료 전 설치기관</small>
+                    <strong>{selectedUpcomingJointGroup.members.length.toLocaleString()}곳</strong>
+                  </span>
+                  <span>
+                    <small>총 입금 예정액</small>
+                    <strong>
+                      {formatMoney(
+                        selectedUpcomingJointGroup.representative.expectedCollectionTotal,
+                      )}
+                    </strong>
+                  </span>
+                </div>
+              </section>
+              <section className="accounting-joint-members">
+                <h3>납품 완료 전 설치기관</h3>
+                {selectedUpcomingJointGroup.members.map((member) => (
+                  <article key={member.businessKey}>
+                    <header>
+                      <div>
+                        <strong>{member.organization}</strong>
+                        <span>{member.region || "지역 미등록"}</span>
+                      </div>
+                      <span className="accounting-status-pill">
+                        {member.awardStage || "납품 전"}
+                      </span>
+                    </header>
+                    <dl>
+                      <div>
+                        <dt>등록 견적 기준 계약금액</dt>
+                        <dd><RegisteredQuoteContractAmount entry={member} /></dd>
+                      </div>
+                      <div>
+                        <dt>입금 예정액</dt>
+                        <dd>{formatMoney(member.expectedCollectionTotal)}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
+              </section>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {selectedCollectionJointGroup && (
+        <div
+          className="accounting-editor-layer"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${selectedCollectionJointGroup.representative.organization} 공동사업 수금 상세`}
+        >
+          <button
+            className="accounting-editor-backdrop"
+            aria-label="공동사업 수금 상세 닫기"
+            onClick={() => setSelectedJointProject(null)}
+          />
+          <aside className="accounting-editor accounting-joint-detail">
+            <header>
+              <div>
+                <span className="section-kicker">JOINT PROJECT</span>
+                <h2>{selectedCollectionJointGroup.representative.organization}</h2>
+                <p>{accountingJointProjectSubtitle(selectedCollectionJointGroup.representative)}</p>
+              </div>
+              <button
+                type="button"
+                aria-label="닫기"
+                onClick={() => setSelectedJointProject(null)}
+              >
+                ×
+              </button>
+            </header>
+            <div className="accounting-editor-body">
+              <section>
+                <h3>수금·채권 합계</h3>
+                <div className="accounting-reference-grid">
+                  <span>
+                    <small>납품 완료 설치기관</small>
+                    <strong>{selectedCollectionJointGroup.members.length.toLocaleString()}곳</strong>
+                  </span>
+                  <span>
+                    <small>누적 실제 수금액</small>
+                    <strong>
+                      {formatMoney(
+                        selectedCollectionJointGroup.representative.commissionCollectedAmount,
+                      )}
+                    </strong>
+                  </span>
+                  <span>
+                    <small>미수수익 예상액</small>
+                    <strong>{receivableLabel(selectedCollectionJointGroup.representative)}</strong>
+                  </span>
+                  <span>
+                    <small>수금 상태</small>
+                    <strong>{collectionStatusLabel(selectedCollectionJointGroup.representative)}</strong>
+                  </span>
+                </div>
+              </section>
+              <section className="accounting-joint-members">
+                <h3>납품 완료 설치기관</h3>
+                {selectedCollectionJointGroup.members.map((member) => (
+                  <article key={member.id}>
+                    <header>
+                      <div>
+                        <strong>{member.organization}</strong>
+                        <span>{member.region || "지역 미등록"}</span>
+                      </div>
+                      <span className="accounting-status-pill">
+                        {collectionStatusLabel(member)}
+                      </span>
+                    </header>
+                    <dl>
+                      <div>
+                        <dt>계약금액</dt>
+                        <dd><RegisteredQuoteContractAmount entry={member} /></dd>
+                      </div>
+                      <div>
+                        <dt>누적 실제 수금액</dt>
+                        <dd>{formatMoney(member.commissionCollectedAmount)}</dd>
+                      </div>
+                      <div>
+                        <dt>입금일</dt>
+                        <dd>
+                          {member.receipts.length
+                            ? member.receipts
+                                .map((receipt) => receipt.collectionDate)
+                                .filter(Boolean)
+                                .join(", ")
+                            : "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>미수수익 예상액</dt>
+                        <dd>{receivableLabel(member)}</dd>
+                      </div>
+                    </dl>
+                    <button
+                      type="button"
+                      onClick={() => openEditor(member)}
+                    >
+                      이 기관 수금 관리
                     </button>
                   </article>
                 ))}

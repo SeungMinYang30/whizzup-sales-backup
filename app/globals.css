@@ -7644,6 +7644,70 @@ tr:hover .row-actions { opacity: 1; }
   font-weight: 750;
   cursor: pointer;
 }
+.accounting-joint-row {
+  cursor: pointer;
+}
+.accounting-table tbody tr.accounting-joint-row:hover td,
+.accounting-upcoming-table tbody tr.accounting-joint-row:hover td {
+  background: #f1f5ff;
+}
+.accounting-joint-detail {
+  width: min(820px, 96vw);
+}
+.accounting-joint-members > article {
+  margin-top: 12px;
+  padding: 15px;
+  border: 1px solid #dfe6f1;
+  border-radius: 12px;
+  background: #f8faff;
+}
+.accounting-joint-members > article > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.accounting-joint-members > article > header strong,
+.accounting-joint-members > article > header span {
+  display: block;
+}
+.accounting-joint-members > article > header div > span {
+  margin-top: 4px;
+  color: #8490a3;
+  font-size: 12px;
+}
+.accounting-joint-members dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+}
+.accounting-joint-members dl > div {
+  padding: 11px;
+  border-radius: 9px;
+  background: #fff;
+}
+.accounting-joint-members dt {
+  color: #7b889b;
+  font-size: 12px;
+}
+.accounting-joint-members dd {
+  margin: 5px 0 0;
+  color: #22324e;
+  font-size: 14px;
+  font-weight: 750;
+}
+.accounting-joint-members > article > button {
+  min-height: 38px;
+  margin-top: 12px;
+  padding: 0 13px;
+  border: 1px solid #cbd5e6;
+  border-radius: 8px;
+  background: #fff;
+  color: #40527a;
+  font-weight: 750;
+  cursor: pointer;
+}
 .analytics-review-grid.delivery-only { grid-template-columns: 1fr; }
 
 @media (max-width: 1000px) {
@@ -7661,6 +7725,7 @@ tr:hover .row-actions { opacity: 1; }
   .accounting-analysis-table-card { margin-inline: 12px; }
   .accounting-subview-controls input { width: 100%; min-width: 0; }
   .accounting-counterparty-award-summary { grid-template-columns: 1fr; }
+  .accounting-joint-members dl { grid-template-columns: 1fr; }
 }
 
 /* Clear visual groups for collection accounting and sales analytics */

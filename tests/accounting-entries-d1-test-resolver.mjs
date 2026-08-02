@@ -76,6 +76,18 @@ const modules = {
   "../../../../lib/collection-analytics": `
     export const automaticCollectionStatus = () => "미수";
   `,
+  "../../../../lib/joint-projects": `
+    export const ensureJointProjectsReady = async () => undefined;
+  `,
+  "../../../../lib/accounting-joint-projects": `
+    export const groupAccountingJointProjects = (entries) =>
+      entries.map((entry) => ({
+        key: entry.businessKey,
+        isJointProject: false,
+        representative: entry,
+        members: [entry],
+      }));
+  `,
 };
 
 export async function resolve(specifier, context, nextResolve) {

@@ -308,7 +308,7 @@ test("요약 카드는 목록만 필터링하고 상세 창은 행을 선택할 
   assert.match(page, /listRef\.current\?\.scrollIntoView/);
   assert.doesNotMatch(page, /const firstMatch = entries\.find/);
   assert.doesNotMatch(page, /nextEntries\.find/);
-  assert.match(page, /onClick=\{\(\) => openEditor\(entry\)\}/);
+  assert.match(page, /group\.isJointProject[\s\S]*openJointProject\(group, "collections"\)[\s\S]*openEditor\(entry\)/);
   assert.match(page, /전체 보기/);
 });
 
