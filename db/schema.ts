@@ -968,3 +968,53 @@ export const accountingSettlementHistory = sqliteTable(
     ),
   ],
 );
+
+export const inventoryProducts = sqliteTable(
+  "inventory_products",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    specification: text("specification").notNull().default(""),
+    unit: text("unit").notNull().default("대"),
+    currentStock: integer("current_stock").notNull().default(0),
+    lowStockThreshold: integer("low_stock_threshold").notNull().default(1),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    createdBy: integer("created_by"),
+    createdByName: text("created_by_name").notNull().default(""),
+    updatedBy: integer("updated_by"),
+    updatedByName: text("updated_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("inventory_products_name_idx").on(table.name),
+  ],
+);
+
+export const inventoryTransactions = sqliteTable(
+  "inventory_transactions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    productId: integer("product_id").notNull(),
+    transactionType: text("transaction_type").notNull(),
+    quantityDelta: integer("quantity_delta").notNull(),
+    resultingStock: integer("resulting_stock").notNull(),
+    reference: text("reference").notNull().default(""),
+    note: text("note").notNull().default(""),
+    transactionDate: text("transaction_date").notNull(),
+    createdBy: integer("created_by"),
+    createdByName: text("created_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("inventory_transactions_product_date_idx").on(
+      table.productId,
+      table.transactionDate,
+      table.id,
+    ),
+    index("inventory_transactions_date_idx").on(
+      table.transactionDate,
+      table.id,
+    ),
+  ],
+);

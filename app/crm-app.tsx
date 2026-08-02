@@ -127,6 +127,7 @@ const ProductCatalogPage = lazy(() => import("./product-catalog-page"));
 const AwardVendorPage = lazy(() => import("./award-vendor-page"));
 const AccountingPage = lazy(() => import("./accounting-page"));
 const AnalyticsPage = lazy(() => import("./analytics-page"));
+const InventoryPage = lazy(() => import("./inventory-page"));
 const QuotationDocuments = lazy(() => import("./quotation-documents"));
 const SalesMapPage = lazy(() => import("./sales-map"));
 
@@ -1020,6 +1021,7 @@ type View =
   | "backup"
   | "accounting"
   | "analytics"
+  | "inventory"
   | "integration";
 
 type AccountingActivityStatus = {
@@ -1282,6 +1284,7 @@ type MemberPermission =
   | "activity-history:manage"
   | "accounting:manage"
   | "analytics:view"
+  | "inventory:manage"
   | "trash:manage"
   | "integration:manage"
   | "backup:manage"
@@ -1323,6 +1326,12 @@ const memberPermissionOptions: {
     group: "operations",
     label: "수주·제품 통계",
     description: "회사 전체 월간·연간 수주·제품 통계 확인",
+  },
+  {
+    id: "inventory:manage",
+    group: "operations",
+    label: "물류·재고 관리",
+    description: "재고 품목과 입고·출고·재고 조정 이력 관리",
   },
   {
     id: "trash:manage",
@@ -1407,7 +1416,7 @@ const memberAccessPresetDefinitions: Record<
       .map((option) => option.id)
       .filter((permission) => permission !== "activity-history:manage"),
     isSales: false,
-    description: "구성원·회계·통계·휴지통·API·백업 등 모든 운영 도구를 사용합니다.",
+    description: "구성원·회계·통계·물류·재고·휴지통·API·백업 등 모든 운영 도구를 사용합니다.",
   },
 };
 
@@ -1627,6 +1636,7 @@ const availableViews = new Set<View>([
   "backup",
   "accounting",
   "analytics",
+  "inventory",
   "integration",
 ]);
 const presentationHiddenViews = new Set<View>([
@@ -6367,6 +6377,9 @@ export default function CrmApp({
   const canViewAnalytics = Boolean(
     session && memberCan(session.member, "analytics:view"),
   );
+  const canManageInventory = Boolean(
+    session && memberCan(session.member, "inventory:manage"),
+  );
   const canUseVoiceInput = Boolean(
     session && memberCan(session.member, "ai:voice"),
   );
@@ -6402,6 +6415,11 @@ export default function CrmApp({
           id: "analytics" as View,
           label: "수주·제품 통계",
           mark: "S",
+        },
+        canManageInventory && {
+          id: "inventory" as View,
+          label: "물류·재고 관리",
+          mark: "I",
         },
         canManageIntegration && {
           id: "integration" as View,
@@ -6861,6 +6879,7 @@ export default function CrmApp({
         (nextView === "team" && !canManageMembers) ||
         (nextView === "accounting" && !canManageAccounting) ||
         (nextView === "analytics" && !canViewAnalytics) ||
+        (nextView === "inventory" && !canManageInventory) ||
         (nextView === "integration" && !canManageIntegration) ||
         (nextView === "backup" && !canManageBackup)
       ) {
@@ -6930,6 +6949,7 @@ export default function CrmApp({
     canManageBackup,
     canManageAccounting,
     canViewAnalytics,
+    canManageInventory,
     isOwner,
     presentationMode,
   ]);
@@ -11241,6 +11261,7 @@ export default function CrmApp({
       (nextView === "team" && !canManageMembers) ||
       (nextView === "accounting" && !canManageAccounting) ||
       (nextView === "analytics" && !canViewAnalytics) ||
+      (nextView === "inventory" && !canManageInventory) ||
       (nextView === "integration" && !canManageIntegration) ||
       (nextView === "backup" && !canManageBackup)
     ) {
@@ -14552,6 +14573,8 @@ export default function CrmApp({
                   ? "수금·채권 관리"
                 : view === "analytics"
                   ? "수주·제품 통계"
+                : view === "inventory"
+                  ? "물류·재고 관리"
                   : "API 등록·관리";
 
   if (sessionLoading) {
@@ -14990,7 +15013,7 @@ export default function CrmApp({
           <button className="menu-button" onClick={() => setMobileNav(true)} aria-label="메뉴 열기">
             ☰
           </button>
-          {view !== "dashboard" && view !== "map" && view !== "budget-institutions" && view !== "trash" && view !== "accounting" && view !== "analytics" && (
+          {view !== "dashboard" && view !== "map" && view !== "budget-institutions" && view !== "trash" && view !== "accounting" && view !== "analytics" && view !== "inventory" && (
             <div className="global-search">
               <span>⌕</span>
               <BufferedInput
@@ -15020,7 +15043,7 @@ export default function CrmApp({
           </div>
         </header>
 
-        <div className={`content ${view === "followup" || view === "map" || view === "budget-institutions" || view === "backup" || view === "records" || view === "organizations" || view === "awards" || view === "products" || view === "vendors" || view === "accounting" || view === "analytics" ? "content-wide" : ""}`}>
+        <div className={`content ${view === "followup" || view === "map" || view === "budget-institutions" || view === "backup" || view === "records" || view === "organizations" || view === "awards" || view === "products" || view === "vendors" || view === "accounting" || view === "analytics" || view === "inventory" ? "content-wide" : ""}`}>
           <div className="page-heading">
             <div>
               <p className="eyebrow">TM · MEETING MANAGEMENT</p>
@@ -15034,6 +15057,8 @@ export default function CrmApp({
                     ? "위즈업 수주의 입금 예정액을 확인하고, 실제 수금액과 미수금을 관리합니다."
                   : view === "analytics"
                     ? "회계 확인 기준의 월간·연간 수주와 제품 흐름을 확인합니다."
+                  : view === "inventory"
+                    ? "보유 장비의 현재 수량과 입고·출고·조정 이력을 한곳에서 관리합니다."
                    : view === "integration"
                      ? "사이트에서 사용할 OpenAI API 키와 모델을 안전하게 등록·교체합니다."
                     : view === "awards"
@@ -15689,6 +15714,10 @@ export default function CrmApp({
                   setDetailOrganization(organization);
                 }}
               />
+            </Suspense>
+          ) : view === "inventory" ? (
+            <Suspense fallback={<DeferredPageFallback />}>
+              <InventoryPage />
             </Suspense>
           ) : view === "products" ? (
             <Suspense fallback={<DeferredPageFallback />}>

@@ -22,11 +22,13 @@ import { ensureAwardVendorsReady } from "./award-vendors";
 import { ensureQuotationDocumentsReady } from "./quotation-documents";
 import { ensureSchoolDirectoryReady } from "./school-directory";
 import { ensureJointProjectsReady } from "./joint-projects";
+import { ensureInventoryReady } from "./inventory-store";
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-08-02-joint-budget-period";
+export const BACKUP_SCHEMA_VERSION = "2026-08-03-inventory-ledger";
 const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
+  "2026-08-02-joint-budget-period",
   "2026-08-02-complete-business-backup",
   "2026-07-31-activity-details",
   "2026-07-30-owner-data-controls",
@@ -87,6 +89,10 @@ const JOINT_PROJECT_BACKUP_TABLES = new Set([
   "joint_project_members",
   "joint_project_events",
 ]);
+const INVENTORY_BACKUP_TABLES = new Set([
+  "inventory_products",
+  "inventory_transactions",
+]);
 
 function legacyBackupMayOmitTable(
   schemaVersion: string,
@@ -97,7 +103,8 @@ function legacyBackupMayOmitTable(
       BUDGET_NAME_BACKUP_TABLES.has(tableName)) ||
     (schemaVersion !== BACKUP_SCHEMA_VERSION &&
       (COMPLETE_BUSINESS_BACKUP_TABLES.has(tableName) ||
-        JOINT_PROJECT_BACKUP_TABLES.has(tableName)))
+        JOINT_PROJECT_BACKUP_TABLES.has(tableName) ||
+        INVENTORY_BACKUP_TABLES.has(tableName)))
   );
 }
 
@@ -619,6 +626,42 @@ export const BACKUP_TABLES = [
     orderBy: "id",
   },
   {
+    name: "inventory_products",
+    columns: [
+      "id",
+      "name",
+      "specification",
+      "unit",
+      "current_stock",
+      "low_stock_threshold",
+      "is_active",
+      "created_by",
+      "created_by_name",
+      "updated_by",
+      "updated_by_name",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "inventory_transactions",
+    columns: [
+      "id",
+      "product_id",
+      "transaction_type",
+      "quantity_delta",
+      "resulting_stock",
+      "reference",
+      "note",
+      "transaction_date",
+      "created_by",
+      "created_by_name",
+      "created_at",
+    ],
+    orderBy: "id",
+  },
+  {
     name: "equipment_projects",
     columns: [
       "id",
@@ -910,6 +953,7 @@ async function ensureBackupReady() {
   await ensureQuotationDocumentsReady();
   await ensureSchoolDirectoryReady();
   await ensureJointProjectsReady();
+  await ensureInventoryReady();
   const d1 = getD1();
   await ensureInstitutionDecisionsReady(d1);
   await d1.prepare(`CREATE TABLE IF NOT EXISTS holdem_weekly_scores (
@@ -1314,6 +1358,7 @@ function validateRows(
   const projects = data.equipment_projects;
   const vendors = data.award_vendors;
   const jointProjects = data.joint_projects;
+  const inventoryProducts = data.inventory_products;
 
   assertUnique(members, (row) => String(asInteger(row.id, "members.id")), "구성원 ID");
   assertUnique(
@@ -1688,6 +1733,21 @@ function validateRows(
       String(asInteger(row.id, "accounting_collection_receipts.id")),
     "수금 내역 ID",
   );
+  assertUnique(
+    inventoryProducts,
+    (row) => String(asInteger(row.id, "inventory_products.id")),
+    "재고 품목 ID",
+  );
+  assertUnique(
+    inventoryProducts,
+    (row) => requiredText(row.name, "inventory_products.name").toLowerCase(),
+    "재고 품목명",
+  );
+  assertUnique(
+    data.inventory_transactions,
+    (row) => String(asInteger(row.id, "inventory_transactions.id")),
+    "재고 변동 이력 ID",
+  );
 
   const memberIds = rowSet(members, "id", "members");
   const activityIds = rowSet(activities, "id", "activities");
@@ -1700,6 +1760,11 @@ function validateRows(
   const projectIds = rowSet(projects, "id", "equipment_projects");
   const jointProjectIds = rowSet(jointProjects, "id", "joint_projects");
   const vendorIds = rowSet(vendors, "id", "award_vendors");
+  const inventoryProductIds = rowSet(
+    inventoryProducts,
+    "id",
+    "inventory_products",
+  );
   const budgetGroupIds = rowSet(
     data.budget_name_groups,
     "id",
@@ -1726,6 +1791,31 @@ function validateRows(
     "accounting_collection_receipts",
   );
   void collectionReceiptIds;
+
+  inventoryProducts.forEach((row) => {
+    assertReference(row.created_by, memberIds, "inventory_products.created_by", true);
+    assertReference(row.updated_by, memberIds, "inventory_products.updated_by", true);
+  });
+  data.inventory_transactions.forEach((row) => {
+    assertReference(
+      row.product_id,
+      inventoryProductIds,
+      "inventory_transactions.product_id",
+    );
+    assertReference(
+      row.created_by,
+      memberIds,
+      "inventory_transactions.created_by",
+      true,
+    );
+    const type = requiredText(
+      row.transaction_type,
+      "inventory_transactions.transaction_type",
+    );
+    if (!new Set(["in", "out", "adjust"]).has(type)) {
+      throw new BackupValidationError("재고 변동 유형이 올바르지 않습니다.");
+    }
+  });
 
   members.forEach((row) => {
     const approvedBy = nullableInteger(row.approved_by, "members.approved_by");
@@ -2676,6 +2766,7 @@ type RestorePresence = {
   restoresProductSupplySettings: boolean;
   restoresBudgetNameCatalog: boolean;
   restoresJointProjects: boolean;
+  restoresInventory: boolean;
 };
 
 function restorePresenceFromInput(input: unknown): RestorePresence {
@@ -2705,6 +2796,9 @@ function restorePresenceFromInput(input: unknown): RestorePresence {
       Array.isArray(rawData?.joint_projects) &&
       Array.isArray(rawData?.joint_project_members) &&
       Array.isArray(rawData?.joint_project_events),
+    restoresInventory:
+      Array.isArray(rawData?.inventory_products) &&
+      Array.isArray(rawData?.inventory_transactions),
   };
 }
 
@@ -2722,6 +2816,7 @@ async function replaceDatabaseFromBackup(
     restoresProductSupplySettings: true,
     restoresBudgetNameCatalog: true,
     restoresJointProjects: true,
+    restoresInventory: true,
   },
 ) {
   const {
@@ -2736,9 +2831,16 @@ async function replaceDatabaseFromBackup(
     restoresProductSupplySettings,
     restoresBudgetNameCatalog,
     restoresJointProjects,
+    restoresInventory,
   } = presence;
   const d1 = await ensureBackupReady();
   const statements = [
+    ...(restoresInventory
+      ? [
+          d1.prepare("DELETE FROM inventory_transactions"),
+          d1.prepare("DELETE FROM inventory_products"),
+        ]
+      : []),
     ...(restoresJointProjects
       ? [
           d1.prepare("DELETE FROM joint_project_events"),
@@ -2802,6 +2904,8 @@ async function replaceDatabaseFromBackup(
 
   const insertOrder: BackupTableName[] = [
     "members",
+    "inventory_products",
+    "inventory_transactions",
     "award_vendors",
     "award_vendor_documents",
     "product_supply_settings",
@@ -2842,6 +2946,13 @@ async function replaceDatabaseFromBackup(
   ];
 
   insertOrder.forEach((tableName) => {
+    if (
+      (tableName === "inventory_products" ||
+        tableName === "inventory_transactions") &&
+      !restoresInventory
+    ) {
+      return;
+    }
     if (
       (tableName === "joint_projects" ||
         tableName === "joint_project_members" ||

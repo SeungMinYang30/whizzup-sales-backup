@@ -37,6 +37,7 @@ test("직접 설정 권한은 왼쪽 운영 도구 순서와 동일하다", () =
     "activity-history:manage",
     "accounting:manage",
     "analytics:view",
+    "inventory:manage",
     "trash:manage",
     "integration:manage",
     "backup:manage",
@@ -47,6 +48,7 @@ test("직접 설정 권한은 왼쪽 운영 도구 순서와 동일하다", () =
     "일괄 변경 이력·되돌리기",
     "수금·채권 관리",
     "수주·제품 통계",
+    "물류·재고 관리",
     "API 등록·관리",
     "데이터 백업·복구",
   ];

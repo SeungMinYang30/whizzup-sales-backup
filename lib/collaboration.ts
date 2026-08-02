@@ -8,6 +8,7 @@ export const MEMBER_PERMISSIONS = [
   "activity-history:manage",
   "accounting:manage",
   "analytics:view",
+  "inventory:manage",
   "trash:manage",
   "integration:manage",
   "backup:manage",
