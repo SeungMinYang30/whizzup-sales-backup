@@ -307,9 +307,48 @@ export async function listJointProjects() {
       .all(),
     d1
       .prepare(
-        `SELECT jpm.*
+        `WITH ranked_member_activities AS (
+           SELECT
+             jpm.id AS member_id,
+             a.id AS resolved_activity_id,
+             a.budget_type,
+             a.budget_group_id,
+             a.budget_amount,
+             a.budgets_json,
+             a.award_status,
+             a.award_stage,
+             a.progress_manager,
+             ROW_NUMBER() OVER (
+               PARTITION BY jpm.id
+               ORDER BY
+                 CASE WHEN a.id = jpm.activity_id THEN 0 ELSE 1 END,
+                 a.activity_date DESC,
+                 a.id DESC
+             ) AS row_number
+           FROM joint_project_members jpm
+           JOIN joint_projects jp
+             ON jp.id = jpm.project_id AND jp.status = 'active'
+           LEFT JOIN activities a
+             ON a.id = jpm.activity_id
+             OR (
+               a.organization = jpm.organization
+               AND a.business_round = jpm.business_round
+             )
+         )
+         SELECT
+           jpm.*,
+           ranked.resolved_activity_id,
+           ranked.budget_type,
+           ranked.budget_group_id,
+           ranked.budget_amount AS activity_budget_amount,
+           ranked.budgets_json,
+           ranked.award_status,
+           ranked.award_stage,
+           ranked.progress_manager
          FROM joint_project_members jpm
          JOIN joint_projects jp ON jp.id = jpm.project_id
+         LEFT JOIN ranked_member_activities ranked
+           ON ranked.member_id = jpm.id AND ranked.row_number = 1
          WHERE jp.status = 'active'
          ORDER BY jpm.project_id DESC,
                   CASE jpm.role WHEN 'sponsor' THEN 0 ELSE 1 END,

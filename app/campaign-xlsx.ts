@@ -3,6 +3,7 @@ import { canonicalInstitutionName } from "../lib/institution-names";
 
 export type CampaignImportRow = {
   clientId?: string;
+  sourceSequence?: string;
   organization: string;
   address: string;
   phone: string;
@@ -22,6 +23,7 @@ export type CampaignImportRow = {
 };
 
 const headers = [
+  "순번",
   "기관명",
   "주소",
   "전화번호",
@@ -66,18 +68,19 @@ function buildTemplateFiles() {
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
   <cols>
-    <col min="1" max="1" width="24" customWidth="1"/>
-    <col min="2" max="2" width="42" customWidth="1"/>
-    <col min="3" max="4" width="18" customWidth="1"/>
-    <col min="5" max="5" width="14" customWidth="1"/>
-    <col min="6" max="6" width="34" customWidth="1"/>
-    <col min="7" max="7" width="18" customWidth="1"/>
+    <col min="1" max="1" width="8" customWidth="1"/>
+    <col min="2" max="2" width="24" customWidth="1"/>
+    <col min="3" max="3" width="42" customWidth="1"/>
+    <col min="4" max="5" width="18" customWidth="1"/>
+    <col min="6" max="6" width="14" customWidth="1"/>
+    <col min="7" max="7" width="34" customWidth="1"/>
     <col min="8" max="8" width="18" customWidth="1"/>
-    <col min="9" max="9" width="28" customWidth="1"/>
-    <col min="10" max="10" width="18" customWidth="1"/>
+    <col min="9" max="9" width="18" customWidth="1"/>
+    <col min="10" max="10" width="28" customWidth="1"/>
+    <col min="11" max="11" width="18" customWidth="1"/>
   </cols>
   <sheetData><row r="1" ht="24" customHeight="1">${headerCells}</row></sheetData>
-  <autoFilter ref="A1:J1"/>
+  <autoFilter ref="A1:K1"/>
 </worksheet>`;
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -275,6 +278,7 @@ function mapRows(rows: string[][]) {
   if (organizationIndex === undefined) {
     throw new Error("기관명 열은 반드시 필요합니다.");
   }
+  const sequenceIndex = findIndex("순번", "연번", "번호", "no", "no.");
   const addressIndex = findIndex("주소", "도로명주소", "지번주소");
   const phoneIndex = findIndex("전화번호", "전화", "기관전화");
   const contactNameIndex = findIndex("기관 담당자", "기관담당자", "담당자");
@@ -316,7 +320,7 @@ function mapRows(rows: string[][]) {
   let previousMunicipality = "";
   const mapped = rows
     .slice(headerRow + 1)
-    .map((row) => {
+    .map((row, index) => {
       const province = valueAt(row, provinceIndex) || previousProvince;
       const municipality =
         valueAt(row, municipalityIndex) || previousMunicipality;
@@ -326,6 +330,7 @@ function mapRows(rows: string[][]) {
       }
       const explicitRegion = valueAt(row, regionIndex);
       return {
+        sourceSequence: valueAt(row, sequenceIndex) || String(index + 1),
         organization: canonicalInstitutionName(
           valueAt(row, organizationIndex),
         ),

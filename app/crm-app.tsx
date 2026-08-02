@@ -48,6 +48,7 @@ import BudgetNameSelector, {
 import JointProjectModal, {
   type JointProjectCandidate,
 } from "./joint-project-modal";
+import JointProjectSummary from "./joint-project-summary";
 import { normalizeAiSuggestedStatus } from "../lib/ai-status";
 import { resolveRegisteredSalesName } from "../lib/sales-names";
 import {
@@ -18772,6 +18773,10 @@ export default function CrmApp({
                   + 새 사업
                 </button>
               </div>
+              <JointProjectSummary
+                projectId={detailDisplayRecord.jointProjectId}
+                organization={detailOrganization}
+              />
               <section className="history-summary-grid" aria-label="기관 최신 정보 요약">
                 <div>
                   <span>{detailLatest ? "최종 컨택일" : "캠페인 등록일"}</span>

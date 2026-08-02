@@ -306,6 +306,7 @@ type CampaignImportRowEditorProps = {
   budget: BudgetSelection;
   institutionSuggestions: CampaignInstitutionOption[];
   showInstitutionSuggestions: boolean;
+  alreadyInActiveCampaign: boolean;
   onUpdate: CampaignImportRowUpdate;
   onBusinessMatch: (
     index: number,
@@ -333,6 +334,7 @@ const CampaignImportRowEditor = memo(function CampaignImportRowEditor({
   budget,
   institutionSuggestions,
   showInstitutionSuggestions,
+  alreadyInActiveCampaign,
   onUpdate,
   onBusinessMatch,
   onSelectInstitution,
@@ -352,6 +354,9 @@ const CampaignImportRowEditor = memo(function CampaignImportRowEditor({
 
   return (
     <div className="campaign-pdf-preview-row">
+      <span className="campaign-source-sequence">
+        {row.sourceSequence || index + 1}
+      </span>
       <div
         className="campaign-institution-entry"
         onBlur={(event) => {
@@ -441,7 +446,9 @@ const CampaignImportRowEditor = memo(function CampaignImportRowEditor({
         aria-label={`${row.organization} 기관별 예산`}
         placeholder="미입력"
       />
-      {row.existingOrganizations.length ? (
+      {alreadyInActiveCampaign ? (
+        <span className="campaign-existing-in-list">현재 명단에 등록됨</span>
+      ) : row.existingOrganizations.length ? (
         <select
           value={row.confirmedOrganization}
           onChange={(event) =>
@@ -2665,6 +2672,7 @@ export default function SalesMapPage({
   function emptyCampaignImportRow(): CampaignImportRow {
     return {
       clientId: createCampaignRowId(),
+      sourceSequence: "",
       organization: "",
       address: "",
       phone: "",
@@ -3091,6 +3099,11 @@ export default function SalesMapPage({
             notes: campaignNotes.trim(),
             importSource: campaignImport.source,
             sourceFileName: campaignImport.fileName,
+            destinationCampaignId:
+              activeCampaign &&
+              activeCampaign.budgetGroupId === campaignBudget.budgetGroupId
+                ? activeCampaign.id
+                : null,
             selectionDate: campaignSelectionDate,
             defaultBudgetAmount: campaignDefaultBudgetAmount,
             ...campaignBudget,
@@ -3102,6 +3115,7 @@ export default function SalesMapPage({
         campaign?: Record<string, unknown>;
         targetCount?: number;
         targets?: CampaignImportRow[];
+        skippedExistingCount?: number;
         linkedExistingCount?: number;
         correctedBudgetCount?: number;
         newBusinessCount?: number;
@@ -3112,7 +3126,7 @@ export default function SalesMapPage({
         throw new Error(payload.error || "영업 카테고리를 등록하지 못했습니다.");
       }
       const campaign = normalizeCampaign(payload.campaign);
-      const rowsToMap = payload.targets?.length
+      const rowsToMap = Array.isArray(payload.targets)
         ? payload.targets
         : campaignImport.rows;
       const targetCount = payload.targetCount ?? campaignImport.rows.length;
@@ -3139,7 +3153,7 @@ export default function SalesMapPage({
       changeMobileView("list");
       setCampaignImporting(false);
       setNotice(
-        `${targetCount}개 기관 등록 완료 · 기존 사업 연결 ${payload.linkedExistingCount ?? 0}건 · 예산명 정정 ${payload.correctedBudgetCount ?? 0}건 · 새 사업 ${payload.newBusinessCount ?? 0}건. 지도 위치는 뒤에서 자동으로 찾고 있습니다.`,
+        `${targetCount}개 기관 추가 완료${payload.skippedExistingCount ? ` · 기존 명단 ${payload.skippedExistingCount}곳 건너뜀` : ""} · 기존 사업 연결 ${payload.linkedExistingCount ?? 0}건 · 예산명 정정 ${payload.correctedBudgetCount ?? 0}건 · 새 사업 ${payload.newBusinessCount ?? 0}건. 지도 위치는 뒤에서 자동으로 찾고 있습니다.`,
       );
       void Promise.allSettled([onRecordsChanged(), loadCampaigns()]);
       void geocodeCampaignRows(rowsToMap)
@@ -6081,9 +6095,7 @@ export default function SalesMapPage({
             type="button"
             className="map-location-backdrop"
             aria-label="영업 카테고리 등록 닫기"
-            onClick={() => {
-              if (!campaignImporting) setCampaignImport(null);
-            }}
+            onClick={() => undefined}
           />
           <form
             className="campaign-import-dialog campaign-pdf-dialog"
@@ -6117,7 +6129,16 @@ export default function SalesMapPage({
               <button
                 type="button"
                 aria-label="카테고리 가져오기 닫기"
-                onClick={() => setCampaignImport(null)}
+                onClick={() => {
+                  if (
+                    !campaignImporting &&
+                    window.confirm(
+                      "아직 저장하지 않은 명단 확인 내용을 닫을까요?",
+                    )
+                  ) {
+                    setCampaignImport(null);
+                  }
+                }}
                 disabled={campaignImporting}
               >
                 ×
@@ -6190,8 +6211,10 @@ export default function SalesMapPage({
                 </>
               ) : (
                 <>
-                  기존 기관과 같은 연도 사업을 먼저 확인합니다. 예산명이 이미
-                  다르면 자동으로 덮어쓰지 않고 새 사업으로 등록합니다.
+                  {activeCampaign &&
+                  activeCampaign.budgetGroupId === campaignBudget.budgetGroupId
+                    ? `${activeCampaign.name} 명단과 비교합니다. 이미 등록된 기관은 건너뛰고 누락 기관만 추가합니다.`
+                    : "기존 기관과 같은 연도 사업을 먼저 확인합니다. 예산명이 이미 다르면 자동으로 덮어쓰지 않고 새 사업으로 등록합니다."}
                 </>
               )}
             </div>
@@ -6209,6 +6232,7 @@ export default function SalesMapPage({
             {campaignImport.rows.length ? (
               <div className="campaign-pdf-preview">
                 <div className="campaign-pdf-preview-head">
+                  <span>순번</span>
                   <span>기관명</span>
                   <span>지원청·지역</span>
                   <span>학교급</span>
@@ -6251,6 +6275,9 @@ export default function SalesMapPage({
                           : EMPTY_CAMPAIGN_INSTITUTION_SUGGESTIONS
                       }
                       showInstitutionSuggestions={showInstitutionSuggestions}
+                      alreadyInActiveCampaign={activeCampaignOrganizationKeys.has(
+                        institutionAliasKey(row.organization),
+                      )}
                       onUpdate={updateCampaignImportRow}
                       onBusinessMatch={updateCampaignBusinessMatch}
                       onSelectInstitution={selectCampaignInstitution}
@@ -6264,7 +6291,15 @@ export default function SalesMapPage({
             <footer>
               <button
                 type="button"
-                onClick={() => setCampaignImport(null)}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "아직 저장하지 않은 명단 확인 내용을 닫을까요?",
+                    )
+                  ) {
+                    setCampaignImport(null);
+                  }
+                }}
                 disabled={campaignImporting}
               >
                 취소
@@ -6283,7 +6318,10 @@ export default function SalesMapPage({
               >
                 {campaignImporting
                   ? "기관·위치 등록 중"
-                  : `${campaignImport.rows.length}개 기관 등록`}
+                  : activeCampaign &&
+                      activeCampaign.budgetGroupId === campaignBudget.budgetGroupId
+                    ? "누락 기관만 현재 명단에 추가"
+                    : `${campaignImport.rows.length}개 기관 등록`}
               </button>
             </footer>
           </form>

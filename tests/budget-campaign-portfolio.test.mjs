@@ -539,7 +539,9 @@ test("대량 명단은 조회와 후속 저장을 묶고 중단된 등록은 다
   assert.match(route, /skipOfficialSchoolLookup: true/);
   assert.match(route, /skipInstitutionStateLookup: true/);
   assert.match(route, /skipRelatedWrites: true/);
-  assert.match(route, /seedKey: `campaign:\$\{campaignId\}:/);
+  assert.match(route, /campaign:\$\{campaignId\}:append:/);
+  assert.match(route, /destinationCampaignId/);
+  assert.match(route, /skippedExistingCount/);
   assert.match(route, /import_status[\s\S]*'processing'/);
   assert.match(route, /removeIncompleteCampaign/);
   assert.match(route, /SET import_status = 'complete'/);

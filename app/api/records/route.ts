@@ -434,6 +434,28 @@ export async function GET(request: Request) {
           SELECT id FROM recent_activities
           UNION
           SELECT id FROM my_recent_activities
+        ),
+        joint_member_candidates AS (
+          SELECT
+            source_activity.id AS activity_id,
+            linked.id AS member_id,
+            ROW_NUMBER() OVER (
+              PARTITION BY source_activity.id
+              ORDER BY
+                CASE WHEN linked.activity_id = source_activity.id THEN 0 ELSE 1 END,
+                linked.updated_at DESC,
+                linked.id DESC
+            ) AS row_number
+          FROM activities source_activity
+          JOIN joint_project_members linked
+            ON linked.activity_id = source_activity.id
+            OR (
+              linked.organization = source_activity.organization
+              AND linked.business_round = source_activity.business_round
+            )
+          JOIN joint_projects linked_project
+            ON linked_project.id = linked.project_id
+           AND linked_project.status = 'active'
         )
         SELECT
           a.*,
@@ -444,30 +466,11 @@ export async function GET(request: Request) {
           jpm.role AS joint_project_role
         FROM activities a
         LEFT JOIN activity_authors aa ON aa.activity_id = a.id
+        LEFT JOIN joint_member_candidates joint_link
+          ON joint_link.activity_id = a.id
+         AND joint_link.row_number = 1
         LEFT JOIN joint_project_members jpm
-          ON jpm.id = COALESCE(
-            (
-              SELECT exact_link.id
-              FROM joint_project_members exact_link
-              JOIN joint_projects exact_project
-                ON exact_project.id = exact_link.project_id
-               AND exact_project.status = 'active'
-              WHERE exact_link.activity_id = a.id
-              ORDER BY exact_link.updated_at DESC, exact_link.id DESC
-              LIMIT 1
-            ),
-            (
-              SELECT fallback_link.id
-              FROM joint_project_members fallback_link
-              JOIN joint_projects fallback_project
-                ON fallback_project.id = fallback_link.project_id
-               AND fallback_project.status = 'active'
-              WHERE fallback_link.organization = a.organization
-                AND fallback_link.business_round = a.business_round
-              ORDER BY fallback_link.updated_at DESC, fallback_link.id DESC
-              LIMIT 1
-            )
-          )
+          ON jpm.id = joint_link.member_id
         LEFT JOIN joint_projects jp
           ON jp.id = jpm.project_id AND jp.status = 'active'
         WHERE a.id IN (SELECT id FROM dashboard_ids)
@@ -486,6 +489,28 @@ export async function GET(request: Request) {
         LIMIT ? OFFSET ?
       `
       : `
+        WITH joint_member_candidates AS (
+          SELECT
+            source_activity.id AS activity_id,
+            linked.id AS member_id,
+            ROW_NUMBER() OVER (
+              PARTITION BY source_activity.id
+              ORDER BY
+                CASE WHEN linked.activity_id = source_activity.id THEN 0 ELSE 1 END,
+                linked.updated_at DESC,
+                linked.id DESC
+            ) AS row_number
+          FROM activities source_activity
+          JOIN joint_project_members linked
+            ON linked.activity_id = source_activity.id
+            OR (
+              linked.organization = source_activity.organization
+              AND linked.business_round = source_activity.business_round
+            )
+          JOIN joint_projects linked_project
+            ON linked_project.id = linked.project_id
+           AND linked_project.status = 'active'
+        )
         SELECT
           a.*,
           COALESCE(aa.created_by_name, '가져온 기록') AS created_by_name,
@@ -495,30 +520,11 @@ export async function GET(request: Request) {
           jpm.role AS joint_project_role
         FROM activities a
         LEFT JOIN activity_authors aa ON aa.activity_id = a.id
+        LEFT JOIN joint_member_candidates joint_link
+          ON joint_link.activity_id = a.id
+         AND joint_link.row_number = 1
         LEFT JOIN joint_project_members jpm
-          ON jpm.id = COALESCE(
-            (
-              SELECT exact_link.id
-              FROM joint_project_members exact_link
-              JOIN joint_projects exact_project
-                ON exact_project.id = exact_link.project_id
-               AND exact_project.status = 'active'
-              WHERE exact_link.activity_id = a.id
-              ORDER BY exact_link.updated_at DESC, exact_link.id DESC
-              LIMIT 1
-            ),
-            (
-              SELECT fallback_link.id
-              FROM joint_project_members fallback_link
-              JOIN joint_projects fallback_project
-                ON fallback_project.id = fallback_link.project_id
-               AND fallback_project.status = 'active'
-              WHERE fallback_link.organization = a.organization
-                AND fallback_link.business_round = a.business_round
-              ORDER BY fallback_link.updated_at DESC, fallback_link.id DESC
-              LIMIT 1
-            )
-          )
+          ON jpm.id = joint_link.member_id
         LEFT JOIN joint_projects jp
           ON jp.id = jpm.project_id AND jp.status = 'active'
         ORDER BY
@@ -535,7 +541,9 @@ export async function GET(request: Request) {
           .bind(member.displayName, member.displayName, limit + 1, offset)
           .all()
       : await statement.bind(limit + 1, offset).all();
-    const records = result.results.slice(0, limit).map((record) =>
+    const records = (result.results as Record<string, unknown>[])
+      .slice(0, limit)
+      .map((record) =>
       record.award_status === "타업체 수주"
         ? {
             ...record,
@@ -544,7 +552,7 @@ export async function GET(request: Request) {
             award_stage: "해당 없음",
           }
         : record,
-    );
+      );
     const hasMore = result.results.length > limit;
     return Response.json({
       records,

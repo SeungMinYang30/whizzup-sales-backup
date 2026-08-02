@@ -391,6 +391,28 @@ export async function GET() {
         .all(),
       d1
         .prepare(`
+          WITH joint_target_candidates AS (
+            SELECT
+              source_target.id AS target_id,
+              linked.id AS member_id,
+              ROW_NUMBER() OVER (
+                PARTITION BY source_target.id
+                ORDER BY
+                  CASE WHEN linked.campaign_target_id = source_target.id THEN 0 ELSE 1 END,
+                  linked.updated_at DESC,
+                  linked.id DESC
+              ) AS row_number
+            FROM sales_campaign_targets source_target
+            JOIN joint_project_members linked
+              ON linked.campaign_target_id = source_target.id
+              OR (
+                linked.organization = source_target.organization
+                AND linked.business_round = source_target.business_round
+              )
+            JOIN joint_projects linked_project
+              ON linked_project.id = linked.project_id
+             AND linked_project.status = 'active'
+          )
           SELECT
             t.*,
             current_activity.activity_date AS current_activity_date,
@@ -465,26 +487,11 @@ export async function GET() {
             ON assigned_member.id = t.assigned_member_id
            AND assigned_member.status = 'approved'
            AND assigned_member.is_sales = 1
+          LEFT JOIN joint_target_candidates joint_link
+            ON joint_link.target_id = t.id
+           AND joint_link.row_number = 1
           LEFT JOIN joint_project_members jpm
-            ON jpm.id = (
-              SELECT linked.id
-              FROM joint_project_members linked
-              JOIN joint_projects linked_project
-                ON linked_project.id = linked.project_id
-               AND linked_project.status = 'active'
-              WHERE (
-                    linked.campaign_target_id = t.id
-                    OR (
-                      linked.organization = t.organization
-                      AND linked.business_round = t.business_round
-                    )
-                  )
-              ORDER BY
-                CASE WHEN linked.campaign_target_id = t.id THEN 0 ELSE 1 END,
-                linked.updated_at DESC,
-                linked.id DESC
-              LIMIT 1
-            )
+            ON jpm.id = joint_link.member_id
           LEFT JOIN joint_projects jp
             ON jp.id = jpm.project_id AND jp.status = 'active'
           ORDER BY t.campaign_id DESC, t.organization COLLATE NOCASE
@@ -522,6 +529,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   let campaignId = 0;
+  let createdCampaign = false;
   try {
     const member = await requireApprovedMember();
     const payload = (await request.json()) as {
@@ -539,6 +547,7 @@ export async function POST(request: Request) {
       budgetRequestId?: unknown;
       budgetKind?: unknown;
       budgetAmountMode?: unknown;
+      destinationCampaignId?: unknown;
       targets?: CampaignTargetInput[];
       institutionDecisions?: Record<
         string,
@@ -565,7 +574,7 @@ export async function POST(request: Request) {
     const selectionDate = clean(payload.selectionDate).slice(0, 10);
     const selectedYear = selectionDate.slice(0, 4);
     const defaultBudgetAmount = parseMoney(payload.defaultBudgetAmount);
-    const targets = [
+    let targets = [
       ...new Map(
         (Array.isArray(payload.targets) ? payload.targets : [])
           .slice(0, 500)
@@ -620,6 +629,72 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    const destinationCampaignId = Number(payload.destinationCampaignId);
+    let destinationCampaign: Record<string, unknown> | null = null;
+    let skippedExistingCount = 0;
+    if (
+      Number.isInteger(destinationCampaignId) &&
+      destinationCampaignId > 0
+    ) {
+      destinationCampaign = await d1
+        .prepare(
+          `SELECT *
+           FROM sales_campaigns
+           WHERE id = ? AND import_status = 'complete'`,
+        )
+        .bind(destinationCampaignId)
+        .first<Record<string, unknown>>();
+      if (!destinationCampaign) {
+        return Response.json(
+          { error: "누락 기관을 추가할 기존 예산 명단을 찾지 못했습니다." },
+          { status: 404 },
+        );
+      }
+      if (
+        Number(destinationCampaign.budget_group_id) !==
+        budgetMetadata.budgetGroupId
+      ) {
+        return Response.json(
+          { error: "현재 명단과 같은 표준 예산명을 선택해 주세요." },
+          { status: 409 },
+        );
+      }
+      const currentTargets = await d1
+        .prepare(
+          `SELECT organization
+           FROM sales_campaign_targets
+           WHERE campaign_id = ?`,
+        )
+        .bind(destinationCampaignId)
+        .all<{ organization: string }>();
+      const currentOrganizationKeys = new Set(
+        currentTargets.results
+          .map((row) => institutionAliasKey(clean(row.organization)))
+          .filter(Boolean),
+      );
+      const missingTargets = targets.filter(
+        (target) =>
+          !currentOrganizationKeys.has(
+            institutionAliasKey(clean(target.organization)),
+          ),
+      );
+      skippedExistingCount = targets.length - missingTargets.length;
+      targets = missingTargets;
+      campaignId = destinationCampaignId;
+      if (!targets.length) {
+        return Response.json({
+          campaign: destinationCampaign,
+          targetCount: 0,
+          targets: [],
+          skippedExistingCount,
+          linkedExistingCount: 0,
+          correctedBudgetCount: 0,
+          newBusinessCount: 0,
+          newInstitutionCount: 0,
+          alreadyImported: true,
+        });
+      }
+    }
     const existingCampaign = await d1
       .prepare(`
         SELECT c.*, COUNT(t.id) AS target_count
@@ -630,7 +705,7 @@ export async function POST(request: Request) {
       `)
       .bind(name)
       .first<Record<string, unknown>>();
-    if (existingCampaign) {
+    if (existingCampaign && !destinationCampaign) {
       const existingCampaignId = Number(existingCampaign.id);
       if (clean(existingCampaign.import_status) === "processing") {
         await removeIncompleteCampaign(d1, existingCampaignId);
@@ -862,11 +937,12 @@ export async function POST(request: Request) {
             ) ?? null
           : null;
       const assignedMemberId =
-        explicitAssignedMemberId ?? inheritedAssignedMemberId;
-      const progressManager =
+        Number(explicitAssignedMemberId ?? inheritedAssignedMemberId) || null;
+      const progressManager = String(
         (assignedMemberId &&
           approvedMemberNameById.get(assignedMemberId)) ||
-        (createdActivity ? inheritedProgressManager : "");
+          (createdActivity ? inheritedProgressManager : ""),
+      );
       plans.push({
         target: {
           ...target,
@@ -904,36 +980,40 @@ export async function POST(request: Request) {
       });
     }
 
-    const campaign = await d1
-      .prepare(`
-        INSERT INTO sales_campaigns (
-          name, notes, budget_type, budget_group_id, budget_match_status,
-          budget_match_method, budget_request_id, budget_kind,
-          budget_amount_mode, selection_date, default_budget_amount,
-          source_file_name, import_source, import_status,
-          expected_target_count, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'processing', ?, ?)
-        RETURNING *
-      `)
-      .bind(
-        name,
-        notes,
-        budgetMetadata.storedName,
-        budgetMetadata.budgetGroupId,
-        budgetMetadata.budgetMatchStatus,
-        budgetMetadata.budgetMatchMethod,
-        budgetMetadata.budgetRequestId,
-        budgetMetadata.budgetKind,
-        budgetMetadata.budgetAmountMode,
-        selectionDate,
-        effectiveDefaultBudgetAmount,
-        sourceFileName,
-        importSource,
-        plans.length,
-        member.id,
-      )
-      .first<Record<string, unknown>>();
-    campaignId = Number(campaign?.id);
+    let campaign = destinationCampaign;
+    if (!campaign) {
+      campaign = await d1
+        .prepare(`
+          INSERT INTO sales_campaigns (
+            name, notes, budget_type, budget_group_id, budget_match_status,
+            budget_match_method, budget_request_id, budget_kind,
+            budget_amount_mode, selection_date, default_budget_amount,
+            source_file_name, import_source, import_status,
+            expected_target_count, created_by
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'processing', ?, ?)
+          RETURNING *
+        `)
+        .bind(
+          name,
+          notes,
+          budgetMetadata.storedName,
+          budgetMetadata.budgetGroupId,
+          budgetMetadata.budgetMatchStatus,
+          budgetMetadata.budgetMatchMethod,
+          budgetMetadata.budgetRequestId,
+          budgetMetadata.budgetKind,
+          budgetMetadata.budgetAmountMode,
+          selectionDate,
+          effectiveDefaultBudgetAmount,
+          sourceFileName,
+          importSource,
+          plans.length,
+          member.id,
+        )
+        .first<Record<string, unknown>>();
+      campaignId = Number(campaign?.id);
+      createdCampaign = Boolean(campaignId);
+    }
     if (!campaignId) throw new Error("예산별 기관 명단을 만들지 못했습니다.");
 
     const normalizedTargets: Array<Record<string, unknown>> = [];
@@ -1001,7 +1081,9 @@ export async function POST(request: Request) {
               skipOfficialSchoolLookup: true,
               skipInstitutionStateLookup: true,
               skipRelatedWrites: true,
-              seedKey: `campaign:${campaignId}:${plans.indexOf(plan)}`,
+              seedKey: destinationCampaign
+                ? `campaign:${campaignId}:append:${institutionAliasKey(plan.organization)}`
+                : `campaign:${campaignId}:${plans.indexOf(plan)}`,
               resolvedBudgetMetadata: {
                 ...budgetMetadata,
                 budgetAmount: storedBudgetAmount,
@@ -1334,10 +1416,16 @@ export async function POST(request: Request) {
     await d1
       .prepare(
         `UPDATE sales_campaigns
-         SET import_status = 'complete', updated_at = CURRENT_TIMESTAMP
+         SET import_status = 'complete',
+             expected_target_count = (
+               SELECT COUNT(*)
+               FROM sales_campaign_targets
+               WHERE campaign_id = ?
+             ),
+             updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
       )
-      .bind(campaignId)
+      .bind(campaignId, campaignId)
       .run();
 
     return Response.json(
@@ -1345,6 +1433,7 @@ export async function POST(request: Request) {
         campaign,
         targetCount: plans.length,
         targets: normalizedTargets,
+        skippedExistingCount,
         linkedExistingCount: plans.filter((plan) => !plan.createdActivity).length,
         correctedBudgetCount: plans.filter((plan) => plan.correctBudget).length,
         newBusinessCount: plans.filter((plan) => plan.createdActivity).length,
@@ -1352,10 +1441,10 @@ export async function POST(request: Request) {
           (plan) => plan.createdActivity && plan.businessRound === 1,
         ).length,
       },
-      { status: 201 },
+      { status: destinationCampaign ? 200 : 201 },
     );
   } catch (error) {
-    if (campaignId) {
+    if (campaignId && createdCampaign) {
       try {
         const d1 = await ensureCampaignsReady();
         await removeIncompleteCampaign(d1, campaignId);
