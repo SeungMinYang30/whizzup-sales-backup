@@ -2036,6 +2036,7 @@ export async function createFullBackup(): Promise<FullBackup> {
         "화면에서 등록한 OpenAI API 키",
         "나이스 학교정보 API 인증키",
         "다시 조회할 수 있는 공식 학교정보 임시 캐시",
+        "견적서·협력사 증빙 첨부파일 원본(R2 목록·연결정보만 포함)",
       ],
     },
     counts,

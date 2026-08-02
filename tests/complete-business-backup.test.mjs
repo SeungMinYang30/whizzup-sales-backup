@@ -46,6 +46,13 @@ test("backup validates document, trash, school-link, and holdem ownership refere
   assert.match(backup, /holdem_weekly_scores\.member_id/);
 });
 
+test("backup clearly distinguishes document metadata from stored file originals", () => {
+  assert.match(
+    backup,
+    /견적서·협력사 증빙 첨부파일 원본\(R2 목록·연결정보만 포함\)/,
+  );
+});
+
 test("activity CSV preserves and re-resolves every budget allocation", () => {
   assert.match(activityCsv, /"예산 목록 JSON"/);
   assert.match(activityCsv, /row\.budgets_json/);
