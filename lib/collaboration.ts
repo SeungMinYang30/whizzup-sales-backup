@@ -1,5 +1,6 @@
 import { getD1 } from "../db";
 import { getChatGPTUser, type ChatGPTUser } from "../app/chatgpt-auth";
+import { fetchApprovedPrimaryMember } from "./primary-member-access";
 
 export const MEMBER_PERMISSIONS = [
   "records:manage",
@@ -207,6 +208,48 @@ export async function getOrCreateMember(
       .bind(Number(row.id))
       .run();
     row.last_seen_at = new Date().toISOString();
+  }
+
+  if (row && String(row.status) === "pending") {
+    try {
+      const primaryMember = await fetchApprovedPrimaryMember(email);
+      if (primaryMember) {
+        const primaryRole = ["admin", "assistant", "member"].includes(
+          String(primaryMember.role),
+        )
+          ? String(primaryMember.role)
+          : "member";
+        const primaryPermissions = JSON.stringify(
+          normalizeMemberPermissions(primaryMember.permissions),
+        );
+        await d1
+          .prepare(`
+            UPDATE members SET
+              display_name = ?,
+              role = ?,
+              permissions = ?,
+              status = 'approved',
+              is_sales = ?,
+              approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
+              last_seen_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'pending'
+          `)
+          .bind(
+            String(primaryMember.display_name ?? identity.displayName),
+            primaryRole,
+            primaryPermissions,
+            Number(primaryMember.is_sales ?? 0) === 1 ? 1 : 0,
+            Number(row.id),
+          )
+          .run();
+        row = await d1
+          .prepare("SELECT * FROM members WHERE id = ?")
+          .bind(Number(row.id))
+          .first<Record<string, unknown>>();
+      }
+    } catch (error) {
+      console.warn("Could not refresh pending member from primary", error);
+    }
   }
 
   if (!row) throw new Error("사용자 정보를 만들지 못했습니다.");
