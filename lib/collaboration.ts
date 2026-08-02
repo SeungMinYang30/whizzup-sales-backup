@@ -42,7 +42,7 @@ export class AccessError extends Error {
 
 export const OAUTH_ACTIVITY_SCOPE = "activities:write";
 
-const STANDBY_PREAPPROVED_BASIC_EMAILS = new Set([
+const STANDBY_PREAPPROVED_FULL_ACCESS_EMAILS = new Set([
   "freeyang30@gmail.com",
 ]);
 
@@ -216,21 +216,20 @@ export async function getOrCreateMember(
 
   if (
     row &&
-    String(row.status) === "pending" &&
-    STANDBY_PREAPPROVED_BASIC_EMAILS.has(email)
+    STANDBY_PREAPPROVED_FULL_ACCESS_EMAILS.has(email)
   ) {
     await d1
       .prepare(`
         UPDATE members SET
-          role = 'member',
-          permissions = '[]',
+          role = 'assistant',
+          permissions = ?,
           status = 'approved',
           is_sales = 0,
           approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
           last_seen_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND status = 'pending'
+        WHERE id = ?
       `)
-      .bind(Number(row.id))
+      .bind(JSON.stringify(MEMBER_PERMISSIONS), Number(row.id))
       .run();
     row = await d1
       .prepare("SELECT * FROM members WHERE id = ?")

@@ -132,6 +132,8 @@ export function normalizeSqlForPostgres(query: string) {
     )
     .replace(/datetime\(\s*'now'\s*\)/gi, "CURRENT_TIMESTAMP")
     .replace(/datetime\(([^)]+)\)/gi, "($1)::timestamptz")
+    .replace(/\bNOT\s+GLOB\s+'\*\[0-9\]\*'/gi, "!~ '[0-9]'")
+    .replace(/\bGLOB\s+'\*\[0-9\]\*'/gi, "~ '[0-9]'")
     .replace(
       /\bFROM\s+sqlite_master\s+WHERE\s+type\s*=\s*'table'\s+AND\s+name\s*=\s*'([^']+)'/gi,
       "FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '$1'",

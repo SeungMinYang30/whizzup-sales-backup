@@ -21,13 +21,25 @@ test("백업사이트 대기 계정은 본사이트의 승인 상태를 즉시 �
   assert.match(primaryAccess, /cache: "no-store"/);
 });
 
-test("명시적으로 승인한 백업 기본 계정은 별도 관리자 권한 없이 입장한다", () => {
+test("명시적으로 승인한 백업 운영 계정은 기존 승인 상태와 관계없이 전체 권한으로 맞춘다", () => {
   const collaboration = source("../lib/collaboration.ts");
 
-  assert.match(collaboration, /STANDBY_PREAPPROVED_BASIC_EMAILS/);
+  assert.match(collaboration, /STANDBY_PREAPPROVED_FULL_ACCESS_EMAILS/);
   assert.match(collaboration, /"freeyang30@gmail\.com"/);
-  assert.match(collaboration, /role = 'member'/);
-  assert.match(collaboration, /permissions = '\[\]'/);
+  assert.match(collaboration, /role = 'assistant'/);
+  assert.match(collaboration, /permissions = \?/);
+  assert.match(collaboration, /JSON\.stringify\(MEMBER_PERMISSIONS\)/);
   assert.match(collaboration, /is_sales = 0/);
-  assert.match(collaboration, /WHERE id = \? AND status = 'pending'/);
+  assert.match(collaboration, /WHERE id = \?/);
+  assert.doesNotMatch(
+    collaboration,
+    /STANDBY_PREAPPROVED_FULL_ACCESS_EMAILS\.has\(email\)[\s\S]{0,80}status\) === "pending"/,
+  );
+});
+
+test("백업 PostgreSQL은 최신 예산 소급 처리의 숫자 GLOB 조건을 정규식으로 변환한다", () => {
+  const database = source("../db/index.ts");
+
+  assert.match(database, /NOT\\s\+GLOB[\s\S]{0,80}!~ '\[0-9\]'/);
+  assert.match(database, /GLOB[\s\S]{0,80}~ '\[0-9\]'/);
 });
