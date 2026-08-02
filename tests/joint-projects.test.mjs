@@ -54,11 +54,9 @@ test("같은 주관기관도 캠페인·표준 예산별 공동사업으로 나�
   assert.match(store, /const scopeCondition = campaignId/);
   assert.match(store, /jp\.campaign_id = \?/);
   assert.match(store, /jp\.budget_group_id = \?/);
-  assert.match(records, /linked\.activity_id = a\.id/);
-  assert.match(
-    records,
-    /CASE WHEN linked\.activity_id = a\.id THEN 0 ELSE 1 END/,
-  );
+  assert.match(records, /exact_link\.activity_id = a\.id/);
+  assert.match(records, /ON jpm\.id = COALESCE/);
+  assert.match(records, /fallback_link\.organization = a\.organization/);
 });
 
 test("기관·예산 명단 조회와 백업 복원에 공동사업 관계가 포함된다", () => {

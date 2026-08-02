@@ -445,22 +445,28 @@ export async function GET(request: Request) {
         FROM activities a
         LEFT JOIN activity_authors aa ON aa.activity_id = a.id
         LEFT JOIN joint_project_members jpm
-          ON jpm.id = (
-            SELECT linked.id
-            FROM joint_project_members linked
-            JOIN joint_projects linked_project
-              ON linked_project.id = linked.project_id
-             AND linked_project.status = 'active'
-            WHERE linked.activity_id = a.id
-               OR (
-                 linked.organization = a.organization
-                 AND linked.business_round = a.business_round
-               )
-            ORDER BY
-              CASE WHEN linked.activity_id = a.id THEN 0 ELSE 1 END,
-              linked.updated_at DESC,
-              linked.id DESC
-            LIMIT 1
+          ON jpm.id = COALESCE(
+            (
+              SELECT exact_link.id
+              FROM joint_project_members exact_link
+              JOIN joint_projects exact_project
+                ON exact_project.id = exact_link.project_id
+               AND exact_project.status = 'active'
+              WHERE exact_link.activity_id = a.id
+              ORDER BY exact_link.updated_at DESC, exact_link.id DESC
+              LIMIT 1
+            ),
+            (
+              SELECT fallback_link.id
+              FROM joint_project_members fallback_link
+              JOIN joint_projects fallback_project
+                ON fallback_project.id = fallback_link.project_id
+               AND fallback_project.status = 'active'
+              WHERE fallback_link.organization = a.organization
+                AND fallback_link.business_round = a.business_round
+              ORDER BY fallback_link.updated_at DESC, fallback_link.id DESC
+              LIMIT 1
+            )
           )
         LEFT JOIN joint_projects jp
           ON jp.id = jpm.project_id AND jp.status = 'active'
@@ -490,22 +496,28 @@ export async function GET(request: Request) {
         FROM activities a
         LEFT JOIN activity_authors aa ON aa.activity_id = a.id
         LEFT JOIN joint_project_members jpm
-          ON jpm.id = (
-            SELECT linked.id
-            FROM joint_project_members linked
-            JOIN joint_projects linked_project
-              ON linked_project.id = linked.project_id
-             AND linked_project.status = 'active'
-            WHERE linked.activity_id = a.id
-               OR (
-                 linked.organization = a.organization
-                 AND linked.business_round = a.business_round
-               )
-            ORDER BY
-              CASE WHEN linked.activity_id = a.id THEN 0 ELSE 1 END,
-              linked.updated_at DESC,
-              linked.id DESC
-            LIMIT 1
+          ON jpm.id = COALESCE(
+            (
+              SELECT exact_link.id
+              FROM joint_project_members exact_link
+              JOIN joint_projects exact_project
+                ON exact_project.id = exact_link.project_id
+               AND exact_project.status = 'active'
+              WHERE exact_link.activity_id = a.id
+              ORDER BY exact_link.updated_at DESC, exact_link.id DESC
+              LIMIT 1
+            ),
+            (
+              SELECT fallback_link.id
+              FROM joint_project_members fallback_link
+              JOIN joint_projects fallback_project
+                ON fallback_project.id = fallback_link.project_id
+               AND fallback_project.status = 'active'
+              WHERE fallback_link.organization = a.organization
+                AND fallback_link.business_round = a.business_round
+              ORDER BY fallback_link.updated_at DESC, fallback_link.id DESC
+              LIMIT 1
+            )
           )
         LEFT JOIN joint_projects jp
           ON jp.id = jpm.project_id AND jp.status = 'active'
