@@ -218,18 +218,19 @@ export async function getOrCreateMember(
     row &&
     STANDBY_PREAPPROVED_FULL_ACCESS_EMAILS.has(email)
   ) {
+    const standbyPermissions = [...MEMBER_PERMISSIONS];
     await d1
       .prepare(`
         UPDATE members SET
           role = 'assistant',
-          permissions = ?,
+          permissions = ${memberPermissionsJsonExpression(standbyPermissions)},
           status = 'approved',
           is_sales = 0,
           approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
           last_seen_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `)
-      .bind(JSON.stringify(MEMBER_PERMISSIONS), Number(row.id))
+      .bind(...standbyPermissions, Number(row.id))
       .run();
     row = await d1
       .prepare("SELECT * FROM members WHERE id = ?")
@@ -246,15 +247,15 @@ export async function getOrCreateMember(
         )
           ? String(primaryMember.role)
           : "member";
-        const primaryPermissions = JSON.stringify(
-          normalizeMemberPermissions(primaryMember.permissions),
+        const primaryPermissions = normalizeMemberPermissions(
+          primaryMember.permissions,
         );
         await d1
           .prepare(`
             UPDATE members SET
               display_name = ?,
               role = ?,
-              permissions = ?,
+              permissions = ${memberPermissionsJsonExpression(primaryPermissions)},
               status = 'approved',
               is_sales = ?,
               approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
@@ -264,7 +265,7 @@ export async function getOrCreateMember(
           .bind(
             String(primaryMember.display_name ?? identity.displayName),
             primaryRole,
-            primaryPermissions,
+            ...primaryPermissions,
             Number(primaryMember.is_sales ?? 0) === 1 ? 1 : 0,
             Number(row.id),
           )
@@ -359,6 +360,14 @@ export function normalizeMemberPermissions(value: unknown): MemberPermission[] {
   }
   if (!Array.isArray(source)) return [];
   return MEMBER_PERMISSIONS.filter((permission) => source.includes(permission));
+}
+
+export function memberPermissionsJsonExpression(
+  permissions: readonly MemberPermission[],
+) {
+  return permissions.length > 0
+    ? `jsonb_build_array(${permissions.map(() => "?::text").join(", ")})`
+    : "'[]'::jsonb";
 }
 
 export function hasMemberPermission(

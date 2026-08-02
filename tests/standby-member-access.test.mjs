@@ -27,14 +27,34 @@ test("명시적으로 승인한 백업 운영 계정은 기존 승인 상태와 
   assert.match(collaboration, /STANDBY_PREAPPROVED_FULL_ACCESS_EMAILS/);
   assert.match(collaboration, /"freeyang30@gmail\.com"/);
   assert.match(collaboration, /role = 'assistant'/);
-  assert.match(collaboration, /permissions = \?/);
-  assert.match(collaboration, /JSON\.stringify\(MEMBER_PERMISSIONS\)/);
+  assert.match(
+    collaboration,
+    /permissions = \$\{memberPermissionsJsonExpression\(standbyPermissions\)\}/,
+  );
+  assert.match(collaboration, /\.bind\(\.\.\.standbyPermissions, Number\(row\.id\)\)/);
   assert.match(collaboration, /is_sales = 0/);
   assert.match(collaboration, /WHERE id = \?/);
   assert.doesNotMatch(
     collaboration,
     /STANDBY_PREAPPROVED_FULL_ACCESS_EMAILS\.has\(email\)[\s\S]{0,80}status\) === "pending"/,
   );
+});
+
+test("백업 구성원 권한은 PostgreSQL JSON 배열로 저장한다", () => {
+  const collaboration = source("../lib/collaboration.ts");
+  const membersRoute = source("../app/api/members/route.ts");
+
+  assert.match(collaboration, /function memberPermissionsJsonExpression/);
+  assert.match(collaboration, /jsonb_build_array/);
+  assert.match(collaboration, /"'\[\]'::jsonb"/);
+  assert.match(
+    collaboration,
+    /memberPermissionsJsonExpression\(primaryPermissions\)/,
+  );
+  assert.match(membersRoute, /memberPermissionsJsonExpression\(permissions\)/);
+  assert.match(membersRoute, /\.\.\.permissions/);
+  assert.doesNotMatch(collaboration, /JSON\.stringify\(MEMBER_PERMISSIONS\)/);
+  assert.doesNotMatch(membersRoute, /JSON\.stringify\(permissions\)/);
 });
 
 test("백업 PostgreSQL은 최신 예산 소급 처리의 숫자 GLOB 조건을 정규식으로 변환한다", () => {

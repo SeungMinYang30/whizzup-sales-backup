@@ -1,6 +1,7 @@
 import {
   accessErrorResponse,
   ensureCollaborationReady,
+  memberPermissionsJsonExpression,
   normalizeMemberPermissions,
   requireApprovedMember,
   requireMemberPermission,
@@ -169,7 +170,7 @@ export async function PUT(request: Request) {
         UPDATE members SET
           status = ?,
           role = ?,
-          permissions = ?,
+          permissions = ${memberPermissionsJsonExpression(permissions)},
           is_sales = ?,
           approved_at = CASE WHEN ? = 'approved' THEN COALESCE(approved_at, CURRENT_TIMESTAMP) ELSE approved_at END,
           approved_by = CASE WHEN ? = 'approved' THEN ? ELSE approved_by END
@@ -179,7 +180,7 @@ export async function PUT(request: Request) {
       .bind(
         status,
         role,
-        JSON.stringify(permissions),
+        ...permissions,
         isSales ? 1 : 0,
         status,
         status,
