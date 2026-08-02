@@ -105,7 +105,9 @@ test("공동사업 목록은 주관기관 한 건으로 접고 설치기관 검�
   assert.match(display, /matchingMembers/);
   assert.match(crm, /groupJointProjectRows\(displayedRecords\)/);
   assert.match(crm, /groupJointProjectRows\(followupRows\)/);
-  assert.match(map, /groupJointProjectRows\(filteredBudgetTargets\)/);
+  assert.match(map, /groupJointProjectRows\(activeCampaignTargets\)\.filter/);
+  assert.match(map, /group\.members\.some\(matchesBudgetTargetFilters\)/);
+  assert.match(map, /const filteredBudgetTargets = filteredBudgetTargetGroups\.flatMap/);
   assert.match(crm, /<JointProjectMemberList/);
   assert.match(map, /<JointProjectMemberList/);
   assert.match(memberList, /전체 \$\{siteMembers\.length\}곳 중 검색 일치/);

@@ -4512,7 +4512,7 @@ export default function SalesMapPage({
     ...new Set(activeCampaignTargets.map(budgetTargetStatus)),
   ].sort((left, right) => left.localeCompare(right, "ko-KR"));
   const budgetKeyword = search.trim().toLocaleLowerCase("ko-KR");
-  const filteredBudgetTargets = activeCampaignTargets.filter((target) => {
+  const matchesBudgetTargetFilters = (target: SalesCampaignTarget) => {
     if (
       budgetQuickFilter === "whizzup" &&
       target.currentAwardStatus !== "위즈업 수주"
@@ -4546,9 +4546,11 @@ export default function SalesMapPage({
       return false;
     }
     return true;
-  });
+  };
   const filteredBudgetTargetGroups = filterJointProjectGroupsByMember(
-    groupJointProjectRows(filteredBudgetTargets),
+    groupJointProjectRows(activeCampaignTargets).filter((group) =>
+      group.members.some(matchesBudgetTargetFilters),
+    ),
     budgetKeyword
       ? (target) =>
           [
@@ -4564,6 +4566,9 @@ export default function SalesMapPage({
             .toLocaleLowerCase("ko-KR")
             .includes(budgetKeyword)
       : undefined,
+  );
+  const filteredBudgetTargets = filteredBudgetTargetGroups.flatMap(
+    (group) => group.members,
   );
   const filteredBudgetTargetIds = jointProjectGroupMemberIds(
     filteredBudgetTargetGroups,
