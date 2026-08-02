@@ -42,6 +42,10 @@ export class AccessError extends Error {
 
 export const OAUTH_ACTIVITY_SCOPE = "activities:write";
 
+const STANDBY_PREAPPROVED_BASIC_EMAILS = new Set([
+  "freeyang30@gmail.com",
+]);
+
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS members (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -208,6 +212,30 @@ export async function getOrCreateMember(
       .bind(Number(row.id))
       .run();
     row.last_seen_at = new Date().toISOString();
+  }
+
+  if (
+    row &&
+    String(row.status) === "pending" &&
+    STANDBY_PREAPPROVED_BASIC_EMAILS.has(email)
+  ) {
+    await d1
+      .prepare(`
+        UPDATE members SET
+          role = 'member',
+          permissions = '[]',
+          status = 'approved',
+          is_sales = 0,
+          approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
+          last_seen_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND status = 'pending'
+      `)
+      .bind(Number(row.id))
+      .run();
+    row = await d1
+      .prepare("SELECT * FROM members WHERE id = ?")
+      .bind(Number(row.id))
+      .first<Record<string, unknown>>();
   }
 
   if (row && String(row.status) === "pending") {

@@ -20,3 +20,14 @@ test("백업사이트 대기 계정은 본사이트의 승인 상태를 즉시 �
   assert.match(primaryAccess, /String\(member\.status \?\? ""\) === "approved"/);
   assert.match(primaryAccess, /cache: "no-store"/);
 });
+
+test("명시적으로 승인한 백업 기본 계정은 별도 관리자 권한 없이 입장한다", () => {
+  const collaboration = source("../lib/collaboration.ts");
+
+  assert.match(collaboration, /STANDBY_PREAPPROVED_BASIC_EMAILS/);
+  assert.match(collaboration, /"freeyang30@gmail\.com"/);
+  assert.match(collaboration, /role = 'member'/);
+  assert.match(collaboration, /permissions = '\[\]'/);
+  assert.match(collaboration, /is_sales = 0/);
+  assert.match(collaboration, /WHERE id = \? AND status = 'pending'/);
+});
