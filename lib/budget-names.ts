@@ -1,4 +1,4 @@
-import { getD1 } from "../db";
+import { getD1, isPostgresDatabase } from "../db";
 import type { Member } from "./collaboration";
 import {
   cleanBudgetText,
@@ -244,6 +244,9 @@ async function ensureAdditiveBudgetSchema(d1: D1Database) {
        ON equipment_projects(budget_group_id, activity_id, id)`,
     ),
   ]);
+}
+
+async function backfillBudgetOriginalNames(d1: D1Database) {
   await d1.batch([
     d1.prepare(
       `UPDATE activities
@@ -919,6 +922,12 @@ async function initializeBudgetNames() {
   const d1 = getD1();
   await d1.batch(schemaStatements.map((statement) => d1.prepare(statement)));
   await ensureAdditiveBudgetSchema(d1);
+  // The standby PostgreSQL database receives already-normalized rows from the
+  // primary Sites backup. Re-running the primary D1/SQLite data retrofits here
+  // can both mutate replicated data and execute SQLite-only expressions.
+  // Keep schema checks above, but leave one-time data repair to the primary.
+  if (isPostgresDatabase()) return d1;
+  await backfillBudgetOriginalNames(d1);
   await ensureSelfBudgetGroup(d1);
   await ensureKnownPurposeBudgetGroups(d1);
   await ensureVirtualSportsBudgetGroup(d1);

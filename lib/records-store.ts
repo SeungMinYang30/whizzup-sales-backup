@@ -1,4 +1,4 @@
-import { getD1 } from "../db";
+import { getD1, isPostgresDatabase } from "../db";
 import type { Member } from "./collaboration";
 import { ensureCollaborationReady, isPrimaryOwner } from "./collaboration";
 import {
@@ -1399,9 +1399,11 @@ async function initializeRecords() {
     await d1.prepare("DELETE FROM ai_recommendations").run();
   }
   await ensureBudgetNamesReady();
-  await retrofitBusinessRoundBudgets(d1);
-  await backfillHistoricalProgressManagersFromLatestAuthors(d1);
-  await repairAutoBackfilledOwnerProgressManagers(d1);
+  if (!isPostgresDatabase()) {
+    await retrofitBusinessRoundBudgets(d1);
+    await backfillHistoricalProgressManagersFromLatestAuthors(d1);
+    await repairAutoBackfilledOwnerProgressManagers(d1);
+  }
 
   return d1;
 }

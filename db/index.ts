@@ -23,6 +23,10 @@ type PostgresResult<T extends QueryRow = QueryRow> = T[] & {
   count?: number;
 };
 
+export function isPostgresDatabase() {
+  return true;
+}
+
 function normalizeD1Row<T extends QueryRow>(row: T): T {
   return Object.fromEntries(
     Object.entries(row).map(([key, value]) => [

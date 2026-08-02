@@ -43,3 +43,19 @@ test("백업 PostgreSQL은 최신 예산 소급 처리의 숫자 GLOB 조건을 
   assert.match(database, /NOT\\s\+GLOB[\s\S]{0,80}!~ '\[0-9\]'/);
   assert.match(database, /GLOB[\s\S]{0,80}~ '\[0-9\]'/);
 });
+
+test("백업 PostgreSQL은 복제된 운영 데이터에 D1 전용 소급 작업을 다시 실행하지 않는다", () => {
+  const database = source("../db/index.ts");
+  const budgetNames = source("../lib/budget-names.ts");
+  const recordsStore = source("../lib/records-store.ts");
+
+  assert.match(database, /export function isPostgresDatabase\(\)/);
+  assert.match(
+    budgetNames,
+    /ensureAdditiveBudgetSchema\(d1\);[\s\S]{0,520}if \(isPostgresDatabase\(\)\) return d1;[\s\S]{0,160}backfillBudgetOriginalNames\(d1\);[\s\S]{0,80}ensureSelfBudgetGroup\(d1\)/,
+  );
+  assert.match(
+    recordsStore,
+    /ensureBudgetNamesReady\(\);[\s\S]{0,100}if \(!isPostgresDatabase\(\)\) \{[\s\S]{0,220}retrofitBusinessRoundBudgets\(d1\)/,
+  );
+});
