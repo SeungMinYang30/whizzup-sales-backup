@@ -16,6 +16,11 @@ export type JointProjectDisplayGroup<T extends JointProjectDisplaySource> = {
   members: T[];
 };
 
+export type JointProjectSearchGroup<T extends JointProjectDisplaySource> =
+  JointProjectDisplayGroup<T> & {
+    matchingMembers: T[];
+  };
+
 export function groupJointProjectRows<T extends JointProjectDisplaySource>(
   rows: T[],
 ): JointProjectDisplayGroup<T>[] {
@@ -57,6 +62,22 @@ export function groupJointProjectRows<T extends JointProjectDisplaySource>(
         left.organization.localeCompare(right.organization, "ko-KR"),
     );
     return group;
+  });
+}
+
+export function filterJointProjectGroupsByMember<
+  T extends JointProjectDisplaySource,
+>(
+  groups: JointProjectDisplayGroup<T>[],
+  matches?: (member: T) => boolean,
+): JointProjectSearchGroup<T>[] {
+  return groups.flatMap((group) => {
+    const matchingMembers = matches
+      ? group.members.filter(matches)
+      : group.members;
+    return matchingMembers.length
+      ? [{ ...group, matchingMembers }]
+      : [];
   });
 }
 

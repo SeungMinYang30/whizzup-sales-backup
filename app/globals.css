@@ -3061,13 +3061,13 @@ tr:hover .row-actions { opacity: 1; }
 .business-round-tabs .business-round-add { min-width: 100px; color: #3541d4; font-weight: 800; text-align: center; }
 .business-round-pill { border: 1px solid #d8c980; background: #fff9dc; color: #765f00; }
 .history-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin-bottom: 14px; border: 1px solid #e1e6ef; background: #e1e6ef; }
-.history-summary-grid > div { min-height: 112px; padding: 18px 16px; background: white; }
+.history-summary-grid > div { min-height: 112px; padding: 18px 16px; background: white; box-shadow: inset 0 -1px 0 #d8e0ec; }
 .history-summary-grid > .history-summary-editable { position: relative; cursor: pointer; transition: background .16s ease, box-shadow .16s ease; }
 .history-summary-grid > .history-summary-editable:hover,
-.history-summary-grid > .history-summary-editable:focus-visible { z-index: 1; background: #f8faff; box-shadow: inset 0 0 0 2px rgba(65, 83, 205, .12); outline: 0; }
+.history-summary-grid > .history-summary-editable:focus-visible { z-index: 1; background: #f8faff; box-shadow: inset 0 -1px 0 #d8e0ec, inset 0 0 0 2px rgba(65, 83, 205, .12); outline: 0; }
 .history-summary-grid > .history-summary-editable.history-summary-disabled { cursor: default; }
-.history-summary-grid > .history-summary-editable.history-summary-disabled:hover { z-index: auto; background: white; box-shadow: none; }
-.history-summary-grid > .history-summary-editable.editing { grid-column: span 2; min-height: 168px; cursor: default; background: #f7f9ff; box-shadow: inset 0 0 0 2px rgba(65, 83, 205, .18); }
+.history-summary-grid > .history-summary-editable.history-summary-disabled:hover { z-index: auto; background: white; box-shadow: inset 0 -1px 0 #d8e0ec; }
+.history-summary-grid > .history-summary-editable.editing { grid-column: span 2; min-height: 168px; cursor: default; background: #f7f9ff; box-shadow: inset 0 -1px 0 #d8e0ec, inset 0 0 0 2px rgba(65, 83, 205, .18); }
 .history-summary-grid > .history-summary-budget.editing { grid-column: span 3; }
 .history-summary-grid span { display: block; margin-bottom: 12px; color: #8b97aa; font-size: 10px; font-weight: 750; }
 .history-summary-grid strong { display: block; color: #263858; font-size: 14px; line-height: 1.4; }
@@ -9298,24 +9298,57 @@ tr:hover .row-actions { opacity: 1; }
   cursor: pointer;
 }
 
-.joint-project-member-list > span {
+.joint-project-member-list > button,
+.joint-project-other-member-list > button {
   display: grid;
   gap: 2px;
+  width: 100%;
   margin-top: 5px;
   padding: 6px 8px;
   border: 1px solid #e1e7f4;
   border-radius: 7px;
   background: #fff;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.joint-project-member-list > span > b {
+.joint-project-member-list > button:hover,
+.joint-project-member-list > button:focus-visible,
+.joint-project-other-member-list > button:hover,
+.joint-project-other-member-list > button:focus-visible {
+  border-color: #8fa4ef;
+  background: #f5f7ff;
+  outline: 0;
+}
+
+.joint-project-member-list > button.search-match {
+  border-color: #7189ee;
+  background: #eef2ff;
+  box-shadow: inset 3px 0 0 #526de8;
+}
+
+.joint-project-member-list button > b {
   color: #2e3c57;
   font-size: 11px;
 }
 
-.joint-project-member-list > span > small {
+.joint-project-member-list button > small {
   color: #79869b;
   font-size: 9px;
+}
+
+.joint-project-other-member-list {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px dashed #dce3f1;
+}
+
+.joint-project-other-member-list > summary {
+  color: #7b879d;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 .joint-project-button:hover:not(:disabled) {
@@ -9715,26 +9748,45 @@ tr:hover .row-actions { opacity: 1; }
   color: #475675;
   font-size: 11px;
 }
-.joint-project-summary-body section > div {
+.joint-project-summary-body section > div,
+.joint-project-summary-body section > button {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 9px 11px;
   border-top: 1px solid #eef1f6;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  background: #fff;
   color: #4f5d75;
   font-size: 11px;
+  text-align: left;
 }
-.joint-project-summary-body section > h4 + div { border-top: 0; }
-.joint-project-summary-body section > div.current { background: #f0f4ff; }
-.joint-project-summary-body section > div > span {
+.joint-project-summary-body section > h4 + div,
+.joint-project-summary-body section > h4 + button { border-top: 0; }
+.joint-project-summary-body section > button { cursor: pointer; }
+.joint-project-summary-body section > button:hover,
+.joint-project-summary-body section > button:focus-visible { background: #f7f9ff; outline: 0; }
+.joint-project-summary-body section > div.current,
+.joint-project-summary-body section > button.current {
+  background: #f0f4ff;
+  box-shadow: inset 3px 0 0 #5069e8;
+}
+.joint-project-summary-body section > div > span,
+.joint-project-summary-body section > button > span {
   color: #5269be;
   font-size: 10px;
   font-weight: 900;
 }
-.joint-project-summary-body section > div > strong { min-width: 0; color: #263755; }
-.joint-project-summary-body section > div > small { color: #8a95a8; }
-.joint-project-summary-body section > div > em {
+.joint-project-summary-body section > div > strong,
+.joint-project-summary-body section > button > strong { min-width: 0; color: #263755; }
+.joint-project-summary-body section > div > small,
+.joint-project-summary-body section > button > small { color: #8a95a8; }
+.joint-project-summary-body section > div > em,
+.joint-project-summary-body section > button > em {
   grid-column: 2 / -1;
   color: #66748d;
   font-size: 10px;

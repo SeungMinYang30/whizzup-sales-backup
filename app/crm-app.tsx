@@ -49,7 +49,9 @@ import JointProjectModal, {
   type JointProjectCandidate,
 } from "./joint-project-modal";
 import JointProjectSummary from "./joint-project-summary";
+import JointProjectMemberList from "./joint-project-member-list";
 import {
+  filterJointProjectGroupsByMember,
   groupJointProjectRows,
   jointProjectGroupMemberIds,
 } from "../lib/joint-project-display";
@@ -7294,9 +7296,8 @@ export default function CrmApp({
     [records],
   );
 
-  const filtered = useMemo(() => {
+  const filteredBeforeSearch = useMemo(() => {
     if (view === "vendors") return [];
-    const keyword = deferredSearch.trim().toLocaleLowerCase("ko-KR");
     const sourceRecords = view === "awards" ? latestAwardRecords : records;
     return sourceRecords.filter((record) => {
       if (isPdfCampaignRegistration(record)) return false;
@@ -7372,12 +7373,10 @@ export default function CrmApp({
         awardManagerFilter !== "전체 담당자" &&
         (record.progressManager.trim() || "해당 없음") !== awardManagerFilter
       ) return false;
-      if (!keyword) return true;
-      return recordSearchIndex.get(record.id)?.includes(keyword) ?? false;
+      return true;
     });
   }, [
     records,
-    deferredSearch,
     typeFilter,
     statusFilter,
     awardFilter,
@@ -7389,14 +7388,21 @@ export default function CrmApp({
     teamPeriodDays,
     activeAwardsOnly,
     latestAwardRecords,
-    recordSearchIndex,
     registeredSalesNames,
     selectedTeamMember,
   ]);
 
+  const filtered = useMemo(() => {
+    const keyword = deferredSearch.trim().toLocaleLowerCase("ko-KR");
+    if (!keyword) return filteredBeforeSearch;
+    return filteredBeforeSearch.filter(
+      (record) => recordSearchIndex.get(record.id)?.includes(keyword) ?? false,
+    );
+  }, [deferredSearch, filteredBeforeSearch, recordSearchIndex]);
+
   const displayedRecords = useMemo(() => {
     if (view !== "awards") return filtered;
-    return [...filtered].sort((a, b) => {
+    return [...filteredBeforeSearch].sort((a, b) => {
       if (awardSort === "date-asc") {
         return (
           a.activityDate.localeCompare(b.activityDate) ||
@@ -7442,12 +7448,31 @@ export default function CrmApp({
         b.id - a.id
       );
     });
-  }, [filtered, view, awardSort, equipmentQuoteSummaryByBusinessKey]);
+  }, [filtered, filteredBeforeSearch, view, awardSort, equipmentQuoteSummaryByBusinessKey]);
 
-  const awardDisplayGroups = useMemo(
-    () => groupJointProjectRows(displayedRecords),
-    [displayedRecords],
-  );
+  const awardDisplayGroups = useMemo(() => {
+    const keyword = deferredSearch.trim().toLocaleLowerCase("ko-KR");
+    return filterJointProjectGroupsByMember(
+      groupJointProjectRows(displayedRecords),
+      keyword
+        ? (record) =>
+            recordSearchIndex.get(record.id)?.includes(keyword) ?? false
+        : undefined,
+    );
+  }, [deferredSearch, displayedRecords, recordSearchIndex]);
+  const openJointProjectGroupDetail = (
+    group: { primary: Activity; matchingMembers: Activity[] },
+    preferSearchMatch = false,
+  ) => {
+    const target = preferSearchMatch
+      ? group.matchingMembers.find(
+          (member) => member.jointProjectRole !== "sponsor",
+        ) ?? group.matchingMembers[0] ?? group.primary
+      : group.primary;
+    cancelDetailInlineEdit();
+    setDetailBusinessRound(target.businessRound);
+    setDetailOrganization(target.organization);
+  };
   const awardPageCount = Math.max(
     1,
     Math.ceil(awardDisplayGroups.length / AWARD_LIST_PAGE_SIZE),
@@ -7777,7 +7802,6 @@ export default function CrmApp({
     });
   }, [latestInstitutionRows, recordsByInstitutionKey]);
   const followupRows = useMemo(() => {
-    const keyword = deferredSearch.trim().toLocaleLowerCase("ko-KR");
     return preAwardInstitutionRows
       .filter(
         ({ record }) =>
@@ -7807,11 +7831,6 @@ export default function CrmApp({
           budgetGroupFilter,
           budgetReviewCatalog,
         ),
-      )
-      .filter(
-        ({ record }) =>
-          !keyword ||
-          (recordSearchIndex.get(record.id)?.includes(keyword) ?? false),
       )
       .map(({ record }) => record)
       .sort((a, b) => {
@@ -7854,8 +7873,6 @@ export default function CrmApp({
       });
   }, [
     preAwardInstitutionRows,
-    deferredSearch,
-    recordSearchIndex,
     typeFilter,
     statusFilter,
     awardFilter,
@@ -7865,10 +7882,16 @@ export default function CrmApp({
     followupDueSoonOnly,
     followupAlertEndValue,
   ]);
-  const followupDisplayGroups = useMemo(
-    () => groupJointProjectRows(followupRows),
-    [followupRows],
-  );
+  const followupDisplayGroups = useMemo(() => {
+    const keyword = deferredSearch.trim().toLocaleLowerCase("ko-KR");
+    return filterJointProjectGroupsByMember(
+      groupJointProjectRows(followupRows),
+      keyword
+        ? (record) =>
+            recordSearchIndex.get(record.id)?.includes(keyword) ?? false
+        : undefined,
+    );
+  }, [deferredSearch, followupRows, recordSearchIndex]);
   const institutionPageCount = Math.max(
     1,
     Math.ceil(followupDisplayGroups.length / DATA_LIST_PAGE_SIZE),
@@ -7973,34 +7996,6 @@ export default function CrmApp({
     (value) =>
       isUnregisteredBudgetAmount(value) ? "" : formatMoneyInput(value),
   );
-  useEffect(() => {
-    const requestedKey = institutionAliasKey(detailOrganization);
-    if (!requestedKey) return;
-    const requestedRecord = [...records]
-      .filter(
-        (record) =>
-          institutionAliasKey(record.organization) === requestedKey &&
-          Boolean(record.jointProjectId) &&
-          Boolean(record.jointProjectSponsor?.trim()),
-      )
-      .sort(
-        (left, right) =>
-          right.activityDate.localeCompare(left.activityDate) || right.id - left.id,
-      )[0];
-    const sponsorOrganization = requestedRecord?.jointProjectSponsor?.trim();
-    if (
-      !sponsorOrganization ||
-      institutionAliasKey(sponsorOrganization) === requestedKey ||
-      !records.some(
-        (record) =>
-          institutionAliasKey(record.organization) ===
-          institutionAliasKey(sponsorOrganization),
-      )
-    ) {
-      return;
-    }
-    setDetailOrganization(sponsorOrganization);
-  }, [detailOrganization, records]);
   const detailHistory = useMemo(
     () => {
       const detailOrganizationKey = institutionAliasKey(detailOrganization);
@@ -8061,6 +8056,11 @@ export default function CrmApp({
     [records, detailOrganization],
   );
   const detailDisplayRecord = detailLatest ?? detailCampaignRegistration;
+  const detailShellOrganization =
+    detailDisplayRecord?.jointProjectId &&
+    detailDisplayRecord.jointProjectSponsor?.trim()
+      ? detailDisplayRecord.jointProjectSponsor.trim()
+      : detailOrganization;
   const detailRegisteredContract =
     detailDisplayRecord && detailDisplayRecord.awardStatus !== "미정"
       ? registeredContractDisplay(detailDisplayRecord)
@@ -17528,11 +17528,19 @@ export default function CrmApp({
                         tabIndex={0}
                         role="button"
                         aria-label={`${group.sponsorOrganization} 상세와 이전 히스토리 보기`}
-                        onClick={() => setDetailOrganization(group.sponsorOrganization)}
+                        onClick={() =>
+                          openJointProjectGroupDetail(
+                            group,
+                            Boolean(deferredSearch.trim()),
+                          )
+                        }
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            setDetailOrganization(group.sponsorOrganization);
+                            openJointProjectGroupDetail(
+                              group,
+                              Boolean(deferredSearch.trim()),
+                            );
                           }
                         }}
                       >
@@ -17577,19 +17585,16 @@ export default function CrmApp({
                               <span className="joint-project-badge sponsor" title={group.projectName}>
                                 공동사업 주관 · {group.members.filter((member) => member.jointProjectRole !== "sponsor").length}곳
                               </span>
-                              <details className="joint-project-member-list" onClick={(event) => event.stopPropagation()}>
-                                <summary>설치기관 펼쳐보기</summary>
-                                {group.members
-                                  .filter((member) => member.jointProjectRole !== "sponsor")
-                                  .map((member) => (
-                                    <span key={member.id}>
-                                      <b>{member.organization}</b>
-                                      <small>
-                                        기관 사업 {member.businessRound}차 · {(member.jointProjectMemberBudgetAmount ?? 0).toLocaleString()}원
-                                      </small>
-                                    </span>
-                                  ))}
-                              </details>
+                              <JointProjectMemberList
+                                members={group.members}
+                                matchingMembers={group.matchingMembers}
+                                searchActive={Boolean(deferredSearch.trim())}
+                                onSelectMember={(member) => {
+                                  cancelDetailInlineEdit();
+                                  setDetailBusinessRound(member.businessRound);
+                                  setDetailOrganization(member.organization);
+                                }}
+                              />
                             </>
                           )}
                           {priorAward ? (
@@ -18413,10 +18418,16 @@ export default function CrmApp({
                             ) {
                               return;
                             }
-                            setDetailOrganization(
-                              awardPageGroupByPrimaryId.get(record.id)?.sponsorOrganization ||
-                                record.organization,
-                            );
+                            const group = awardPageGroupByPrimaryId.get(record.id);
+                            if (group) {
+                              openJointProjectGroupDetail(
+                                group,
+                                Boolean(deferredSearch.trim()),
+                              );
+                            } else {
+                              setDetailBusinessRound(record.businessRound);
+                              setDetailOrganization(record.organization);
+                            }
                           }}
                           onKeyDown={(event) => {
                             if (
@@ -18426,10 +18437,16 @@ export default function CrmApp({
                               return;
                             }
                             event.preventDefault();
-                            setDetailOrganization(
-                              awardPageGroupByPrimaryId.get(record.id)?.sponsorOrganization ||
-                                record.organization,
-                            );
+                            const group = awardPageGroupByPrimaryId.get(record.id);
+                            if (group) {
+                              openJointProjectGroupDetail(
+                                group,
+                                Boolean(deferredSearch.trim()),
+                              );
+                            } else {
+                              setDetailBusinessRound(record.businessRound);
+                              setDetailOrganization(record.organization);
+                            }
                           }}
                         >
                           <td className="selection-cell">
@@ -18468,17 +18485,16 @@ export default function CrmApp({
                                 <span className="joint-project-badge sponsor" title={record.jointProjectName}>
                                   공동사업 주관 · {(awardPageGroupByPrimaryId.get(record.id)?.members || [record]).filter((member) => member.jointProjectRole !== "sponsor").length}곳
                                 </span>
-                                <details className="joint-project-member-list" onClick={(event) => event.stopPropagation()}>
-                                  <summary>설치기관 펼쳐보기</summary>
-                                  {(awardPageGroupByPrimaryId.get(record.id)?.members || [record])
-                                    .filter((member) => member.jointProjectRole !== "sponsor")
-                                    .map((member) => (
-                                      <span key={member.id}>
-                                        <b>{member.organization}</b>
-                                        <small>기관 사업 {member.businessRound}차 · {(member.jointProjectMemberBudgetAmount ?? 0).toLocaleString()}원</small>
-                                      </span>
-                                    ))}
-                                </details>
+                                <JointProjectMemberList
+                                  members={awardPageGroupByPrimaryId.get(record.id)?.members || [record]}
+                                  matchingMembers={awardPageGroupByPrimaryId.get(record.id)?.matchingMembers || [record]}
+                                  searchActive={Boolean(deferredSearch.trim())}
+                                  onSelectMember={(member) => {
+                                    cancelDetailInlineEdit();
+                                    setDetailBusinessRound(member.businessRound);
+                                    setDetailOrganization(member.organization);
+                                  }}
+                                />
                               </>
                             )}
                             {postAwardContactStatus(
@@ -18827,12 +18843,15 @@ export default function CrmApp({
             <div className="history-header">
               <div>
                 <span className="section-kicker">ORGANIZATION HISTORY</span>
-                <h2 id="history-title">{detailOrganization}</h2>
+                <h2 id="history-title">{detailShellOrganization}</h2>
                 <p>
                   {detailDisplayRecord.region || "지역 미입력"} ·{" "}
                   {detailLatest
                     ? `${detailHistory.length}건의 컨택 기록`
                     : "캠페인 대상 등록 · 아직 컨택 기록 없음"}
+                  {detailShellOrganization !== detailOrganization
+                    ? ` · 현재 보기 ${detailOrganization}`
+                    : ""}
                 </p>
               </div>
               <button
@@ -18902,6 +18921,12 @@ export default function CrmApp({
               <JointProjectSummary
                 projectId={detailDisplayRecord.jointProjectId}
                 organization={detailOrganization}
+                selectedActivityId={detailDisplayRecord.id}
+                onSelectMember={(member) => {
+                  cancelDetailInlineEdit();
+                  setDetailBusinessRound(member.businessRound);
+                  setDetailOrganization(member.organization);
+                }}
               />
               <section className="history-summary-grid" aria-label="기관 최신 정보 요약">
                 <div>

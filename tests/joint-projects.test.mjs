@@ -10,6 +10,7 @@ const sources = await Promise.all(
     "../app/api/map/campaigns/route.ts",
     "../app/joint-project-modal.tsx",
     "../app/joint-project-summary.tsx",
+    "../app/joint-project-member-list.tsx",
     "../lib/joint-project-display.ts",
     "../app/crm-app.tsx",
     "../app/sales-map.tsx",
@@ -30,6 +31,7 @@ const [
   campaigns,
   modal,
   summary,
+  memberList,
   display,
   crm,
   map,
@@ -94,19 +96,38 @@ test("예산별 기관과 수주 전후 화면이 같은 공동사업 API를 사
   assert.match(summary, /합계는 설치기관만 계산합니다/);
 });
 
-test("공동사업 목록은 주관기관 한 건으로 접고 설치기관과 일괄 선택 범위를 보존한다", () => {
+test("공동사업 목록은 주관기관 한 건으로 접고 설치기관 검색과 일괄 선택 범위를 보존한다", () => {
   assert.match(display, /const key = projectId \? `joint:\$\{projectId\}`/);
   assert.match(display, /row\.jointProjectRole === "sponsor"/);
   assert.match(display, /group\.members\.sort/);
   assert.match(display, /groups\.flatMap\(\(group\) => group\.members/);
+  assert.match(display, /filterJointProjectGroupsByMember/);
+  assert.match(display, /matchingMembers/);
   assert.match(crm, /groupJointProjectRows\(displayedRecords\)/);
   assert.match(crm, /groupJointProjectRows\(followupRows\)/);
   assert.match(map, /groupJointProjectRows\(filteredBudgetTargets\)/);
-  assert.match(crm, /설치기관 펼쳐보기/);
-  assert.match(map, /설치기관 펼쳐보기/);
-  assert.match(crm, /setDetailOrganization\(sponsorOrganization\)/);
+  assert.match(crm, /<JointProjectMemberList/);
+  assert.match(map, /<JointProjectMemberList/);
+  assert.match(memberList, /전체 \$\{siteMembers\.length\}곳 중 검색 일치/);
+  assert.match(memberList, /다른 설치기관 \{otherSiteMembers\.length\}곳 보기/);
+  assert.match(memberList, /if \(!searchActive\)[\s\S]*setOpen\(false\)/);
+  assert.match(crm, /openJointProjectGroupDetail/);
+  assert.doesNotMatch(crm, /setDetailOrganization\(sponsorOrganization\)/);
   assert.match(styles, /\.joint-project-member-list/);
+  assert.match(styles, /\.joint-project-member-list > button\.search-match/);
   assert.match(styles, /\.joint-project-button[\s\S]*border: 1px solid #88a4f8/);
+});
+
+test("공동사업 상세는 주관기관 셸 안에서 선택 기관의 기록과 물품으로 전환한다", () => {
+  assert.match(crm, /detailShellOrganization/);
+  assert.match(crm, /현재 보기 \$\{detailOrganization\}/);
+  assert.match(crm, /selectedActivityId=\{detailDisplayRecord\.id\}/);
+  assert.match(crm, /setDetailBusinessRound\(member\.businessRound\)/);
+  assert.match(summary, /onSelectMember/);
+  assert.match(summary, /resolved_activity_id/);
+  assert.match(summary, /aria-pressed=\{member\.id === current\?\.id\}/);
+  assert.match(summary, /현재 보기 \$\{current\.organization\}/);
+  assert.match(styles, /\.history-summary-grid > div[\s\S]*inset 0 -1px 0 #d8e0ec/);
 });
 
 test("공동사업 예산은 활성 표준 예산명과 연도·차수로 구분하고 설치기관별 금액을 저장한다", () => {

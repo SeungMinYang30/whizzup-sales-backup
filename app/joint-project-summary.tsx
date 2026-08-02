@@ -56,13 +56,23 @@ function memberBudgets(
 export default function JointProjectSummary({
   projectId,
   organization,
+  selectedActivityId,
+  onSelectMember,
 }: {
   projectId: number | null | undefined;
   organization: string;
+  selectedActivityId?: number | null;
+  onSelectMember?: (member: {
+    organization: string;
+    businessRound: number;
+    resolvedActivityId: number | null;
+    role: "sponsor" | "site";
+  }) => void;
 }) {
   const [projects, setProjects] = useState<JointProject[]>([]);
   const [members, setMembers] = useState<JointMember[]>([]);
   const [failed, setFailed] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   useEffect(() => {
     if (!projectId) return;
@@ -86,6 +96,10 @@ export default function JointProjectSummary({
     return () => {
       cancelled = true;
     };
+  }, [projectId]);
+
+  useEffect(() => {
+    if (projectId) setExpanded(true);
   }, [projectId]);
 
   const project = projects.find((item) => Number(item.id) === Number(projectId));
@@ -116,12 +130,21 @@ export default function JointProjectSummary({
   }, [project?.budget_group_id, project?.budget_type, projectMembers]);
 
   if (!projectId || failed || !project || !projectMembers.length) return null;
-  const current = projectMembers.find((member) => member.organization === organization);
+  const current =
+    projectMembers.find(
+      (member) =>
+        selectedActivityId &&
+        Number(member.resolved_activity_id) === Number(selectedActivityId),
+    ) ?? projectMembers.find((member) => member.organization === organization);
   const siteMembers = projectMembers.filter((member) => member.role === "site");
   const total = budgetTracks.reduce((sum, track) => sum + track.amount, 0);
 
   return (
-    <details className="joint-project-summary">
+    <details
+      className="joint-project-summary"
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
       <summary>
         <span className="joint-project-summary-role">
           {current?.role === "sponsor" ? "공동사업 주관" : "공동사업 설치"}
@@ -130,6 +153,9 @@ export default function JointProjectSummary({
         <small>
           {project.project_year > 0 ? `${project.project_year}년 · ` : ""}
           {Math.max(1, Number(project.joint_round) || 1)}차 · 주관 {project.sponsor_organization} · 설치 {siteMembers.length}곳 · {formatWon(total)}
+          {current?.role === "site"
+            ? ` · 현재 보기 ${current.organization} ${formatWon(money(current.budget_amount))}`
+            : ""}
         </small>
       </summary>
       <div className="joint-project-summary-body">
@@ -146,9 +172,19 @@ export default function JointProjectSummary({
         <section>
           <h4>연결 기관</h4>
           {projectMembers.map((member) => (
-            <div
-              className={member.organization === organization ? "current" : ""}
+            <button
+              type="button"
+              className={member.id === current?.id ? "current" : ""}
               key={member.id}
+              aria-pressed={member.id === current?.id}
+              onClick={() =>
+                onSelectMember?.({
+                  organization: member.organization,
+                  businessRound: member.business_round,
+                  resolvedActivityId: member.resolved_activity_id,
+                  role: member.role,
+                })
+              }
             >
               <span>{member.role === "sponsor" ? "주관" : "설치"}</span>
               <strong>{member.organization}</strong>
@@ -174,7 +210,7 @@ export default function JointProjectSummary({
                       )
                       .join(" · ")}
               </em>
-            </div>
+            </button>
           ))}
         </section>
         <p>기관별 연락처·지도·영업·수주·회계 기록은 각각 유지되며, 합계는 설치기관만 계산합니다.</p>

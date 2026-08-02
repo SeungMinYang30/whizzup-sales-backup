@@ -37,7 +37,9 @@ import { institutionAliasKey } from "../lib/institution-names";
 import JointProjectModal, {
   type JointProjectCandidate,
 } from "./joint-project-modal";
+import JointProjectMemberList from "./joint-project-member-list";
 import {
+  filterJointProjectGroupsByMember,
   groupJointProjectRows,
   jointProjectGroupMemberIds,
 } from "../lib/joint-project-display";
@@ -4543,21 +4545,26 @@ export default function SalesMapPage({
     ) {
       return false;
     }
-    if (!budgetKeyword) return true;
-    return [
-      target.organization,
-      target.region,
-      target.assignedMemberName,
-      target.currentProgressManager,
-      target.contactName,
-      target.currentBudgetType,
-      target.supplyItems,
-    ]
-      .join(" ")
-      .toLocaleLowerCase("ko-KR")
-      .includes(budgetKeyword);
+    return true;
   });
-  const filteredBudgetTargetGroups = groupJointProjectRows(filteredBudgetTargets);
+  const filteredBudgetTargetGroups = filterJointProjectGroupsByMember(
+    groupJointProjectRows(filteredBudgetTargets),
+    budgetKeyword
+      ? (target) =>
+          [
+            target.organization,
+            target.region,
+            target.assignedMemberName,
+            target.currentProgressManager,
+            target.contactName,
+            target.currentBudgetType,
+            target.supplyItems,
+          ]
+            .join(" ")
+            .toLocaleLowerCase("ko-KR")
+            .includes(budgetKeyword)
+      : undefined,
+  );
   const filteredBudgetTargetIds = jointProjectGroupMemberIds(
     filteredBudgetTargetGroups,
   );
@@ -4841,7 +4848,8 @@ export default function SalesMapPage({
                     type="button"
                     onClick={() =>
                       setBudgetSelectedTargetIds(
-                        filteredBudgetTargets
+                        filteredBudgetTargetGroups
+                          .flatMap((group) => group.members)
                           .filter((target) => !target.assignedMemberId)
                           .map((target) => target.id),
                       )
@@ -4928,6 +4936,11 @@ export default function SalesMapPage({
                       const target = group.primary;
                       const selection = budgetTargetSelection(target);
                       const status = budgetTargetStatus(target);
+                      const detailTarget = budgetKeyword
+                        ? group.matchingMembers.find(
+                            (member) => member.jointProjectRole !== "sponsor",
+                          ) ?? group.matchingMembers[0] ?? target
+                        : target;
                       return (
                       <tr
                         key={group.key}
@@ -4962,19 +4975,14 @@ export default function SalesMapPage({
                               <em className="joint-project-badge sponsor" title={group.projectName}>
                                 공동사업 주관 · {group.members.filter((member) => member.jointProjectRole !== "sponsor").length}곳
                               </em>
-                              <details className="joint-project-member-list">
-                                <summary>설치기관 펼쳐보기</summary>
-                                {group.members
-                                  .filter((member) => member.jointProjectRole !== "sponsor")
-                                  .map((member) => (
-                                    <span key={member.id}>
-                                      <b>{member.organization}</b>
-                                      <small>
-                                        기관 사업 {member.businessRound}차 · {(member.jointProjectMemberBudgetAmount ?? member.budgetAmount ?? 0).toLocaleString()}원
-                                      </small>
-                                    </span>
-                                  ))}
-                              </details>
+                              <JointProjectMemberList
+                                members={group.members}
+                                matchingMembers={group.matchingMembers}
+                                searchActive={Boolean(budgetKeyword)}
+                                onSelectMember={(member) =>
+                                  onOpenOrganization(member.organization)
+                                }
+                              />
                             </>
                           )}
                           <span>
@@ -5059,9 +5067,9 @@ export default function SalesMapPage({
                         <td>
                           <button
                             type="button"
-                            onClick={() =>
-                              onOpenOrganization(group.sponsorOrganization)
-                            }
+                              onClick={() =>
+                                onOpenOrganization(detailTarget.organization)
+                              }
                           >
                             상세 보기
                           </button>
@@ -5078,6 +5086,11 @@ export default function SalesMapPage({
                   const target = group.primary;
                   const selection = budgetTargetSelection(target);
                   const status = budgetTargetStatus(target);
+                  const detailTarget = budgetKeyword
+                    ? group.matchingMembers.find(
+                        (member) => member.jointProjectRole !== "sponsor",
+                      ) ?? group.matchingMembers[0] ?? target
+                    : target;
                   return (
                   <article
                     key={group.key}
@@ -5111,17 +5124,15 @@ export default function SalesMapPage({
                             <em className="joint-project-badge sponsor" title={group.projectName}>
                               공동사업 주관 · {group.members.filter((member) => member.jointProjectRole !== "sponsor").length}곳
                             </em>
-                            <details className="joint-project-member-list">
-                              <summary>설치기관 펼쳐보기</summary>
-                              {group.members
-                                .filter((member) => member.jointProjectRole !== "sponsor")
-                                .map((member) => (
-                                  <span key={member.id}>
-                                    <b>{member.organization}</b>
-                                    <small>기관 사업 {member.businessRound}차</small>
-                                  </span>
-                                ))}
-                            </details>
+                            <JointProjectMemberList
+                              members={group.members}
+                              matchingMembers={group.matchingMembers}
+                              searchActive={Boolean(budgetKeyword)}
+                              showBudget={false}
+                              onSelectMember={(member) =>
+                                onOpenOrganization(member.organization)
+                              }
+                            />
                           </>
                         )}
                         <span>{target.region || "지역 미등록"}</span>
@@ -5197,7 +5208,7 @@ export default function SalesMapPage({
                     </dl>
                     <button
                       type="button"
-                              onClick={() => onOpenOrganization(group.sponsorOrganization)}
+                      onClick={() => onOpenOrganization(detailTarget.organization)}
                     >
                       기관 상세 보기
                     </button>
@@ -5206,7 +5217,7 @@ export default function SalesMapPage({
                 })}
               </div>
 
-              {!filteredBudgetTargets.length && (
+              {!filteredBudgetTargetGroups.length && (
                 <div className="empty-state large">
                   현재 조건에 해당하는 기관이 없습니다.
                 </div>
