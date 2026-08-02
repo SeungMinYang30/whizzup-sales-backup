@@ -1,11 +1,23 @@
-import { getD1 } from "../db";
 import type { Member } from "./collaboration";
+import {
+  ensureBudgetNamesReady,
+  resolveBudgetRecordMetadata,
+  resolveCanonicalBudgetName,
+} from "./budget-names";
 import { canonicalInstitutionName } from "./institution-names";
 import { ensureRecordsReady } from "./records-store";
 import {
   canonicalProgressManagerName,
   listRegisteredSalesNames,
 } from "./sales-manager-normalization";
+import { normalizeAwardStage } from "./sales-taxonomy";
+import { resolveAwardCompletedDate } from "./award-completion";
+import { meaningfulBudgetAmount } from "./budget-policy";
+import {
+  activityBudgetsFromRecord,
+  serializeActivityBudgets,
+  type ActivityBudgetAllocation,
+} from "./activity-budgets";
 
 const CSV_MAX_ROWS = 5_000;
 
@@ -18,17 +30,20 @@ const CSV_HEADERS = [
   "컨택 방식",
   "지역",
   "기관명",
-  "예산 종류",
-  "예산 금액",
+  "사업 차수",
+  "예산",
+  "예산금액",
+  "예산 목록 JSON",
   "주제",
   "요약",
   "상태",
   "온도",
   "수주 결과",
-  "수주 업체",
+  "수주업체",
   "사업 방식",
   "컨소 업체",
   "수주 현재 상태",
+  "납품 완료일",
   "진행 담당자",
   "재연락 필요",
   "재연락 예정일",
@@ -55,8 +70,10 @@ type CsvActivity = {
   contactMethod: string;
   region: string;
   organization: string;
+  businessRound: number;
   budgetType: string;
   budgetAmount: string;
+  budgetsJson: string;
   topic: string;
   summary: string;
   status: string;
@@ -66,6 +83,7 @@ type CsvActivity = {
   executionType: string;
   consortiumCompany: string;
   awardStage: string;
+  awardCompletedDate: string;
   progressManager: string;
   followUpRequired: number;
   followUpDate: string | null;
@@ -91,6 +109,12 @@ export type ActivityCsvInspection = {
   duplicateRows: number;
   errorRows: number;
   errors: { row: number; message: string }[];
+  budgetMatches?: Array<{
+    originalName: string;
+    canonicalName: string;
+    matchMethod: string;
+    matchStatus: string;
+  }>;
 };
 
 export class ActivityCsvError extends Error {
@@ -179,18 +203,22 @@ function normalizedSignature(row: {
   activityDate: string | null;
   activityType: string;
   organization: string;
+  businessRound: number;
   topic: string;
   summary: string;
   budgetType: string;
+  budgetsJson: string;
   progressSchedule: string;
 }) {
   return [
     row.activityDate ?? "",
     row.activityType.trim().toLowerCase(),
     canonicalInstitutionName(row.organization).toLowerCase(),
+    String(Math.max(1, Number(row.businessRound) || 1)),
     row.topic.trim().toLowerCase(),
     row.summary.trim().toLowerCase(),
     row.budgetType.trim().toLowerCase(),
+    row.budgetsJson.trim(),
     row.progressSchedule.trim().toLowerCase(),
   ].join("|");
 }
@@ -200,9 +228,11 @@ function databaseSignature(row: Record<string, unknown>) {
     activityDate: row.activity_date ? String(row.activity_date) : null,
     activityType: String(row.activity_type ?? ""),
     organization: String(row.organization ?? ""),
+    businessRound: Math.max(1, Number(row.business_round) || 1),
     topic: String(row.topic ?? ""),
     summary: String(row.summary ?? ""),
     budgetType: String(row.budget_type ?? ""),
+    budgetsJson: String(row.budgets_json ?? ""),
     progressSchedule: String(row.progress_schedule ?? ""),
   });
 }
@@ -253,7 +283,7 @@ async function analyzeCsv(text: string) {
   const existing = await d1
     .prepare(
       `SELECT id, activity_date, activity_type, organization, topic, summary,
-              budget_type, progress_schedule
+              business_round, budget_type, progress_schedule
        FROM activities`,
     )
     .all<Record<string, unknown>>();
@@ -284,8 +314,18 @@ async function analyzeCsv(text: string) {
       const organization = canonicalInstitutionName(
         get(cells, "기관명", "organization"),
       );
+      const requestedBusinessRound =
+        get(cells, "사업 차수", "사업차수", "business_round") || "1";
+      const businessRound = Number(requestedBusinessRound);
       const activityType = get(cells, "활동 유형", "activity_type");
       if (!organization) throw new ActivityCsvError("기관명이 비어 있습니다.");
+      if (
+        !Number.isSafeInteger(businessRound) ||
+        businessRound < 1 ||
+        businessRound > 99
+      ) {
+        throw new ActivityCsvError("사업 차수는 1~99 사이의 정수여야 합니다.");
+      }
       if (!activityType) {
         throw new ActivityCsvError("활동 유형이 비어 있습니다.");
       }
@@ -296,6 +336,10 @@ async function analyzeCsv(text: string) {
       const followUpDate = csvDate(
         get(cells, "재연락 예정일", "follow_up_date"),
         "재연락 예정일",
+      );
+      const requestedAwardCompletedDate = csvDate(
+        get(cells, "납품 완료일", "award_completed_date"),
+        "납품 완료일",
       );
       const draft = {
         sourceId,
@@ -308,15 +352,27 @@ async function analyzeCsv(text: string) {
         contactMethod: get(cells, "컨택 방식", "contact_method"),
         region: get(cells, "지역", "region"),
         organization,
-        budgetType: get(cells, "예산 종류", "budget_type"),
-        budgetAmount: get(cells, "예산 금액", "budget_amount"),
+        businessRound,
+        budgetType: get(cells, "예산", "예산명", "예산 종류", "budget_type"),
+        budgetAmount: get(
+          cells,
+          "예산금액",
+          "예산 금액",
+          "budget_amount",
+        ),
+        budgetsJson: get(
+          cells,
+          "예산 목록 JSON",
+          "복수 예산 JSON",
+          "budgets_json",
+        ),
         topic: get(cells, "주제", "topic"),
         summary: get(cells, "요약", "summary", "내용"),
         status: get(cells, "상태", "status") || "진행 중",
         temperature:
           get(cells, "온도", "관심도", "temperature") || "중간",
         awardStatus: get(cells, "수주 결과", "award_status") || "미정",
-        awardCompany: get(cells, "수주 업체", "award_company"),
+        awardCompany: get(cells, "수주업체", "수주 업체", "실제 진행 주체", "award_company"),
         executionType:
           get(cells, "사업 방식", "execution_type") === "컨소"
             ? "컨소"
@@ -326,16 +382,21 @@ async function analyzeCsv(text: string) {
           "컨소 업체",
           "consortium_company",
         ),
-        awardStage:
-          get(cells, "수주 현재 상태", "award_stage") || "미정",
+        awardStage: normalizeAwardStage(
+          get(cells, "수주 현재 상태", "award_stage"),
+          get(cells, "수주 결과", "award_status"),
+        ),
+        awardCompletedDate: requestedAwardCompletedDate || "",
         progressManager: get(
           cells,
           "진행 담당자",
           "progress_manager",
         ),
-        followUpRequired: parseYesNo(
-          get(cells, "재연락 필요", "follow_up_required") || "예",
-        ),
+        followUpRequired: followUpDate
+          ? parseYesNo(
+              get(cells, "재연락 필요", "follow_up_required") || "아니오",
+            )
+          : 0,
         followUpDate,
         nextAction: get(cells, "다음 행동", "next_action"),
         progressSchedule: get(cells, "진행 일정", "progress_schedule"),
@@ -354,6 +415,22 @@ async function analyzeCsv(text: string) {
         signature: "",
         sourceRow,
       } satisfies CsvActivity;
+      draft.awardCompletedDate = resolveAwardCompletedDate({
+        awardStage: draft.awardStage,
+        requestedDate: draft.awardCompletedDate,
+        fallbackDate: activityDate,
+      });
+      if (draft.budgetsJson) {
+        let parsedBudgets: unknown;
+        try {
+          parsedBudgets = JSON.parse(draft.budgetsJson);
+        } catch {
+          throw new ActivityCsvError("예산 목록 JSON 형식이 올바르지 않습니다.");
+        }
+        if (!Array.isArray(parsedBudgets)) {
+          throw new ActivityCsvError("예산 목록 JSON은 배열 형식이어야 합니다.");
+        }
+      }
       draft.signature = normalizedSignature(draft);
 
       if (
@@ -414,8 +491,10 @@ export async function createActivitiesCsv() {
       row.contact_method,
       row.region,
       row.organization,
+      row.business_round,
       row.budget_type,
       row.budget_amount,
+      row.budgets_json,
       row.topic,
       row.summary,
       row.status,
@@ -425,6 +504,7 @@ export async function createActivitiesCsv() {
       row.execution_type,
       row.consortium_company,
       row.award_stage,
+      row.award_completed_date,
       row.progress_manager,
       Number(row.follow_up_required) === 1 ? "예" : "아니오",
       row.follow_up_date,
@@ -449,8 +529,22 @@ export async function createActivitiesCsv() {
 }
 
 export async function inspectActivityCsv(text: string) {
-  const { inspection } = await analyzeCsv(text);
-  return inspection;
+  const { inspection, importable } = await analyzeCsv(text);
+  const d1 = await ensureBudgetNamesReady();
+  const budgetMatches = await Promise.all(
+    Array.from(
+      new Set(importable.map((row) => row.budgetType).filter(Boolean)),
+    ).map(async (originalName) => {
+      const resolution = await resolveCanonicalBudgetName(d1, originalName);
+      return {
+        originalName,
+        canonicalName: resolution.canonicalName,
+        matchMethod: resolution.matchMethod,
+        matchStatus: resolution.matchStatus,
+      };
+    }),
+  );
+  return { ...inspection, budgetMatches };
 }
 
 export async function importActivityCsv(text: string, admin: Member) {
@@ -459,8 +553,12 @@ export async function importActivityCsv(text: string, admin: Member) {
     return { ...inspection, importedRows: 0 };
   }
 
-  const d1 = getD1();
+  const d1 = await ensureBudgetNamesReady();
   const registeredSalesNames = await listRegisteredSalesNames(d1);
+  const budgetResolutions = new Map<
+    string,
+    Awaited<ReturnType<typeof resolveBudgetRecordMetadata>>
+  >();
   const maximum = await d1
     .prepare("SELECT COALESCE(MAX(id), 0) AS maximum FROM activities")
     .first<{ maximum: number }>();
@@ -480,20 +578,75 @@ export async function importActivityCsv(text: string, admin: Member) {
     const row = importable[index];
     const id = firstId + index;
     const seedKey = `csv:${await sha256Hex(row.signature)}`;
+    const importedBudgets = activityBudgetsFromRecord({
+      budget_type: row.budgetType,
+      budget_amount: row.budgetAmount,
+      budgets_json: row.budgetsJson,
+    });
+    const resolvedBudgets: ActivityBudgetAllocation[] = [];
+    const resolvedBudgetMetadata: Array<
+      Awaited<ReturnType<typeof resolveBudgetRecordMetadata>>
+    > = [];
+    for (const budget of importedBudgets) {
+      const resolutionInput = {
+        budgetType: budget.budgetType,
+        budgetOriginalName: budget.budgetOriginalName,
+        budgetGroupId: budget.budgetGroupId,
+        budgetRequestId: budget.budgetRequestId,
+        budgetKind: budget.budgetKind,
+        budgetAmountMode: budget.budgetAmountMode,
+        budgetAmount: budget.budgetAmount,
+        budgetInstitutionAmount: budget.budgetInstitutionAmount,
+        budgetAmountOverride: budget.budgetAmountOverride,
+        budgetAmountSource: budget.budgetAmountSource,
+        awardStatus: row.awardStatus,
+      };
+      const budgetResolutionKey = JSON.stringify(resolutionInput);
+      let resolution = budgetResolutions.get(budgetResolutionKey);
+      if (!resolution) {
+        resolution = await resolveBudgetRecordMetadata(d1, resolutionInput);
+        budgetResolutions.set(budgetResolutionKey, resolution);
+      }
+      resolvedBudgetMetadata.push(resolution);
+      resolvedBudgets.push({
+        budgetType: resolution.storedName,
+        budgetAmount: resolution.budgetAmount,
+        budgetOriginalName: resolution.budgetOriginalName,
+        budgetGroupId: resolution.budgetGroupId,
+        budgetMatchStatus: resolution.budgetMatchStatus,
+        budgetMatchMethod: resolution.budgetMatchMethod,
+        budgetRequestId: resolution.budgetRequestId,
+        budgetKind: resolution.budgetKind,
+        budgetAmountMode: resolution.budgetAmountMode,
+        budgetInstitutionAmount: resolution.budgetAmount,
+        budgetQuoteAmount: null,
+        budgetAmountOverride: resolution.budgetAmountOverride,
+        budgetAmountSource: resolution.budgetAmountOverride
+          ? "manual"
+          : budget.budgetAmountSource || "missing",
+      });
+    }
+    const resolvedBudget = resolvedBudgetMetadata[0];
+    if (!resolvedBudget) {
+      throw new ActivityCsvError("예산 정보를 확인하지 못했습니다.");
+    }
     statements.push(
       d1
         .prepare(
           `INSERT INTO activities (
              id, seed_key, activity_date, date_confidence, activity_type,
-             category, contact_method, region, organization, budget_type,
-             budget_amount, topic, summary, status, temperature, award_status,
+             category, contact_method, region, organization, business_round, budget_type,
+             budget_amount, budget_original_name, budget_group_id,
+             budget_match_status, budget_match_method, budget_request_id,
+              budget_kind, budget_amount_mode, budget_amount_override, budgets_json,
+             topic, summary, status, temperature, award_status,
              award_company, execution_type, consortium_company, award_stage,
-             progress_manager, follow_up_required, follow_up_date, next_action,
+             award_completed_date, progress_manager, follow_up_required, follow_up_date, next_action,
              progress_schedule, contact_role, contact_name, contact_phone, contact_email,
              source_chat, notes, created_at, updated_at
            ) VALUES (
-             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
            )`,
         )
         .bind(
@@ -506,8 +659,18 @@ export async function importActivityCsv(text: string, admin: Member) {
           row.contactMethod,
           row.region,
           row.organization,
-          row.budgetType,
-          row.budgetAmount,
+          row.businessRound,
+          resolvedBudget.storedName,
+          resolvedBudget.budgetAmount,
+          resolvedBudget.budgetOriginalName,
+          resolvedBudget.budgetGroupId,
+          resolvedBudget.budgetMatchStatus,
+          resolvedBudget.budgetMatchMethod,
+          resolvedBudget.budgetRequestId,
+          resolvedBudget.budgetKind,
+          resolvedBudget.budgetAmountMode,
+          resolvedBudget.budgetAmountOverride,
+          serializeActivityBudgets(resolvedBudgets),
           row.topic,
           row.summary,
           row.status,
@@ -517,6 +680,7 @@ export async function importActivityCsv(text: string, admin: Member) {
           row.executionType,
           row.executionType === "컨소" ? row.consortiumCompany : "",
           row.awardStage,
+          row.awardCompletedDate,
           canonicalProgressManagerName(
             row.progressManager,
             registeredSalesNames,
@@ -552,6 +716,29 @@ export async function importActivityCsv(text: string, admin: Member) {
           row.createdAt,
         ),
     );
+    if (resolvedBudget.budgetGroupId) {
+      statements.push(
+        d1
+          .prepare(
+            `INSERT INTO budget_name_members
+              (group_id, entity_type, entity_id, original_name, alias_key, active)
+             VALUES (?, 'activity', ?, ?, ?, 1)
+             ON CONFLICT(entity_type, entity_id) DO UPDATE SET
+               group_id = excluded.group_id,
+               original_name = excluded.original_name,
+               alias_key = excluded.alias_key,
+               active = 1,
+               linked_at = CURRENT_TIMESTAMP,
+               unlinked_at = NULL`,
+          )
+          .bind(
+            resolvedBudget.budgetGroupId,
+            id,
+            resolvedBudget.budgetOriginalName,
+            resolvedBudget.resolution?.aliasKey ?? "",
+          ),
+      );
+    }
   }
 
   await d1.batch(statements);

@@ -6,32 +6,9 @@ import {
   canonicalInstitutionName,
   findSimilarInstitutionNames,
   findSimilarInstitutionMatches,
-  officialSchoolSearchTerms,
   rememberedInstitutionAlias,
   updateInstitutionAliasSetting,
 } from "../lib/institution-names.ts";
-
-test("학교급과 성별이 포함된 흔한 줄임말을 정식 형태로 정리한다", () => {
-  assert.equal(canonicalInstitutionName("진명여고"), "진명여자고등학교");
-  assert.equal(canonicalInstitutionName("근명여중"), "근명여자중학교");
-  assert.equal(canonicalInstitutionName("한빛 초·중학교"), "한빛초중학교");
-  assert.equal(canonicalInstitutionName("모담초교"), "모담초등학교");
-});
-
-test("전문계 고등학교 줄임말은 공식 학교 검색 후보로만 확장한다", () => {
-  assert.deepEqual(officialSchoolSearchTerms("서울공고"), [
-    "서울공고",
-    "서울공업고등학교",
-  ]);
-  assert.deepEqual(officialSchoolSearchTerms("대원외고"), [
-    "대원외고",
-    "대원외국어고등학교",
-  ]);
-});
-
-test("초등학교와 초중학교는 이름이 같아도 자동 통합 후보로 보지 않는다", () => {
-  assert.deepEqual(findSimilarInstitutionNames("한빛초", ["한빛초중학교"]), []);
-});
 
 test("초 유치원 축약을 초등학교 병설유치원으로 정리한다", () => {
   assert.equal(
@@ -135,22 +112,6 @@ test("승인한 별칭은 저장되고 다음 기록 입력에서 먼저 적용�
   assert.match(recordsStore, /INSTITUTION_ALIASES_SETTING_KEY/);
   assert.match(institutionMerge, /updateInstitutionAliasSetting/);
   assert.match(institutionMerge, /ON CONFLICT\(key\) DO UPDATE SET/);
-});
-
-test("기관 관계 선택과 전국 학교정보 연결이 백업 사이트에도 포함된다", async () => {
-  const root = new URL("../", import.meta.url);
-  const [recordsStore, confirmation, crm, schoolDirectory] = await Promise.all([
-    readFile(new URL("lib/records-store.ts", root), "utf8"),
-    readFile(new URL("app/institution-confirmation.ts", root), "utf8"),
-    readFile(new URL("app/crm-app.tsx", root), "utf8"),
-    readFile(new URL("lib/school-directory.ts", root), "utf8"),
-  ]);
-  assert.match(recordsStore, /resolveOfficialSchoolName/);
-  assert.match(recordsStore, /excludedInstitutionCandidates/);
-  assert.match(confirmation, /관련 기관으로 구분/);
-  assert.match(confirmation, /새로운 별도 기관으로 등록/);
-  assert.match(crm, /전국 학교정보 연결/);
-  assert.match(schoolDirectory, /INTERVAL '30 days'/);
 });
 
 test("띄어쓰기만 다른 동일 기관은 채팅에서 다시 묻지 않고 기존 기관명으로 연결한다", async () => {

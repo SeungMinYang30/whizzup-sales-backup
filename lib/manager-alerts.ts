@@ -5,6 +5,7 @@ export type ManagerAlertAcknowledgement = {
   organization: string;
   issueSignature: string;
   snoozedUntil: string;
+  hiddenAt: string;
   updatedAt: string;
 };
 
@@ -21,6 +22,7 @@ const createTableSql = `
     organization TEXT NOT NULL,
     issue_signature TEXT NOT NULL,
     snoozed_until TEXT,
+    hidden_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
@@ -56,6 +58,7 @@ function mapAcknowledgement(
     organization: String(row.organization ?? ""),
     issueSignature: String(row.issue_signature ?? ""),
     snoozedUntil: String(row.snoozed_until ?? ""),
+    hiddenAt: String(row.hidden_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
   };
 }
@@ -64,7 +67,7 @@ export async function listManagerAlertAcknowledgements(memberId: number) {
   const d1 = await ensureManagerAlertsReady();
   const result = await d1
     .prepare(
-      `SELECT organization, issue_signature, snoozed_until, updated_at
+      `SELECT organization, issue_signature, snoozed_until, hidden_at, updated_at
        FROM manager_alert_acknowledgements
        WHERE member_id = ?
        ORDER BY updated_at DESC, organization`,
@@ -89,6 +92,7 @@ export async function saveManagerAlertAcknowledgements(
            ON CONFLICT(member_id, organization) DO UPDATE SET
              issue_signature = excluded.issue_signature,
              snoozed_until = excluded.snoozed_until,
+             hidden_at = NULL,
              updated_at = CURRENT_TIMESTAMP`,
         )
         .bind(
@@ -100,6 +104,60 @@ export async function saveManagerAlertAcknowledgements(
     ),
   );
   return listManagerAlertAcknowledgements(memberId);
+}
+
+export async function hideManagerAlertAcknowledgements(
+  memberId: number,
+  organizations: string[],
+) {
+  const d1 = await ensureManagerAlertsReady();
+  const chunks = Array.from(
+    { length: Math.ceil(organizations.length / 50) },
+    (_, index) => organizations.slice(index * 50, index * 50 + 50),
+  );
+  let hiddenCount = 0;
+  for (const chunk of chunks) {
+    const placeholders = chunk.map(() => "?").join(", ");
+    const result = await d1
+      .prepare(
+        `UPDATE manager_alert_acknowledgements
+         SET hidden_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE member_id = ?
+           AND hidden_at IS NULL
+           AND organization IN (${placeholders})`,
+      )
+      .bind(memberId, ...chunk)
+      .run();
+    hiddenCount += Number(result.meta?.changes ?? 0);
+  }
+  return {
+    acknowledgements: await listManagerAlertAcknowledgements(memberId),
+    hiddenCount,
+  };
+}
+
+export async function hideOldManagerAlertAcknowledgements(
+  memberId: number,
+  olderThanDays: number,
+) {
+  const d1 = await ensureManagerAlertsReady();
+  const result = await d1
+    .prepare(
+      `UPDATE manager_alert_acknowledgements
+       SET hidden_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE member_id = ?
+         AND hidden_at IS NULL
+         AND (snoozed_until IS NULL OR trim(snoozed_until) = '')
+         AND updated_at <= datetime('now', ?)`,
+    )
+    .bind(memberId, `-${olderThanDays} days`)
+    .run();
+  return {
+    acknowledgements: await listManagerAlertAcknowledgements(memberId),
+    hiddenCount: Number(result.meta?.changes ?? 0),
+  };
 }
 
 export async function removeManagerAlertAcknowledgements(

@@ -9,19 +9,89 @@ import { ensureMapReady } from "./map-store";
 import { ensureManagerAlertsReady } from "./manager-alerts";
 import { ensureActivityReviewsReady } from "./activity-reviews";
 import { ensureActivityAssignmentHistoryReady } from "./activity-assignment-history";
+import { ensureActivityChangeLedgerReady } from "./activity-change-ledger";
 import { ensureRecordsReady } from "./records-store";
 import { ensureAiRecommendationsReady } from "./ai-recommendations";
 import { ensureInstitutionDecisionsReady } from "./institution-decisions";
+import { ensureAccountingReady } from "./accounting-store";
+import { ensureProductVendorLinksReady } from "./product-vendor-links";
+import { ensureBudgetNamesReady } from "./budget-names";
+import { normalizeAwardStage } from "./sales-taxonomy";
+import { ensureDataControlReady } from "./data-control-store";
+import { ensureAwardVendorsReady } from "./award-vendors";
+import { ensureQuotationDocumentsReady } from "./quotation-documents";
+import { ensureSchoolDirectoryReady } from "./school-directory";
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-07-21-institution-directory";
+export const BACKUP_SCHEMA_VERSION = "2026-08-02-complete-business-backup";
 const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
+  "2026-07-31-activity-details",
+  "2026-07-30-owner-data-controls",
   "2026-07-18",
   "2026-07-20",
   "2026-07-21",
+  "2026-07-21-institution-directory",
+  "2026-07-22-equipment-consortium",
+  "2026-07-22-equipment-dual-commission",
+  "2026-07-22-equipment-quote-costs",
+  "2026-07-23-accounting-commission-ledger",
+  "2026-07-23-accounting-collection-receipts",
+  "2026-07-24-business-rounds",
+  "2026-07-26-product-vendor-links",
+  "2026-07-26-budget-name-groups",
+  "2026-07-27-award-completion-dates",
+  "2026-07-28-equipment-price-status",
+  "2026-07-28-manual-sales-status",
+  "2026-07-29-product-supply-accounting",
+  "2026-07-29-standard-budget-catalog",
+  "2026-07-30-budget-campaign-portfolio",
+  "2026-07-30-progress-manager-control",
 ]);
+const PRE_BUDGET_NAME_SCHEMA_VERSIONS = new Set([
+  "2026-07-18",
+  "2026-07-20",
+  "2026-07-21",
+  "2026-07-21-institution-directory",
+  "2026-07-22-equipment-consortium",
+  "2026-07-22-equipment-dual-commission",
+  "2026-07-22-equipment-quote-costs",
+  "2026-07-23-accounting-commission-ledger",
+  "2026-07-23-accounting-collection-receipts",
+  "2026-07-24-business-rounds",
+  "2026-07-26-product-vendor-links",
+]);
+const BUDGET_NAME_BACKUP_TABLES = new Set([
+  "budget_name_groups",
+  "budget_name_aliases",
+  "budget_name_members",
+  "budget_name_events",
+]);
+const LEGACY_BUDGET_NAME_NOTICE =
+  "이 백업은 표준 예산명 기능 도입 이전 형식입니다. 복원 시 현재 표준 예산명과 별칭은 유지하고, 당시 활동·지도·품목 등 포함 자료만 복원합니다.";
+const LEGACY_COMPLETE_BUSINESS_NOTICE =
+  "이 백업은 견적서·협력사 문서·학교 연결·휴지통·홀덤 순위가 전체 DB 백업에 포함되기 전 형식입니다. 복원 시 해당 현재 자료는 지우지 않고 유지합니다.";
 export const BACKUP_MAX_ROWS = 20_000;
+
+const COMPLETE_BUSINESS_BACKUP_TABLES = new Set([
+  "quotation_documents",
+  "award_vendor_documents",
+  "organization_school_links",
+  "deletion_batches",
+  "holdem_weekly_scores",
+]);
+
+function legacyBackupMayOmitTable(
+  schemaVersion: string,
+  tableName: string,
+) {
+  return (
+    (PRE_BUDGET_NAME_SCHEMA_VERSIONS.has(schemaVersion) &&
+      BUDGET_NAME_BACKUP_TABLES.has(tableName)) ||
+    (schemaVersion !== BACKUP_SCHEMA_VERSION &&
+      COMPLETE_BUSINESS_BACKUP_TABLES.has(tableName))
+  );
+}
 
 type BackupRow = Record<string, unknown>;
 
@@ -61,18 +131,36 @@ export const BACKUP_TABLES = [
       "contact_method",
       "region",
       "organization",
+      "business_round",
       "budget_type",
       "budget_amount",
+      "budget_original_name",
+      "budget_group_id",
+      "budget_match_status",
+      "budget_match_method",
+      "budget_request_id",
+      "budget_kind",
+      "budget_amount_mode",
+      "budget_amount_override",
+      "budgets_json",
       "topic",
       "summary",
+      "detail_level",
+      "detail_summary",
+      "detail_key_facts_json",
+      "detail_sections_json",
+      "raw_input",
       "status",
+      "status_manual",
       "temperature",
       "award_status",
       "award_company",
       "execution_type",
       "consortium_company",
       "award_stage",
+      "award_completed_date",
       "progress_manager",
+      "progress_manager_locked",
       "follow_up_required",
       "follow_up_date",
       "next_action",
@@ -81,8 +169,11 @@ export const BACKUP_TABLES = [
       "contact_name",
       "contact_phone",
       "contact_email",
+      "contacts_json",
       "source_chat",
       "notes",
+      "updated_by_member_id",
+      "updated_by_name",
       "created_at",
       "updated_at",
     ],
@@ -108,6 +199,48 @@ export const BACKUP_TABLES = [
     orderBy: "id",
   },
   {
+    name: "activity_change_batches",
+    columns: [
+      "id",
+      "scope",
+      "operation_label",
+      "operation_total",
+      "requested_fields_json",
+      "actor_member_id",
+      "actor_name",
+      "item_count",
+      "status",
+      "created_at",
+      "updated_at",
+      "completed_at",
+      "undone_at",
+      "undone_by_member_id",
+      "undone_by_name",
+      "undo_result_json",
+    ],
+    orderBy: "created_at, id",
+  },
+  {
+    name: "activity_change_items",
+    columns: [
+      "id",
+      "batch_id",
+      "activity_id",
+      "organization",
+      "requested_fields_json",
+      "changed_fields_json",
+      "before_json",
+      "after_json",
+      "created_at",
+      "undone_at",
+      "undone_by_member_id",
+      "undone_by_name",
+      "undo_status",
+      "undo_result_json",
+    ],
+    orderBy: "id",
+  },
+  {
     name: "manager_alert_acknowledgements",
     columns: [
       "id",
@@ -115,10 +248,44 @@ export const BACKUP_TABLES = [
       "organization",
       "issue_signature",
       "snoozed_until",
+      "hidden_at",
       "created_at",
       "updated_at",
     ],
     orderBy: "id",
+  },
+  {
+    name: "data_control_events",
+    columns: [
+      "id",
+      "action",
+      "subject",
+      "item_count",
+      "archive_ids_json",
+      "actor_member_id",
+      "actor_name",
+      "details_json",
+      "created_at",
+    ],
+    orderBy: "created_at, id",
+  },
+  {
+    name: "deletion_batches",
+    columns: [
+      "id",
+      "entity_type",
+      "display_name",
+      "item_count",
+      "snapshot_json",
+      "stored_bytes",
+      "deleted_by_member_id",
+      "deleted_by_name",
+      "deleted_at",
+      "expires_at",
+      "restored_at",
+      "restored_by_member_id",
+    ],
+    orderBy: "deleted_at, id",
   },
   {
     name: "activity_review_acknowledgements",
@@ -160,6 +327,177 @@ export const BACKUP_TABLES = [
     orderBy: "key",
   },
   {
+    name: "award_vendors",
+    columns: [
+      "id",
+      "company_name",
+      "business_number",
+      "representative_name",
+      "business_type",
+      "business_item",
+      "address",
+      "phone",
+      "email",
+      "bank_name",
+      "account_number",
+      "account_holder",
+      "contact_name",
+      "contact_title",
+      "contact_phone",
+      "contact_email",
+      "notes",
+      "is_active",
+      "created_by",
+      "updated_by",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "award_vendor_documents",
+    columns: [
+      "id",
+      "vendor_id",
+      "document_type",
+      "original_name",
+      "object_key",
+      "content_type",
+      "size_bytes",
+      "extracted_json",
+      "created_by",
+      "created_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "product_vendor_links",
+    columns: [
+      "product_id",
+      "vendor_id",
+      "vendor_name_snapshot",
+      "updated_by",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "product_id",
+  },
+  {
+    name: "product_supply_settings",
+    columns: [
+      "product_id",
+      "supply_type",
+      "margin_rate",
+      "updated_by",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "product_id",
+  },
+  {
+    name: "budget_name_groups",
+    columns: [
+      "id",
+      "canonical_name",
+      "canonical_key",
+      "active",
+      "budget_kind",
+      "amount_mode",
+      "default_amount",
+      "sort_order",
+      "created_by",
+      "created_by_name",
+      "updated_by",
+      "updated_by_name",
+      "disabled_at",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "budget_name_aliases",
+    columns: [
+      "id",
+      "group_id",
+      "alias_name",
+      "alias_key",
+      "active",
+      "created_by",
+      "created_by_name",
+      "disabled_at",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "budget_name_members",
+    columns: [
+      "id",
+      "group_id",
+      "entity_type",
+      "entity_id",
+      "original_name",
+      "alias_key",
+      "active",
+      "linked_at",
+      "unlinked_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "budget_name_events",
+    columns: [
+      "id",
+      "group_id",
+      "action",
+      "snapshot_json",
+      "request_id",
+      "batch_key",
+      "changed_by",
+      "changed_by_name",
+      "created_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "budget_name_requests",
+    columns: [
+      "id",
+      "requested_name",
+      "requested_key",
+      "expected_budget_kind",
+      "reason",
+      "organization",
+      "requester_member_id",
+      "requester_name",
+      "status",
+      "resolved_group_id",
+      "resolution_type",
+      "decision_reason",
+      "decided_by",
+      "decided_by_name",
+      "decided_at",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "created_at, id",
+  },
+  {
+    name: "budget_name_request_records",
+    columns: [
+      "id",
+      "request_id",
+      "entity_type",
+      "entity_id",
+      "original_name",
+      "organization",
+      "created_at",
+    ],
+    orderBy: "id",
+  },
+  {
     name: "institution_name_decisions",
     columns: [
       "pair_key",
@@ -171,6 +509,41 @@ export const BACKUP_TABLES = [
       "updated_at",
     ],
     orderBy: "pair_key",
+  },
+  {
+    name: "organization_school_links",
+    columns: [
+      "link_key",
+      "organization",
+      "organization_key",
+      "context_key",
+      "school_code",
+      "match_source",
+      "updated_at",
+    ],
+    orderBy: "link_key",
+  },
+  {
+    name: "quotation_documents",
+    columns: [
+      "id",
+      "organization",
+      "business_round",
+      "company_name",
+      "quote_amount",
+      "quote_date",
+      "original_name",
+      "original_key",
+      "original_size",
+      "page_keys_json",
+      "page_sizes_json",
+      "page_count",
+      "total_size",
+      "created_by",
+      "created_by_name",
+      "created_at",
+    ],
+    orderBy: "id",
   },
   {
     name: "organization_locations",
@@ -194,6 +567,19 @@ export const BACKUP_TABLES = [
       "id",
       "name",
       "notes",
+      "budget_type",
+      "budget_group_id",
+      "budget_match_status",
+      "budget_match_method",
+      "budget_request_id",
+      "budget_kind",
+      "budget_amount_mode",
+      "selection_date",
+      "default_budget_amount",
+      "source_file_name",
+      "import_source",
+      "import_status",
+      "expected_target_count",
       "created_by",
       "created_at",
       "updated_at",
@@ -213,6 +599,12 @@ export const BACKUP_TABLES = [
       "notes",
       "assigned_member_id",
       "activity_id",
+      "budget_amount",
+      "school_level",
+      "supply_items",
+      "review_note",
+      "business_round",
+      "created_activity",
       "created_at",
       "updated_at",
     ],
@@ -222,11 +614,21 @@ export const BACKUP_TABLES = [
     name: "equipment_projects",
     columns: [
       "id",
+      "activity_id",
       "organization",
+      "business_round",
       "name",
       "status",
       "budget_type",
+      "budget_original_name",
+      "budget_group_id",
+      "budget_match_status",
+      "budget_match_method",
+      "budget_request_id",
+      "budget_kind",
       "notes",
+      "construction_amount",
+      "actual_construction_cost",
       "created_by",
       "created_at",
       "updated_at",
@@ -246,11 +648,150 @@ export const BACKUP_TABLES = [
       "unit",
       "status",
       "notes",
+      "catalog_item_id",
+      "catalog_unit_price",
+      "price_status",
+      "catalog_note",
+      "execution_type",
+      "commission_input_type",
+      "commission_rate",
+      "supply_type",
+      "margin_rate",
+      "procurement_fee_rate",
+      "consortium_commission_rate",
+      "consortium_payment_amount",
+      "supplier_vendor_id",
+      "supplier_vendor_name",
+      "protection_status",
+      "protection_completed_at",
+      "created_by",
+      "updated_by",
       "sort_order",
       "created_at",
       "updated_at",
     ],
     orderBy: "id",
+  },
+  {
+    name: "accounting_settlements",
+    columns: [
+      "id",
+      "activity_id",
+      "confirmed_contract_amount",
+      "deposit_amount",
+      "interim_amount",
+      "balance_amount",
+      "paid_amount",
+      "actual_cost",
+      "confirmed_commission",
+      "confirmed_margin",
+      "manufacturer_commission_expected",
+      "manufacturer_commission_received",
+      "manufacturer_commission_received_date",
+      "consortium_payment_expected",
+      "consortium_payment_paid",
+      "consortium_payment_date",
+      "other_cost",
+      "commission_receivable",
+      "consortium_payable",
+      "net_revenue",
+      "recognized_date",
+      "invoice_status",
+      "invoice_date",
+      "settlement_status",
+      "accounting_note",
+      "confirmed",
+      "updated_by",
+      "updated_by_name",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "accounting_settlement_history",
+    columns: [
+      "id",
+      "settlement_id",
+      "activity_id",
+      "snapshot_json",
+      "changed_fields_json",
+      "changed_by",
+      "changed_by_name",
+      "created_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "accounting_commission_entries",
+    columns: [
+      "id",
+      "activity_id",
+      "manufacturer_key",
+      "manufacturer_name",
+      "commission_sales_amount",
+      "revenue_recognition_date",
+      "invoice_status",
+      "invoice_date",
+      "commission_collected_amount",
+      "collection_date",
+      "direct_cost",
+      "consortium_settlement_confirmed",
+      "consortium_paid_amount",
+      "consortium_paid_date",
+      "receivable_balance",
+      "consortium_payable",
+      "contribution_margin",
+      "accounting_status",
+      "voucher_note",
+      "confirmed",
+      "workflow_excluded",
+      "workflow_excluded_at",
+      "workflow_excluded_by",
+      "workflow_excluded_by_name",
+      "legacy_source_settlement_id",
+      "updated_by",
+      "updated_by_name",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "accounting_commission_entry_history",
+    columns: [
+      "id",
+      "entry_id",
+      "activity_id",
+      "snapshot_json",
+      "changed_fields_json",
+      "changed_by",
+      "changed_by_name",
+      "created_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "accounting_collection_receipts",
+    columns: [
+      "id",
+      "entry_id",
+      "activity_id",
+      "amount",
+      "collection_date",
+      "note",
+      "legacy_source_entry_id",
+      "created_by",
+      "created_by_name",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "holdem_weekly_scores",
+    columns: ["member_id", "week_start", "best_chips", "games_played", "wins", "updated_at"],
+    orderBy: "week_start, member_id",
   },
 ] as const satisfies readonly BackupTableDefinition[];
 
@@ -283,6 +824,7 @@ export type BackupInspection = {
   totalRows: number;
   counts: Record<BackupTableName, number>;
   excluded: string[];
+  compatibilityNotices: string[];
 };
 
 export class BackupValidationError extends Error {
@@ -302,8 +844,22 @@ async function ensureBackupReady() {
   await ensureManagerAlertsReady();
   await ensureActivityReviewsReady();
   await ensureActivityAssignmentHistoryReady();
+  await ensureActivityChangeLedgerReady();
+  await ensureAccountingReady();
+  await ensureProductVendorLinksReady();
+  await ensureBudgetNamesReady();
+  await ensureDataControlReady();
+  await ensureAwardVendorsReady();
+  await ensureQuotationDocumentsReady();
+  await ensureSchoolDirectoryReady();
   const d1 = getD1();
   await ensureInstitutionDecisionsReady(d1);
+  await d1.prepare(`CREATE TABLE IF NOT EXISTS holdem_weekly_scores (
+    member_id INTEGER NOT NULL, week_start TEXT NOT NULL,
+    best_chips INTEGER NOT NULL DEFAULT 1000, games_played INTEGER NOT NULL DEFAULT 0,
+    wins INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (member_id, week_start)
+  )`).run();
   return d1;
 }
 
@@ -381,6 +937,223 @@ function asInteger(value: unknown, label: string) {
 function nullableInteger(value: unknown, label: string) {
   if (value === null || value === "") return null;
   return asInteger(value, label);
+}
+
+function normalizeEquipmentProjectRows(rows: unknown[]) {
+  const occupiedNames = new Set<string>();
+  rows.forEach((row) => {
+    if (!isPlainObject(row)) return;
+    const organization = String(row.organization ?? "").trim();
+    const name = String(row.name ?? "").trim();
+    if (organization && name) {
+      occupiedNames.add(`${organization.toLowerCase()}|${name.toLowerCase()}`);
+    }
+  });
+
+  return rows.map((row, index) => {
+    if (!isPlainObject(row)) return row;
+    const organization = String(row.organization ?? "").trim();
+    const originalName = String(row.name ?? "").trim();
+    const inferredName =
+      originalName ||
+      String(row.budget_type ?? "").trim() ||
+      String(row.budget_original_name ?? "").trim() ||
+      "미분류 사업";
+    let name = inferredName;
+    let key = `${organization.toLowerCase()}|${name.toLowerCase()}`;
+    if (!originalName && occupiedNames.has(key)) {
+      const rowLabel = String(row.id ?? index + 1).trim() || String(index + 1);
+      name = `${inferredName} (복원 ${rowLabel})`;
+      key = `${organization.toLowerCase()}|${name.toLowerCase()}`;
+    }
+    occupiedNames.add(key);
+
+    return {
+      ...row,
+      name,
+      activity_id: "activity_id" in row ? row.activity_id : null,
+      business_round: "business_round" in row ? row.business_round : 1,
+      construction_amount:
+        "construction_amount" in row ? row.construction_amount : null,
+      actual_construction_cost:
+        "actual_construction_cost" in row
+          ? row.actual_construction_cost
+          : null,
+      budget_original_name:
+        "budget_original_name" in row
+          ? row.budget_original_name
+          : row.budget_type ?? "",
+      budget_group_id:
+        "budget_group_id" in row ? row.budget_group_id : null,
+      budget_match_status:
+        "budget_match_status" in row
+          ? row.budget_match_status
+          : "unclassified",
+      budget_match_method:
+        "budget_match_method" in row ? row.budget_match_method : "legacy",
+      budget_request_id:
+        "budget_request_id" in row ? row.budget_request_id : null,
+      budget_kind:
+        "budget_kind" in row ? row.budget_kind : "unclassified",
+    };
+  });
+}
+
+function activityBusinessKey(row: BackupRow) {
+  const organization = String(row.organization ?? "").trim().toLowerCase();
+  const businessRound = Number(row.business_round ?? 1) || 1;
+  return `${organization}|${businessRound}`;
+}
+
+function activityBudgetNames(row: BackupRow) {
+  return new Set(
+    [
+      row.budget_type,
+      row.budget_original_name,
+      row.name,
+    ]
+      .map((value) =>
+        String(value ?? "")
+          .replace(/\s+/g, "")
+          .trim()
+          .toLowerCase(),
+      )
+      .filter(Boolean),
+  );
+}
+
+function accountingEntryHasBusinessValue(row: BackupRow) {
+  const moneyFields = [
+    "commission_sales_amount",
+    "commission_collected_amount",
+    "direct_cost",
+    "consortium_paid_amount",
+    "receivable_balance",
+    "consortium_payable",
+    "contribution_margin",
+  ];
+  if (
+    moneyFields.some((field) => {
+      const value = row[field];
+      return value !== null && value !== "" && Number(value) !== 0;
+    })
+  ) {
+    return true;
+  }
+  return Boolean(
+    String(row.revenue_recognition_date ?? "").trim() ||
+      String(row.invoice_date ?? "").trim() ||
+      String(row.collection_date ?? "").trim() ||
+      String(row.consortium_paid_date ?? "").trim() ||
+      String(row.voucher_note ?? "").trim() ||
+      Number(row.confirmed ?? 0) !== 0,
+  );
+}
+
+function repairBrokenActivityReferences(
+  data: Record<BackupTableName, BackupRow[]>,
+) {
+  const activities = data.activities;
+  const activityIds = new Set(activities.map((row) => String(row.id)));
+  const activitiesByBusiness = new Map<string, BackupRow[]>();
+  activities.forEach((row) => {
+    const key = activityBusinessKey(row);
+    const candidates = activitiesByBusiness.get(key) ?? [];
+    candidates.push(row);
+    activitiesByBusiness.set(key, candidates);
+  });
+
+  let reconnectedProjects = 0;
+  let detachedProjects = 0;
+  data.equipment_projects = data.equipment_projects.map((project) => {
+    const activityId = project.activity_id;
+    if (
+      activityId === null ||
+      activityId === "" ||
+      activityIds.has(String(activityId))
+    ) {
+      return project;
+    }
+    const projectBudgetNames = activityBudgetNames(project);
+    const candidates = [...(activitiesByBusiness.get(activityBusinessKey(project)) ?? [])]
+      .sort((left, right) => {
+        const score = (activity: BackupRow) => {
+          const activityNames = activityBudgetNames(activity);
+          const budgetMatches = [...projectBudgetNames].some((name) =>
+            activityNames.has(name),
+          );
+          const whizzupAward =
+            String(activity.award_status ?? "").trim() === "위즈업 수주";
+          const completedMatch =
+            String(project.status ?? "").includes("완료") &&
+            String(activity.award_stage ?? "").includes("완료");
+          return (
+            (whizzupAward ? 100 : 0) +
+            (budgetMatches ? 20 : 0) +
+            (completedMatch ? 10 : 0)
+          );
+        };
+        const scoreDifference = score(right) - score(left);
+        if (scoreDifference) return scoreDifference;
+        const dateDifference =
+          Date.parse(String(right.activity_date ?? "")) -
+          Date.parse(String(left.activity_date ?? ""));
+        if (Number.isFinite(dateDifference) && dateDifference) {
+          return dateDifference;
+        }
+        return Number(right.id ?? 0) - Number(left.id ?? 0);
+      });
+    if (candidates.length) {
+      reconnectedProjects += 1;
+      return { ...project, activity_id: candidates[0].id };
+    }
+    detachedProjects += 1;
+    return { ...project, activity_id: null };
+  });
+
+  const historyEntryIds = new Set(
+    data.accounting_commission_entry_history.map((row) =>
+      String(row.entry_id),
+    ),
+  );
+  const receiptEntryIds = new Set(
+    data.accounting_collection_receipts.map((row) => String(row.entry_id)),
+  );
+  const discardedAccountingEntries: Array<string | number> = [];
+  data.accounting_commission_entries =
+    data.accounting_commission_entries.filter((entry) => {
+      if (activityIds.has(String(entry.activity_id))) return true;
+      const entryId = String(entry.id);
+      if (
+        accountingEntryHasBusinessValue(entry) ||
+        historyEntryIds.has(entryId) ||
+        receiptEntryIds.has(entryId)
+      ) {
+        throw new BackupValidationError(
+          `삭제된 활동과 연결된 회계 전표 ${entryId}에 금액 또는 수금 이력이 있어 자동 복원할 수 없습니다.`,
+        );
+      }
+      discardedAccountingEntries.push(entry.id as string | number);
+      return false;
+    });
+
+  const notices: string[] = [];
+  if (reconnectedProjects) {
+    notices.push(
+      `삭제된 활동을 가리키던 사업 ${reconnectedProjects}건을 같은 기관·사업 차수의 현재 기록으로 다시 연결했습니다.`,
+    );
+  }
+  if (detachedProjects) {
+    notices.push(
+      `연결할 현재 기록이 없는 사업 ${detachedProjects}건은 사업 정보는 보존하고 활동 연결만 해제했습니다.`,
+    );
+  }
+  if (discardedAccountingEntries.length) {
+    notices.push(
+      `삭제된 활동을 가리키던 빈 회계 전표 ${discardedAccountingEntries.length}건은 금액·수금·변경 이력이 없어 제외했습니다.`,
+    );
+  }
+  return notices;
 }
 
 function requiredText(value: unknown, label: string) {
@@ -481,6 +1254,7 @@ function validateRows(
   const activities = data.activities;
   const campaigns = data.sales_campaigns;
   const projects = data.equipment_projects;
+  const vendors = data.award_vendors;
 
   assertUnique(members, (row) => String(asInteger(row.id, "members.id")), "구성원 ID");
   assertUnique(
@@ -502,6 +1276,25 @@ function validateRows(
     data.activity_assignment_history,
     (row) => String(asInteger(row.id, "activity_assignment_history.id")),
     "진행 담당자 변경 이력 ID",
+  );
+  assertUnique(
+    data.activity_change_batches,
+    (row) => requiredText(row.id, "activity_change_batches.id"),
+    "일괄 변경 이력 ID",
+  );
+  assertUnique(
+    data.activity_change_items,
+    (row) => String(asInteger(row.id, "activity_change_items.id")),
+    "일괄 변경 상세 이력 ID",
+  );
+  assertUnique(
+    data.activity_change_items,
+    (row) =>
+      `${requiredText(row.batch_id, "activity_change_items.batch_id")}|${asInteger(
+        row.activity_id,
+        "activity_change_items.activity_id",
+      )}`,
+    "일괄 변경별 활동 연결",
   );
   assertUnique(
     data.manager_alert_acknowledgements,
@@ -538,6 +1331,137 @@ function validateRows(
     (row) => requiredText(row.key, "app_settings.key"),
     "설정 키",
   );
+  assertUnique(
+    vendors,
+    (row) => String(asInteger(row.id, "award_vendors.id")),
+    "협력사 ID",
+  );
+  assertUnique(
+    vendors,
+    (row) => requiredText(row.company_name, "award_vendors.company_name").toLowerCase(),
+    "협력사명",
+  );
+  assertUnique(
+    data.award_vendor_documents,
+    (row) => String(asInteger(row.id, "award_vendor_documents.id")),
+    "협력사 문서 ID",
+  );
+  assertUnique(
+    data.award_vendor_documents,
+    (row) => requiredText(row.object_key, "award_vendor_documents.object_key"),
+    "협력사 문서 파일 키",
+  );
+  assertUnique(
+    data.quotation_documents,
+    (row) => String(asInteger(row.id, "quotation_documents.id")),
+    "견적서 ID",
+  );
+  assertUnique(
+    data.quotation_documents,
+    (row) => requiredText(row.original_key, "quotation_documents.original_key"),
+    "견적서 원본 파일 키",
+  );
+  assertUnique(
+    data.organization_school_links,
+    (row) => requiredText(row.link_key, "organization_school_links.link_key"),
+    "기관 학교 연결 키",
+  );
+  assertUnique(
+    data.deletion_batches,
+    (row) => requiredText(row.id, "deletion_batches.id"),
+    "휴지통 묶음 ID",
+  );
+  assertUnique(
+    data.holdem_weekly_scores,
+    (row) =>
+      `${asInteger(row.member_id, "holdem_weekly_scores.member_id")}|${requiredText(
+        row.week_start,
+        "holdem_weekly_scores.week_start",
+      )}`,
+    "구성원별 홀덤 주간 순위",
+  );
+  assertUnique(
+    data.product_vendor_links,
+    (row) => requiredText(row.product_id, "product_vendor_links.product_id"),
+    "제품별 협력사 연결",
+  );
+  assertUnique(
+    data.product_supply_settings,
+    (row) =>
+      requiredText(row.product_id, "product_supply_settings.product_id"),
+    "제품별 공급 구분",
+  );
+  assertUnique(
+    data.budget_name_requests,
+    (row) => requiredText(row.id, "budget_name_requests.id"),
+    "예산명 신청 ID",
+  );
+  assertUnique(
+    data.budget_name_request_records,
+    (row) => String(asInteger(row.id, "budget_name_request_records.id")),
+    "예산명 신청 연결 ID",
+  );
+  assertUnique(
+    data.budget_name_request_records,
+    (row) =>
+      `${requiredText(
+        row.request_id,
+        "budget_name_request_records.request_id",
+      )}|${requiredText(
+        row.entity_type,
+        "budget_name_request_records.entity_type",
+      )}|${asInteger(
+        row.entity_id,
+        "budget_name_request_records.entity_id",
+      )}`,
+    "예산명 신청 연결",
+  );
+  data.product_supply_settings.forEach((row) => {
+    const supplyType = requiredText(
+      row.supply_type,
+      "product_supply_settings.supply_type",
+    );
+    if (supplyType !== "partner" && supplyType !== "direct") {
+      throw new BackupValidationError(
+        "product_supply_settings.supply_type 값이 올바르지 않습니다.",
+      );
+    }
+    const marginRate =
+      row.margin_rate === null || row.margin_rate === ""
+        ? null
+        : Number(row.margin_rate);
+    if (
+      marginRate !== null &&
+      (!Number.isFinite(marginRate) || marginRate < 0 || marginRate > 1)
+    ) {
+      throw new BackupValidationError(
+        "product_supply_settings.margin_rate 값이 올바르지 않습니다.",
+      );
+    }
+    if (supplyType === "partner" && marginRate !== null) {
+      throw new BackupValidationError(
+        "협력사 공급 제품에는 마진율을 저장할 수 없습니다.",
+      );
+    }
+  });
+  const directProductIds = new Set(
+    data.product_supply_settings
+      .filter((row) => row.supply_type === "direct")
+      .map((row) =>
+        requiredText(row.product_id, "product_supply_settings.product_id"),
+      ),
+  );
+  data.product_vendor_links.forEach((row) => {
+    if (
+      directProductIds.has(
+        requiredText(row.product_id, "product_vendor_links.product_id"),
+      )
+    ) {
+      throw new BackupValidationError(
+        "위즈업 직접 공급 제품에는 협력사를 연결할 수 없습니다.",
+      );
+    }
+  });
   assertUnique(
     data.institution_name_decisions,
     (row) => requiredText(row.pair_key, "institution_name_decisions.pair_key"),
@@ -579,10 +1503,19 @@ function validateRows(
   );
   assertUnique(
     projects,
-    (row) =>
-      `${requiredText(row.organization, "equipment_projects.organization")}|${String(
-        row.name ?? "",
-      ).trim()}`,
+    (row) => {
+      const organization = requiredText(
+        row.organization,
+        "equipment_projects.organization",
+      );
+      const businessRound = asInteger(
+        row.business_round ?? 1,
+        "equipment_projects.business_round",
+      );
+      const name = String(row.name ?? "").trim();
+      const fallbackName = `사업 #${asInteger(row.id, "equipment_projects.id")}`;
+      return `${organization}|${businessRound}|${name || fallbackName}`;
+    },
     "기관별 사업명",
   );
   assertUnique(
@@ -590,16 +1523,182 @@ function validateRows(
     (row) => String(asInteger(row.id, "equipment_items.id")),
     "품목 ID",
   );
+  data.equipment_items.forEach((row) => {
+    const supplyType = requiredText(
+      row.supply_type,
+      "equipment_items.supply_type",
+    );
+    if (supplyType !== "partner" && supplyType !== "direct") {
+      throw new BackupValidationError(
+        "equipment_items.supply_type 값이 올바르지 않습니다.",
+      );
+    }
+    const marginRate =
+      row.margin_rate === null || row.margin_rate === ""
+        ? null
+        : Number(row.margin_rate);
+    if (
+      marginRate !== null &&
+      (!Number.isFinite(marginRate) || marginRate < 0 || marginRate > 1)
+    ) {
+      throw new BackupValidationError(
+        "equipment_items.margin_rate 값이 올바르지 않습니다.",
+      );
+    }
+    if (supplyType === "partner" && marginRate !== null) {
+      throw new BackupValidationError(
+        "협력사 공급 품목에는 마진율을 저장할 수 없습니다.",
+      );
+    }
+    if (
+      supplyType === "direct" &&
+      (row.supplier_vendor_id !== null ||
+        String(row.supplier_vendor_name ?? "").trim() !== "")
+    ) {
+      throw new BackupValidationError(
+        "위즈업 직접 공급 품목에는 협력사를 연결할 수 없습니다.",
+      );
+    }
+  });
+  assertUnique(
+    data.accounting_settlements,
+    (row) => String(asInteger(row.id, "accounting_settlements.id")),
+    "기존 회계 전표 ID",
+  );
+  assertUnique(
+    data.accounting_settlements,
+    (row) =>
+      String(
+        asInteger(row.activity_id, "accounting_settlements.activity_id"),
+      ),
+    "기존 수주별 회계 전표",
+  );
+  assertUnique(
+    data.accounting_commission_entries,
+    (row) =>
+      String(asInteger(row.id, "accounting_commission_entries.id")),
+    "수수료 전표 ID",
+  );
+  assertUnique(
+    data.accounting_commission_entries,
+    (row) =>
+      `${asInteger(
+        row.activity_id,
+        "accounting_commission_entries.activity_id",
+      )}|${requiredText(
+        row.manufacturer_key,
+        "accounting_commission_entries.manufacturer_key",
+      )}`,
+    "수주·제조사별 수수료 전표",
+  );
+  assertUnique(
+    data.accounting_collection_receipts,
+    (row) =>
+      String(asInteger(row.id, "accounting_collection_receipts.id")),
+    "수금 내역 ID",
+  );
 
   const memberIds = rowSet(members, "id", "members");
   const activityIds = rowSet(activities, "id", "activities");
   const campaignIds = rowSet(campaigns, "id", "sales_campaigns");
   const projectIds = rowSet(projects, "id", "equipment_projects");
+  const vendorIds = rowSet(vendors, "id", "award_vendors");
+  const budgetGroupIds = rowSet(
+    data.budget_name_groups,
+    "id",
+    "budget_name_groups",
+  );
+  const budgetRequestIds = new Set(
+    data.budget_name_requests.map((row) =>
+      requiredText(row.id, "budget_name_requests.id"),
+    ),
+  );
+  const settlementIds = rowSet(
+    data.accounting_settlements,
+    "id",
+    "accounting_settlements",
+  );
+  const commissionEntryIds = rowSet(
+    data.accounting_commission_entries,
+    "id",
+    "accounting_commission_entries",
+  );
+  const collectionReceiptIds = rowSet(
+    data.accounting_collection_receipts,
+    "id",
+    "accounting_collection_receipts",
+  );
+  void collectionReceiptIds;
 
   members.forEach((row) => {
     const approvedBy = nullableInteger(row.approved_by, "members.approved_by");
     if (approvedBy !== null) {
       assertReference(approvedBy, memberIds, "members.approved_by");
+    }
+  });
+  data.budget_name_requests.forEach((row) => {
+    assertReference(
+      row.requester_member_id,
+      memberIds,
+      "budget_name_requests.requester_member_id",
+    );
+    assertReference(
+      row.resolved_group_id,
+      budgetGroupIds,
+      "budget_name_requests.resolved_group_id",
+      true,
+    );
+    assertReference(
+      row.decided_by,
+      memberIds,
+      "budget_name_requests.decided_by",
+      true,
+    );
+  });
+  data.budget_name_request_records.forEach((row) => {
+    const requestId = requiredText(
+      row.request_id,
+      "budget_name_request_records.request_id",
+    );
+    if (!budgetRequestIds.has(requestId)) {
+      throw new BackupValidationError(
+        "budget_name_request_records.request_id 연결 정보가 없습니다.",
+      );
+    }
+    const entityType = requiredText(
+      row.entity_type,
+      "budget_name_request_records.entity_type",
+    );
+    if (entityType === "activity") {
+      assertReference(
+        row.entity_id,
+        activityIds,
+        "budget_name_request_records.entity_id",
+      );
+    } else if (entityType === "equipment_project") {
+      assertReference(
+        row.entity_id,
+        projectIds,
+        "budget_name_request_records.entity_id",
+      );
+    } else {
+      throw new BackupValidationError(
+        "budget_name_request_records.entity_type 값이 올바르지 않습니다.",
+      );
+    }
+  });
+  activities.forEach((row) => {
+    assertReference(
+      row.budget_group_id,
+      budgetGroupIds,
+      "activities.budget_group_id",
+      true,
+    );
+    const requestId = String(row.budget_request_id ?? "").trim();
+    if (requestId && !budgetRequestIds.has(requestId)) {
+      throw new BackupValidationError(
+        "activities.budget_request_id 연결 정보가 없습니다.",
+      );
     }
   });
   data.activity_authors.forEach((row) => {
@@ -651,6 +1750,42 @@ function validateRows(
       "activity_assignment_history.changed_by_name",
     );
   });
+  const activityChangeBatchIds = new Set(
+    data.activity_change_batches.map((row) =>
+      requiredText(row.id, "activity_change_batches.id"),
+    ),
+  );
+  data.activity_change_batches.forEach((row) => {
+    assertReference(
+      row.actor_member_id,
+      memberIds,
+      "activity_change_batches.actor_member_id",
+    );
+    assertReference(
+      row.undone_by_member_id,
+      memberIds,
+      "activity_change_batches.undone_by_member_id",
+      true,
+    );
+  });
+  data.activity_change_items.forEach((row) => {
+    const batchId = requiredText(
+      row.batch_id,
+      "activity_change_items.batch_id",
+    );
+    if (!activityChangeBatchIds.has(batchId)) {
+      throw new BackupValidationError(
+        "activity_change_items.batch_id 연결 정보가 없습니다.",
+      );
+    }
+    asInteger(row.activity_id, "activity_change_items.activity_id");
+    assertReference(
+      row.undone_by_member_id,
+      memberIds,
+      "activity_change_items.undone_by_member_id",
+      true,
+    );
+  });
   data.activity_review_acknowledgements.forEach((row) => {
     assertReference(
       row.member_id,
@@ -675,6 +1810,64 @@ function validateRows(
       true,
     ),
   );
+  vendors.forEach((row) => {
+    assertReference(row.created_by, memberIds, "award_vendors.created_by", true);
+    assertReference(row.updated_by, memberIds, "award_vendors.updated_by", true);
+  });
+  data.award_vendor_documents.forEach((row) => {
+    assertReference(
+      row.vendor_id,
+      vendorIds,
+      "award_vendor_documents.vendor_id",
+    );
+    assertReference(
+      row.created_by,
+      memberIds,
+      "award_vendor_documents.created_by",
+      true,
+    );
+  });
+  data.quotation_documents.forEach((row) =>
+    assertReference(
+      row.created_by,
+      memberIds,
+      "quotation_documents.created_by",
+      true,
+    ),
+  );
+  data.deletion_batches.forEach((row) => {
+    assertReference(
+      row.deleted_by_member_id,
+      memberIds,
+      "deletion_batches.deleted_by_member_id",
+    );
+    assertReference(
+      row.restored_by_member_id,
+      memberIds,
+      "deletion_batches.restored_by_member_id",
+      true,
+    );
+  });
+  data.holdem_weekly_scores.forEach((row) =>
+    assertReference(
+      row.member_id,
+      memberIds,
+      "holdem_weekly_scores.member_id",
+    ),
+  );
+  data.product_vendor_links.forEach((row) => {
+    assertReference(
+      row.vendor_id,
+      vendorIds,
+      "product_vendor_links.vendor_id",
+    );
+    assertReference(
+      row.updated_by,
+      memberIds,
+      "product_vendor_links.updated_by",
+      true,
+    );
+  });
   data.organization_locations.forEach((row) => {
     assertReference(
       row.updated_by,
@@ -719,12 +1912,80 @@ function validateRows(
       true,
     );
   });
-  projects.forEach((row) =>
-    assertReference(row.created_by, memberIds, "equipment_projects.created_by"),
-  );
+  projects.forEach((row) => {
+    assertReference(row.created_by, memberIds, "equipment_projects.created_by");
+    assertReference(
+      row.activity_id,
+      activityIds,
+      "equipment_projects.activity_id",
+      true,
+    );
+    assertReference(
+      row.budget_group_id,
+      budgetGroupIds,
+      "equipment_projects.budget_group_id",
+      true,
+    );
+    const requestId = String(row.budget_request_id ?? "").trim();
+    if (requestId && !budgetRequestIds.has(requestId)) {
+      throw new BackupValidationError(
+        "equipment_projects.budget_request_id 연결 정보가 없습니다.",
+      );
+    }
+  });
   data.equipment_items.forEach((row) =>
     assertReference(row.project_id, projectIds, "equipment_items.project_id"),
   );
+  data.accounting_settlements.forEach((row) =>
+    assertReference(
+      row.activity_id,
+      activityIds,
+      "accounting_settlements.activity_id",
+    ),
+  );
+  data.accounting_settlement_history.forEach((row) => {
+    assertReference(
+      row.settlement_id,
+      settlementIds,
+      "accounting_settlement_history.settlement_id",
+    );
+    assertReference(
+      row.activity_id,
+      activityIds,
+      "accounting_settlement_history.activity_id",
+    );
+  });
+  data.accounting_commission_entries.forEach((row) =>
+    assertReference(
+      row.activity_id,
+      activityIds,
+      "accounting_commission_entries.activity_id",
+    ),
+  );
+  data.accounting_commission_entry_history.forEach((row) => {
+    assertReference(
+      row.entry_id,
+      commissionEntryIds,
+      "accounting_commission_entry_history.entry_id",
+    );
+    assertReference(
+      row.activity_id,
+      activityIds,
+      "accounting_commission_entry_history.activity_id",
+    );
+  });
+  data.accounting_collection_receipts.forEach((row) => {
+    assertReference(
+      row.entry_id,
+      commissionEntryIds,
+      "accounting_collection_receipts.entry_id",
+    );
+    assertReference(
+      row.activity_id,
+      activityIds,
+      "accounting_collection_receipts.activity_id",
+    );
+  });
 
   if (currentAdmin) {
     const email = currentAdmin.email.trim().toLowerCase();
@@ -845,6 +2106,10 @@ export async function validateFullBackup(
 
   const data = {} as Record<BackupTableName, BackupRow[]>;
   const counts = {} as Record<BackupTableName, number>;
+  const schemaVersion = String(input.schemaVersion);
+  const restoresBudgetNameCatalog =
+    Array.isArray(input.data.budget_name_groups) &&
+    Array.isArray(input.data.budget_name_aliases);
   for (const table of BACKUP_TABLES) {
     const rows = input.data[table.name];
     if (
@@ -852,7 +2117,21 @@ export async function validateFullBackup(
         table.name === "manager_alert_acknowledgements" ||
         table.name === "activity_review_acknowledgements" ||
         table.name === "activity_assignment_history" ||
-        table.name === "institution_name_decisions") &&
+        table.name === "activity_change_batches" ||
+        table.name === "activity_change_items" ||
+        table.name === "data_control_events" ||
+        table.name === "budget_name_requests" ||
+        table.name === "budget_name_request_records" ||
+        table.name === "institution_name_decisions" ||
+        table.name === "award_vendors" ||
+        table.name === "product_vendor_links" ||
+        table.name === "product_supply_settings" ||
+        table.name === "accounting_settlements" ||
+        table.name === "accounting_settlement_history" ||
+        table.name === "accounting_commission_entries" ||
+        table.name === "accounting_commission_entry_history" ||
+        table.name === "accounting_collection_receipts" ||
+        legacyBackupMayOmitTable(schemaVersion, table.name)) &&
       rows === undefined &&
       input.counts[table.name] === undefined
     ) {
@@ -872,10 +2151,230 @@ export async function validateFullBackup(
           )
         : table.name === "activities"
           ? rows.map((row) =>
-              isPlainObject(row) && !("contact_role" in row)
-                ? { ...row, contact_role: "" }
+              isPlainObject(row)
+                ? {
+                    ...row,
+                    contact_role:
+                      "contact_role" in row ? row.contact_role : "",
+                    business_round:
+                      "business_round" in row ? row.business_round : 1,
+                    award_stage: normalizeAwardStage(
+                      row.award_stage,
+                      row.award_status,
+                    ),
+                    award_completed_date:
+                      "award_completed_date" in row
+                        ? row.award_completed_date
+                        : normalizeAwardStage(
+                              row.award_stage,
+                              row.award_status,
+                            ) === "납품 완료"
+                          ? row.activity_date ?? ""
+                          : "",
+                    status_manual:
+                      "status_manual" in row ? row.status_manual : 1,
+                    progress_manager_locked:
+                      "progress_manager_locked" in row
+                        ? row.progress_manager_locked
+                        : 0,
+                    budget_original_name:
+                      "budget_original_name" in row
+                        ? row.budget_original_name
+                        : row.budget_type ?? "",
+                    budget_group_id:
+                      "budget_group_id" in row ? row.budget_group_id : null,
+                    budget_match_status:
+                      "budget_match_status" in row
+                        ? row.budget_match_status
+                        : "unclassified",
+                    budget_match_method:
+                      "budget_match_method" in row
+                        ? row.budget_match_method
+                        : "legacy",
+                    budget_request_id:
+                      "budget_request_id" in row
+                        ? row.budget_request_id
+                        : null,
+                    budget_kind:
+                      "budget_kind" in row
+                        ? row.budget_kind
+                        : "unclassified",
+                    budget_amount_mode:
+                      "budget_amount_mode" in row
+                        ? row.budget_amount_mode
+                        : "manual",
+                    budget_amount_override:
+                      "budget_amount_override" in row
+                        ? row.budget_amount_override
+                        : "",
+                    budgets_json:
+                      "budgets_json" in row ? row.budgets_json : "[]",
+                    contacts_json:
+                      "contacts_json" in row ? row.contacts_json : "[]",
+                    detail_level:
+                      "detail_level" in row ? row.detail_level : "compact",
+                    detail_summary:
+                      "detail_summary" in row ? row.detail_summary : "",
+                    detail_key_facts_json:
+                      "detail_key_facts_json" in row
+                        ? row.detail_key_facts_json
+                        : "[]",
+                    detail_sections_json:
+                      "detail_sections_json" in row
+                        ? row.detail_sections_json
+                        : "[]",
+                    raw_input:
+                      "raw_input" in row ? row.raw_input : "",
+                    updated_by_member_id:
+                      "updated_by_member_id" in row
+                        ? row.updated_by_member_id
+                        : null,
+                    updated_by_name:
+                      "updated_by_name" in row ? row.updated_by_name : "",
+                  }
                 : row,
             )
+          : table.name === "budget_name_groups" &&
+              input.schemaVersion !== BACKUP_SCHEMA_VERSION
+            ? rows.map((row, index) =>
+                isPlainObject(row)
+                  ? {
+                      ...row,
+                      budget_kind:
+                        "budget_kind" in row
+                          ? row.budget_kind
+                          : "unclassified",
+                      amount_mode:
+                        "amount_mode" in row ? row.amount_mode : "manual",
+                      default_amount:
+                        "default_amount" in row ? row.default_amount : null,
+                      sort_order:
+                        "sort_order" in row ? row.sort_order : index,
+                      updated_by:
+                        "updated_by" in row ? row.updated_by : null,
+                      updated_by_name:
+                        "updated_by_name" in row
+                          ? row.updated_by_name
+                          : row.created_by_name ?? "",
+                      disabled_at:
+                        "disabled_at" in row ? row.disabled_at : null,
+                    }
+                  : row,
+              )
+          : table.name === "budget_name_aliases" &&
+              input.schemaVersion !== BACKUP_SCHEMA_VERSION
+            ? rows.map((row) =>
+                isPlainObject(row)
+                  ? {
+                      ...row,
+                      created_by:
+                        "created_by" in row ? row.created_by : null,
+                      created_by_name:
+                        "created_by_name" in row
+                          ? row.created_by_name
+                          : "",
+                      disabled_at:
+                        "disabled_at" in row ? row.disabled_at : null,
+                    }
+                  : row,
+              )
+          : table.name === "budget_name_events" &&
+              input.schemaVersion !== BACKUP_SCHEMA_VERSION
+            ? rows.map((row) =>
+                isPlainObject(row)
+                  ? {
+                      ...row,
+                      request_id:
+                        "request_id" in row ? row.request_id : null,
+                      batch_key:
+                        "batch_key" in row ? row.batch_key : "",
+                   }
+                  : row,
+              )
+          : table.name === "sales_campaigns" &&
+              input.schemaVersion !== BACKUP_SCHEMA_VERSION
+            ? rows.map((row) =>
+                isPlainObject(row)
+                  ? {
+                      ...row,
+                      import_status:
+                        "import_status" in row ? row.import_status : "complete",
+                      expected_target_count:
+                        "expected_target_count" in row
+                          ? row.expected_target_count
+                          : 0,
+                    }
+                  : row,
+              )
+          : table.name === "equipment_projects"
+            ? normalizeEquipmentProjectRows(rows)
+          : table.name === "equipment_items" &&
+              input.schemaVersion !== BACKUP_SCHEMA_VERSION
+            ? rows.map((row) =>
+                isPlainObject(row)
+                  ? {
+                      ...row,
+                      catalog_item_id:
+                        "catalog_item_id" in row ? row.catalog_item_id : "",
+                      catalog_unit_price:
+                        "catalog_unit_price" in row
+                          ? row.catalog_unit_price
+                          : null,
+                      price_status:
+                        "price_status" in row
+                          ? row.price_status
+                          : Number(row.catalog_unit_price ?? 0) > 0
+                            ? "입력 완료"
+                            : "금액 미입력",
+                      catalog_note:
+                        "catalog_note" in row ? row.catalog_note : "",
+                      execution_type:
+                        "execution_type" in row ? row.execution_type : "직영",
+                      commission_input_type:
+                        "commission_input_type" in row
+                          ? row.commission_input_type
+                          : "rate",
+                      commission_rate:
+                        "commission_rate" in row ? row.commission_rate : null,
+                      supply_type:
+                        "supply_type" in row ? row.supply_type : "partner",
+                      margin_rate:
+                        "margin_rate" in row ? row.margin_rate : null,
+                      procurement_fee_rate:
+                        "procurement_fee_rate" in row
+                          ? row.procurement_fee_rate
+                          : null,
+                      consortium_commission_rate:
+                        "consortium_commission_rate" in row
+                          ? row.consortium_commission_rate
+                          : null,
+                      consortium_payment_amount:
+                        "consortium_payment_amount" in row
+                          ? row.consortium_payment_amount
+                          : null,
+                      supplier_vendor_id:
+                        "supplier_vendor_id" in row
+                          ? row.supplier_vendor_id
+                          : null,
+                      supplier_vendor_name:
+                        "supplier_vendor_name" in row
+                          ? row.supplier_vendor_name
+                          : "",
+                      protection_status:
+                        "protection_status" in row
+                          ? row.protection_status
+                          : "신청 필요",
+                      protection_completed_at:
+                        "protection_completed_at" in row
+                          ? row.protection_completed_at
+                          : null,
+                      created_by:
+                        "created_by" in row ? row.created_by : null,
+                      updated_by:
+                        "updated_by" in row ? row.updated_by : null,
+                    }
+                  : row,
+              )
           : rows
     ) as BackupRow[];
     counts[table.name] = rows.length;
@@ -885,6 +2384,11 @@ export async function validateFullBackup(
       );
     }
   }
+
+  const repairNotices = repairBrokenActivityReferences(data);
+  counts.equipment_projects = data.equipment_projects.length;
+  counts.accounting_commission_entries =
+    data.accounting_commission_entries.length;
 
   const backup = {
     format: BACKUP_FORMAT,
@@ -906,6 +2410,16 @@ export async function validateFullBackup(
   const excluded = Array.isArray(backup.security.excludes)
     ? backup.security.excludes.map(String)
     : [];
+  const compatibilityNotices = [
+    ...(PRE_BUDGET_NAME_SCHEMA_VERSIONS.has(schemaVersion) &&
+    !restoresBudgetNameCatalog
+      ? [LEGACY_BUDGET_NAME_NOTICE]
+      : []),
+    ...(schemaVersion !== BACKUP_SCHEMA_VERSION
+      ? [LEGACY_COMPLETE_BUSINESS_NOTICE]
+      : []),
+    ...repairNotices,
+  ];
 
   return {
     backup,
@@ -918,6 +2432,7 @@ export async function validateFullBackup(
       totalRows,
       counts,
       excluded,
+      compatibilityNotices,
     },
   };
 }
@@ -982,15 +2497,118 @@ function insertStatements(
   return statements;
 }
 
-async function replaceDatabaseFromBackup(backup: FullBackup) {
+type RestorePresence = {
+  restoresLegacySchema: boolean;
+  restoresAwardVendors: boolean;
+  restoresAwardVendorDocuments: boolean;
+  restoresQuotationDocuments: boolean;
+  restoresOrganizationSchoolLinks: boolean;
+  restoresDeletionBatches: boolean;
+  restoresHoldemScores: boolean;
+  restoresProductVendorLinks: boolean;
+  restoresProductSupplySettings: boolean;
+  restoresBudgetNameCatalog: boolean;
+};
+
+function restorePresenceFromInput(input: unknown): RestorePresence {
+  const rawData =
+    isPlainObject(input) && isPlainObject(input.data) ? input.data : null;
+  return {
+    restoresLegacySchema:
+      isPlainObject(input) && input.schemaVersion !== BACKUP_SCHEMA_VERSION,
+    restoresAwardVendors: Array.isArray(rawData?.award_vendors),
+    restoresAwardVendorDocuments: Array.isArray(
+      rawData?.award_vendor_documents,
+    ),
+    restoresQuotationDocuments: Array.isArray(rawData?.quotation_documents),
+    restoresOrganizationSchoolLinks: Array.isArray(
+      rawData?.organization_school_links,
+    ),
+    restoresDeletionBatches: Array.isArray(rawData?.deletion_batches),
+    restoresHoldemScores: Array.isArray(rawData?.holdem_weekly_scores),
+    restoresProductVendorLinks: Array.isArray(rawData?.product_vendor_links),
+    restoresProductSupplySettings: Array.isArray(
+      rawData?.product_supply_settings,
+    ),
+    restoresBudgetNameCatalog:
+      Array.isArray(rawData?.budget_name_groups) &&
+      Array.isArray(rawData?.budget_name_aliases),
+  };
+}
+
+async function replaceDatabaseFromBackup(
+  backup: FullBackup,
+  presence: RestorePresence = {
+    restoresLegacySchema: backup.schemaVersion !== BACKUP_SCHEMA_VERSION,
+    restoresAwardVendors: true,
+    restoresAwardVendorDocuments: true,
+    restoresQuotationDocuments: true,
+    restoresOrganizationSchoolLinks: true,
+    restoresDeletionBatches: true,
+    restoresHoldemScores: true,
+    restoresProductVendorLinks: true,
+    restoresProductSupplySettings: true,
+    restoresBudgetNameCatalog: true,
+  },
+) {
+  const {
+    restoresLegacySchema,
+    restoresAwardVendors,
+    restoresAwardVendorDocuments,
+    restoresQuotationDocuments,
+    restoresOrganizationSchoolLinks,
+    restoresDeletionBatches,
+    restoresHoldemScores,
+    restoresProductVendorLinks,
+    restoresProductSupplySettings,
+    restoresBudgetNameCatalog,
+  } = presence;
   const d1 = await ensureBackupReady();
   const statements = [
+    ...(restoresAwardVendorDocuments
+      ? [d1.prepare("DELETE FROM award_vendor_documents")]
+      : []),
+    ...(restoresQuotationDocuments
+      ? [d1.prepare("DELETE FROM quotation_documents")]
+      : []),
+    ...(restoresOrganizationSchoolLinks
+      ? [d1.prepare("DELETE FROM organization_school_links")]
+      : []),
+    ...(restoresDeletionBatches
+      ? [d1.prepare("DELETE FROM deletion_batches")]
+      : []),
+    ...(restoresHoldemScores
+      ? [d1.prepare("DELETE FROM holdem_weekly_scores")]
+      : []),
+    d1.prepare("DELETE FROM activity_change_items"),
+    d1.prepare("DELETE FROM activity_change_batches"),
+    d1.prepare("DELETE FROM data_control_events"),
+    d1.prepare("DELETE FROM budget_name_request_records"),
+    d1.prepare("DELETE FROM budget_name_requests"),
+    d1.prepare("DELETE FROM budget_name_events"),
+    d1.prepare("DELETE FROM budget_name_members"),
+    ...(restoresBudgetNameCatalog
+      ? [
+          d1.prepare("DELETE FROM budget_name_aliases"),
+          d1.prepare("DELETE FROM budget_name_groups"),
+        ]
+      : []),
+    d1.prepare("DELETE FROM accounting_collection_receipts"),
+    d1.prepare("DELETE FROM accounting_commission_entry_history"),
+    d1.prepare("DELETE FROM accounting_settlement_history"),
+    d1.prepare("DELETE FROM accounting_commission_entries"),
+    d1.prepare("DELETE FROM accounting_settlements"),
     d1.prepare("DELETE FROM activity_authors"),
     d1.prepare("DELETE FROM activity_assignment_history"),
     d1.prepare("DELETE FROM activity_review_acknowledgements"),
     d1.prepare("DELETE FROM manager_alert_acknowledgements"),
     d1.prepare("DELETE FROM ai_recommendations"),
+    ...(restoresProductVendorLinks
+      ? [d1.prepare("DELETE FROM product_vendor_links")]
+      : []),
+    d1.prepare("DELETE FROM product_supply_settings"),
     d1.prepare("DELETE FROM equipment_items"),
+    ...(restoresAwardVendors ? [d1.prepare("DELETE FROM award_vendors")] : []),
     d1.prepare("DELETE FROM sales_campaign_targets"),
     d1.prepare("DELETE FROM organization_locations"),
     d1.prepare("DELETE FROM equipment_projects"),
@@ -1003,40 +2621,154 @@ async function replaceDatabaseFromBackup(backup: FullBackup) {
 
   const insertOrder: BackupTableName[] = [
     "members",
+    "award_vendors",
+    "award_vendor_documents",
+    "product_supply_settings",
+    "product_vendor_links",
+    "budget_name_groups",
+    "budget_name_aliases",
+    "budget_name_requests",
     "manager_alert_acknowledgements",
     "activities",
+    "activity_change_batches",
+    "activity_change_items",
+    "data_control_events",
+    "accounting_settlements",
+    "accounting_commission_entries",
+    "accounting_collection_receipts",
+    "accounting_settlement_history",
+    "accounting_commission_entry_history",
     "activity_assignment_history",
     "activity_review_acknowledgements",
     "app_settings",
     "institution_name_decisions",
+    "organization_school_links",
     "organization_locations",
+    "quotation_documents",
     "sales_campaigns",
     "equipment_projects",
     "activity_authors",
-    "ai_recommendations",
     "sales_campaign_targets",
     "equipment_items",
+    "budget_name_request_records",
+    "budget_name_members",
+    "budget_name_events",
+    "deletion_batches",
+    "holdem_weekly_scores",
   ];
 
   insertOrder.forEach((tableName) => {
+    if (tableName === "award_vendors" && !restoresAwardVendors) return;
+    if (
+      tableName === "award_vendor_documents" &&
+      !restoresAwardVendorDocuments
+    ) {
+      return;
+    }
+    if (tableName === "quotation_documents" && !restoresQuotationDocuments) {
+      return;
+    }
+    if (
+      tableName === "organization_school_links" &&
+      !restoresOrganizationSchoolLinks
+    ) {
+      return;
+    }
+    if (tableName === "deletion_batches" && !restoresDeletionBatches) return;
+    if (tableName === "holdem_weekly_scores" && !restoresHoldemScores) return;
+    if (
+      (tableName === "budget_name_groups" ||
+        tableName === "budget_name_aliases") &&
+      !restoresBudgetNameCatalog
+    ) {
+      return;
+    }
+    if (
+      tableName === "product_vendor_links" &&
+      !restoresProductVendorLinks
+    ) {
+      return;
+    }
+    if (
+      tableName === "product_supply_settings" &&
+      !restoresProductSupplySettings
+    ) {
+      return;
+    }
     const table = BACKUP_TABLES.find((item) => item.name === tableName);
     if (!table) return;
-    statements.push(
-      ...insertStatements(d1, table, backup.data[tableName]),
-    );
+    statements.push(...insertStatements(d1, table, backup.data[tableName]));
   });
+  if (!restoresProductSupplySettings) {
+    statements.push(
+      d1.prepare(
+        `INSERT INTO product_supply_settings (
+           product_id, supply_type, margin_rate, updated_by
+         ) VALUES ('quote-62', 'direct', 0.5545454545454546, 0)`,
+      ),
+    );
+  }
+  statements.push(
+    d1.prepare(
+      `DELETE FROM product_vendor_links
+       WHERE product_id IN (
+         SELECT product_id
+         FROM product_supply_settings
+         WHERE supply_type = 'direct'
+      )`,
+    ),
+  );
+  if (restoresLegacySchema) {
+    statements.push(
+      d1.prepare(
+        `UPDATE equipment_items
+         SET supply_type = 'direct',
+             margin_rate = (
+               SELECT margin_rate
+               FROM product_supply_settings
+               WHERE product_id = equipment_items.catalog_item_id
+             ),
+             commission_rate = NULL,
+             supplier_vendor_id = NULL,
+             supplier_vendor_name = '',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE status IN ('제안 예정', '제안', '견적')
+           AND COALESCE(supply_type, 'partner') = 'partner'
+           AND catalog_item_id IN (
+             SELECT product_id
+             FROM product_supply_settings
+             WHERE supply_type = 'direct'
+           )`,
+      ),
+    );
+  }
 
   [
     "members",
     "activities",
-    "manager_alert_acknowledgements",
+    "award_vendors",
+    "award_vendor_documents",
+    "quotation_documents",
     "activity_assignment_history",
+    "activity_change_items",
+    "manager_alert_acknowledgements",
+    "data_control_events",
     "activity_review_acknowledgements",
+    "ai_recommendations",
+    "budget_name_groups",
+    "budget_name_aliases",
+    "budget_name_members",
+    "budget_name_events",
+    "budget_name_request_records",
     "sales_campaigns",
     "equipment_projects",
-    "ai_recommendations",
     "sales_campaign_targets",
     "equipment_items",
+    "accounting_settlements",
+    "accounting_settlement_history",
+    "accounting_commission_entries",
+    "accounting_commission_entry_history",
+    "accounting_collection_receipts",
   ].forEach((tableName) => {
     statements.push(
       d1.prepare(
@@ -1054,13 +2786,11 @@ async function replaceDatabaseFromBackup(backup: FullBackup) {
 
 export async function restoreFullBackup(
   input: unknown,
-  currentAdmin: Pick<Member, "id" | "email">,
+  currentAdmin?: Pick<Member, "id" | "email">,
 ) {
-  const { backup, inspection } = await validateFullBackup(
-    input,
-    currentAdmin,
-  );
-  await replaceDatabaseFromBackup(backup);
+  const presence = restorePresenceFromInput(input);
+  const { backup, inspection } = await validateFullBackup(input, currentAdmin);
+  await replaceDatabaseFromBackup(backup, presence);
   return inspection;
 }
 

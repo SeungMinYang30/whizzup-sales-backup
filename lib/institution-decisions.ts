@@ -14,7 +14,7 @@ const createTableSql = `CREATE TABLE IF NOT EXISTS institution_name_decisions (
   left_organization TEXT NOT NULL,
   right_organization TEXT NOT NULL,
   decision TEXT NOT NULL CHECK (decision IN ('related', 'different')),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`;
 
 function pair(valueA: unknown, valueB: unknown) {

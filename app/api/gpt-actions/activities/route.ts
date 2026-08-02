@@ -4,6 +4,7 @@ import {
 } from "../../../../lib/collaboration";
 import { insertActivity } from "../../../../lib/records-store";
 import { institutionConfirmationResponse } from "../../../../lib/institution-names";
+import { normalizeAiSuggestedStatus } from "../../../../lib/ai-status";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +28,19 @@ export async function POST(request: Request) {
   try {
     const member = await getOAuthMember(request);
     const payload = (await request.json()) as Record<string, unknown>;
+    const followUpDate =
+      typeof payload.followUpDate === "string" ? payload.followUpDate.trim() : "";
+    const followUpRequired =
+      payload.followUpRequired === true &&
+      /^\d{4}-\d{2}-\d{2}$/.test(followUpDate);
     const record = await insertActivity(
-      { ...payload, sourceChat: "공유 GPT 음성·대화 입력" },
+      {
+        ...payload,
+        status: normalizeAiSuggestedStatus(payload.status, followUpRequired),
+        followUpRequired,
+        followUpDate: followUpRequired ? followUpDate : "",
+        sourceChat: "공유 GPT 음성·대화 입력",
+      },
       member,
       "공유 GPT 음성·대화 입력",
     );

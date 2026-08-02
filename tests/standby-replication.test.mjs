@@ -32,6 +32,8 @@ test("standby sync is one-way, authenticated, bounded, and uncached", () => {
   assert.match(syncRoute, /AbortSignal\.timeout/);
   assert.match(syncRoute, /cache:\s*"no-store"/);
   assert.match(syncRoute, /restoreReplicaBackup/);
+  assert.match(syncRoute, /replicaContentChecksum/);
+  assert.match(syncRoute, /validateFullBackup/);
   assert.doesNotMatch(syncRoute, /fetch\([^)]*supabase/i);
 });
 
@@ -49,6 +51,11 @@ test("replica restore validates the signed backup before replacement", () => {
     backupStore,
     /requiredText\(\s*row\.name,\s*"equipment_projects\.name"/,
   );
+  assert.match(backupStore, /column === "permissions"/);
+  assert.match(backupStore, /jsonb_build_array/);
+  assert.match(backupStore, /memberPermissions/);
+  assert.match(backupStore, /RESTORE_INSERT_CHUNK_SIZE = 100/);
+  assert.match(backupStore, /insertStatements/);
 });
 
 test("replication state is private from browser database roles", () => {

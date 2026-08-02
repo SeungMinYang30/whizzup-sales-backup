@@ -1,4 +1,4 @@
-export const VERCEL_SCHEMA_VERSION = "202607210003_institution_directory";
+export const VERCEL_SCHEMA_VERSION = "202607250003_v240_equipment_links";
 
 export const VERCEL_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS public.vercel_schema_migrations (
@@ -11,6 +11,84 @@ ALTER TABLE public.members
 
 ALTER TABLE public.activities
   ADD COLUMN IF NOT EXISTS contact_role text NOT NULL DEFAULT '';
+
+ALTER TABLE public.activities
+  ADD COLUMN IF NOT EXISTS business_round integer NOT NULL DEFAULT 1;
+
+ALTER TABLE public.equipment_projects
+  ADD COLUMN IF NOT EXISTS business_round integer NOT NULL DEFAULT 1;
+ALTER TABLE public.equipment_projects
+  ADD COLUMN IF NOT EXISTS activity_id bigint;
+ALTER TABLE public.equipment_projects
+  ADD COLUMN IF NOT EXISTS construction_amount bigint;
+ALTER TABLE public.equipment_projects
+  ADD COLUMN IF NOT EXISTS actual_construction_cost bigint;
+
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS catalog_item_id text NOT NULL DEFAULT '';
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS catalog_unit_price bigint;
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS catalog_note text NOT NULL DEFAULT '';
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS execution_type text NOT NULL DEFAULT '직영';
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS commission_input_type text NOT NULL DEFAULT 'rate';
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS commission_rate double precision;
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS procurement_fee_rate double precision;
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS consortium_commission_rate double precision;
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS consortium_payment_amount bigint;
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS protection_status text NOT NULL DEFAULT '신청 필요';
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS protection_completed_at text;
+
+-- The original standby database used fixed enum-like checks from the first
+-- release. The main Sites database stores these fields as text and now uses
+-- additional values such as 협력사 수주 and 해당 없음. Keeping the legacy
+-- checks would reject an otherwise valid full backup during standby sync.
+ALTER TABLE public.activities
+  DROP CONSTRAINT IF EXISTS activities_award_status_check;
+ALTER TABLE public.activities
+  DROP CONSTRAINT IF EXISTS activities_execution_type_check;
+ALTER TABLE public.activities
+  DROP CONSTRAINT IF EXISTS activities_award_stage_check;
+
+DO $$
+DECLARE
+  old_constraint text;
+BEGIN
+  SELECT tc.constraint_name
+  INTO old_constraint
+  FROM information_schema.table_constraints tc
+  WHERE tc.table_schema = 'public'
+    AND tc.table_name = 'equipment_projects'
+    AND tc.constraint_type = 'UNIQUE'
+    AND (
+      SELECT array_agg(kcu.column_name::text ORDER BY kcu.column_name::text)
+      FROM information_schema.key_column_usage kcu
+      WHERE kcu.constraint_schema = tc.constraint_schema
+        AND kcu.constraint_name = tc.constraint_name
+    ) = ARRAY['name', 'organization']::text[]
+  LIMIT 1;
+
+  IF old_constraint IS NOT NULL THEN
+    EXECUTE format(
+      'ALTER TABLE public.equipment_projects DROP CONSTRAINT %I',
+      old_constraint
+    );
+  END IF;
+END
+$$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS equipment_projects_org_round_name_idx
+  ON public.equipment_projects (organization, business_round, name);
+CREATE INDEX IF NOT EXISTS equipment_projects_activity_idx
+  ON public.equipment_projects (activity_id, updated_at);
 
 DO $$
 BEGIN
@@ -102,33 +180,6 @@ CREATE TABLE IF NOT EXISTS public.api_credentials (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS public.school_directory_credentials (
-  id integer PRIMARY KEY CHECK (id = 1),
-  encrypted_key text NOT NULL,
-  iv text NOT NULL,
-  key_last4 text NOT NULL,
-  updated_by bigint REFERENCES public.members(id) ON DELETE SET NULL,
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.official_school_cache (
-  cache_key text PRIMARY KEY,
-  query_name text NOT NULL,
-  region text NOT NULL DEFAULT '',
-  results_json text NOT NULL DEFAULT '[]',
-  fetched_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.institution_name_decisions (
-  pair_key text PRIMARY KEY,
-  left_key text NOT NULL,
-  right_key text NOT NULL,
-  left_organization text NOT NULL,
-  right_organization text NOT NULL,
-  decision text NOT NULL CHECK (decision IN ('related', 'different')),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
 CREATE TABLE IF NOT EXISTS public.replication_sync_state (
   id integer PRIMARY KEY CHECK (id = 1),
   source_origin text NOT NULL DEFAULT '',
@@ -159,12 +210,6 @@ CREATE INDEX IF NOT EXISTS activity_review_ack_snoozed_idx
   ON public.activity_review_acknowledgements (member_id, snoozed_until);
 CREATE INDEX IF NOT EXISTS activity_assignment_history_activity_idx
   ON public.activity_assignment_history (activity_id, created_at);
-CREATE INDEX IF NOT EXISTS official_school_cache_fetched_idx
-  ON public.official_school_cache (fetched_at);
-CREATE INDEX IF NOT EXISTS institution_name_decisions_left_idx
-  ON public.institution_name_decisions (left_key);
-CREATE INDEX IF NOT EXISTS institution_name_decisions_right_idx
-  ON public.institution_name_decisions (right_key);
 
 DROP TRIGGER IF EXISTS ai_recommendations_touch_updated_at
   ON public.ai_recommendations;
@@ -190,9 +235,6 @@ ALTER TABLE public.manager_alert_acknowledgements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_review_acknowledgements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_assignment_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.api_credentials ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.school_directory_credentials ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.official_school_cache ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.institution_name_decisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.replication_sync_state ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.vercel_schema_migrations
@@ -206,12 +248,6 @@ REVOKE ALL ON public.activity_review_acknowledgements
 REVOKE ALL ON public.activity_assignment_history
   FROM anon, authenticated;
 REVOKE ALL ON public.api_credentials
-  FROM anon, authenticated;
-REVOKE ALL ON public.school_directory_credentials
-  FROM anon, authenticated;
-REVOKE ALL ON public.official_school_cache
-  FROM anon, authenticated;
-REVOKE ALL ON public.institution_name_decisions
   FROM anon, authenticated;
 REVOKE ALL ON public.replication_sync_state
   FROM anon, authenticated;

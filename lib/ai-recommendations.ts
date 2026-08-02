@@ -226,6 +226,21 @@ export async function listAiRecommendations(organization: string) {
   return result.results.map(mapRecommendation);
 }
 
+export async function deleteAiRecommendation(recommendationId: number) {
+  const d1 = await ensureAiRecommendationsReady();
+  const existing = await d1
+    .prepare("SELECT id FROM ai_recommendations WHERE id = ?")
+    .bind(recommendationId)
+    .first<{ id: number }>();
+  if (!existing) {
+    throw new Error("삭제할 AI 대응 제안을 찾지 못했습니다.");
+  }
+  await d1
+    .prepare("DELETE FROM ai_recommendations WHERE id = ?")
+    .bind(recommendationId)
+    .run();
+}
+
 function appendUniqueLine(current: string, value: string) {
   const cleanValue = value.trim();
   if (!cleanValue || current.includes(cleanValue)) return current;
@@ -291,9 +306,6 @@ export async function applyAiRecommendation(
   if (products.length) {
     notes = appendUniqueLine(notes, `AI 추천 제품: ${products.join(", ")}`);
   }
-  const hasAppliedItem =
-    products.length > 0 || questions.length > 0 || actions.length > 0;
-
   await d1.batch([
     d1
       .prepare(
@@ -307,7 +319,7 @@ export async function applyAiRecommendation(
       .bind(
         nextAction,
         notes,
-        hasAppliedItem || Boolean(followUpDate) ? 1 : 0,
+        followUpDate ? 1 : 0,
         followUpDate,
         followUpDate,
         activityId,

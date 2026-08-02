@@ -2,6 +2,83 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+const administrativeRegionPrefixes = [
+  "서울",
+  "부산",
+  "대구",
+  "인천",
+  "광주",
+  "대전",
+  "울산",
+  "세종",
+  "경기",
+  "강원",
+  "충북",
+  "충남",
+  "전북",
+  "전남",
+  "경북",
+  "경남",
+  "제주",
+];
+
+/**
+ * 기관명에 이미 포함된 지역명이 문장 앞에 한 번 더 붙은 경우만 제거한다.
+ * 예: "서울서울천동초등학교" → "서울천동초등학교"
+ */
+export function collapseRepeatedOrganizationRegionPrefix(
+  value: unknown,
+  organization: unknown,
+  region: unknown = "",
+) {
+  const text = String(value ?? "");
+  const name = String(organization ?? "").normalize("NFKC").trim();
+  if (!text || !name) return text;
+
+  const compactName = name.replace(/\s+/g, "");
+  const regionTokens = String(region ?? "")
+    .normalize("NFKC")
+    .split(/[\s,·/]+/)
+    .flatMap((token) => {
+      const trimmed = token.trim();
+      const short = trimmed.replace(
+        /(?:특별자치도|특별자치시|특별시|광역시|자치시|도|시|군|구)$/u,
+        "",
+      );
+      return [trimmed, short];
+    });
+  const candidates = [
+    ...new Set([
+      ...regionTokens,
+      ...administrativeRegionPrefixes.filter((prefix) =>
+        compactName.startsWith(prefix),
+      ),
+    ]),
+  ]
+    .filter((prefix) => prefix.length >= 2 && compactName.startsWith(prefix))
+    .sort((left, right) => right.length - left.length);
+
+  for (const prefix of candidates) {
+    const prefixPattern = prefix
+      .split("")
+      .map((character) => escapeRegExp(character))
+      .join("\\s*");
+    const organizationPattern = compactName
+      .split("")
+      .map((character) => escapeRegExp(character))
+      .join("\\s*");
+    const repeatedPrefixPattern = new RegExp(
+      `^(\\s*)${prefixPattern}\\s*${organizationPattern}`,
+      "u",
+    );
+    if (repeatedPrefixPattern.test(text)) {
+      return text.replace(repeatedPrefixPattern, `$1${name}`);
+    }
+  }
+
+  return text;
+}
+
 /**
  * 기관명이 최종 확정되면 요약·후속 업무에 남은 이전 표기도 함께 바꾼다.
  * 띄어쓰기만 다른 표기도 같은 기관명으로 취급한다.
@@ -16,18 +93,106 @@ export function replaceOrganizationReferences(
   const next = String(nextOrganization ?? "").trim();
   if (!text || !previous || !next || previous === next) return text;
 
-  const exactReplaced = text.split(previous).join(next);
+  const compactPattern = (organization: string) =>
+    organization
+      .replace(/\s+/g, "")
+      .split("")
+      .map((character) => escapeRegExp(character))
+      .join("\\s*");
+  const marker = `\uE000WHIZZUP_ORGANIZATION_${text.length}\uE001`;
+  const protectedText = text.replace(
+    new RegExp(compactPattern(next), "gu"),
+    marker,
+  );
+  const exactReplaced = protectedText.split(previous).join(next);
   const compactPrevious = previous.replace(/\s+/g, "");
-  if (compactPrevious.length < 2) return exactReplaced;
+  if (compactPrevious.length < 2) {
+    return exactReplaced.split(marker).join(next);
+  }
 
-  const whitespaceFlexiblePattern = compactPrevious
-    .split("")
-    .map((character) => escapeRegExp(character))
-    .join("\\s*");
+  const whitespaceFlexiblePattern = compactPattern(previous);
   return exactReplaced.replace(
     new RegExp(whitespaceFlexiblePattern, "gu"),
     next,
+  ).split(marker).join(next);
+}
+
+function normalizeRepeatToken(value: string) {
+  return value
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}]/gu, "")
+    .toLocaleLowerCase("ko-KR");
+}
+
+function isNearDuplicateToken(left: string, right: string) {
+  const normalizedLeft = normalizeRepeatToken(left);
+  const normalizedRight = normalizeRepeatToken(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (normalizedLeft === normalizedRight) return true;
+
+  const minimumLength = Math.min(
+    normalizedLeft.length,
+    normalizedRight.length,
   );
+  if (
+    minimumLength < 5 ||
+    Math.abs(normalizedLeft.length - normalizedRight.length) > 3
+  ) {
+    return false;
+  }
+
+  let commonPrefixLength = 0;
+  while (
+    commonPrefixLength < minimumLength &&
+    normalizedLeft[commonPrefixLength] === normalizedRight[commonPrefixLength]
+  ) {
+    commonPrefixLength += 1;
+  }
+  return commonPrefixLength >= Math.max(4, Math.ceil(minimumLength * 0.75));
+}
+
+/**
+ * AI가 기관명이나 짧은 구절을 연속 반복해 생성한 경우 저장·표시 전에 정리한다.
+ * 정상 문장은 유지하고, 바로 이어지는 동일·유사 단어와 동일 구절만 한 번 남긴다.
+ */
+export function compactRepeatedAiText(value: unknown, maxLength = 600) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+
+  const compactedWords: string[] = [];
+  text.split(" ").forEach((word) => {
+    const previous = compactedWords.at(-1);
+    if (previous && isNearDuplicateToken(previous, word)) return;
+    compactedWords.push(word);
+  });
+
+  for (
+    let phraseLength = Math.min(4, Math.floor(compactedWords.length / 2));
+    phraseLength >= 2;
+    phraseLength -= 1
+  ) {
+    let index = 0;
+    while (index + phraseLength * 2 <= compactedWords.length) {
+      const left = compactedWords
+        .slice(index, index + phraseLength)
+        .map(normalizeRepeatToken)
+        .join(" ");
+      const right = compactedWords
+        .slice(index + phraseLength, index + phraseLength * 2)
+        .map(normalizeRepeatToken)
+        .join(" ");
+      if (left && left === right) {
+        compactedWords.splice(index + phraseLength, phraseLength);
+        continue;
+      }
+      index += 1;
+    }
+  }
+
+  const compacted = compactedWords.join(" ");
+  return compacted.length > maxLength
+    ? `${compacted.slice(0, maxLength).trimEnd()}…`
+    : compacted;
 }
 
 function isShareMetaSentence(value: string) {
@@ -50,7 +215,7 @@ function isShareMetaSentence(value: string) {
   );
 }
 
-/** 단톡 공유 문구에서는 확인된 사실만 남기고 AI의 해설·부재 설명을 뺀다. */
+/** 요약문에서는 확인된 사실만 남기고 AI의 해설·부재 설명을 뺀다. */
 export function compactShareSummary(value: unknown) {
   return String(value ?? "")
     .split(/\r?\n+/)
@@ -65,7 +230,7 @@ export function compactShareSummary(value: unknown) {
 const contactRolePattern =
   /(?:공사|기관|시설(?:\s*관리)?|행정|회계|교육|정보|전산|구매|계약|현장|설치|예산|실무|업무|영업|수주|안전|총무|설계|감리)\s*담당자/u;
 
-/** 기존 기록의 본문에만 남아 있는 담당 역할도 공유 문구에서 복원한다. */
+/** 기존 기록의 본문에만 남아 있는 담당 역할을 복원한다. */
 export function resolveContactRole(
   explicitRole: unknown,
   ...contextValues: unknown[]
@@ -142,7 +307,7 @@ function formalizeShareSentence(value: string) {
   return `${formal}${punctuation || "."}`;
 }
 
-/** 단톡 공유 문장을 존댓말 보고체로 통일한다. */
+/** 요약 문장을 존댓말 보고체로 통일한다. */
 export function formalizeShareSummary(value: unknown) {
   return String(value ?? "")
     .split(/\r?\n+/)
@@ -152,4 +317,19 @@ export function formalizeShareSummary(value: unknown) {
     .map(formalizeShareSentence)
     .join(" ")
     .trim();
+}
+
+/** 활동 유형을 짧은 제목으로 정리한다. */
+export function activityShareHeading(
+  organization: unknown,
+  activityType: unknown,
+) {
+  const name = String(organization ?? "").trim() || "기관";
+  const type = String(activityType ?? "").trim();
+  const label = /(?:TM|통화|유선)/iu.test(type)
+    ? "TM 공유"
+    : /(?:미팅|방문|온라인)/u.test(type)
+      ? "미팅 공유"
+      : "영업 공유";
+  return `[${name} ${label}]`;
 }

@@ -4,8 +4,14 @@ import { getChatGPTUser, type ChatGPTUser } from "../app/chatgpt-auth";
 export const MEMBER_PERMISSIONS = [
   "records:manage",
   "members:manage",
+  "activity-history:manage",
+  "accounting:manage",
+  "analytics:view",
+  "trash:manage",
   "integration:manage",
   "backup:manage",
+  "ai:voice",
+  "ai:images",
 ] as const;
 
 export type MemberPermission = (typeof MEMBER_PERMISSIONS)[number];
@@ -147,7 +153,7 @@ function mapMember(row: Record<string, unknown>): Member {
     email: String(row.email),
     displayName: String(row.display_name),
     role,
-    permissions: role === "assistant" ? normalizeMemberPermissions(row.permissions) : [],
+    permissions: normalizeMemberPermissions(row.permissions),
     status:
       String(row.status) === "approved"
         ? "approved"
@@ -161,126 +167,56 @@ function mapMember(row: Record<string, unknown>): Member {
   };
 }
 
-export async function getOrCreateMember(identity: ChatGPTUser) {
+export async function getOrCreateMember(
+  identity: ChatGPTUser,
+  refreshLastSeen = false,
+) {
   const d1 = await ensureCollaborationReady();
   const email = identity.email.trim().toLowerCase();
-  const bootstrapAdminEmail =
-    process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase() ?? "";
-  const isBootstrapAdmin = Boolean(
-    bootstrapAdminEmail && bootstrapAdminEmail === email,
-  );
-
-  if (isBootstrapAdmin) {
-    const primaryAdmin = await d1
-      .prepare(
-        `SELECT *
-         FROM members
-         WHERE role = 'admin' AND status = 'approved'
-         ORDER BY id ASC
-         LIMIT 1`,
-      )
-      .first<Record<string, unknown>>();
-
-    if (primaryAdmin) {
-      await d1
-        .prepare(
-          `UPDATE members
-           SET auth_user_id = NULL
-           WHERE auth_user_id = ? AND id <> ?`,
-        )
-        .bind(identity.authUserId, Number(primaryAdmin.id))
-        .run();
-      const linkedAdmin = await d1
-        .prepare(
-          `UPDATE members
-           SET auth_user_id = ?,
-               last_seen_at = CURRENT_TIMESTAMP
-           WHERE id = ?
-           RETURNING *`,
-        )
-        .bind(identity.authUserId, Number(primaryAdmin.id))
-        .first<Record<string, unknown>>();
-      return mapMember(linkedAdmin ?? primaryAdmin);
-    }
-  }
-
   let row = await d1
-    .prepare(
-      "SELECT * FROM members WHERE auth_user_id = ? OR lower(email) = lower(?) LIMIT 1",
-    )
-    .bind(identity.authUserId, email)
+    .prepare("SELECT * FROM members WHERE email = ?")
+    .bind(email)
     .first<Record<string, unknown>>();
 
   if (!row) {
+    const count = await d1
+      .prepare("SELECT COUNT(*) AS count FROM members")
+      .first<{ count: number }>();
+    const firstMember = (count?.count ?? 0) === 0;
     await d1
       .prepare(`
-        INSERT INTO members (
-          auth_user_id, email, display_name, role, status, approved_at,
-          last_seen_at
-        ) VALUES (?, ?, ?, 'member', 'pending', NULL, CURRENT_TIMESTAMP)
-        ON CONFLICT (email) DO NOTHING
+        INSERT OR IGNORE INTO members (
+          email, display_name, role, status, approved_at, last_seen_at
+        ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `)
-      .bind(identity.authUserId, email, identity.displayName)
+      .bind(
+        email,
+        identity.displayName,
+        firstMember ? "admin" : "member",
+        firstMember ? "approved" : "pending",
+        firstMember ? new Date().toISOString() : null,
+      )
       .run();
     row = await d1
-      .prepare("SELECT * FROM members WHERE lower(email) = lower(?) LIMIT 1")
+      .prepare("SELECT * FROM members WHERE email = ?")
       .bind(email)
       .first<Record<string, unknown>>();
-  } else {
-    if (
-      row.auth_user_id &&
-      String(row.auth_user_id) !== identity.authUserId
-    ) {
-      throw new AccessError(
-        "같은 이메일에 다른 로그인 계정이 연결되어 있습니다. 관리자에게 문의해 주세요.",
-        409,
-      );
-    }
-    const updated = await d1
-      .prepare(`
-        UPDATE members
-        SET auth_user_id = COALESCE(auth_user_id, ?),
-            last_seen_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-        RETURNING *
-      `)
-      .bind(identity.authUserId, Number(row.id))
-      .first<Record<string, unknown>>();
-    if (updated) row = updated;
-  }
-
-  if (row && isBootstrapAdmin) {
-    const promoted = await d1
-      .prepare(`
-        UPDATE members AS candidate
-        SET role = 'admin',
-            status = 'approved',
-            approved_at = COALESCE(candidate.approved_at, CURRENT_TIMESTAMP),
-            last_seen_at = CURRENT_TIMESTAMP
-        WHERE candidate.id = ?
-          AND lower(candidate.email) = lower(?)
-          AND NOT EXISTS (
-            SELECT 1
-            FROM members AS approved_admin
-            WHERE approved_admin.role = 'admin'
-              AND approved_admin.status = 'approved'
-              AND approved_admin.id <> candidate.id
-          )
-        RETURNING *
-      `)
-      .bind(Number(row.id), bootstrapAdminEmail)
-      .first<Record<string, unknown>>();
-    if (promoted) row = promoted;
+  } else if (refreshLastSeen) {
+    await d1
+      .prepare("UPDATE members SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .bind(Number(row.id))
+      .run();
+    row.last_seen_at = new Date().toISOString();
   }
 
   if (!row) throw new Error("사용자 정보를 만들지 못했습니다.");
   return mapMember(row);
 }
 
-export async function requireMember() {
+export async function requireMember(refreshLastSeen = false) {
   const identity = await getChatGPTUser();
-  if (!identity) throw new AccessError("Google 로그인이 필요합니다.", 401);
-  return getOrCreateMember(identity);
+  if (!identity) throw new AccessError("ChatGPT 로그인이 필요합니다.", 401);
+  return getOrCreateMember(identity, refreshLastSeen);
 }
 
 export async function requireApprovedMember() {
@@ -327,6 +263,21 @@ export async function requirePrimaryOwner() {
   return member;
 }
 
+export async function canManageActivityHistory(
+  member: Pick<Member, "id" | "role" | "permissions">,
+) {
+  if (member.permissions.includes("activity-history:manage")) return true;
+  return isPrimaryOwner(member);
+}
+
+export async function requireActivityHistoryManager() {
+  const member = await requireApprovedMember();
+  if (!(await canManageActivityHistory(member))) {
+    throw new AccessError("변경 이력 관리 권한이 필요합니다.", 403);
+  }
+  return member;
+}
+
 export function normalizeMemberPermissions(value: unknown): MemberPermission[] {
   let source: unknown = value;
   if (typeof value === "string") {
@@ -344,10 +295,13 @@ export function hasMemberPermission(
   member: Pick<Member, "role" | "permissions">,
   permission: MemberPermission,
 ) {
-  return (
-    member.role === "admin" ||
-    (member.role === "assistant" && member.permissions.includes(permission))
-  );
+  return member.role === "admin" || member.permissions.includes(permission);
+}
+
+export function canCollaborativelyManageSalesRecords(
+  member: Pick<Member, "status">,
+) {
+  return member.status === "approved";
 }
 
 export async function requireMemberPermission(permission: MemberPermission) {
@@ -359,16 +313,11 @@ export async function requireMemberPermission(permission: MemberPermission) {
 }
 
 export function accessErrorResponse(error: unknown) {
-  if (
-    error instanceof AccessError &&
-    error.status >= 400 &&
-    error.status < 500
-  ) {
+  if (error instanceof AccessError) {
     return Response.json({ error: error.message }, { status: error.status });
   }
-  console.error("Unhandled collaboration request error", error);
   return Response.json(
-    { error: "요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요." },
+    { error: error instanceof Error ? error.message : "요청을 처리하지 못했습니다." },
     { status: 500 },
   );
 }

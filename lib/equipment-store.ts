@@ -4,20 +4,42 @@ import {
   koreaTodayValue,
   parseProgressScheduleEntries,
 } from "./records-store";
+import { PRODUCT_CATALOG } from "./product-catalog";
+import {
+  DEFAULT_PROCUREMENT_FEE_RATE,
+  hasProcurementSignal,
+} from "./procurement-product";
+import {
+  ensureBudgetNamesReady,
+  linkBudgetNameEntity,
+  normalizeBudgetNameKey,
+  resolveBudgetRecordMetadata,
+} from "./budget-names";
+import { parseImportedEquipmentItems } from "./imported-equipment";
 
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS equipment_projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     organization TEXT NOT NULL,
+    business_round INTEGER NOT NULL DEFAULT 1,
     name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT '제안',
     budget_type TEXT NOT NULL DEFAULT '',
+    budget_original_name TEXT NOT NULL DEFAULT '',
+    budget_group_id INTEGER,
+    budget_match_status TEXT NOT NULL DEFAULT 'unclassified',
+    budget_match_method TEXT NOT NULL DEFAULT 'legacy',
+    budget_request_id TEXT,
+    budget_kind TEXT NOT NULL DEFAULT 'unclassified',
     notes TEXT NOT NULL DEFAULT '',
+    construction_amount INTEGER,
+    actual_construction_cost INTEGER,
+    activity_id INTEGER,
     created_by INTEGER NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
-  "CREATE UNIQUE INDEX IF NOT EXISTS equipment_projects_org_name_idx ON equipment_projects (organization, name)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS equipment_projects_org_round_name_idx ON equipment_projects (organization, business_round, name)",
   "CREATE INDEX IF NOT EXISTS equipment_projects_org_idx ON equipment_projects (organization, updated_at)",
   `CREATE TABLE IF NOT EXISTS equipment_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,6 +52,24 @@ const schemaStatements = [
     unit TEXT NOT NULL DEFAULT '대',
     status TEXT NOT NULL DEFAULT '제안',
     notes TEXT NOT NULL DEFAULT '',
+    catalog_item_id TEXT NOT NULL DEFAULT '',
+    catalog_unit_price INTEGER,
+    price_status TEXT NOT NULL DEFAULT '금액 미입력',
+    catalog_note TEXT NOT NULL DEFAULT '',
+    execution_type TEXT NOT NULL DEFAULT '직영',
+    commission_input_type TEXT NOT NULL DEFAULT 'rate',
+    commission_rate REAL,
+    supply_type TEXT NOT NULL DEFAULT 'partner',
+    margin_rate REAL,
+    procurement_fee_rate REAL,
+    consortium_commission_rate REAL,
+    consortium_payment_amount INTEGER,
+    supplier_vendor_id INTEGER,
+    supplier_vendor_name TEXT NOT NULL DEFAULT '',
+    protection_status TEXT NOT NULL DEFAULT '신청 필요',
+    protection_completed_at TEXT,
+    created_by INTEGER,
+    updated_by INTEGER,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -43,11 +83,170 @@ async function initializeEquipment() {
   const d1 = getD1();
   await ensureCollaborationReady();
   await d1.batch(schemaStatements.map((statement) => d1.prepare(statement)));
+  const columns = await d1
+    .prepare("PRAGMA table_info(equipment_items)")
+    .all<{ name: string }>();
+  const existing = new Set(columns.results.map((column) => column.name));
+  const upgrades = [
+    ["catalog_item_id", "ALTER TABLE equipment_items ADD COLUMN catalog_item_id TEXT NOT NULL DEFAULT ''"],
+    ["catalog_unit_price", "ALTER TABLE equipment_items ADD COLUMN catalog_unit_price INTEGER"],
+    ["price_status", "ALTER TABLE equipment_items ADD COLUMN price_status TEXT NOT NULL DEFAULT '금액 미입력'"],
+    ["catalog_note", "ALTER TABLE equipment_items ADD COLUMN catalog_note TEXT NOT NULL DEFAULT ''"],
+    ["execution_type", "ALTER TABLE equipment_items ADD COLUMN execution_type TEXT NOT NULL DEFAULT '직영'"],
+    ["commission_input_type", "ALTER TABLE equipment_items ADD COLUMN commission_input_type TEXT NOT NULL DEFAULT 'rate'"],
+    ["commission_rate", "ALTER TABLE equipment_items ADD COLUMN commission_rate REAL"],
+    ["supply_type", "ALTER TABLE equipment_items ADD COLUMN supply_type TEXT NOT NULL DEFAULT 'partner'"],
+    ["margin_rate", "ALTER TABLE equipment_items ADD COLUMN margin_rate REAL"],
+    ["procurement_fee_rate", "ALTER TABLE equipment_items ADD COLUMN procurement_fee_rate REAL"],
+    ["consortium_commission_rate", "ALTER TABLE equipment_items ADD COLUMN consortium_commission_rate REAL"],
+    ["consortium_payment_amount", "ALTER TABLE equipment_items ADD COLUMN consortium_payment_amount INTEGER"],
+    ["supplier_vendor_id", "ALTER TABLE equipment_items ADD COLUMN supplier_vendor_id INTEGER"],
+    ["supplier_vendor_name", "ALTER TABLE equipment_items ADD COLUMN supplier_vendor_name TEXT NOT NULL DEFAULT ''"],
+    ["protection_status", "ALTER TABLE equipment_items ADD COLUMN protection_status TEXT NOT NULL DEFAULT '신청 필요'"],
+    ["protection_completed_at", "ALTER TABLE equipment_items ADD COLUMN protection_completed_at TEXT"],
+    ["created_by", "ALTER TABLE equipment_items ADD COLUMN created_by INTEGER"],
+    ["updated_by", "ALTER TABLE equipment_items ADD COLUMN updated_by INTEGER"],
+  ] as const;
+  const pending = upgrades
+    .filter(([column]) => !existing.has(column))
+    .map(([, statement]) => d1.prepare(statement));
+  if (pending.length) await d1.batch(pending);
+  await d1
+    .prepare(
+      `UPDATE equipment_items
+       SET price_status = '입력 완료'
+       WHERE COALESCE(catalog_unit_price, 0) > 0
+         AND (price_status = '' OR price_status = '금액 미입력')`,
+    )
+    .run();
+
+  const projectColumns = await d1
+    .prepare("PRAGMA table_info(equipment_projects)")
+    .all<{ name: string }>();
+  const existingProjectColumns = new Set(
+    projectColumns.results.map((column) => column.name),
+  );
+  const projectUpgrades = [
+    ["construction_amount", "ALTER TABLE equipment_projects ADD COLUMN construction_amount INTEGER"],
+    ["actual_construction_cost", "ALTER TABLE equipment_projects ADD COLUMN actual_construction_cost INTEGER"],
+    ["activity_id", "ALTER TABLE equipment_projects ADD COLUMN activity_id INTEGER"],
+    ["business_round", "ALTER TABLE equipment_projects ADD COLUMN business_round INTEGER NOT NULL DEFAULT 1"],
+  ] as const;
+  const pendingProjectUpgrades = projectUpgrades
+    .filter(([column]) => !existingProjectColumns.has(column))
+    .map(([, statement]) => d1.prepare(statement));
+  if (pendingProjectUpgrades.length) await d1.batch(pendingProjectUpgrades);
+  await d1
+    .prepare("CREATE INDEX IF NOT EXISTS equipment_projects_activity_idx ON equipment_projects (activity_id, updated_at)")
+    .run();
+
+  const storedCatalog = await d1
+    .prepare("SELECT value FROM app_settings WHERE key = 'product_catalog_v1'")
+    .first<{ value: string }>();
+  let catalog: Array<{
+    id?: unknown;
+    name?: unknown;
+    specification?: unknown;
+    commissionRate?: unknown;
+    note?: unknown;
+    reference?: unknown;
+  }> = PRODUCT_CATALOG;
+  if (storedCatalog?.value) {
+    try {
+      const parsed = JSON.parse(storedCatalog.value);
+      if (Array.isArray(parsed) && parsed.length) catalog = parsed;
+    } catch {
+      // Keep the built-in product catalog when an older setting is malformed.
+    }
+  }
+  const commissionByCatalogId = new Map(
+    catalog.flatMap((product) => {
+      const id = String(product.id ?? "");
+      const rate = Number(product.commissionRate);
+      return id && Number.isFinite(rate) && rate >= 0 && rate <= 1
+        ? [[id, rate] as const]
+        : [];
+    }),
+  );
+  const missingCommissionItems = await d1
+    .prepare(
+      `SELECT id, catalog_item_id
+       FROM equipment_items
+       WHERE commission_rate IS NULL AND catalog_item_id <> ''`,
+    )
+    .all<{ id: number; catalog_item_id: string }>();
+  const commissionBackfills = missingCommissionItems.results.flatMap((item) => {
+    const rate = commissionByCatalogId.get(item.catalog_item_id);
+    return rate === undefined
+      ? []
+      : [
+          d1
+            .prepare("UPDATE equipment_items SET commission_rate = ? WHERE id = ?")
+            .bind(rate, item.id),
+        ];
+  });
+  if (commissionBackfills.length) await d1.batch(commissionBackfills);
+
+  const procurementCatalogIds = new Set(
+    catalog.flatMap((product) => {
+      const id = String(product.id ?? "");
+      return id &&
+        hasProcurementSignal(
+          product.name,
+          product.specification,
+          product.note,
+          product.reference,
+        )
+        ? [id]
+        : [];
+    }),
+  );
+  const missingProcurementFeeItems = await d1
+    .prepare(
+      `SELECT id, product_name, specification, notes, catalog_item_id, catalog_note
+       FROM equipment_items
+       WHERE procurement_fee_rate IS NULL`,
+    )
+    .all<{
+      id: number;
+      product_name: string;
+      specification: string;
+      notes: string;
+      catalog_item_id: string;
+      catalog_note: string;
+    }>();
+  const procurementFeeBackfills = missingProcurementFeeItems.results.flatMap(
+    (item) =>
+      procurementCatalogIds.has(item.catalog_item_id) ||
+      hasProcurementSignal(
+        item.product_name,
+        item.specification,
+        item.catalog_note,
+        item.notes,
+      )
+        ? [
+            d1
+              .prepare(
+                "UPDATE equipment_items SET procurement_fee_rate = ? WHERE id = ?",
+              )
+              .bind(DEFAULT_PROCUREMENT_FEE_RATE, item.id),
+          ]
+        : [],
+  );
+  if (procurementFeeBackfills.length) {
+    await d1.batch(procurementFeeBackfills);
+  }
   return d1;
 }
 
 export function ensureEquipmentReady() {
-  return Promise.resolve(getD1());
+  if (!equipmentReadyPromise) {
+    equipmentReadyPromise = initializeEquipment().catch((error) => {
+      equipmentReadyPromise = null;
+      throw error;
+    });
+  }
+  return equipmentReadyPromise;
 }
 
 type PlannedEquipmentProduct = {
@@ -100,6 +299,12 @@ export async function saveAiSelectedEquipmentAsPlanned(input: {
   if (!organization || !products.length) return 0;
 
   const d1 = await ensureEquipmentReady();
+  await ensureBudgetNamesReady();
+  const budgetMetadata = await resolveBudgetRecordMetadata(d1, {
+    budgetType,
+    budgetOriginalName: budgetType,
+    awardStatus: "미정",
+  });
   let project = await d1
     .prepare(
       `SELECT *
@@ -125,11 +330,25 @@ export async function saveAiSelectedEquipmentAsPlanned(input: {
     project = await d1
       .prepare(
         `INSERT INTO equipment_projects (
-          organization, name, status, budget_type, notes, created_by
-        ) VALUES (?, ?, '제안', ?, 'AI 대응에서 선택한 제안 예정 품목', ?)
+          organization, name, status, budget_type, notes, created_by,
+          budget_original_name, budget_group_id, budget_match_status,
+          budget_match_method, budget_request_id, budget_kind
+        ) VALUES (?, ?, '제안', ?, 'AI 대응에서 선택한 제안 예정 품목', ?,
+                  ?, ?, ?, ?, ?, ?)
         RETURNING *`,
       )
-      .bind(organization, projectName, budgetType, input.createdBy)
+      .bind(
+        organization,
+        projectName,
+        budgetMetadata.storedName,
+        input.createdBy,
+        budgetMetadata.budgetOriginalName,
+        budgetMetadata.budgetGroupId,
+        budgetMetadata.budgetMatchStatus,
+        budgetMetadata.budgetMatchMethod,
+        budgetMetadata.budgetRequestId,
+        budgetMetadata.budgetKind,
+      )
       .first<Record<string, unknown>>();
   }
   if (!project) throw new Error("AI 추천 품목을 연결할 사업을 만들지 못했습니다.");
@@ -204,11 +423,32 @@ export async function saveAiSelectedEquipmentAsPlanned(input: {
   await d1
     .prepare(
       `UPDATE equipment_projects
-       SET updated_at = CURRENT_TIMESTAMP
+       SET budget_type = ?, budget_original_name = ?,
+           budget_group_id = ?, budget_match_status = ?,
+           budget_match_method = ?, budget_request_id = ?,
+           budget_kind = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
     )
-    .bind(Number(project.id))
+    .bind(
+      budgetMetadata.storedName,
+      budgetMetadata.budgetOriginalName,
+      budgetMetadata.budgetGroupId,
+      budgetMetadata.budgetMatchStatus,
+      budgetMetadata.budgetMatchMethod,
+      budgetMetadata.budgetRequestId,
+      budgetMetadata.budgetKind,
+      Number(project.id),
+    )
     .run();
+  await linkBudgetNameEntity(d1, {
+    entityType: "equipment_project",
+    entityId: Number(project.id),
+    groupId: budgetMetadata.budgetGroupId,
+    originalName: budgetMetadata.budgetOriginalName,
+    aliasKey:
+      budgetMetadata.resolution?.aliasKey ??
+      normalizeBudgetNameKey(budgetMetadata.budgetOriginalName),
+  });
   return changed;
 }
 
@@ -325,12 +565,14 @@ export async function removeUnselectedLegacyAiEquipment(
 
 export async function promotePlannedEquipmentFromActivity(input: {
   organization: string;
+  businessRound?: number;
   budgetType?: string;
   activityText: string;
 }) {
   const organization = cleanEquipmentText(input.organization, 120);
   const budgetType = cleanEquipmentText(input.budgetType, 120);
   const activityText = cleanEquipmentText(input.activityText, 8_000);
+  const businessRound = Math.max(1, Number(input.businessRound) || 1);
   if (
     !organization ||
     !activityText ||
@@ -346,11 +588,12 @@ export async function promotePlannedEquipmentFromActivity(input: {
        FROM equipment_items i
        JOIN equipment_projects p ON p.id = i.project_id
        WHERE p.organization = ?
+         AND p.business_round = ?
          AND i.status = '제안 예정'
          AND (? = '' OR p.budget_type = ?)
        ORDER BY p.updated_at DESC, i.sort_order ASC, i.id ASC`,
     )
-    .bind(organization, budgetType, budgetType)
+    .bind(organization, businessRound, budgetType, budgetType)
     .all<{ id: number; project_id: number; product_name: string }>();
   if (!pending.results.length) return 0;
 
@@ -398,6 +641,99 @@ function compactEquipmentName(value: string) {
     .replace(/[^0-9a-z가-힣]/g, "");
 }
 
+export async function syncImportedAwardEquipment(input: {
+  projectId: number;
+  installedProducts: unknown;
+  memberId: number;
+}) {
+  const projectId = Number(input.projectId);
+  const items = parseImportedEquipmentItems(input.installedProducts);
+  if (!Number.isSafeInteger(projectId) || projectId <= 0 || !items.length) return 0;
+  const d1 = await ensureEquipmentReady();
+  const existing = await d1
+    .prepare(
+      `SELECT id, product_name
+       FROM equipment_items
+       WHERE project_id = ?
+       ORDER BY sort_order, id`,
+    )
+    .bind(projectId)
+    .all<{ id: number; product_name: string }>();
+  const existingByName = new Map(
+    existing.results.map((item) => [
+      compactEquipmentName(item.product_name),
+      item,
+    ]),
+  );
+  let insertedCount = 0;
+  let nextSortOrder = existing.results.length;
+  for (const item of items) {
+    const matched = existingByName.get(compactEquipmentName(item.productName));
+    if (matched) {
+      await d1
+        .prepare(
+          `UPDATE equipment_items
+           SET proposed_qty = MAX(proposed_qty, ?),
+               awarded_qty = MAX(awarded_qty, ?),
+               installed_qty = MAX(installed_qty, ?),
+               unit = CASE WHEN unit = '' THEN ? ELSE unit END,
+               status = '설치 완료',
+               updated_by = ?,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+        )
+        .bind(
+          item.quantity,
+          item.quantity,
+          item.quantity,
+          item.unit,
+          input.memberId,
+          matched.id,
+        )
+        .run();
+      continue;
+    }
+    const inserted = await d1
+      .prepare(
+        `INSERT INTO equipment_items (
+          project_id, product_name, proposed_qty, awarded_qty, installed_qty,
+          unit, status, notes, price_status, created_by, updated_by, sort_order
+        ) VALUES (?, ?, ?, ?, ?, ?, '설치 완료', ?, '금액 미입력', ?, ?, ?)`,
+      )
+      .bind(
+        projectId,
+        item.productName,
+        item.quantity,
+        item.quantity,
+        item.quantity,
+        item.unit,
+        "설치 완료 수주 일괄등록",
+        input.memberId,
+        input.memberId,
+        nextSortOrder,
+      )
+      .run();
+    const insertedId = Number(inserted.meta.last_row_id);
+    if (insertedId > 0) {
+      insertedCount += 1;
+      nextSortOrder += 1;
+      existingByName.set(compactEquipmentName(item.productName), {
+        id: insertedId,
+        product_name: item.productName,
+      });
+    }
+  }
+  await d1
+    .prepare(
+      `UPDATE equipment_projects
+       SET status = '설치 완료', updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status NOT IN ('보류', '취소')`,
+    )
+    .bind(projectId)
+    .run();
+  return insertedCount;
+}
+
 function scheduleMatchesEquipment(label: string, productName: string) {
   const scheduleName = compactEquipmentName(label);
   const equipmentName = compactEquipmentName(productName);
@@ -411,6 +747,7 @@ function scheduleMatchesEquipment(label: string, productName: string) {
 export async function syncEquipmentItemsFromProgressSchedule(
   organization: string,
   progressSchedule: string,
+  businessRound = 1,
   todayValue = koreaTodayValue(),
 ) {
   const entries = parseProgressScheduleEntries(progressSchedule);
@@ -421,9 +758,9 @@ export async function syncEquipmentItemsFromProgressSchedule(
       `SELECT i.id, i.project_id, i.product_name, i.status
        FROM equipment_items i
        JOIN equipment_projects p ON p.id = i.project_id
-       WHERE p.organization = ?`,
+       WHERE p.organization = ? AND p.business_round = ?`,
     )
-    .bind(organization.trim())
+    .bind(organization.trim(), businessRound)
     .all<{
       id: number;
       project_id: number;

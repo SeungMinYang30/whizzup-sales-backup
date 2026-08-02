@@ -1,0 +1,1 @@
+ALTER TABLE `activities` ADD `progress_manager` text DEFAULT '' NOT NULL;

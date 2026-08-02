@@ -1,0 +1,1 @@
+ALTER TABLE `activities` ADD `progress_schedule` text DEFAULT '' NOT NULL;

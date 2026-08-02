@@ -1,0 +1,1 @@
+ALTER TABLE `members` ADD `permissions` text DEFAULT '[]' NOT NULL;

@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ["postgres"],
+  // The Sites source is compiled by vinext without a separate Next.js type pass.
+  // Keep the Vercel mirror on the same build contract after its runtime adapters compile.
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   async headers() {
     return [
       {

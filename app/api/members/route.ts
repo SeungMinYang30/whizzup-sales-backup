@@ -5,6 +5,7 @@ import {
   requireApprovedMember,
   requireMemberPermission,
 } from "../../../lib/collaboration";
+import { ensureActivityChangeLedgerReady } from "../../../lib/activity-change-ledger";
 
 export const dynamic = "force-dynamic";
 
@@ -90,14 +91,12 @@ export async function PUT(request: Request) {
       actor.role === "admin" && payload.role === "assistant"
         ? "assistant"
         : "member";
+    const requestedPermissions = normalizeMemberPermissions(payload.permissions);
+    const aiInputPermissions = requestedPermissions.filter((permission) =>
+      ["ai:voice", "ai:images"].includes(permission),
+    );
     const permissions =
-      role === "assistant"
-        ? normalizeMemberPermissions(payload.permissions)
-        : [];
-    const permissionsExpression =
-      permissions.length > 0
-        ? `jsonb_build_array(${permissions.map(() => "?").join(", ")})`
-        : "'[]'::jsonb";
+      role === "assistant" ? requestedPermissions : aiInputPermissions;
     const isSales =
       actor.role === "admin" && typeof payload.isSales === "boolean"
         ? payload.isSales
@@ -107,7 +106,7 @@ export async function PUT(request: Request) {
         UPDATE members SET
           status = ?,
           role = ?,
-          permissions = ${permissionsExpression},
+          permissions = ?,
           is_sales = ?,
           approved_at = CASE WHEN ? = 'approved' THEN COALESCE(approved_at, CURRENT_TIMESTAMP) ELSE approved_at END,
           approved_by = CASE WHEN ? = 'approved' THEN ? ELSE approved_by END
@@ -117,7 +116,7 @@ export async function PUT(request: Request) {
       .bind(
         status,
         role,
-        ...permissions,
+        JSON.stringify(permissions),
         isSales ? 1 : 0,
         status,
         status,
@@ -256,6 +255,7 @@ export async function DELETE(request: Request) {
       );
     }
 
+    await ensureActivityChangeLedgerReady();
     await d1.batch([
       d1
         .prepare("UPDATE members SET approved_by = ? WHERE approved_by = ?")
@@ -271,6 +271,21 @@ export async function DELETE(request: Request) {
       d1
         .prepare(
           "UPDATE activity_assignment_history SET changed_by_member_id = ? WHERE changed_by_member_id = ?",
+        )
+        .bind(actor.id, id),
+      d1
+        .prepare(
+          "UPDATE activity_change_batches SET actor_member_id = ? WHERE actor_member_id = ?",
+        )
+        .bind(actor.id, id),
+      d1
+        .prepare(
+          "UPDATE activity_change_batches SET undone_by_member_id = ? WHERE undone_by_member_id = ?",
+        )
+        .bind(actor.id, id),
+      d1
+        .prepare(
+          "UPDATE activity_change_items SET undone_by_member_id = ? WHERE undone_by_member_id = ?",
         )
         .bind(actor.id, id),
       d1

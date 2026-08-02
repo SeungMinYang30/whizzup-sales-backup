@@ -1,0 +1,230 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1784256499407,
+      "tag": "0000_wild_malcolm_colcord",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784260082233,
+      "tag": "0001_same_sue_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784261392084,
+      "tag": "0002_nappy_kinsey_walden",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784263903992,
+      "tag": "0003_plain_swarm",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784264734953,
+      "tag": "0004_fixed_union_jack",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1784273409253,
+      "tag": "0005_eager_kulan_gath",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784273926351,
+      "tag": "0006_premium_talkback",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1784280073573,
+      "tag": "0007_luxuriant_slayback",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1784285090849,
+      "tag": "0008_sales-campaigns",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1784287345511,
+      "tag": "0009_equipment-projects",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1784294562785,
+      "tag": "0010_overjoyed_robbie_robertson",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1784387953730,
+      "tag": "0011_odd_skin",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1784433442169,
+      "tag": "0012_colorful_gabe_jones",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1784437069412,
+      "tag": "0013_fine_typhoid_mary",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1784441771512,
+      "tag": "0014_nebulous_argent",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1784768961935,
+      "tag": "0033_accounting_settlements",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1784772922860,
+      "tag": "0034_accounting_commission_flow",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1784779200000,
+      "tag": "0035_accounting_commission_entries",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1784782800000,
+      "tag": "0036_accounting_collection_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1785051010992,
+      "tag": "0043_product_vendor_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1785081600000,
+      "tag": "0044_delivery_stage_normalization",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1785076822239,
+      "tag": "0045_budget_name_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1785110400000,
+      "tag": "0046_award_completion_dates",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1785198029386,
+      "tag": "0047_equipment_price_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1785199377392,
+      "tag": "0048_manual_sales_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1785286296305,
+      "tag": "0049_product_supply_and_margin",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1785290400000,
+      "tag": "0050_activity_change_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1785376800000,
+      "tag": "0051_standard_budget_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1785463200000,
+      "tag": "0052_budget_default_amount",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1785549600000,
+      "tag": "0053_manager_alert_archiving",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1785636000000,
+      "tag": "0054_budget_campaign_portfolio",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1785722400000,
+      "tag": "0055_activity_contacts",
+      "breakpoints": true
+    }
+  ]
+}

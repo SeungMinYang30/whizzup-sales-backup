@@ -2,6 +2,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { canonicalInstitutionName } from "../lib/institution-names";
 
 export type CampaignImportRow = {
+  clientId?: string;
   organization: string;
   address: string;
   phone: string;
@@ -9,6 +10,15 @@ export type CampaignImportRow = {
   region: string;
   notes: string;
   assignedMemberName: string;
+  schoolLevel: string;
+  supplyItems: string;
+  budgetAmount: string;
+  reviewNote: string;
+  existingOrganizations: string[];
+  confirmedOrganization: string;
+  businessMatchMode: "auto" | "link-current" | "new" | "list-only";
+  linkedActivityId?: number | null;
+  updateLinkedBudget?: boolean;
 };
 
 const headers = [
@@ -19,6 +29,9 @@ const headers = [
   "지역",
   "메모",
   "영업 담당자",
+  "학교급·기관 구분",
+  "지원·공급 내용",
+  "기관별 예산",
 ];
 
 function escapeXml(value: string) {
@@ -59,9 +72,12 @@ function buildTemplateFiles() {
     <col min="5" max="5" width="14" customWidth="1"/>
     <col min="6" max="6" width="34" customWidth="1"/>
     <col min="7" max="7" width="18" customWidth="1"/>
+    <col min="8" max="8" width="18" customWidth="1"/>
+    <col min="9" max="9" width="28" customWidth="1"/>
+    <col min="10" max="10" width="18" customWidth="1"/>
   </cols>
   <sheetData><row r="1" ht="24" customHeight="1">${headerCells}</row></sheetData>
-  <autoFilter ref="A1:G1"/>
+  <autoFilter ref="A1:J1"/>
 </worksheet>`;
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -223,44 +239,113 @@ function normalizeHeader(value: string) {
 
 function mapRows(rows: string[][]) {
   if (!rows.length) throw new Error("엑셀에 입력된 내용이 없습니다.");
+  const organizationHeaders = new Set([
+    "기관명",
+    "학교명",
+    "시설명",
+    "선정기관",
+    "대상기관",
+  ].map(normalizeHeader));
   const headerRow = rows.findIndex((row) =>
-    row.some((value) => normalizeHeader(String(value)) === "기관명"),
+    row.some((value) => organizationHeaders.has(normalizeHeader(String(value)))),
   );
   if (headerRow < 0) {
     throw new Error("첫 행에서 ‘기관명’ 열을 찾지 못했습니다.");
   }
-  const indexes = new Map(
-    rows[headerRow].map((header, index) => [normalizeHeader(String(header)), index]),
-  );
+  const indexes = new Map<string, number>();
+  for (let index = 0; index < rows[headerRow].length; index += 1) {
+    const header = rows[headerRow][index];
+    if (header === undefined || header === null) continue;
+    const normalized = normalizeHeader(String(header));
+    if (normalized && !indexes.has(normalized)) {
+      indexes.set(normalized, index);
+    }
+  }
   const findIndex = (...names: string[]) =>
     names.map(normalizeHeader).map((name) => indexes.get(name)).find(
       (index): index is number => index !== undefined,
     );
-  const organizationIndex = findIndex("기관명", "학교명");
+  const organizationIndex = findIndex(
+    "기관명",
+    "학교명",
+    "시설명",
+    "선정기관",
+    "대상기관",
+  );
   if (organizationIndex === undefined) {
     throw new Error("기관명 열은 반드시 필요합니다.");
   }
   const addressIndex = findIndex("주소", "도로명주소", "지번주소");
   const phoneIndex = findIndex("전화번호", "전화", "기관전화");
   const contactNameIndex = findIndex("기관 담당자", "기관담당자", "담당자");
-  const regionIndex = findIndex("지역", "시도");
-  const notesIndex = findIndex("메모", "비고");
+  const regionIndex = findIndex("지역", "소재지");
+  const provinceIndex = findIndex("시도", "광역시도", "광역자치단체");
+  const municipalityIndex = findIndex(
+    "시군구",
+    "시·군·구",
+    "시군",
+    "기초자치단체",
+  );
+  const notesIndex = findIndex("메모", "비고", "참고사항");
   const assigneeIndex = findIndex("영업 담당자", "영업담당자", "담당 영업");
+  const schoolLevelIndex = findIndex(
+    "학교급·기관 구분",
+    "학교급",
+    "기관구분",
+    "시설구분",
+    "분류",
+  );
+  const supplyItemsIndex = findIndex(
+    "지원·공급 내용",
+    "지원내용",
+    "공급내용",
+    "선정유형",
+    "구축형태",
+    "지원품목",
+  );
+  const budgetAmountIndex = findIndex(
+    "기관별 예산",
+    "기관별예산",
+    "예산액",
+    "지원금액",
+    "금액",
+  );
   const valueAt = (row: string[], index: number | undefined) =>
     index === undefined ? "" : String(row[index] ?? "").trim();
+  let previousProvince = "";
+  let previousMunicipality = "";
   const mapped = rows
     .slice(headerRow + 1)
-    .map((row) => ({
-      organization: canonicalInstitutionName(
-        valueAt(row, organizationIndex),
-      ),
-      address: valueAt(row, addressIndex),
-      phone: valueAt(row, phoneIndex),
-      contactName: valueAt(row, contactNameIndex),
-      region: valueAt(row, regionIndex),
-      notes: valueAt(row, notesIndex),
-      assignedMemberName: valueAt(row, assigneeIndex),
-    }))
+    .map((row) => {
+      const province = valueAt(row, provinceIndex) || previousProvince;
+      const municipality =
+        valueAt(row, municipalityIndex) || previousMunicipality;
+      if (valueAt(row, provinceIndex)) previousProvince = province;
+      if (valueAt(row, municipalityIndex)) {
+        previousMunicipality = municipality;
+      }
+      const explicitRegion = valueAt(row, regionIndex);
+      return {
+        organization: canonicalInstitutionName(
+          valueAt(row, organizationIndex),
+        ),
+        address: valueAt(row, addressIndex),
+        phone: valueAt(row, phoneIndex),
+        contactName: valueAt(row, contactNameIndex),
+        region:
+          explicitRegion ||
+          [province, municipality].filter(Boolean).join(" ").trim(),
+        notes: valueAt(row, notesIndex),
+        assignedMemberName: valueAt(row, assigneeIndex),
+        schoolLevel: valueAt(row, schoolLevelIndex),
+        supplyItems: valueAt(row, supplyItemsIndex),
+        budgetAmount: valueAt(row, budgetAmountIndex),
+        reviewNote: "",
+        existingOrganizations: [],
+        confirmedOrganization: "",
+        businessMatchMode: "auto" as const,
+      };
+    })
     .filter((row) => row.organization);
   const deduplicated = [
     ...new Map(

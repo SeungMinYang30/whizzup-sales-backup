@@ -5,6 +5,7 @@ import {
 import {
   inspectInstitutionMerge,
   mergeInstitutionRecords,
+  type InstitutionMergeResolutions,
 } from "../../../../lib/institution-merge";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
       organizations?: unknown[];
       targetOrganization?: unknown;
       confirm?: boolean;
+      resolutions?: unknown;
     };
     const organizations = [
       ...new Set(
@@ -53,25 +55,50 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    const sourceOrganization = organizations.find(
+    const sourceOrganizations = organizations.filter(
       (organization) => organization !== targetOrganization,
     );
-    if (!sourceOrganization) {
+    if (!sourceOrganizations.length) {
       return Response.json(
         { error: "합쳐질 기관을 확인하지 못했습니다." },
         { status: 400 },
       );
     }
-    const result = await mergeInstitutionRecords(
-      sourceOrganization,
-      targetOrganization,
-      member.id,
-    );
+    const requestedResolutions =
+      payload.resolutions &&
+      typeof payload.resolutions === "object" &&
+      !Array.isArray(payload.resolutions)
+        ? (payload.resolutions as Record<string, unknown>)
+        : {};
+    const resolutions: InstitutionMergeResolutions = {};
+    for (const conflict of preview.conflicts) {
+      const requestedValue = String(
+        requestedResolutions[conflict.key] ?? "",
+      ).trim();
+      resolutions[conflict.key] = conflict.options.some(
+        (option) => option.value === requestedValue,
+      )
+        ? requestedValue
+        : conflict.recommendedValue;
+    }
+    const results = [];
+    for (const sourceOrganization of sourceOrganizations) {
+      results.push(
+        await mergeInstitutionRecords(
+          sourceOrganization,
+          targetOrganization,
+          member.id,
+          resolutions,
+        ),
+      );
+    }
+    const result = await inspectInstitutionMerge([targetOrganization]);
     return Response.json({
       ok: true,
-      sourceOrganization,
+      sourceOrganizations,
       targetOrganization,
       result,
+      results,
     });
   } catch (error) {
     return accessErrorResponse(error);

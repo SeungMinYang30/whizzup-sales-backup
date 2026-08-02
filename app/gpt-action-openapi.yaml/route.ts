@@ -63,34 +63,35 @@ paths:
                   description: 자체예산, 문체부, 늘봄, 교육청 등 예산 출처나 종류
                 budgetAmount:
                   type: string
-                  description: "사용자가 말한 단위를 포함한 예산 금액. 예: 2,480만원"
+                  description: "사용자가 말한 단위를 포함한 예산금액. 예: 2,480만원"
                 topic:
                   type: string
                 summary:
                   type: string
                 status:
                   type: string
-                  enum: [재접촉 필요, 진행 중, 결과 확인, 후속 완료, 장기 추적, 대기, 완료]
+                  enum: [신규 접촉, 상담 진행, 제안·견적, 결과 대기, 재영업 상담, 사후관리, 수주 전환, 영업 종료]
+                  description: 상담 내용과 수주 결과를 기준으로 영업 진행상황을 분류합니다.
                 temperature:
                   type: string
                   enum: [높음, 중간, 낮음]
                 awardStatus:
                   type: string
-                  enum: [미정, 위즈업 수주, 타업체 수주]
+                  enum: [미정, 위즈업 수주, 협력사 수주, 타업체 수주]
                   description: 수주 결과가 확인되지 않았으면 미정
                 awardCompany:
                   type: string
                   description: 위즈업 수주는 위즈업, 타업체 수주는 실제 수주 업체명, 미정은 빈 문자열
                 executionType:
                   type: string
-                  enum: [직영, 컨소]
+                  enum: [직영, 컨소, 해당 없음]
                   description: 수주 사업의 진행 방식
                 consortiumCompany:
                   type: string
                   description: 컨소 방식일 때 함께 진행하는 업체명
                 awardStage:
                   type: string
-                  enum: [미정, 품의, 협상, 계약, 일정 조율, 완공, 검수, 교육]
+                  enum: [미정, 협상, 계약, 일정 조율, 설치·공사 진행, 검수·교육 진행, 납품 완료]
                   description: 수주 건의 현재 진행 상태
                 progressManager:
                   type: string

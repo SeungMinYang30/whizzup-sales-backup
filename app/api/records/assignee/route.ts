@@ -2,7 +2,11 @@ import {
   accessErrorResponse,
   requireApprovedMember,
 } from "../../../../lib/collaboration";
-import { transferActivityAssignment } from "../../../../lib/activity-assignment-history";
+import {
+  setActivityAssignmentAutomatic,
+  setActivityAssignmentFixed,
+  transferActivityAssignment,
+} from "../../../../lib/activity-assignment-history";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +15,24 @@ export async function PUT(request: Request) {
     const member = await requireApprovedMember();
     const payload = (await request.json()) as Record<string, unknown>;
     const activityId = Number(payload.activityId);
+    if (
+      Number.isInteger(activityId) &&
+      activityId > 0 &&
+      payload.mode === "automatic"
+    ) {
+      return Response.json(
+        await setActivityAssignmentAutomatic(activityId, member),
+      );
+    }
+    if (
+      Number.isInteger(activityId) &&
+      activityId > 0 &&
+      payload.mode === "fixed"
+    ) {
+      return Response.json(
+        await setActivityAssignmentFixed(activityId, member),
+      );
+    }
     const targetMemberId = Number(payload.targetMemberId);
     if (
       !Number.isInteger(activityId) ||

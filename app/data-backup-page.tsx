@@ -11,6 +11,7 @@ type BackupInspection = {
   totalRows: number;
   counts: Record<string, number>;
   excluded: string[];
+  compatibilityNotices: string[];
 };
 
 type CsvInspection = {
@@ -27,13 +28,14 @@ const tableLabels: Record<string, string> = {
   members: "구성원·권한",
   activities: "기관 활동 기록",
   activity_authors: "기록 입력자",
-  ai_recommendations: "AI 대응 제안",
   app_settings: "사이트 설정",
   organization_locations: "지도 주소·좌표",
   sales_campaigns: "영업 묶음",
   sales_campaign_targets: "묶음 영업 대상",
   equipment_projects: "사업",
   equipment_items: "품목·설치 상태",
+  data_control_events: "선택 정리·복구 이력",
+  holdem_weekly_scores: "홀덤 주간 순위",
 };
 
 function responseFilename(response: Response, fallback: string) {
@@ -79,6 +81,7 @@ export default function DataBackupPage({
 }: {
   onDataChanged: () => Promise<void>;
   notify: (message: string) => void;
+  isPrimaryOwner: boolean;
 }) {
   const [busy, setBusy] = useState("");
   const [lastBackupAt, setLastBackupAt] = useState(() =>
@@ -337,41 +340,9 @@ export default function DataBackupPage({
         </div>
       </article>
 
-      <div className="backup-card-grid">
-        <article className="panel backup-card backup-card-primary">
-          <div className="backup-card-number">01</div>
-          <span className="section-kicker">FULL BACKUP</span>
-          <h3>전체 DB 백업</h3>
-          <p>
-            장애 복구용 원본입니다. 검색이나 화면 필터와 관계없이 모든 업무
-            데이터를 저장합니다.
-          </p>
-          <ul className="backup-inclusion-list">
-            <li>기관별 통화·미팅 이력과 일정</li>
-            <li>지도 주소·위도·경도·카카오 장소 정보</li>
-            <li>영업 카테고리와 묶음 대상</li>
-            <li>수주 사업·품목·규격·수량·설치 상태</li>
-            <li>AI 미팅·TM 분석과 선택·반영한 대응 제안</li>
-            <li>구성원·승인 상태·담당자 권한</li>
-          </ul>
-          <button
-            type="button"
-            className="primary-button backup-main-action"
-            disabled={Boolean(busy)}
-            onClick={() => void download("full")}
-          >
-            {busy === "download-full"
-              ? "전체 백업 만드는 중…"
-              : "전체 DB 백업 내려받기"}
-          </button>
-          <p className="backup-security-note">
-            보안을 위해 로그인 세션, OAuth 토큰·비밀키, OpenAI API 비밀값은
-            파일에 넣지 않습니다.
-          </p>
-        </article>
-
+      <div className="backup-card-grid backup-card-grid-single">
         <article className="panel backup-card">
-          <div className="backup-card-number">02</div>
+          <div className="backup-card-number">01</div>
           <span className="section-kicker">ACTIVITY CSV</span>
           <h3>활동 CSV 불러오기</h3>
           <p>
@@ -464,7 +435,7 @@ export default function DataBackupPage({
         <div className="backup-portability-grid">
           <section className="backup-package-card">
             <div className="backup-package-heading">
-              <span className="backup-card-number">03</span>
+              <span className="backup-card-number">02</span>
               <div>
                 <span className="section-kicker">EMERGENCY RECOVERY</span>
                 <h4>비상복구 패키지</h4>
@@ -498,7 +469,7 @@ export default function DataBackupPage({
 
           <section className="backup-package-card backup-package-offline">
             <div className="backup-package-heading">
-              <span className="backup-card-number">04</span>
+              <span className="backup-card-number">03</span>
               <div>
                 <span className="section-kicker">OFFLINE EDITION</span>
                 <h4>오프라인 독립판</h4>
@@ -537,21 +508,56 @@ export default function DataBackupPage({
         <div className="backup-restore-heading">
           <div>
             <span className="section-kicker">DISASTER RECOVERY</span>
-            <h3>전체 DB 복원</h3>
+            <h3>전체 DB 백업·복원</h3>
             <p>
-              파일을 먼저 검사한 뒤에만 복원할 수 있습니다. 원본 ID와 연결
-              관계를 유지해 지도·품목·담당자가 함께 돌아옵니다.
+              전체 업무 데이터를 한 파일로 보관하고, 필요할 때 같은 화면에서
+              검사한 뒤 안전하게 복원합니다.
             </p>
           </div>
-          <label className="backup-file-button">
-            전체 백업 파일 선택
-            <input
-              type="file"
-              accept=".json,application/json"
-              onChange={(event) => void inspectBackupFile(event)}
-            />
-          </label>
         </div>
+
+        <div className="backup-recovery-actions">
+          <section className="backup-recovery-action backup-recovery-action-download">
+            <div>
+              <strong>현재 전체 DB 백업</strong>
+              <p>
+                기관 기록, 지도, 수주·품목, 담당자와 권한을 복원 가능한 원본
+                파일로 저장합니다.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={Boolean(busy)}
+              onClick={() => void download("full")}
+            >
+              {busy === "download-full"
+                ? "전체 백업 만드는 중…"
+                : "전체 DB 백업 받기"}
+            </button>
+          </section>
+          <section className="backup-recovery-action backup-recovery-action-restore">
+            <div>
+              <strong>저장한 전체 DB 복원</strong>
+              <p>
+                백업 파일을 먼저 검사하고, 원본 ID와 연결 관계를 유지한 채
+                복원합니다.
+              </p>
+            </div>
+            <label className="backup-file-button">
+              전체 백업 파일 선택
+              <input
+                type="file"
+                accept=".json,application/json"
+                onChange={(event) => void inspectBackupFile(event)}
+              />
+            </label>
+          </section>
+        </div>
+        <p className="backup-security-note">
+          로그인 세션, OAuth 토큰·비밀키, OpenAI API 비밀값은 백업 파일에
+          포함되지 않습니다.
+        </p>
 
         {backupFileName && (
           <p className="backup-selected-file">선택 파일 · {backupFileName}</p>
@@ -571,6 +577,12 @@ export default function DataBackupPage({
                 무결성 코드 {backupInspection.checksum.slice(0, 12)}
               </small>
             </div>
+            {backupInspection.compatibilityNotices.map((notice) => (
+              <div className="restore-compatibility-notice" key={notice}>
+                <strong>이전 백업 호환 안내</strong>
+                <span>{notice}</span>
+              </div>
+            ))}
             <div className="restore-count-grid">
               {Object.entries(backupInspection.counts).map(([table, count]) => (
                 <div key={table}>

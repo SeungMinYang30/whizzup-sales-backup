@@ -1,5 +1,11 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { canonicalInstitutionName } from "../lib/institution-names";
+import { regionFromAddress } from "../lib/region-from-address";
+import {
+  AWARD_STAGE_OPTIONS,
+  COMPLETED_AWARD_STAGE,
+  normalizeAwardStage,
+} from "../lib/sales-taxonomy";
 
 export type ActivityImportValues = {
   activityDate: string;
@@ -9,6 +15,7 @@ export type ActivityImportValues = {
   contactMethod: string;
   region: string;
   organization: string;
+  businessRound: number;
   budgetType: string;
   budgetAmount: string;
   topic: string;
@@ -20,6 +27,7 @@ export type ActivityImportValues = {
   executionType: string;
   consortiumCompany: string;
   awardStage: string;
+  awardCompletedDate: string;
   progressManager: string;
   followUpRequired: boolean;
   followUpDate: string;
@@ -31,6 +39,8 @@ export type ActivityImportValues = {
   contactEmail: string;
   sourceChat: string;
   notes: string;
+  address: string;
+  installedProducts: string;
 };
 
 export type ActivityImportRow = {
@@ -40,49 +50,211 @@ export type ActivityImportRow = {
   warnings: string[];
 };
 
+export type AwardCompanyRelation = "ours" | "partner" | "other" | "unknown";
+
+export function awardCompanyKey(value: string) {
+  return canonicalInstitutionName(value)
+    .normalize("NFKC")
+    .toLocaleLowerCase("ko-KR")
+    .replace(/주식회사|유한회사|합자회사|합명회사|\(주\)|㈜/g, "")
+    .replace(/[^0-9a-z가-힣]/g, "");
+}
+
+export function classifyAwardCompany(
+  company: string,
+  registeredPartners: string[],
+): AwardCompanyRelation {
+  const key = awardCompanyKey(company);
+  if (!key) return "unknown";
+  if (key === "위즈업" || key === "whizzup" || key === "wizup") return "ours";
+  const partnerKeys = new Set(
+    registeredPartners.map(awardCompanyKey).filter(Boolean),
+  );
+  return partnerKeys.has(key) ? "partner" : "other";
+}
+
+function mergeTextList(left: string, right: string) {
+  const values = `${left}\n${right}`
+    .split(/[\n,;|]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [...new Set(values)].join(", ");
+}
+
+export function applyAwardCompanyToSelectedRows<
+  T extends ActivityImportRow & { selected?: boolean; duplicate?: boolean },
+>(
+  rows: T[],
+  company: string,
+  mode: "empty" | "overwrite",
+) {
+  const nextCompany = company.trim();
+  let changedCount = 0;
+  let overwrittenCount = 0;
+  const nextRows = rows.map((row) => {
+    if (!row.selected || row.duplicate) return row;
+    const currentCompany = row.values.awardCompany.trim();
+    if (mode === "empty" && currentCompany) return row;
+    if (currentCompany === nextCompany) return row;
+    changedCount += 1;
+    if (currentCompany) overwrittenCount += 1;
+    return {
+      ...row,
+      values: { ...row.values, awardCompany: nextCompany },
+      warnings: row.warnings.filter(
+        (warning) => warning !== "수주업체가 없어 수주 구분을 미정으로 저장합니다.",
+      ),
+    };
+  });
+  return { rows: nextRows, changedCount, overwrittenCount };
+}
+
+export function mergeAwardImportRows<T extends ActivityImportRow>(rows: T[]) {
+  const merged = new Map<string, T>();
+  let mergedCount = 0;
+  for (const sourceRow of rows) {
+    const row = {
+      ...sourceRow,
+      values: { ...sourceRow.values },
+      errors: [...sourceRow.errors],
+      warnings: [...sourceRow.warnings],
+    } as T;
+    const key = [
+      row.values.activityDate.slice(0, 7),
+      awardCompanyKey(row.values.organization),
+      Math.max(1, Number(row.values.businessRound) || 1),
+      awardCompanyKey(row.values.awardCompany),
+    ].join("|");
+    const safeKey = row.values.organization.trim() ? key : `row:${row.rowNumber}`;
+    const current = merged.get(safeKey);
+    if (!current) {
+      merged.set(safeKey, row);
+      continue;
+    }
+    mergedCount += 1;
+    const installedProducts = mergeTextList(
+      current.values.installedProducts,
+      row.values.installedProducts,
+    );
+    const conflictingAmounts =
+      Boolean(current.values.budgetAmount) &&
+      Boolean(row.values.budgetAmount) &&
+      current.values.budgetAmount !== row.values.budgetAmount;
+    current.values = {
+      ...current.values,
+      ...Object.fromEntries(
+        Object.entries(row.values).filter(
+          ([field, value]) =>
+            !String(current.values[field as keyof ActivityImportValues] ?? "").trim() &&
+            String(value ?? "").trim(),
+        ),
+      ),
+      installedProducts,
+      summary: installedProducts
+        ? `${installedProducts} 수주 등록`
+        : current.values.summary || row.values.summary,
+      notes: mergeTextList(current.values.notes, row.values.notes),
+    } as ActivityImportValues;
+    current.errors = [...new Set([...current.errors, ...row.errors])];
+    current.warnings = [
+      ...new Set([
+        ...current.warnings,
+        ...row.warnings,
+        `${row.rowNumber}행의 같은 수주 건을 이 행에 합쳤습니다.`,
+        ...(conflictingAmounts
+          ? ["같은 수주 건의 금액이 달라 먼저 입력된 금액을 유지했습니다."]
+          : []),
+      ]),
+    ];
+    if ("selected" in current || "selected" in row) {
+      (current as T & { selected?: boolean }).selected = Boolean(
+        (current as T & { selected?: boolean }).selected ||
+          (row as T & { selected?: boolean }).selected,
+      );
+    }
+  }
+  return { rows: [...merged.values()], mergedCount };
+}
+
+export function prepareAwardImportValues(
+  values: ActivityImportValues,
+  options: { today: string; registeredPartners: string[] },
+): ActivityImportValues {
+  const relation = classifyAwardCompany(
+    values.awardCompany,
+    options.registeredPartners,
+  );
+  const products = values.installedProducts.trim();
+  const companyNote =
+    relation === "partner"
+      ? `수주업체: ${values.awardCompany.trim()} (등록 협력사)`
+      : relation === "other"
+        ? `수주업체: ${values.awardCompany.trim()}`
+        : "";
+  return {
+    ...values,
+    activityDate: values.activityDate || options.today,
+    dateConfidence: values.activityDate
+      ? values.dateConfidence || "연월 확인"
+      : "등록일 기준",
+    activityType: "수주",
+    contactMethod: "기타",
+    topic: products || values.budgetType.trim() || "수주",
+    summary:
+      values.summary.trim() ||
+      (products
+        ? `${products} 수주 등록`
+        : `${values.organization.trim()} 수주현황 등록`),
+    awardStatus:
+      relation === "ours"
+        ? "위즈업 수주"
+        : relation === "partner"
+          ? "협력사 수주"
+          : relation === "other"
+            ? "타업체 수주"
+            : "미정",
+    awardCompany:
+      relation === "ours"
+        ? "위즈업"
+        : relation === "partner" || relation === "other"
+          ? values.awardCompany.trim()
+          : "",
+    executionType: relation === "other" ? "해당 없음" : "직영",
+    consortiumCompany: "",
+    awardStage: COMPLETED_AWARD_STAGE,
+    awardCompletedDate:
+      values.awardCompletedDate || values.activityDate || options.today,
+    progressManager: values.progressManager.trim() || "해당 없음",
+    sourceChat: "수주 관리 엑셀 등록",
+    notes: mergeTextList(values.notes, companyNote),
+  };
+}
+
 const activityTypes = [
-  "TM",
   "TM·통화",
-  "영업 대상",
-  "학교 미팅",
-  "학교 진행 중",
-  "기관 미팅",
-  "협력사 미팅",
-  "방문 미팅",
-  "업무 통화",
-  "제품 통화",
-  "계약 통화",
-  "수주",
-  "AS 통화",
+  "미팅·방문",
+  "문자·메일",
   "기타",
 ];
 const categories = ["학교", "기관", "협력사", "내부", "기타"];
 const contactMethods = ["유선", "방문", "온라인", "진행 공유", "기타"];
 const temperatures = ["높음", "중간", "낮음"];
-const awardStatuses = ["미정", "위즈업 수주", "타업체 수주"];
-const executionTypes = ["직영", "컨소"];
-const awardStages = [
-  "미정",
-  "품의",
-  "협상",
-  "계약",
-  "일정 조율",
-  "완공",
-  "검수",
-  "교육",
-];
+const awardStatuses = ["미정", "위즈업 수주", "협력사 수주", "타업체 수주"];
+const executionTypes = ["직영", "컨소", "해당 없음"];
+const awardStages = [...AWARD_STAGE_OPTIONS];
 
 const columns = [
   ["activityDate", "활동일자", true, "YYYY-MM-DD 형식으로 입력합니다.", "2026-07-18", 14],
   ["organization", "기관명", true, "학교·기관·협력사 이름을 입력합니다.", "제일초등학교", 24],
+  ["businessRound", "사업 차수", false, "같은 기관의 신규 사업은 2, 3처럼 구분합니다. 미입력 시 1차입니다.", "1", 12],
   ["activityType", "활동 유형", true, "선택값 안내 시트의 활동 유형 중 하나를 입력합니다.", "TM·통화", 16],
   ["summary", "상담 내용", true, "통화·미팅에서 확인한 핵심 내용을 입력합니다.", "전자칠판 교체 계획 확인, 다음 주 제안서 전달", 46],
   ["category", "기관 구분", false, "미입력 시 학교로 저장됩니다.", "학교", 14],
   ["region", "지역", false, "예: 경기 성남, 충북 청주", "경기 성남", 16],
   ["contactMethod", "컨택 유형", false, "미입력 시 유선으로 저장됩니다.", "유선", 14],
   ["topic", "주제", false, "제품, 사업명 또는 논의 주제를 입력합니다.", "전자칠판 교체", 24],
-  ["budgetType", "예산 종류", false, "예: 자체예산, 늘봄, 교육청 예산", "자체예산", 18],
-  ["budgetAmount", "예산 금액", false, "단위를 포함해도 됩니다.", "2,480만원", 16],
+  ["budgetType", "예산", false, "예: 자체예산, 늘봄, 교육청 예산", "자체예산", 18],
+  ["budgetAmount", "예산금액", false, "단위를 포함해도 됩니다.", "2,480만원", 16],
   ["temperature", "관심도", false, "미입력 시 중간으로 저장됩니다.", "중간", 12],
   ["followUpRequired", "재연락 여부", false, "예/아니오로 입력합니다. 미입력 시 아니오입니다.", "예", 14],
   ["followUpDate", "재연락 예정일", false, "YYYY-MM-DD 형식으로 입력합니다.", "2026-07-25", 16],
@@ -94,10 +266,11 @@ const columns = [
   ["contactEmail", "기관 메일", false, "이메일 주소를 입력합니다.", "name@example.com", 24],
   ["notes", "추가 메모", false, "추가로 남길 내용을 입력합니다.", "교장 선생님 보고 예정", 30],
   ["awardStatus", "수주 구분", false, "미입력 시 미정으로 저장됩니다.", "미정", 16],
-  ["awardCompany", "수주 업체명", false, "타업체 수주일 때 반드시 입력합니다.", "", 20],
+  ["awardCompany", "수주업체", false, "위즈업·협력사·타업체명을 입력합니다. 모르면 비워 둘 수 있습니다.", "", 20],
   ["executionType", "사업방식", false, "미입력 시 직영으로 저장됩니다.", "직영", 14],
   ["consortiumCompany", "컨소 업체명", false, "사업방식이 컨소일 때 반드시 입력합니다.", "", 20],
   ["awardStage", "현재 상태", false, "수주 후 진행 상태를 입력합니다.", "미정", 16],
+  ["awardCompletedDate", "납품 완료일", false, "현재 상태가 납품 완료일 때 YYYY-MM-DD로 입력합니다.", "", 16],
   ["progressManager", "진행 담당자", false, "수주 후 진행을 맡는 담당자 이름을 입력합니다.", "", 18],
 ] as const;
 
@@ -163,11 +336,14 @@ function worksheetXml(
 </worksheet>`;
 }
 
-function buildTemplateFiles() {
-  const inputRows = [columns.map((column) => column[1])];
+function buildTemplateFiles(
+  templateColumns: readonly (readonly [string, string, boolean, string, string, number])[] = columns,
+  templateTitle = "WHIZZUP 새 기록 대량 등록 양식",
+) {
+  const inputRows = [templateColumns.map((column) => column[1])];
   const guideRows = [
     ["항목", "필수 여부", "작성 방법", "입력 예시"],
-    ...columns.map((column) => [
+    ...templateColumns.map((column) => [
       column[1],
       column[2] ? "필수" : "선택",
       column[3],
@@ -185,10 +361,10 @@ function buildTemplateFiles() {
     ["사업방식", executionTypes.join(", ")],
     ["현재 상태", awardStages.join(", ")],
   ];
-  const lastColumn = columnName(columns.length - 1);
+  const lastColumn = columnName(templateColumns.length - 1);
   const sheet1 = worksheetXml(
     inputRows,
-    columns.map((column) => column[5]),
+    templateColumns.map((column) => column[5]),
     { filter: `A1:${lastColumn}1`, freeze: true },
   );
   const sheet2 = worksheetXml(guideRows, [20, 12, 58, 34], {
@@ -244,7 +420,7 @@ function buildTemplateFiles() {
   const now = new Date().toISOString();
   const core = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <dc:title>WHIZZUP 새 기록 대량 등록 양식</dc:title><dc:creator>WHIZZUP</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created>
+  <dc:title>${escapeXml(templateTitle)}</dc:title><dc:creator>WHIZZUP</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created>
 </cp:coreProperties>`;
   const app = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>WHIZZUP Sales Hub</Application></Properties>`;
@@ -279,6 +455,48 @@ export function downloadActivityTemplate() {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
+}
+
+export function downloadAwardTemplate() {
+  downloadRowsXlsx({
+    filename: "WHIZZUP_설치완료_수주일괄등록_양식.xlsx",
+    sheetName: "설치 완료 수주",
+    headers: [
+      "설치연월일",
+      "기관명",
+      "사업 차수",
+      "주소",
+      "설치 장비",
+      "수주업체",
+    ],
+    rows: [
+      [
+        "2026-07-15",
+        "[예시—삭제 후 입력] 서울한빛초등학교",
+        "1",
+        "서울특별시 종로구 세종대로 1",
+        "가상현실스포츠실 1식, 전자칠판 1대",
+        "주식회사 위즈업",
+      ],
+      [
+        "2026-06",
+        "[예시—삭제 후 입력] 부산꿈나무센터",
+        "1",
+        "부산광역시 해운대구 센텀로 1",
+        "키오스크 2대",
+        "에어패스",
+      ],
+      [
+        "2025-12-20",
+        "[예시—삭제 후 입력] 김포모담초중학교",
+        "2",
+        "경기도 김포시 운양로 158",
+        "3X비전센서 1대, 빔프로젝터 1대",
+        "주식회사 위즈업",
+      ],
+    ],
+    widths: [16, 34, 12, 42, 44, 24],
+  });
 }
 
 export type WorkbookExportOptions = {
@@ -508,19 +726,61 @@ function normalizeDate(value: string) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+function normalizeAwardMonth(value: string, yearValue = "", monthValue = "") {
+  const combined = value.trim() ||
+    (yearValue.trim() && monthValue.trim()
+      ? `${yearValue.trim()}-${monthValue.trim()}`
+      : yearValue.trim());
+  if (!combined) return "";
+  const exactDate = normalizeDate(combined);
+  if (exactDate) return exactDate;
+  const normalized = combined
+    .replace(/년/g, "-")
+    .replace(/월/g, "")
+    .replace(/[./]/g, "-")
+    .replace(/\s+/g, "")
+    .replace(/-+/g, "-")
+    .replace(/-$/, "");
+  const matched = normalized.match(/^(\d{4})-(\d{1,2})$/);
+  if (matched) {
+    const month = Number(matched[2]);
+    if (month >= 1 && month <= 12) {
+      return `${matched[1]}-${String(month).padStart(2, "0")}-01`;
+    }
+  }
+  if (/^\d{4}$/.test(normalized)) return `${normalized}-01-01`;
+  return "";
+}
+
 function booleanValue(value: string) {
   const normalized = normalizeHeader(value);
   return ["예", "y", "yes", "true", "1", "필요"].includes(normalized);
 }
 
-function mapRows(rows: string[][]): ActivityImportRow[] {
+function mapRows(rows: string[][], awardMode = false): ActivityImportRow[] {
   if (!rows.length) throw new Error("엑셀에 입력된 내용이 없습니다.");
+  const organizationHeaders = new Set(
+    ["기관명", "학교명", "기관", "학교", "시설명", "거래처명", "납품처"].map(
+      normalizeHeader,
+    ),
+  );
+  const activityTypeHeaders = new Set(
+    ["활동 유형", "활동유형", "활동 구분", "활동구분"].map(normalizeHeader),
+  );
   const headerRow = rows.findIndex((row) => {
     const normalized = row.map((value) => normalizeHeader(String(value)));
-    return normalized.includes("기관명") && normalized.includes("활동유형");
+    return (
+      normalized.some((header) => organizationHeaders.has(header)) &&
+      (awardMode ||
+        normalized.some((header) => activityTypeHeaders.has(header)))
+    );
   });
   if (headerRow < 0) {
-    throw new Error("‘기관명’과 ‘활동 유형’ 열을 찾지 못했습니다.");
+    throw new Error(
+      awardMode
+        ? "‘기관명’ 열을 찾지 못했습니다. 새 수주관리 양식을 사용해 주세요."
+        : "‘기관명’과 ‘활동 유형’ 열을 찾지 못했습니다.",
+    );
   }
   const indexes = new Map(
     rows[headerRow].map((header, index) => [
@@ -535,39 +795,165 @@ function mapRows(rows: string[][]): ActivityImportRow[] {
       .find((index): index is number => index !== undefined);
   const indexByKey = new Map<string, number | undefined>();
   columns.forEach((column) => {
-    indexByKey.set(column[0], findIndex(column[1]));
+    indexByKey.set(
+      column[0],
+      column[0] === "budgetType"
+        ? findIndex("예산", "예산명", "예산 종류", "budget_type")
+        : column[0] === "budgetAmount"
+          ? findIndex("예산금액", "예산 금액", "budget_amount")
+          : column[0] === "awardCompany"
+            ? findIndex("수주업체", "수주 업체", "실제 진행 주체", "award_company")
+            : findIndex(column[1]),
+    );
   });
+  if (awardMode) {
+    indexByKey.set(
+      "activityDate",
+      findIndex(
+        "설치연월일",
+        "설치 연월일",
+        "설치일자",
+        "설치일",
+        "납품일자",
+        "납품일",
+        "수주연월",
+        "수주 연월",
+        "수주년월",
+        "수주일자",
+        "활동일자",
+      ),
+    );
+    indexByKey.set("region", findIndex("지역", "권역", "소재지"));
+    indexByKey.set(
+      "organization",
+      findIndex("기관명", "학교명", "기관", "학교", "시설명", "거래처명", "납품처"),
+    );
+    indexByKey.set(
+      "businessRound",
+      findIndex("사업 차수", "사업차수", "차수", "수주 차수"),
+    );
+    indexByKey.set(
+      "address",
+      findIndex(
+        "주소",
+        "기관주소",
+        "학교주소",
+        "도로명주소",
+        "지번주소",
+        "소재지주소",
+      ),
+    );
+    indexByKey.set(
+      "installedProducts",
+      findIndex(
+        "설치 장비",
+        "설치장비",
+        "설치물품",
+        "설치 물품",
+        "설치품목",
+        "설치 품목",
+        "설치제품",
+        "납품품목",
+        "장비",
+        "제품",
+        "품목",
+      ),
+    );
+    indexByKey.set("budgetType", findIndex("예산", "예산명", "사업명"));
+    indexByKey.set(
+      "budgetAmount",
+      findIndex(
+        "예산금액(참고)",
+        "예산금액",
+        "예산 금액",
+        "수주금액",
+        "수주 금액",
+        "금액",
+      ),
+    );
+    indexByKey.set(
+      "awardCompany",
+      findIndex(
+        "수주업체",
+        "수주 업체",
+        "수주업체명",
+        "납품업체",
+        "공급업체",
+        "진행업체",
+        "협력사",
+        "업체명",
+        "계약업체",
+      ),
+    );
+    indexByKey.set(
+      "awardCompletedDate",
+      findIndex("납품 완료일", "납품완료일", "설치 완료일", "설치완료일"),
+    );
+    indexByKey.set("awardYear", findIndex("수주연도", "수주년도", "연도", "년도"));
+    indexByKey.set("awardMonth", findIndex("수주월", "월"));
+  }
   const valueAt = (row: string[], key: string) => {
     const index = indexByKey.get(key);
     return index === undefined ? "" : String(row[index] ?? "").trim();
   };
   const mapped = rows
     .slice(headerRow + 1)
-    .map((row, index) => {
+    .map((row, index): ActivityImportRow | null => {
       const rowNumber = headerRow + index + 2;
+      if (/^\[?예시(?:—|-|:|\s)/.test(valueAt(row, "organization"))) {
+        return null;
+      }
       const rawActivityDate = valueAt(row, "activityDate");
       const rawFollowUpDate = valueAt(row, "followUpDate");
-      const activityDate = normalizeDate(rawActivityDate);
+      const activityDate = awardMode
+        ? normalizeAwardMonth(
+            rawActivityDate,
+            valueAt(row, "awardYear"),
+            valueAt(row, "awardMonth"),
+          )
+        : normalizeDate(rawActivityDate);
       const followUpDate = normalizeDate(rawFollowUpDate);
+      const rawBusinessRound = valueAt(row, "businessRound");
+      const parsedBusinessRound = Number(rawBusinessRound || 1);
+      const awardCompletedDate = normalizeDate(
+        valueAt(row, "awardCompletedDate"),
+      );
+      const organization = canonicalInstitutionName(valueAt(row, "organization"));
+      const installedProducts = valueAt(row, "installedProducts");
+      const address = valueAt(row, "address");
       const values: ActivityImportValues = {
         activityDate,
-        dateConfidence: "확정",
-        activityType: valueAt(row, "activityType"),
+        dateConfidence:
+          awardMode && activityDate.endsWith("-01") ? "연월 확인" : "확정",
+        activityType: awardMode ? "수주" : valueAt(row, "activityType"),
         category: valueAt(row, "category") || "학교",
-        contactMethod: valueAt(row, "contactMethod") || "유선",
-        region: valueAt(row, "region"),
-        organization: canonicalInstitutionName(valueAt(row, "organization")),
+        contactMethod: awardMode
+          ? "기타"
+          : valueAt(row, "contactMethod") || "유선",
+        region: valueAt(row, "region") || regionFromAddress(address),
+        organization,
+        businessRound:
+          Number.isSafeInteger(parsedBusinessRound) &&
+          parsedBusinessRound >= 1 &&
+          parsedBusinessRound <= 99
+            ? parsedBusinessRound
+            : 1,
         budgetType: valueAt(row, "budgetType"),
         budgetAmount: valueAt(row, "budgetAmount"),
-        topic: valueAt(row, "topic"),
-        summary: valueAt(row, "summary"),
-        status: "진행 중",
+        topic: awardMode ? installedProducts || "수주" : valueAt(row, "topic"),
+        summary: awardMode
+          ? installedProducts
+            ? `${installedProducts} 수주 등록`
+            : `${organization || "기관"} 수주현황 등록`
+          : valueAt(row, "summary"),
+        status: "상담 진행",
         temperature: valueAt(row, "temperature") || "중간",
         awardStatus: valueAt(row, "awardStatus") || "미정",
         awardCompany: valueAt(row, "awardCompany"),
         executionType: valueAt(row, "executionType") || "직영",
         consortiumCompany: valueAt(row, "consortiumCompany"),
         awardStage: valueAt(row, "awardStage") || "미정",
+        awardCompletedDate,
         progressManager: valueAt(row, "progressManager"),
         followUpRequired: booleanValue(valueAt(row, "followUpRequired")),
         followUpDate,
@@ -577,12 +963,31 @@ function mapRows(rows: string[][]): ActivityImportRow[] {
         contactName: valueAt(row, "contactName"),
         contactPhone: valueAt(row, "contactPhone"),
         contactEmail: valueAt(row, "contactEmail"),
-        sourceChat: "엑셀 대량 등록",
-        notes: valueAt(row, "notes"),
+        sourceChat: awardMode ? "수주 관리 엑셀 등록" : "엑셀 대량 등록",
+        notes: awardMode && address
+          ? `주소: ${address}`
+          : valueAt(row, "notes"),
+        address,
+        installedProducts,
       };
+      if (values.awardStatus === "타업체 수주") {
+        values.executionType = "해당 없음";
+        values.consortiumCompany = "";
+        values.awardStage = "해당 없음";
+      } else {
+        if (values.executionType === "해당 없음") values.executionType = "직영";
+        values.awardStage =
+          values.awardStage === "해당 없음"
+            ? "미정"
+            : normalizeAwardStage(values.awardStage, values.awardStatus);
+      }
+      values.awardCompletedDate =
+        values.awardStage === COMPLETED_AWARD_STAGE
+          ? values.awardCompletedDate || values.activityDate
+          : "";
       const errors: string[] = [];
       const warnings: string[] = [];
-      if (!values.activityDate) {
+      if (!values.activityDate && !awardMode) {
         errors.push(
           rawActivityDate
             ? "활동일자 형식이 올바르지 않습니다."
@@ -590,12 +995,35 @@ function mapRows(rows: string[][]): ActivityImportRow[] {
         );
       }
       if (!values.organization) errors.push("기관명이 필요합니다.");
+      if (
+        rawBusinessRound &&
+        (!Number.isSafeInteger(parsedBusinessRound) ||
+          parsedBusinessRound < 1 ||
+          parsedBusinessRound > 99)
+      ) {
+        errors.push("사업 차수는 1~99 사이의 정수여야 합니다.");
+      }
       if (!values.activityType) {
         errors.push("활동 유형이 필요합니다.");
-      } else if (!activityTypes.includes(values.activityType)) {
+      } else if (!awardMode && !activityTypes.includes(values.activityType)) {
         errors.push("활동 유형을 선택값 안내에 맞춰 입력해 주세요.");
       }
       if (!values.summary) errors.push("상담 내용이 필요합니다.");
+      if (awardMode && !activityDate) {
+        warnings.push("수주연월이 없어 저장일 기준으로 자동 보완합니다.");
+      }
+      if (awardMode && !installedProducts) {
+        warnings.push("설치물품이 비어 있습니다.");
+      }
+      if (awardMode && address && !values.region) {
+        warnings.push("주소에서 지역을 판별하지 못했습니다. 미리보기에서 지역을 확인해 주세요.");
+      }
+      if (awardMode && !address) {
+        warnings.push("주소가 없어 지도 위치는 기관명으로 확인합니다.");
+      }
+      if (awardMode && !values.awardCompany) {
+        warnings.push("수주업체가 없어 수주 구분을 미정으로 저장합니다.");
+      }
       if (!categories.includes(values.category)) {
         errors.push("기관 구분을 선택값 안내에 맞춰 입력해 주세요.");
       }
@@ -608,8 +1036,8 @@ function mapRows(rows: string[][]): ActivityImportRow[] {
       if (!awardStatuses.includes(values.awardStatus)) {
         errors.push("수주 구분을 선택값 안내에 맞춰 입력해 주세요.");
       }
-      if (values.awardStatus === "타업체 수주" && !values.awardCompany) {
-        errors.push("타업체 수주 업체명이 필요합니다.");
+      if (["협력사 수주", "타업체 수주"].includes(values.awardStatus) && !values.awardCompany) {
+        warnings.push("수주업체가 비어 있어 미리보기에서 확인해야 합니다.");
       }
       if (!executionTypes.includes(values.executionType)) {
         errors.push("사업방식을 선택값 안내에 맞춰 입력해 주세요.");
@@ -617,7 +1045,7 @@ function mapRows(rows: string[][]): ActivityImportRow[] {
       if (values.executionType === "컨소" && !values.consortiumCompany) {
         errors.push("컨소 업체명이 필요합니다.");
       }
-      if (!awardStages.includes(values.awardStage)) {
+      if (!(awardStages as readonly string[]).includes(values.awardStage)) {
         errors.push("현재 상태를 선택값 안내에 맞춰 입력해 주세요.");
       }
       if (rawFollowUpDate && !followUpDate) {
@@ -636,22 +1064,28 @@ function mapRows(rows: string[][]): ActivityImportRow[] {
       return { rowNumber, values, errors, warnings };
     })
     .filter(
-      (row) =>
-        row.values.organization ||
-        row.values.activityType ||
-        row.values.summary ||
-        row.values.topic,
+      (row): row is ActivityImportRow =>
+        Boolean(
+          row &&
+            (row.values.organization ||
+              row.values.activityType ||
+              row.values.summary ||
+              row.values.topic),
+        ),
     );
   if (!mapped.length) {
     throw new Error("‘기록 입력’ 시트에 작성된 기록이 없습니다.");
   }
-  if (mapped.length > 500) {
-    throw new Error("한 번에 최대 500건까지 등록할 수 있습니다.");
+  if (mapped.length > 5_000) {
+    throw new Error("한 번에 최대 5,000건까지 등록할 수 있습니다.");
   }
   return mapped;
 }
 
-export async function parseActivityImportFile(file: File) {
+export async function parseActivityImportFile(
+  file: File,
+  options: { awardMode?: boolean } = {},
+) {
   const lowerName = file.name.toLocaleLowerCase();
   if (!lowerName.endsWith(".xlsx") && !lowerName.endsWith(".csv")) {
     throw new Error("엑셀(.xlsx) 또는 CSV 파일을 선택해 주세요.");
@@ -659,5 +1093,5 @@ export async function parseActivityImportFile(file: File) {
   const rows = lowerName.endsWith(".csv")
     ? parseCsv((await file.text()).replace(/^\uFEFF/, ""))
     : parseXlsx(await file.arrayBuffer());
-  return mapRows(rows);
+  return mapRows(rows, Boolean(options.awardMode));
 }

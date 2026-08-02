@@ -1,5 +1,6 @@
 import {
   accessErrorResponse,
+  canManageActivityHistory as memberCanManageActivityHistory,
   ensureCollaborationReady,
   isPrimaryOwner,
   requireMember,
@@ -10,18 +11,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const member = await requireMember();
-    if (member.status !== "approved") {
-      return Response.json({
-        member,
-        pendingCount: 0,
-        approvedCount: 0,
-        sharedGptUrl: "",
-        aiConfigured: false,
-        aiModel: "",
-        canViewPresence: false,
-      });
-    }
+    const member = await requireMember(true);
     const d1 = await ensureCollaborationReady();
     const counts = await d1
       .prepare(`
@@ -37,6 +27,9 @@ export async function GET() {
       .first<{ value: string }>();
     const aiConfig = await getOpenAIConfig();
     const canViewPresence = await isPrimaryOwner(member);
+    const canManageActivityHistory =
+      member.status === "approved" &&
+      (await memberCanManageActivityHistory(member));
 
     return Response.json({
       member,
@@ -46,6 +39,7 @@ export async function GET() {
       aiConfigured: aiConfig.configured,
       aiModel: aiConfig.model,
       canViewPresence,
+      canManageActivityHistory,
     });
   } catch (error) {
     return accessErrorResponse(error);
