@@ -1080,10 +1080,32 @@ export async function PUT(request: Request) {
           .prepare(
             `SELECT activities.*,
                     COALESCE(activity_authors.created_by_name, '가져온 기록')
-                      AS created_by_name
+                      AS created_by_name,
+                    jp.id AS joint_project_id,
+                    jp.name AS joint_project_name,
+                    jp.sponsor_organization AS joint_project_sponsor,
+                    jp.budget_group_id AS joint_project_budget_group_id,
+                    jp.budget_type AS joint_project_budget_type,
+                    jp.project_year AS joint_project_year,
+                    jp.joint_round AS joint_project_round,
+                    jpm.role AS joint_project_role,
+                    jpm.budget_amount AS joint_project_member_budget_amount
              FROM activities
              LEFT JOIN activity_authors
                ON activity_authors.activity_id = activities.id
+             LEFT JOIN joint_project_members jpm
+               ON jpm.id = (
+                 SELECT linked.id
+                 FROM joint_project_members linked
+                 JOIN joint_projects linked_project
+                   ON linked_project.id = linked.project_id
+                  AND linked_project.status = 'active'
+                 WHERE linked.activity_id = activities.id
+                 ORDER BY linked.updated_at DESC, linked.id DESC
+                 LIMIT 1
+               )
+             LEFT JOIN joint_projects jp
+               ON jp.id = jpm.project_id AND jp.status = 'active'
              WHERE activities.id = ?`,
           )
           .bind(Number(result.id))

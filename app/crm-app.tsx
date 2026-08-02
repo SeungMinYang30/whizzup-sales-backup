@@ -3371,6 +3371,35 @@ function upsertActivity(
   ];
 }
 
+function normalizeUpdatedActivity(
+  payload: Record<string, unknown>,
+  previous: Activity,
+) {
+  const hasJointProjectMetadata =
+    Object.prototype.hasOwnProperty.call(payload, "jointProjectId") ||
+    Object.prototype.hasOwnProperty.call(payload, "joint_project_id");
+  return normalize({
+    ...payload,
+    ...(hasJointProjectMetadata
+      ? {}
+      : {
+          jointProjectId: previous.jointProjectId ?? null,
+          jointProjectName: previous.jointProjectName || "",
+          jointProjectSponsor: previous.jointProjectSponsor || "",
+          jointProjectRole: previous.jointProjectRole || "",
+          jointProjectBudgetGroupId:
+            previous.jointProjectBudgetGroupId ?? null,
+          jointProjectBudgetType: previous.jointProjectBudgetType || "",
+          jointProjectYear: previous.jointProjectYear ?? null,
+          jointProjectRound: previous.jointProjectRound ?? null,
+          jointProjectMemberBudgetAmount:
+            previous.jointProjectMemberBudgetAmount ?? null,
+        }),
+    createdByName: previous.createdByName,
+    createdAt: previous.createdAt,
+  });
+}
+
 async function requestSession() {
   const response = await fetch("/api/session", { cache: "no-store" });
   const payload = (await response.json()) as SessionPayload & { error?: string };
@@ -9515,13 +9544,9 @@ export default function CrmApp({
         }
         payloadRecord = payload.record;
       }
-      const savedRecord = normalize({
-        ...payloadRecord,
-        createdByName: record.createdByName,
-        createdAt: record.createdAt,
-      });
+      const savedRecord = normalizeUpdatedActivity(payloadRecord, record);
       setRecords((current) => upsertActivity(current, savedRecord));
-      if (field === "budget") {
+      if (field === "budget" || Boolean(record.jointProjectId)) {
         void refreshRecordsInBackground();
       }
       setDetailInlineField(null);
@@ -13857,11 +13882,10 @@ export default function CrmApp({
       if (!response.ok || !payload.record) {
         throw new Error(payload.error || "진행 담당자를 변경하지 못했습니다.");
       }
-      const transferredRecord = normalize({
-        ...payload.record,
-        createdByName: record.createdByName,
-        createdAt: record.createdAt,
-      });
+      const transferredRecord = normalizeUpdatedActivity(
+        payload.record,
+        record,
+      );
       setRecords((current) =>
         current.map((item) =>
           item.id === transferredRecord.id ? transferredRecord : item,
@@ -13922,11 +13946,7 @@ export default function CrmApp({
       if (!response.ok || !payload.record) {
         throw new Error(payload.error || "담당자 고정 상태를 변경하지 못했습니다.");
       }
-      const savedRecord = normalize({
-        ...payload.record,
-        createdByName: record.createdByName,
-        createdAt: record.createdAt,
-      });
+      const savedRecord = normalizeUpdatedActivity(payload.record, record);
       setRecords((current) =>
         current.map((item) =>
           item.id === savedRecord.id
@@ -14073,11 +14093,7 @@ export default function CrmApp({
         if (!response.ok || !payload.record) {
           throw new Error(payload.error || "보완한 내용을 저장하지 못했습니다.");
         }
-        reviewedRecord = normalize({
-          ...payload.record,
-          createdByName: record.createdByName,
-          createdAt: record.createdAt,
-        });
+        reviewedRecord = normalizeUpdatedActivity(payload.record, record);
         setRecords((current) =>
           current.map((item) =>
             item.id === reviewedRecord.id ? reviewedRecord : item,

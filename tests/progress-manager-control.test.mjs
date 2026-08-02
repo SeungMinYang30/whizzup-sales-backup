@@ -101,7 +101,10 @@ test("detail progress-manager save renders the server response without stale cam
     crm.indexOf("async function saveDetailInlineEdit"),
     crm.indexOf("function updateDetailInlineDraft"),
   );
-  assert.match(saveBlock, /const savedRecord = normalize\(\{\s*\.\.\.payloadRecord,/);
+  assert.match(
+    saveBlock,
+    /const savedRecord = normalizeUpdatedActivity\(payloadRecord, record\)/,
+  );
   assert.doesNotMatch(
     saveBlock,
     /const savedRecord = normalize\(\{\s*\.\.\.record,\s*\.\.\.payloadRecord,/,

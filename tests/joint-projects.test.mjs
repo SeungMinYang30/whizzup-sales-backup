@@ -143,6 +143,30 @@ test("설치기관 담당자는 같은 공동사업의 주관기관 연락처를
   assert.match(styles, /\.history-inline-contact-source/);
 });
 
+test("공동사업 기록 수정 응답과 화면 상태는 저장 직후에도 연결 정보를 유지한다", () => {
+  const putBlock = records.slice(
+    records.indexOf("export async function PUT"),
+    records.indexOf("export async function PATCH"),
+  );
+  const saveBlock = crm.slice(
+    crm.indexOf("async function saveDetailInlineEdit"),
+    crm.indexOf("function updateDetailInlineDraft"),
+  );
+  assert.match(putBlock, /jp\.id AS joint_project_id/);
+  assert.match(putBlock, /jpm\.role AS joint_project_role/);
+  assert.match(putBlock, /linked\.activity_id = activities\.id/);
+  assert.match(crm, /function normalizeUpdatedActivity/);
+  assert.match(crm, /hasJointProjectMetadata/);
+  assert.match(
+    saveBlock,
+    /normalizeUpdatedActivity\(payloadRecord, record\)/,
+  );
+  assert.match(
+    saveBlock,
+    /field === "budget" \|\| Boolean\(record\.jointProjectId\)/,
+  );
+});
+
 test("공동사업 예산은 활성 표준 예산명과 연도·차수로 구분하고 설치기관별 금액을 저장한다", () => {
   assert.match(modal, /fetch\("\/api\/budget-catalog"/);
   assert.match(modal, />예산명</);
