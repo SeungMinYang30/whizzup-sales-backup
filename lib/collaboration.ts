@@ -42,7 +42,7 @@ export class AccessError extends Error {
 
 export const OAUTH_ACTIVITY_SCOPE = "activities:write";
 
-const STANDBY_PREAPPROVED_FULL_ACCESS_EMAILS = new Set([
+const STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS = new Set([
   "freeyang30@gmail.com",
 ]);
 
@@ -216,13 +216,13 @@ export async function getOrCreateMember(
 
   if (
     row &&
-    STANDBY_PREAPPROVED_FULL_ACCESS_EMAILS.has(email)
+    STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS.has(email)
   ) {
     const standbyPermissions = [...MEMBER_PERMISSIONS];
     await d1
       .prepare(`
         UPDATE members SET
-          role = 'assistant',
+          role = 'admin',
           permissions = ${memberPermissionsJsonExpression(standbyPermissions)},
           status = 'approved',
           is_sales = 0,
@@ -314,6 +314,23 @@ export async function isPrimaryOwner(
 ) {
   if (member.role !== "admin") return false;
   const d1 = await ensureCollaborationReady();
+  const standbyOwner = await d1
+    .prepare(
+      `SELECT email
+       FROM members
+       WHERE id = ? AND role = 'admin' AND status = 'approved'
+       LIMIT 1`,
+    )
+    .bind(member.id)
+    .first<{ email: string }>();
+  if (
+    standbyOwner &&
+    STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS.has(
+      String(standbyOwner.email).trim().toLowerCase(),
+    )
+  ) {
+    return true;
+  }
   const owner = await d1
     .prepare(
       `SELECT id

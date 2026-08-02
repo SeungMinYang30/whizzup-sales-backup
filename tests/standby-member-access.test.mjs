@@ -24,9 +24,9 @@ test("백업사이트 대기 계정은 본사이트의 승인 상태를 즉시 �
 test("명시적으로 승인한 백업 운영 계정은 기존 승인 상태와 관계없이 전체 권한으로 맞춘다", () => {
   const collaboration = source("../lib/collaboration.ts");
 
-  assert.match(collaboration, /STANDBY_PREAPPROVED_FULL_ACCESS_EMAILS/);
+  assert.match(collaboration, /STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS/);
   assert.match(collaboration, /"freeyang30@gmail\.com"/);
-  assert.match(collaboration, /role = 'assistant'/);
+  assert.match(collaboration, /role = 'admin'/);
   assert.match(
     collaboration,
     /permissions = \$\{memberPermissionsJsonExpression\(standbyPermissions\)\}/,
@@ -36,7 +36,20 @@ test("명시적으로 승인한 백업 운영 계정은 기존 승인 상태와 
   assert.match(collaboration, /WHERE id = \?/);
   assert.doesNotMatch(
     collaboration,
-    /STANDBY_PREAPPROVED_FULL_ACCESS_EMAILS\.has\(email\)[\s\S]{0,80}status\) === "pending"/,
+    /STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS\.has\(email\)[\s\S]{0,80}status\) === "pending"/,
+  );
+});
+
+test("백업 지정 계정은 기존 대표관리자를 유지하면서 대표 전용 기능도 사용한다", () => {
+  const collaboration = source("../lib/collaboration.ts");
+
+  assert.match(
+    collaboration,
+    /STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS\.has\([\s\S]{0,120}standbyOwner\.email/,
+  );
+  assert.match(
+    collaboration,
+    /STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS[\s\S]{0,260}return true;[\s\S]{0,260}ORDER BY id ASC/,
   );
 });
 
