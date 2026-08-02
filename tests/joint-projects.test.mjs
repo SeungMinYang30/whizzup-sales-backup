@@ -185,9 +185,12 @@ test("공동사업 예산은 활성 표준 예산명과 연도·차수로 구분
   assert.match(periodMigration, /ADD `joint_round`/);
 });
 
-test("공동사업 연결은 등록된 실제 기관만 사용하고 없는 주관·설치기관은 먼저 등록하게 한다", () => {
-  assert.match(modal, /\+ 새 주관기관 등록/);
-  assert.match(modal, /\+ 새 설치기관 등록/);
+test("공동사업 연결은 기존 기관 선택과 새 기관 즉시 등록을 함께 제공한다", () => {
+  assert.match(modal, /\+ 새 기관 등록/);
+  assert.match(modal, /기관 등록하고 선택/);
+  assert.match(modal, /비슷한 기존 기관/);
+  assert.match(modal, /공동사업 빠른 등록/);
+  assert.match(modal, /대신 \$\{organization\}을 주관기관으로 선택할까요/);
   assert.match(modal, /등록된 기관을 선택하거나 새 기관을 먼저 등록/);
   assert.match(modal, /공동사업 차수는 이 공동사업의 연도별 묶음 기준/);
   assert.match(store, /등록된 주관기관을 선택해 주세요/);

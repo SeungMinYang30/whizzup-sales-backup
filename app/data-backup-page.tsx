@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, useMemo, useState } from "react";
+import TrashPage from "./trash-page";
 
 type BackupInspection = {
   valid: true;
@@ -81,11 +82,19 @@ async function readError(response: Response, fallback: string) {
 export default function DataBackupPage({
   onDataChanged,
   notify,
+  isPrimaryOwner,
+  canManageBackup,
+  canManageTrash,
 }: {
   onDataChanged: () => Promise<void>;
   notify: (message: string) => void;
   isPrimaryOwner: boolean;
+  canManageBackup: boolean;
+  canManageTrash: boolean;
 }) {
+  const [activeSection, setActiveSection] = useState<"trash" | "backup">(
+    canManageTrash ? "trash" : "backup",
+  );
   const [busy, setBusy] = useState("");
   const [lastBackupAt, setLastBackupAt] = useState(() =>
     typeof window === "undefined"
@@ -326,7 +335,49 @@ export default function DataBackupPage({
     }
   }
 
+  const sectionTabs = (
+    <div className="backup-section-tabs" role="tablist" aria-label="데이터 복구 메뉴">
+      {canManageTrash && (
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeSection === "trash"}
+          className={activeSection === "trash" ? "active" : ""}
+          onClick={() => setActiveSection("trash")}
+        >
+          휴지통 복구
+        </button>
+      )}
+      {canManageBackup && (
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeSection === "backup"}
+          className={activeSection === "backup" ? "active" : ""}
+          onClick={() => setActiveSection("backup")}
+        >
+          전체 DB 백업·복원
+        </button>
+      )}
+    </div>
+  );
+
+  if (activeSection === "trash" && canManageTrash) {
+    return (
+      <section className="backup-workspace">
+        {sectionTabs}
+        <TrashPage
+          onDataChanged={onDataChanged}
+          notify={notify}
+          canPermanentlyDelete={isPrimaryOwner}
+        />
+      </section>
+    );
+  }
+
   return (
+    <section className="backup-workspace">
+      {sectionTabs}
     <section className="backup-layout">
       <article className="panel backup-hero">
         <div>
@@ -652,6 +703,7 @@ export default function DataBackupPage({
           </div>
         )}
       </article>
+    </section>
     </section>
   );
 }

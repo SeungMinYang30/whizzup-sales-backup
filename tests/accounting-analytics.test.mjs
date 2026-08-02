@@ -409,10 +409,12 @@ test("과거 제품 연결 점검은 내부 계산에 유지하고 통계 화면
   assert.doesNotMatch(analytics, /2025년 제품 연결/);
 });
 
-test("수주 목록에서 권한 범위의 회계 확인 상태를 함께 표시한다", () => {
+test("수주 목록은 정상 수금 완료를 숨기고 확인이 필요한 회계 상태만 표시한다", () => {
   const crm = source("../app/crm-app.tsx");
   assert.match(crm, /\/api\/accounting\/entries\?scope=visible/);
   assert.doesNotMatch(crm, /\/api\/accounting\?scope=visible/);
-  assert.match(crm, /실 수금 확인 전/);
-  assert.match(crm, /회계 확인 ·/);
+  assert.match(crm, /accountingExceptionForRecord/);
+  assert.match(crm, /수금 확인 필요/);
+  assert.match(crm, /미수금/);
+  assert.doesNotMatch(crm, /회계 확인 ·/);
 });

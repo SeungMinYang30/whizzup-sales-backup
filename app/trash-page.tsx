@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type TrashItem = {
   id: string;
@@ -16,6 +16,7 @@ type TrashItem = {
 type Props = {
   onDataChanged: () => void | Promise<void>;
   notify: (message: string) => void;
+  canPermanentlyDelete: boolean;
 };
 
 type TrashActionResponse = {
@@ -59,11 +60,6 @@ function formatDate(value: string) {
   }).format(date);
 }
 
-function daysRemaining(value: string) {
-  const date = new Date(value.endsWith("Z") ? value : `${value.replace(" ", "T")}Z`);
-  return Math.max(0, Math.ceil((date.getTime() - Date.now()) / 86_400_000));
-}
-
 function entityLabel(item: TrashItem) {
   if (item.entityType === "institution") return `기관 ${item.itemCount}곳`;
   if (item.entityType === "quotation") return "견적서";
@@ -76,12 +72,29 @@ function formatBytes(value: number) {
   return `${Math.max(1, Math.round(value / 1024)).toLocaleString("ko-KR")}KB`;
 }
 
-export default function TrashPage({ onDataChanged, notify }: Props) {
+export default function TrashPage({
+  onDataChanged,
+  notify,
+  canPermanentlyDelete,
+}: Props) {
   const [items, setItems] = useState<TrashItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+
+  const filteredItems = useMemo(() => {
+    const keyword = query.trim().toLocaleLowerCase("ko-KR");
+    return items.filter(
+      (item) =>
+        (typeFilter === "all" || item.entityType === typeFilter) &&
+        (!keyword ||
+          item.displayName.toLocaleLowerCase("ko-KR").includes(keyword) ||
+          item.deletedByName.toLocaleLowerCase("ko-KR").includes(keyword)),
+    );
+  }, [items, query, typeFilter]);
 
   const loadTrash = useCallback(async () => {
     setLoading(true);
@@ -107,7 +120,9 @@ export default function TrashPage({ onDataChanged, notify }: Props) {
     return () => window.clearTimeout(timer);
   }, [loadTrash]);
 
-  const allSelected = items.length > 0 && selectedIds.length === items.length;
+  const allSelected =
+    filteredItems.length > 0 &&
+    filteredItems.every((item) => selectedIds.includes(item.id));
   const busy = Boolean(busyId);
 
   function toggleSelected(id: string) {
@@ -119,7 +134,12 @@ export default function TrashPage({ onDataChanged, notify }: Props) {
   }
 
   function toggleAll() {
-    setSelectedIds(allSelected ? [] : items.map((item) => item.id));
+    const visibleIds = new Set(filteredItems.map((item) => item.id));
+    setSelectedIds((current) =>
+      allSelected
+        ? current.filter((id) => !visibleIds.has(id))
+        : [...new Set([...current, ...visibleIds])],
+    );
   }
 
   async function restoreSelected() {
@@ -151,7 +171,7 @@ export default function TrashPage({ onDataChanged, notify }: Props) {
   }
 
   async function deleteSelected() {
-    if (!selectedIds.length || busy) return;
+    if (!canPermanentlyDelete || !selectedIds.length || busy) return;
     if (!window.confirm(`선택한 ${selectedIds.length}개 항목을 영구 삭제할까요?\n\n이 작업은 되돌릴 수 없습니다.`)) return;
     setBusyId("bulk-delete");
     try {
@@ -178,7 +198,7 @@ export default function TrashPage({ onDataChanged, notify }: Props) {
   }
 
   async function emptyTrash() {
-    if (!items.length || busy) return;
+    if (!canPermanentlyDelete || !items.length || busy) return;
     const confirmation = window.prompt(
       `휴지통의 ${items.length}개 항목을 모두 영구 삭제합니다.\n계속하려면 '휴지통 비우기'를 입력해 주세요.`,
     );
@@ -233,6 +253,7 @@ export default function TrashPage({ onDataChanged, notify }: Props) {
   }
 
   async function permanentlyDelete(item: TrashItem) {
+    if (!canPermanentlyDelete) return;
     if (
       !window.confirm(
         `${item.displayName} 항목을 영구 삭제할까요?\n\n이 작업은 다시 되돌릴 수 없습니다.`,
@@ -269,19 +290,21 @@ export default function TrashPage({ onDataChanged, notify }: Props) {
       <article className="panel trash-panel">
         <div className="panel-header trash-panel-header">
           <div>
-            <span className="section-kicker">ADMIN ONLY · 30 DAYS</span>
+            <span className="section-kicker">DATA RECOVERY</span>
             <h2>삭제된 항목</h2>
-            <p>삭제 후 30일 안에 기관·활동 기록·견적서를 원래 상태로 복원할 수 있습니다.</p>
+            <p>기관·활동 기록·견적서를 복원합니다. 자동 영구 삭제 없이 관리자가 정리할 때까지 보관됩니다.</p>
           </div>
           <div className="trash-header-actions">
-            <button
-              type="button"
-              className="trash-empty-all"
-              onClick={() => void emptyTrash()}
-              disabled={loading || busy || items.length === 0}
-            >
-              휴지통 전체 비우기
-            </button>
+            {canPermanentlyDelete && (
+              <button
+                type="button"
+                className="trash-empty-all"
+                onClick={() => void emptyTrash()}
+                disabled={loading || busy || items.length === 0}
+              >
+                휴지통 전체 비우기
+              </button>
+            )}
             <button type="button" onClick={() => void loadTrash()} disabled={loading || busy}>
               새로고침
             </button>
@@ -299,10 +322,28 @@ export default function TrashPage({ onDataChanged, notify }: Props) {
           <div className="trash-empty">
             <span aria-hidden="true">✓</span>
             <strong>휴지통이 비어 있습니다</strong>
-            <p>삭제한 항목은 이곳에 30일 동안 보관됩니다.</p>
+            <p>삭제한 항목은 이곳에 안전하게 보관됩니다.</p>
           </div>
         ) : (
           <div className="trash-list">
+            <div className="trash-filter-bar">
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="항목명·삭제한 사람 검색"
+                aria-label="휴지통 검색"
+              />
+              <select
+                value={typeFilter}
+                onChange={(event) => setTypeFilter(event.target.value)}
+                aria-label="휴지통 자료 유형"
+              >
+                <option value="all">전체 자료</option>
+                <option value="institution">기관</option>
+                <option value="record">활동 기록</option>
+                <option value="quotation">견적서</option>
+              </select>
+            </div>
             <div className="trash-selection-bar">
               <label>
                 <input
@@ -323,17 +364,24 @@ export default function TrashPage({ onDataChanged, notify }: Props) {
                 >
                   선택 복구
                 </button>
-                <button
-                  type="button"
-                  className="trash-bulk-delete"
-                  disabled={!selectedIds.length || busy}
-                  onClick={() => void deleteSelected()}
-                >
-                  선택 영구 삭제
-                </button>
+                {canPermanentlyDelete && (
+                  <button
+                    type="button"
+                    className="trash-bulk-delete"
+                    disabled={!selectedIds.length || busy}
+                    onClick={() => void deleteSelected()}
+                  >
+                    선택 영구 삭제
+                  </button>
+                )}
               </div>
             </div>
-            {items.map((item) => (
+            {filteredItems.length === 0 && (
+              <div className="trash-empty compact">
+                <strong>조건에 맞는 항목이 없습니다.</strong>
+              </div>
+            )}
+            {filteredItems.map((item) => (
               <article
                 className={`trash-item ${selectedIds.includes(item.id) ? "selected" : ""}`}
                 key={item.id}
@@ -360,8 +408,8 @@ export default function TrashPage({ onDataChanged, notify }: Props) {
                   </p>
                 </div>
                 <div className="trash-expiry">
-                  <span>자동 영구 삭제까지</span>
-                  <strong>{daysRemaining(item.expiresAt)}일</strong>
+                  <span>보관 상태</span>
+                  <strong>복원 가능</strong>
                 </div>
                 <div className="trash-actions">
                   <button
@@ -372,14 +420,16 @@ export default function TrashPage({ onDataChanged, notify }: Props) {
                   >
                     {busyId === item.id ? "처리 중…" : "복원"}
                   </button>
-                  <button
-                    type="button"
-                    className="trash-delete"
-                    disabled={busy}
-                    onClick={() => void permanentlyDelete(item)}
-                  >
-                    영구 삭제
-                  </button>
+                  {canPermanentlyDelete && (
+                    <button
+                      type="button"
+                      className="trash-delete"
+                      disabled={busy}
+                      onClick={() => void permanentlyDelete(item)}
+                    >
+                      영구 삭제
+                    </button>
+                  )}
                 </div>
               </article>
             ))}

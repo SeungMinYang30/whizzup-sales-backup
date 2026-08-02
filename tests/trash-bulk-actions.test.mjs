@@ -27,6 +27,7 @@ test("trash supports selected restore, selected delete, and guarded empty all", 
   assert.match(page, /confirmation\?\.trim\(\) !== "휴지통 비우기"/);
   assert.match(route, /requestedIds/);
   assert.match(route, /requireMemberPermission\("trash:manage"\)/);
+  assert.match(route, /const member = await requirePrimaryOwner\(\)/);
   assert.doesNotMatch(route, /requireAdminMember/);
   assert.match(route, /payload\.all === true/);
   assert.match(route, /TRASH_ID_QUERY_CHUNK_SIZE = 50/);
@@ -35,6 +36,10 @@ test("trash supports selected restore, selected delete, and guarded empty all", 
   assert.match(route, /failedCount/);
   assert.match(page, /actionResultMessage/);
   assert.match(page, /payload\.processedIds/);
+  assert.match(page, /canPermanentlyDelete/);
+  assert.match(page, /항목명·삭제한 사람 검색/);
+  assert.match(page, /자동 영구 삭제 없이/);
+  assert.doesNotMatch(route, /purgeExpiredTrash/);
   assert.match(store, /TRASH_RESTORE_STATEMENT_CHUNK_SIZE = 40/);
   assert.match(store, /TRASH_OBJECT_DELETE_CHUNK_SIZE = 50/);
   assert.match(

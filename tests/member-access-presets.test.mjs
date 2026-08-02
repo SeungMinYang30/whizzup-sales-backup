@@ -49,6 +49,7 @@ test("직접 설정 권한은 왼쪽 운영 도구 순서와 동일하다", () =
     "수금·채권 관리",
     "수주·제품 통계",
     "물류·재고 관리",
+    "휴지통 복구",
     "API 등록·관리",
     "데이터 백업·복구",
   ];
@@ -83,7 +84,10 @@ test("팀 현황과 관리자 점검은 하나의 권한으로 함께 노출된�
     /canManageRecords && \{[\s\S]*id: "records"[\s\S]*canManageRecords && \{[\s\S]*id: "organizations"/,
   );
   assert.doesNotMatch(managementMenu, /id: "trash"/);
-  assert.match(managementMenu, /canManageBackup && \{[\s\S]*id: "backup"/);
+  assert.match(
+    managementMenu,
+    /\(canManageBackup \|\| canManageTrash\) && \{[\s\S]*id: "backup"/,
+  );
 });
 
 test("음성과 사진 분석은 대표관리자가 구성원별로 허용한다", () => {

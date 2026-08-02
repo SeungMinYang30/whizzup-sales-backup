@@ -41,10 +41,7 @@ test("the institution cleanup inventory is primary-owner only", () => {
     recordsRoute,
     /payload\.dataControl[\s\S]*await requirePrimaryOwner\(\)/,
   );
-  assert.match(
-    trashRoute,
-    /payload\.dataControl === true[\s\S]*await requirePrimaryOwner\(\)/,
-  );
+  assert.match(trashRoute, /const member = await requirePrimaryOwner\(\)/);
   assert.match(dataControlPanel, /대표관리자 본인 전용/);
 });
 
@@ -206,14 +203,16 @@ test("pre-standard-budget backups remain inspectable without erasing the current
   assert.match(backupPage, /이전 백업 호환 안내/);
 });
 
-test("duplicate institution cleanup UI is removed without deleting recovery APIs", () => {
+test("휴지통은 별도 메뉴 대신 데이터 백업·복구 화면 안에서 제공한다", () => {
   const managementMenu = crm.slice(
     crm.indexOf("const managementNavItems"),
     crm.indexOf("const visibleManagementNavItems"),
   );
   assert.doesNotMatch(managementMenu, /id: "trash"/);
   assert.match(crm, /requestedView === "trash" \? "backup"/);
-  assert.doesNotMatch(crm, /<TrashPage/);
+  assert.match(backupPage, /import TrashPage/);
+  assert.match(backupPage, /<TrashPage/);
+  assert.match(backupPage, /휴지통 복구/);
   assert.doesNotMatch(backupPage, /import DataControlPanel/);
   assert.doesNotMatch(backupPage, /<DataControlPanel/);
   assert.match(trashRoute, /export async function POST/);

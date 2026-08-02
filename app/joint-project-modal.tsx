@@ -13,6 +13,16 @@ export type JointProjectCandidate = {
   jointProjectName?: string;
 };
 
+type QuickInstitutionRole = "sponsor" | "site";
+
+type QuickInstitutionDraft = {
+  role: QuickInstitutionRole;
+  organization: string;
+  region: string;
+  address: string;
+  institutionType: string;
+};
+
 type StandardBudgetOption = {
   id: number;
   canonicalName: string;
@@ -67,7 +77,6 @@ export default function JointProjectModal({
   budgetGroupId = null,
   budgetType = "",
   initialProjectYear,
-  onCreateInstitution,
   onClose,
   onSaved,
 }: {
@@ -78,7 +87,6 @@ export default function JointProjectModal({
   budgetGroupId?: number | null;
   budgetType?: string;
   initialProjectYear?: number | null;
-  onCreateInstitution?: (organization: string) => void;
   onClose: () => void;
   onSaved: () => Promise<void> | void;
 }) {
@@ -99,10 +107,13 @@ export default function JointProjectModal({
     ],
     [candidates],
   );
+  const [createdCandidates, setCreatedCandidates] = useState<
+    JointProjectCandidate[]
+  >([]);
   const sponsorOptions = useMemo(
     () => [
       ...new Map(
-        [...availableSponsors, ...normalizedCandidates]
+        [...availableSponsors, ...normalizedCandidates, ...createdCandidates]
           .filter((item) => item.organization.trim())
           .map((item) => [item.organization.trim(), item]),
       ).values(),
@@ -111,7 +122,7 @@ export default function JointProjectModal({
         sponsorScore(right.organization) - sponsorScore(left.organization) ||
         left.organization.localeCompare(right.organization, "ko-KR"),
     ),
-    [availableSponsors, normalizedCandidates],
+    [availableSponsors, createdCandidates, normalizedCandidates],
   );
   const recommendedSponsor = useMemo(() => {
     const selected = [...normalizedCandidates].sort(
@@ -150,6 +161,9 @@ export default function JointProjectModal({
   const [activitySelections, setActivitySelections] = useState<Record<string, string>>({});
   const [extraMembers, setExtraMembers] = useState<JointProjectCandidate[]>([]);
   const [siteOrganizationDraft, setSiteOrganizationDraft] = useState("");
+  const [quickInstitution, setQuickInstitution] =
+    useState<QuickInstitutionDraft | null>(null);
+  const [quickInstitutionBusy, setQuickInstitutionBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -177,7 +191,9 @@ export default function JointProjectModal({
     setActivityAmbiguities([]);
     setActivitySelections({});
     setExtraMembers([]);
+    setCreatedCandidates([]);
     setSiteOrganizationDraft("");
+    setQuickInstitution(null);
     setCatalogLoading(true);
     void fetch("/api/budget-catalog", { cache: "no-store" })
       .then(async (response) => {
@@ -376,6 +392,138 @@ export default function JointProjectModal({
     setError("");
   }
 
+  function openQuickInstitution(role: QuickInstitutionRole) {
+    setQuickInstitution({
+      role,
+      organization:
+        role === "sponsor"
+          ? sponsorOrganization.trim()
+          : siteOrganizationDraft.trim(),
+      region: "",
+      address: "",
+      institutionType: "기관",
+    });
+    setError("");
+  }
+
+  async function createQuickInstitution() {
+    if (!quickInstitution || quickInstitutionBusy) return;
+    const organization = quickInstitution.organization.trim();
+    if (!organization) {
+      setError("새 기관명을 입력해 주세요.");
+      return;
+    }
+    const exact = sponsorOptions.find(
+      (item) => item.organization.trim() === organization,
+    );
+    if (exact) {
+      setError("이미 등록된 기관입니다. 기존 기관을 선택해 주세요.");
+      return;
+    }
+    if (
+      quickInstitution.role === "sponsor" &&
+      sponsorCandidate &&
+      sponsorCandidate.organization !== organization &&
+      !window.confirm(
+        `${sponsorCandidate.organization} 대신 ${organization}을 주관기관으로 선택할까요?`,
+      )
+    ) {
+      return;
+    }
+    try {
+      setQuickInstitutionBusy(true);
+      setError("");
+      let addressWarning = "";
+      const response = await fetch("/api/records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organization,
+          activityDate: new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Seoul",
+          }).format(new Date()),
+          activityType: "기타",
+          category: quickInstitution.institutionType.trim() || "기관",
+          region: quickInstitution.region.trim(),
+          businessRound: 1,
+          topic: "공동사업 기관 등록",
+          summary: "공동사업 연결 화면에서 새 기관으로 등록했습니다.",
+          status: "신규 접촉",
+          awardStatus: "미정",
+          sourceChat: "공동사업 빠른 등록",
+          skipInstitutionStateLookup: true,
+        }),
+      });
+      const payload = (await response.json()) as {
+        record?: Record<string, unknown>;
+        error?: string;
+      };
+      if (!response.ok || !payload.record) {
+        throw new Error(payload.error || "새 기관을 등록하지 못했습니다.");
+      }
+      const savedOrganization = String(
+        payload.record.organization ?? organization,
+      ).trim();
+      const candidate: JointProjectCandidate = {
+        organization: savedOrganization,
+        businessRound: Math.max(
+          1,
+          Number(payload.record.businessRound ?? payload.record.business_round) || 1,
+        ),
+        activityId:
+          Number(payload.record.id) > 0 ? Number(payload.record.id) : null,
+        budgetAmount: selectedBudget?.defaultAmount ?? null,
+        budgetType: selectedBudget?.canonicalName ?? budgetType,
+      };
+      if (quickInstitution.address.trim()) {
+        const locationResponse = await fetch("/api/map/locations", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            organization: savedOrganization,
+            region: quickInstitution.region.trim(),
+            address: quickInstitution.address.trim(),
+            roadAddress: quickInstitution.address.trim(),
+            latitude: 0,
+            longitude: 0,
+            placeName: savedOrganization,
+            placeId: "",
+          }),
+        });
+        if (!locationResponse.ok) {
+          const locationPayload = (await locationResponse.json()) as {
+            error?: string;
+          };
+          addressWarning =
+            locationPayload.error ||
+            "기관은 등록했지만 주소를 저장하지 못했습니다. 기관별 관리에서 주소를 다시 입력해 주세요.";
+        }
+      }
+      setCreatedCandidates((current) => [...current, candidate]);
+      if (quickInstitution.role === "sponsor") {
+        setSponsorOrganization(savedOrganization);
+      } else {
+        setExtraMembers((current) => [...current, candidate]);
+        setMemberAmounts((current) => ({
+          ...current,
+          [amountKey(candidate)]:
+            selectedBudget?.defaultAmount === null || !selectedBudget
+              ? ""
+              : String(Math.max(0, Math.round(selectedBudget.defaultAmount))),
+        }));
+        setSiteOrganizationDraft("");
+      }
+      setQuickInstitution(null);
+      if (addressWarning) setError(addressWarning);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "새 기관을 등록하지 못했습니다.",
+      );
+    } finally {
+      setQuickInstitutionBusy(false);
+    }
+  }
+
   return (
     <div
       className="modal-layer"
@@ -500,15 +648,13 @@ export default function JointProjectModal({
             {!existingProjectId && (
               <>
                 <small>현재 등록된 기관 중 주관기관을 검색해 선택해 주세요.</small>
-                {sponsorOrganization.trim() && !sponsorCandidate && onCreateInstitution && (
-                  <button
-                    type="button"
-                    className="joint-project-inline-action"
-                    onClick={() => onCreateInstitution(sponsorOrganization.trim())}
-                  >
-                    + 새 주관기관 등록
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="joint-project-inline-action"
+                  onClick={() => openQuickInstitution("sponsor")}
+                >
+                  + 새 기관 등록
+                </button>
               </>
             )}
           </label>
@@ -524,19 +670,109 @@ export default function JointProjectModal({
                 />
               </label>
               <button type="button" onClick={addExistingSite}>기존 기관 추가</button>
-              {siteOrganizationDraft.trim() &&
-                !sponsorOptions.some(
-                  (item) => item.organization === siteOrganizationDraft.trim(),
-                ) &&
-                onCreateInstitution && (
-                  <button
-                    type="button"
-                    onClick={() => onCreateInstitution(siteOrganizationDraft.trim())}
-                  >
-                    + 새 설치기관 등록
-                  </button>
-                )}
+              <button type="button" onClick={() => openQuickInstitution("site")}>
+                + 새 기관 등록
+              </button>
             </div>
+          )}
+          {quickInstitution && !existingProjectId && (
+            <section className="joint-project-quick-institution">
+              <header>
+                <div>
+                  <strong>
+                    새 {quickInstitution.role === "sponsor" ? "주관" : "설치"}기관 등록
+                  </strong>
+                  <span>등록과 동시에 현재 공동사업 기관으로 선택합니다.</span>
+                </div>
+                <button type="button" onClick={() => setQuickInstitution(null)}>
+                  닫기
+                </button>
+              </header>
+              <div className="joint-project-quick-grid">
+                <label>
+                  <span>기관명 *</span>
+                  <input
+                    value={quickInstitution.organization}
+                    onChange={(event) =>
+                      setQuickInstitution((current) =>
+                        current
+                          ? { ...current, organization: event.target.value }
+                          : current,
+                      )
+                    }
+                    placeholder="기관명"
+                  />
+                </label>
+                <label>
+                  <span>기관 유형</span>
+                  <select
+                    value={quickInstitution.institutionType}
+                    onChange={(event) =>
+                      setQuickInstitution((current) =>
+                        current
+                          ? { ...current, institutionType: event.target.value }
+                          : current,
+                      )
+                    }
+                  >
+                    <option value="기관">기관</option>
+                    <option value="학교">학교</option>
+                    <option value="유아">어린이집·유치원</option>
+                    <option value="노인">노인</option>
+                    <option value="장애인">장애인</option>
+                    <option value="기타">기타</option>
+                  </select>
+                </label>
+                <label>
+                  <span>지역</span>
+                  <input
+                    value={quickInstitution.region}
+                    onChange={(event) =>
+                      setQuickInstitution((current) =>
+                        current ? { ...current, region: event.target.value } : current,
+                      )
+                    }
+                    placeholder="예: 충남 보령"
+                  />
+                </label>
+                <label className="wide">
+                  <span>주소</span>
+                  <input
+                    value={quickInstitution.address}
+                    onChange={(event) =>
+                      setQuickInstitution((current) =>
+                        current ? { ...current, address: event.target.value } : current,
+                      )
+                    }
+                    placeholder="주소를 알면 입력해 주세요. 지도 위치는 나중에 확인할 수 있습니다."
+                  />
+                </label>
+              </div>
+              {quickInstitution.organization.trim() && (
+                <div className="joint-project-duplicate-guide">
+                  <strong>비슷한 기존 기관</strong>
+                  <span>
+                    {sponsorOptions
+                      .filter((item) => {
+                        const query = quickInstitution.organization.replace(/\s+/g, "");
+                        const name = item.organization.replace(/\s+/g, "");
+                        return query && (name.includes(query) || query.includes(name));
+                      })
+                      .slice(0, 3)
+                      .map((item) => item.organization)
+                      .join(", ") || "없음"}
+                  </span>
+                </div>
+              )}
+              <button
+                type="button"
+                className="primary-button"
+                disabled={quickInstitutionBusy || !quickInstitution.organization.trim()}
+                onClick={() => void createQuickInstitution()}
+              >
+                {quickInstitutionBusy ? "등록 중…" : "기관 등록하고 선택"}
+              </button>
+            </section>
           )}
           <section className="joint-project-members">
             <header>

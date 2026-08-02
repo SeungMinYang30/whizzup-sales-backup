@@ -1336,8 +1336,8 @@ const memberPermissionOptions: {
   {
     id: "trash:manage",
     group: "operations",
-    label: "휴지통",
-    description: "삭제된 자료 확인·복원·영구 삭제",
+    label: "휴지통 복구",
+    description: "백업·복구 화면에서 삭제된 자료 확인·복원",
   },
   {
     id: "integration:manage",
@@ -6368,6 +6368,9 @@ export default function CrmApp({
   const canManageBackup = Boolean(
     session && memberCan(session.member, "backup:manage"),
   );
+  const canManageTrash = Boolean(
+    session && memberCan(session.member, "trash:manage"),
+  );
   const canManageAccounting = Boolean(
     session && memberCan(session.member, "accounting:manage"),
   );
@@ -6426,7 +6429,7 @@ export default function CrmApp({
           label: "API 등록·관리",
           mark: "A",
         },
-        canManageBackup && {
+        (canManageBackup || canManageTrash) && {
           id: "backup" as View,
           label: "데이터 백업·복구",
           mark: "B",
@@ -6881,7 +6884,7 @@ export default function CrmApp({
         (nextView === "analytics" && !canViewAnalytics) ||
         (nextView === "inventory" && !canManageInventory) ||
         (nextView === "integration" && !canManageIntegration) ||
-        (nextView === "backup" && !canManageBackup)
+        (nextView === "backup" && !canManageBackup && !canManageTrash)
       ) {
         nextView = "dashboard";
       }
@@ -6947,6 +6950,7 @@ export default function CrmApp({
     canManageRecords,
     canManageIntegration,
     canManageBackup,
+    canManageTrash,
     canManageAccounting,
     canViewAnalytics,
     canManageInventory,
@@ -7330,6 +7334,29 @@ export default function CrmApp({
     accountingStatusByBusinessKey[
       analyticsBusinessRoundKey(record.organization, record.businessRound)
     ];
+  const accountingExceptionForRecord = (record: Activity) => {
+    const accounting = accountingStatusForRecord(record);
+    if (!accounting || record.awardStatus !== "위즈업 수주") return null;
+    if (!accounting.confirmed) {
+      return {
+        label: "수금 확인 필요",
+        title: "회계에서 실제 수금 여부를 확인해 주세요.",
+      };
+    }
+    const status = accounting.accountingStatus.trim();
+    if (accounting.receivableBalance > 0) {
+      return {
+        label:
+          status && !/수금\s*완료|완료/.test(status)
+            ? status
+            : `미수금 ${accounting.receivableBalance.toLocaleString("ko-KR")}원`,
+        title: `실 수금 ${accounting.commissionCollectedAmount.toLocaleString("ko-KR")}원 · 미수금 ${accounting.receivableBalance.toLocaleString("ko-KR")}원`,
+      };
+    }
+    return status && !/수금\s*완료|완료/.test(status)
+      ? { label: status, title: status }
+      : null;
+  };
 
   const recordSearchIndex = useMemo(
     () =>
@@ -9616,15 +9643,6 @@ export default function CrmApp({
     );
   }
 
-  function openNewForUnregisteredOrganization(organization: string) {
-    const name = organization.trim();
-    setJointProjectOpen(false);
-    setJointProjectSeedCandidates(null);
-    setDetailOrganization(null);
-    openNew();
-    setForm((current) => ({ ...current, organization: name, category: "" }));
-  }
-
   function applyDetailJointProjectSponsorContact() {
     const source = detailJointProjectSponsorContact;
     const draft = detailInlineDraft;
@@ -11263,7 +11281,7 @@ export default function CrmApp({
       (nextView === "analytics" && !canViewAnalytics) ||
       (nextView === "inventory" && !canManageInventory) ||
       (nextView === "integration" && !canManageIntegration) ||
-      (nextView === "backup" && !canManageBackup)
+      (nextView === "backup" && !canManageBackup && !canManageTrash)
     ) {
       navigateTo("dashboard", { replace: true });
       setMobileNav(false);
@@ -16305,7 +16323,9 @@ export default function CrmApp({
               <DataBackupPage
                 onDataChanged={loadRecords}
                 notify={setToast}
-                isPrimaryOwner={Boolean(session?.canViewPresence)}
+                isPrimaryOwner={isOwner}
+                canManageBackup={canManageBackup}
+                canManageTrash={canManageTrash}
               />
             </Suspense>
           ) : view === "integration" ? (
@@ -18638,7 +18658,7 @@ export default function CrmApp({
                           </td>
                           <td><span className="date-cell">{formatDate(record.activityDate)}</span></td>
                           <td><span className="region-cell">{record.region || "—"}</span></td>
-                          <td>
+                          <td className="contract-amount-cell">
                             <strong className="org-name">
                               {awardPageGroupByPrimaryId.get(record.id)?.sponsorOrganization || record.organization}
                             </strong>
@@ -18705,23 +18725,12 @@ export default function CrmApp({
                                 </>
                               );
                             })()}
-                            {record.awardStatus === "위즈업 수주" &&
-                              accountingStatusForRecord(record) && (
+                            {accountingExceptionForRecord(record) && (
                               <span
-                                className={`award-accounting-state ${
-                                  accountingStatusForRecord(record).confirmed
-                                    ? "confirmed"
-                                    : "pending"
-                                }`}
-                                title={
-                                  accountingStatusForRecord(record).confirmed
-                                    ? `회계 확인 완료 · 실 수금 ${accountingStatusForRecord(record).commissionCollectedAmount.toLocaleString()}원 · 미수금 ${accountingStatusForRecord(record).receivableBalance.toLocaleString()}원`
-                                    : "실 수금 확인 전"
-                                }
+                                className="award-accounting-state pending"
+                                title={accountingExceptionForRecord(record)?.title}
                               >
-                                {accountingStatusForRecord(record).confirmed
-                                  ? `회계 확인 · ${accountingStatusForRecord(record).accountingStatus}`
-                                  : "실 수금 확인 전"}
+                                {accountingExceptionForRecord(record)?.label}
                               </span>
                             )}
                           </td>
@@ -20848,7 +20857,6 @@ export default function CrmApp({
               ?.activityDate.slice(0, 4),
           ) || new Date().getFullYear()
         }
-        onCreateInstitution={openNewForUnregisteredOrganization}
         onClose={() => {
           setJointProjectOpen(false);
           setJointProjectSeedCandidates(null);

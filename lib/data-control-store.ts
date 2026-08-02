@@ -177,7 +177,7 @@ export async function listActiveDataArchives() {
   const result = await d1
     .prepare(
       `SELECT * FROM deletion_batches
-       WHERE restored_at IS NULL AND DATETIME(expires_at) > DATETIME('now')
+       WHERE restored_at IS NULL
        ORDER BY deleted_at DESC
        LIMIT 300`,
     )

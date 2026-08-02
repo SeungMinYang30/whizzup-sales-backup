@@ -193,6 +193,35 @@ export async function restoreTrashBatch(
   memberId: number,
 ) {
   const snapshot = parseSnapshot(row.snapshot_json);
+  for (const table of restoreOrder) {
+    if (!allowedRestoreTables.has(table)) continue;
+    const records = snapshot.tables[table] || [];
+    if (!records.length) continue;
+    const tableInfo = await d1
+      .prepare(`PRAGMA table_info(${quotedIdentifier(table)})`)
+      .all<{ name: string; pk: number }>();
+    const primaryKeys = tableInfo.results
+      .filter((column) => Number(column.pk) > 0)
+      .sort((left, right) => Number(left.pk) - Number(right.pk))
+      .map((column) => column.name);
+    if (!primaryKeys.length) continue;
+    for (const record of records) {
+      if (primaryKeys.some((column) => record[column] === undefined)) continue;
+      const existing = await d1
+        .prepare(
+          `SELECT 1 AS found FROM ${quotedIdentifier(table)} WHERE ${primaryKeys
+            .map((column) => `${quotedIdentifier(column)} = ?`)
+            .join(" AND ")} LIMIT 1`,
+        )
+        .bind(...primaryKeys.map((column) => record[column] ?? null))
+        .first<{ found: number }>();
+      if (existing?.found) {
+        throw new Error(
+          "같은 자료가 이미 존재해 자동으로 덮어쓰지 않았습니다. 기존 자료를 확인한 뒤 다시 복원해 주세요.",
+        );
+      }
+    }
+  }
   const statements = [];
   for (const table of restoreOrder) {
     if (!allowedRestoreTables.has(table)) continue;
