@@ -132,6 +132,17 @@ test("공동사업 상세는 주관기관 셸 안에서 선택 기관의 기록�
   assert.match(styles, /\.history-summary-grid > div[\s\S]*inset 0 -1px 0 #d8e0ec/);
 });
 
+test("설치기관 담당자는 같은 공동사업의 주관기관 연락처를 확인 후 한 번만 불러온다", () => {
+  assert.match(crm, /detailJointProjectSponsorContact/);
+  assert.match(crm, /detailDisplayRecord\.jointProjectRole !== "site"/);
+  assert.match(crm, /record\.jointProjectRole === "sponsor"/);
+  assert.match(crm, /주관기관 담당자 정보 불러오기/);
+  assert.match(crm, /현재 입력된 기관 담당자 정보를 주관기관 담당자 정보로 바꿀까요/);
+  assert.match(crm, /불러온 뒤 저장을 눌러야 실제 기록에 반영됩니다/);
+  assert.match(crm, /updateDetailInlineDraft\(nextContact\)/);
+  assert.match(styles, /\.history-inline-contact-source/);
+});
+
 test("공동사업 예산은 활성 표준 예산명과 연도·차수로 구분하고 설치기관별 금액을 저장한다", () => {
   assert.match(modal, /fetch\("\/api\/budget-catalog"/);
   assert.match(modal, />예산명</);

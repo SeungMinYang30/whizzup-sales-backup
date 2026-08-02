@@ -8056,6 +8056,41 @@ export default function CrmApp({
     [records, detailOrganization],
   );
   const detailDisplayRecord = detailLatest ?? detailCampaignRegistration;
+  const detailJointProjectSponsorContact = useMemo(() => {
+    if (
+      !detailDisplayRecord?.jointProjectId ||
+      detailDisplayRecord.jointProjectRole !== "site"
+    ) {
+      return null;
+    }
+
+    return (
+      records
+        .filter(
+          (record) =>
+            record.jointProjectId === detailDisplayRecord.jointProjectId &&
+            record.jointProjectRole === "sponsor" &&
+            !isPdfCampaignRegistration(record) &&
+            !isCampaignRegistrationSystemRecord(record) &&
+            [
+              record.contactRole,
+              record.contactName,
+              record.contactPhone,
+              record.contactEmail,
+            ].some((value) => value.trim()),
+        )
+        .sort((left, right) => {
+          if (left.activityDate !== right.activityDate) {
+            return right.activityDate.localeCompare(left.activityDate);
+          }
+          return right.id - left.id;
+        })[0] ?? null
+    );
+  }, [
+    detailDisplayRecord?.jointProjectId,
+    detailDisplayRecord?.jointProjectRole,
+    records,
+  ]);
   const detailShellOrganization =
     detailDisplayRecord?.jointProjectId &&
     detailDisplayRecord.jointProjectSponsor?.trim()
@@ -9507,6 +9542,44 @@ export default function CrmApp({
     setDetailInlineDraft((current) =>
       current ? { ...current, ...updates } : current,
     );
+  }
+
+  function applyDetailJointProjectSponsorContact() {
+    const source = detailJointProjectSponsorContact;
+    const draft = detailInlineDraft;
+    if (!source || !draft) return;
+
+    const nextContact = {
+      contactRole: source.contactRole.trim() || draft.contactRole,
+      contactName: source.contactName.trim() || draft.contactName,
+      contactPhone: source.contactPhone.trim() || draft.contactPhone,
+      contactEmail: source.contactEmail.trim() || draft.contactEmail,
+    };
+    const hasConflictingValue = (
+      [
+        [draft.contactRole, nextContact.contactRole],
+        [draft.contactName, nextContact.contactName],
+        [draft.contactPhone, nextContact.contactPhone],
+        [draft.contactEmail, nextContact.contactEmail],
+      ] as const
+    ).some(
+      ([currentValue, nextValue]) =>
+        currentValue.trim() &&
+        nextValue.trim() &&
+        currentValue.trim() !== nextValue.trim(),
+    );
+
+    if (
+      hasConflictingValue &&
+      !window.confirm(
+        "현재 입력된 기관 담당자 정보를 주관기관 담당자 정보로 바꿀까요?\n불러온 뒤 저장을 눌러야 실제 기록에 반영됩니다.",
+      )
+    ) {
+      return;
+    }
+
+    updateDetailInlineDraft(nextContact);
+    setToast("주관기관 담당자 정보를 불러왔습니다. 저장을 눌러 반영해 주세요.");
   }
 
   function renderDetailInlineActions(record: Activity) {
@@ -19156,6 +19229,25 @@ export default function CrmApp({
                       className="history-inline-editor"
                       onClick={(event) => event.stopPropagation()}
                     >
+                      {detailJointProjectSponsorContact && (
+                        <div className="history-inline-contact-source">
+                          <div>
+                            <strong>주관기관 담당자 정보</strong>
+                            <small>
+                              {detailJointProjectSponsorContact.organization}
+                              {detailJointProjectSponsorContact.contactName
+                                ? ` · ${detailJointProjectSponsorContact.contactName}`
+                                : ""}
+                            </small>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={applyDetailJointProjectSponsorContact}
+                          >
+                            주관기관 담당자 정보 불러오기
+                          </button>
+                        </div>
+                      )}
                       <input
                         value={detailInlineDraft.contactName}
                         placeholder="담당자 이름"

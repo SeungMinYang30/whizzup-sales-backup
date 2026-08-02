@@ -164,6 +164,70 @@
   .restore-valid, .restore-count-grid span { font-size: 12px; }
   .backup-reminder strong, .restore-summary strong,
   .restore-safety strong { font-size: 14px; }
+
+  /* Keep dense institution workspaces readable without widening their tables. */
+  .records-heading-actions > button,
+  .records-heading-actions > .institution-budget-button,
+  .records-heading-actions > .joint-project-button,
+  .records-heading-actions > .institution-merge-button,
+  .records-heading-actions > .institution-bulk-delete-button,
+  .records-heading-actions > .award-delete-button,
+  .records-heading-actions > .award-history-button,
+  .records-heading-actions > .excel-export-button,
+  .records-heading-actions > .award-register-button,
+  .organization-header-actions button,
+  .manager-header-actions button,
+  .team-work-controls > button,
+  .manager-selection-actions button {
+    min-height: 40px;
+    padding-inline: 15px;
+    border-radius: 9px;
+    font-size: 12px;
+  }
+
+  .inline-search { height: 40px; }
+  .filter-row select,
+  .filter-row .reset-filter {
+    height: 40px;
+    font-size: 12px;
+  }
+
+  .followup-main small,
+  .followup-side b,
+  .followup-side small,
+  .schedule-range-note,
+  .schedule-chip small,
+  .region-cell,
+  .budget-cell,
+  .contact-person-cell,
+  .progress-manager-cell,
+  .budget-amount,
+  .followup-summary,
+  .organization-check,
+  .organization-card-top small,
+  .org-stats,
+  .team-work-note { font-size: 11px; line-height: 1.45; }
+
+  .schedule-head,
+  .row-actions button { font-size: 11px; }
+
+  .history-inline-contact-source strong { font-size: 12px; }
+  .history-inline-contact-source small,
+  .history-inline-contact-source button { font-size: 11px; }
+}
+
+@media (max-width: 760px) {
+  .history-inline-contact-source {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .history-inline-contact-source button {
+    width: 100%;
+    min-height: 42px;
+    font-size: 12px;
+    white-space: normal;
+  }
 }
 
 /* AI response guide: non-blocking drawer on desktop, bottom sheet on mobile. */

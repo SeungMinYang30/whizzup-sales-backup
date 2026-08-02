@@ -3075,6 +3075,11 @@ tr:hover .row-actions { opacity: 1; }
 .history-inline-editor { display: grid; gap: 7px; }
 .history-inline-editor input,
 .history-inline-editor select { width: 100%; min-width: 0; min-height: 38px; padding: 7px 9px; border: 1px solid #ccd6e8; border-radius: 7px; background: #fff; color: #263858; font: inherit; }
+.history-inline-contact-source { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px; border: 1px solid #cfdafb; border-radius: 9px; background: #eef3ff; }
+.history-inline-contact-source > div { min-width: 0; display: grid; gap: 3px; }
+.history-inline-contact-source strong { color: #334b9b; font-size: 11px; line-height: 1.35; }
+.history-inline-contact-source small { margin: 0; color: #7181a8; font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+.history-inline-contact-source button { flex: 0 0 auto; min-height: 34px; padding: 0 10px; border: 1px solid #7289e7; border-radius: 7px; background: #fff; color: #3d55ba; font-size: 10px; font-weight: 850; cursor: pointer; white-space: nowrap; }
 .history-inline-editor.budget { grid-template-columns: minmax(210px, 1.4fr) minmax(140px, .6fr); align-items: start; }
 .history-inline-editor.budget.multiple { grid-template-columns: 1fr; }
 .history-inline-editor.budget.multiple .history-inline-budget-editor { min-width: 0; }
@@ -3458,6 +3463,7 @@ tr:hover .row-actions { opacity: 1; }
 .equipment-catalog-price-input > small { display: none; }
 .equipment-construction-form-tab { margin: 0 18px 16px; border: 1px solid #d7e6df; border-radius: 9px; }
 .equipment-catalog-settlement { display: grid; grid-template-columns: 64px 84px 78px minmax(190px,1fr); align-items: end; gap: 6px; min-width: 0; }
+.equipment-catalog-settlement > label:not(.equipment-catalog-wizup-rate) > span { min-width: 0; }
 .equipment-catalog-quantity, .equipment-catalog-wizup-rate { display: flex; min-width: 0; flex-direction: column; gap: 3px; color: #355f91; font-size: 8px; font-weight: 800; line-height: 1; text-align: center; white-space: nowrap; }
 .equipment-catalog-quantity-input { position: relative; display: block; width: 100%; }
 .equipment-catalog-quantity input { box-sizing: border-box; width: 100%; height: 34px; padding: 0 20px 0 7px; border: 1px solid #d3dbea; border-radius: 7px; background: #fff; color: #40516d; font-size: 10px; font-weight: 800; text-align: right; outline: 0; }
