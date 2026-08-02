@@ -81,6 +81,7 @@ import { meaningfulBudgetAmount } from "../../../lib/budget-policy";
 import { logDataControlEvent } from "../../../lib/data-control-store";
 import { ensureAccountingReady } from "../../../lib/accounting-store";
 import { ensureManagerAlertsReady } from "../../../lib/manager-alerts";
+import { ensureJointProjectsReady } from "../../../lib/joint-projects";
 import {
   ACTIVITY_CHANGE_MAX_OPERATION_ID_LENGTH,
   ACTIVITY_CHANGE_SCOPE_AWARDS,
@@ -372,7 +373,10 @@ export async function GET(request: Request) {
         : MAX_RECORD_PAGE_SIZE,
     );
     const offset = positiveInteger(searchParams.get("offset"), 0);
-    const d1 = await ensureRecordsReady();
+    const [d1] = await Promise.all([
+      ensureRecordsReady(),
+      ensureJointProjectsReady(),
+    ]);
     const selectRecordsSql = dashboardScope
       ? `
         WITH
@@ -433,9 +437,33 @@ export async function GET(request: Request) {
         )
         SELECT
           a.*,
-          COALESCE(aa.created_by_name, '가져온 기록') AS created_by_name
+          COALESCE(aa.created_by_name, '가져온 기록') AS created_by_name,
+          jp.id AS joint_project_id,
+          jp.name AS joint_project_name,
+          jp.sponsor_organization AS joint_project_sponsor,
+          jpm.role AS joint_project_role
         FROM activities a
         LEFT JOIN activity_authors aa ON aa.activity_id = a.id
+        LEFT JOIN joint_project_members jpm
+          ON jpm.id = (
+            SELECT linked.id
+            FROM joint_project_members linked
+            JOIN joint_projects linked_project
+              ON linked_project.id = linked.project_id
+             AND linked_project.status = 'active'
+            WHERE linked.activity_id = a.id
+               OR (
+                 linked.organization = a.organization
+                 AND linked.business_round = a.business_round
+               )
+            ORDER BY
+              CASE WHEN linked.activity_id = a.id THEN 0 ELSE 1 END,
+              linked.updated_at DESC,
+              linked.id DESC
+            LIMIT 1
+          )
+        LEFT JOIN joint_projects jp
+          ON jp.id = jpm.project_id AND jp.status = 'active'
         WHERE a.id IN (SELECT id FROM dashboard_ids)
            OR (
              a.category <> '내부'
@@ -454,9 +482,33 @@ export async function GET(request: Request) {
       : `
         SELECT
           a.*,
-          COALESCE(aa.created_by_name, '가져온 기록') AS created_by_name
+          COALESCE(aa.created_by_name, '가져온 기록') AS created_by_name,
+          jp.id AS joint_project_id,
+          jp.name AS joint_project_name,
+          jp.sponsor_organization AS joint_project_sponsor,
+          jpm.role AS joint_project_role
         FROM activities a
         LEFT JOIN activity_authors aa ON aa.activity_id = a.id
+        LEFT JOIN joint_project_members jpm
+          ON jpm.id = (
+            SELECT linked.id
+            FROM joint_project_members linked
+            JOIN joint_projects linked_project
+              ON linked_project.id = linked.project_id
+             AND linked_project.status = 'active'
+            WHERE linked.activity_id = a.id
+               OR (
+                 linked.organization = a.organization
+                 AND linked.business_round = a.business_round
+               )
+            ORDER BY
+              CASE WHEN linked.activity_id = a.id THEN 0 ELSE 1 END,
+              linked.updated_at DESC,
+              linked.id DESC
+            LIMIT 1
+          )
+        LEFT JOIN joint_projects jp
+          ON jp.id = jpm.project_id AND jp.status = 'active'
         ORDER BY
           CASE WHEN a.follow_up_required = 1 THEN 0 ELSE 1 END,
           CASE WHEN a.follow_up_date IS NULL OR a.follow_up_date = '' THEN 1 ELSE 0 END,

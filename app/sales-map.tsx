@@ -34,6 +34,9 @@ import {
 } from "../lib/map-clustering";
 import { isCompletedAwardStage } from "../lib/sales-taxonomy";
 import { institutionAliasKey } from "../lib/institution-names";
+import JointProjectModal, {
+  type JointProjectCandidate,
+} from "./joint-project-modal";
 
 export type SalesMapRecord = {
   id: number;
@@ -58,6 +61,10 @@ export type SalesMapRecord = {
   summary: string;
   nextAction: string;
   notes: string;
+  jointProjectId?: number | null;
+  jointProjectName?: string;
+  jointProjectSponsor?: string;
+  jointProjectRole?: "sponsor" | "site" | "";
 };
 
 type MapStatus = "영업 중" | "진행 중" | "완료" | "타업체";
@@ -169,6 +176,10 @@ type SalesCampaignTarget = {
   currentBudgetType: string;
   currentNextAction: string;
   currentProgressManager: string;
+  jointProjectId: number | null;
+  jointProjectName: string;
+  jointProjectSponsor: string;
+  jointProjectRole: "sponsor" | "site" | "";
 };
 
 type CampaignMember = {
@@ -862,6 +873,22 @@ function normalizeCampaignTarget(
     currentProgressManager: String(
       value("currentProgressManager", "current_progress_manager"),
     ),
+    jointProjectId:
+      Number(value("jointProjectId", "joint_project_id")) > 0
+        ? Number(value("jointProjectId", "joint_project_id"))
+        : null,
+    jointProjectName: String(
+      value("jointProjectName", "joint_project_name"),
+    ),
+    jointProjectSponsor: String(
+      value("jointProjectSponsor", "joint_project_sponsor"),
+    ),
+    jointProjectRole:
+      String(value("jointProjectRole", "joint_project_role")) === "sponsor"
+        ? "sponsor"
+        : String(value("jointProjectRole", "joint_project_role")) === "site"
+          ? "site"
+          : "",
   };
 }
 
@@ -1276,6 +1303,7 @@ export default function SalesMapPage({
   >([]);
   const [budgetBulkAssigneeId, setBudgetBulkAssigneeId] = useState("");
   const [budgetBulkBusy, setBudgetBulkBusy] = useState("");
+  const [jointProjectOpen, setJointProjectOpen] = useState(false);
   const [campaignImporting, setCampaignImporting] = useState(false);
   const [campaignPdfAnalyzing, setCampaignPdfAnalyzing] = useState(false);
   const [campaignDeleteTarget, setCampaignDeleteTarget] =
@@ -2028,6 +2056,44 @@ export default function SalesMapPage({
           ),
     [activeCampaignId, campaignTargets],
   );
+  const selectedBudgetJointCandidates = useMemo<JointProjectCandidate[]>(
+    () =>
+      budgetSelectedTargetIds
+        .map((id) => activeCampaignTargets.find((target) => target.id === id))
+        .filter((target): target is SalesCampaignTarget => Boolean(target))
+        .map((target) => ({
+          organization: target.organization,
+          businessRound: target.businessRound,
+          campaignTargetId: target.id,
+          budgetAmount: target.budgetAmount,
+          budgetType: activeCampaign?.budgetType ?? target.currentBudgetType,
+          jointProjectId: target.jointProjectId,
+          jointProjectName: target.jointProjectName,
+        })),
+    [activeCampaign, activeCampaignTargets, budgetSelectedTargetIds],
+  );
+  const jointProjectSponsorOptions = useMemo<JointProjectCandidate[]>(() => {
+    const latest = new Map<string, SalesMapRecord>();
+    [...records]
+      .sort(
+        (left, right) =>
+          right.activityDate.localeCompare(left.activityDate) || right.id - left.id,
+      )
+      .forEach((record) => {
+        const key = institutionAliasKey(record.organization);
+        if (key && !latest.has(key)) latest.set(key, record);
+      });
+    return [...latest.values()].map((record) => ({
+      organization: record.organization,
+      businessRound: Math.max(1, record.businessRound || 1),
+      activityId: record.id,
+      budgetAmount:
+        Number(String(record.budgetAmount).replace(/[^0-9.-]/g, "")) || null,
+      budgetType: record.budgetType,
+      jointProjectId: record.jointProjectId ?? null,
+      jointProjectName: record.jointProjectName ?? "",
+    }));
+  }, [records]);
   useEffect(() => {
     setBudgetSelectedTargetIds([]);
     setBudgetBulkAssigneeId("");
@@ -4725,6 +4791,17 @@ export default function SalesMapPage({
                   </button>
                   <button
                     type="button"
+                    className="joint-project-button"
+                    disabled={
+                      selectedBudgetJointCandidates.length < 2 ||
+                      Boolean(budgetBulkBusy)
+                    }
+                    onClick={() => setJointProjectOpen(true)}
+                  >
+                    공동사업 연결
+                  </button>
+                  <button
+                    type="button"
                     className="danger"
                     disabled={
                       !budgetSelectedTargetIds.length || Boolean(budgetBulkBusy)
@@ -4787,6 +4864,16 @@ export default function SalesMapPage({
                         )}
                         <td>
                           <strong>{target.organization}</strong>
+                          {target.jointProjectId && (
+                            <em
+                              className={`joint-project-badge ${target.jointProjectRole}`}
+                              title={target.jointProjectName}
+                            >
+                              {target.jointProjectRole === "sponsor"
+                                ? "공동사업 주관"
+                                : "공동사업 설치"}
+                            </em>
+                          )}
                           <span>
                             {[target.region, target.schoolLevel]
                               .filter(Boolean)
@@ -4901,6 +4988,16 @@ export default function SalesMapPage({
                           />
                         )}
                         <strong>{target.organization}</strong>
+                        {target.jointProjectId && (
+                          <em
+                            className={`joint-project-badge ${target.jointProjectRole}`}
+                            title={target.jointProjectName}
+                          >
+                            {target.jointProjectRole === "sponsor"
+                              ? "공동사업 주관"
+                              : "공동사업 설치"}
+                          </em>
+                        )}
                         <span>{target.region || "지역 미등록"}</span>
                       </div>
                       <div className="budget-mobile-status-stack">
@@ -6444,6 +6541,21 @@ export default function SalesMapPage({
           </section>
         </div>
       )}
+
+      <JointProjectModal
+        open={jointProjectOpen}
+        candidates={selectedBudgetJointCandidates}
+        availableSponsors={jointProjectSponsorOptions}
+        campaignId={activeCampaign?.id ?? null}
+        budgetGroupId={activeCampaign?.budgetGroupId ?? null}
+        budgetType={activeCampaign?.budgetType ?? ""}
+        onClose={() => setJointProjectOpen(false)}
+        onSaved={async () => {
+          setBudgetSelectedTargetIds([]);
+          await Promise.all([loadCampaigns(), onRecordsChanged()]);
+          setNotice("공동사업 관계를 연결했습니다. 선정기관 수와 기존 기록은 그대로 유지됩니다.");
+        }}
+      />
 
       {notice && (
         <div className="toast">

@@ -45,6 +45,9 @@ import BudgetNameSelector, {
   type BudgetKind,
   type BudgetSelection,
 } from "./budget-name-selector";
+import JointProjectModal, {
+  type JointProjectCandidate,
+} from "./joint-project-modal";
 import { normalizeAiSuggestedStatus } from "../lib/ai-status";
 import { resolveRegisteredSalesName } from "../lib/sales-names";
 import {
@@ -130,6 +133,10 @@ type Activity = {
   region: string;
   organization: string;
   businessRound: number;
+  jointProjectId?: number | null;
+  jointProjectName?: string;
+  jointProjectSponsor?: string;
+  jointProjectRole?: "sponsor" | "site" | "";
   budgetType: string;
   budgetAmount: string;
   budgetOriginalName?: string;
@@ -1802,6 +1809,22 @@ function normalize(row: Record<string, unknown>): Activity {
       1,
       Number(value("businessRound", "business_round")) || 1,
     ),
+    jointProjectId:
+      Number(value("jointProjectId", "joint_project_id")) > 0
+        ? Number(value("jointProjectId", "joint_project_id"))
+        : null,
+    jointProjectName: String(
+      value("jointProjectName", "joint_project_name"),
+    ),
+    jointProjectSponsor: String(
+      value("jointProjectSponsor", "joint_project_sponsor"),
+    ),
+    jointProjectRole:
+      String(value("jointProjectRole", "joint_project_role")) === "sponsor"
+        ? "sponsor"
+        : String(value("jointProjectRole", "joint_project_role")) === "site"
+          ? "site"
+          : "",
     budgetType: String(value("budgetType", "budget_type")),
     budgetAmount: formatMoneyInput(rawBudgetAmount),
     budgetOriginalName: String(
@@ -5919,6 +5942,7 @@ export default function CrmApp({
   const [institutionMergeResolutions, setInstitutionMergeResolutions] =
     useState<Record<string, string>>({});
   const [institutionMergeBusy, setInstitutionMergeBusy] = useState(false);
+  const [jointProjectOpen, setJointProjectOpen] = useState(false);
   const [institutionDeleteBusy, setInstitutionDeleteBusy] = useState(false);
   const [institutionBudgetOpen, setInstitutionBudgetOpen] = useState(false);
   const [institutionBudgetType, setInstitutionBudgetType] = useState("");
@@ -7414,6 +7438,42 @@ export default function CrmApp({
     ],
     [records, selectedAwardIds],
   );
+  const selectedJointProjectCandidates = useMemo<JointProjectCandidate[]>(() => {
+    const selectedIds = view === "awards" ? selectedAwardIds : selectedInstitutionIds;
+    return selectedIds
+      .map((id) => records.find((record) => record.id === id))
+      .filter((record): record is Activity => Boolean(record))
+      .map((record) => ({
+        organization: record.organization,
+        businessRound: record.businessRound,
+        activityId: record.id,
+        budgetAmount: parseMoneyAmount(record.budgetAmount) || null,
+        budgetType: record.budgetType,
+        jointProjectId: record.jointProjectId ?? null,
+        jointProjectName: record.jointProjectName ?? "",
+      }));
+  }, [records, selectedAwardIds, selectedInstitutionIds, view]);
+  const jointProjectSponsorOptions = useMemo<JointProjectCandidate[]>(() => {
+    const latest = new Map<string, Activity>();
+    [...records]
+      .sort(
+        (left, right) =>
+          right.activityDate.localeCompare(left.activityDate) || right.id - left.id,
+      )
+      .forEach((record) => {
+        const key = institutionAliasKey(record.organization);
+        if (key && !latest.has(key)) latest.set(key, record);
+      });
+    return [...latest.values()].map((record) => ({
+      organization: record.organization,
+      businessRound: Math.max(1, record.businessRound || 1),
+      activityId: record.id,
+      budgetAmount: parseMoneyAmount(record.budgetAmount) || null,
+      budgetType: record.budgetType,
+      jointProjectId: record.jointProjectId ?? null,
+      jointProjectName: record.jointProjectName ?? "",
+    }));
+  }, [records]);
   const currentAwardPageSelected =
     awardPageRecords.length > 0 &&
     awardPageRecords.every((record) => selectedAwardIdSet.has(record.id));
@@ -16965,6 +17025,21 @@ export default function CrmApp({
                   {canManageRecords && (
                     <button
                       type="button"
+                      className="joint-project-button"
+                      disabled={selectedJointProjectCandidates.length < 2}
+                      onClick={() => setJointProjectOpen(true)}
+                      title="기관은 그대로 유지하고 주관기관과 설치기관의 공동사업 관계만 연결합니다."
+                    >
+                      {`공동사업 연결${
+                        selectedJointProjectCandidates.length > 0
+                          ? ` ${selectedJointProjectCandidates.length}`
+                          : ""
+                      }`}
+                    </button>
+                  )}
+                  {canManageRecords && (
+                    <button
+                      type="button"
                       className="institution-merge-button"
                       disabled={
                         selectedInstitutionNames.length < 2 ||
@@ -17054,6 +17129,16 @@ export default function CrmApp({
                     >
                       여러 기관 수정
                     </button>
+                    {canManageRecords && (
+                      <button
+                        type="button"
+                        className="joint"
+                        disabled={selectedJointProjectCandidates.length < 2}
+                        onClick={() => setJointProjectOpen(true)}
+                      >
+                        공동사업 연결
+                      </button>
+                    )}
                     {canManageRecords && (
                       <button
                         type="button"
@@ -17389,6 +17474,16 @@ export default function CrmApp({
                         </td>
                         <td>
                           <strong className="org-name">{record.organization}</strong>
+                          {record.jointProjectId && (
+                            <span
+                              className={`joint-project-badge ${record.jointProjectRole}`}
+                              title={record.jointProjectName}
+                            >
+                              {record.jointProjectRole === "sponsor"
+                                ? "공동사업 주관"
+                                : "공동사업 설치"}
+                            </span>
+                          )}
                           {priorAward ? (
                             <span className="prior-award-badge">{priorAward}</span>
                           ) : null}
@@ -17901,6 +17996,21 @@ export default function CrmApp({
                   {view === "awards" && canManageRecords && (
                     <button
                       type="button"
+                      className="joint-project-button"
+                      disabled={selectedJointProjectCandidates.length < 2}
+                      onClick={() => setJointProjectOpen(true)}
+                      title="기관 자료를 이동하지 않고 같은 공동사업 관계로 연결합니다."
+                    >
+                      {`공동사업 연결${
+                        selectedJointProjectCandidates.length > 0
+                          ? ` ${selectedJointProjectCandidates.length}`
+                          : ""
+                      }`}
+                    </button>
+                  )}
+                  {view === "awards" && canManageRecords && (
+                    <button
+                      type="button"
                       className="institution-merge-button"
                       disabled={
                         selectedAwardOrganizations.length < 2 ||
@@ -18234,6 +18344,16 @@ export default function CrmApp({
                             <small>
                               {record.businessRound}차 사업 · {record.category || "기관 구분 미정"}
                             </small>
+                            {record.jointProjectId && (
+                              <span
+                                className={`joint-project-badge ${record.jointProjectRole}`}
+                                title={record.jointProjectName}
+                              >
+                                {record.jointProjectRole === "sponsor"
+                                  ? "공동사업 주관"
+                                  : "공동사업 설치"}
+                              </span>
+                            )}
                             {postAwardContactStatus(
                               record,
                               recordsByInstitutionKey.get(
@@ -20292,6 +20412,34 @@ export default function CrmApp({
           </aside>
         </div>
       )}
+
+      <JointProjectModal
+        open={jointProjectOpen}
+        candidates={selectedJointProjectCandidates}
+        availableSponsors={jointProjectSponsorOptions}
+        budgetGroupId={
+          selectedJointProjectCandidates.length
+            ? records.find(
+                (record) =>
+                  record.id ===
+                  (view === "awards"
+                    ? selectedAwardIds[0]
+                    : selectedInstitutionIds[0]),
+              )?.budgetGroupId ?? null
+            : null
+        }
+        budgetType={
+          selectedJointProjectCandidates.find((item) => item.budgetType)
+            ?.budgetType ?? ""
+        }
+        onClose={() => setJointProjectOpen(false)}
+        onSaved={async () => {
+          await loadRecords("full");
+          setSelectedInstitutionIds([]);
+          setSelectedAwardIds([]);
+          setToast("공동사업 관계를 연결했습니다. 기관별 원래 기록은 그대로 유지됩니다.");
+        }}
+      />
 
       {institutionMergePreview && (
         <div

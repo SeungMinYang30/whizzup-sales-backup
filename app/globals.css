@@ -9261,3 +9261,223 @@ tr:hover .row-actions { opacity: 1; }
     grid-template-columns: 1fr;
   }
 }
+
+.joint-project-button {
+  border-color: #88a4f8;
+  background: #f4f7ff;
+  color: #3150b5;
+}
+
+.joint-project-button:hover:not(:disabled) {
+  border-color: #4f6ff1;
+  background: #eaf0ff;
+}
+
+.joint-project-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 5px;
+  padding: 3px 7px;
+  border: 1px solid #c9d5fb;
+  border-radius: 999px;
+  background: #f3f6ff;
+  color: #3b56aa;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.joint-project-badge.sponsor {
+  border-color: #b9d8ca;
+  background: #edf9f3;
+  color: #247054;
+}
+
+.joint-project-modal {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.joint-project-body {
+  display: grid;
+  gap: 16px;
+  padding: 20px 24px 24px;
+  overflow-y: auto;
+}
+
+.joint-project-guide,
+.joint-project-existing {
+  padding: 14px 16px;
+  border: 1px solid #cfdbf8;
+  border-radius: 12px;
+  background: #f5f8ff;
+  color: #3e527f;
+}
+
+.joint-project-existing {
+  border-color: #b9d9cc;
+  background: #eef9f4;
+  color: #28664f;
+}
+
+.joint-project-guide strong,
+.joint-project-existing strong,
+.joint-project-existing span {
+  display: block;
+}
+
+.joint-project-guide p,
+.joint-project-existing span {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.joint-project-field {
+  display: grid;
+  gap: 7px;
+}
+
+.joint-project-field > span {
+  color: #425272;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.joint-project-field input,
+.joint-project-field select,
+.joint-project-field textarea {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #d5ddea;
+  border-radius: 9px;
+  background: #fff;
+  padding: 10px 12px;
+  color: #263853;
+  font: inherit;
+}
+
+.joint-project-field textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.joint-project-field small {
+  color: #78869d;
+  font-size: 12px;
+}
+
+.joint-project-members {
+  overflow: hidden;
+  border: 1px solid #dce3ee;
+  border-radius: 12px;
+}
+
+.joint-project-members > header,
+.joint-project-members > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e7ebf1;
+}
+
+.joint-project-members > header {
+  background: #f7f9fc;
+}
+
+.joint-project-members > header span,
+.joint-project-members > div small {
+  display: block;
+  margin-top: 3px;
+  color: #7e8a9e;
+  font-size: 12px;
+}
+
+.joint-project-members > header b,
+.joint-project-members > div b {
+  color: #203b7c;
+  white-space: nowrap;
+}
+
+.joint-project-members > div:last-child {
+  border-bottom: 0;
+}
+
+.joint-project-members > div {
+  grid-template-columns: 52px minmax(0, 1fr) 72px auto;
+}
+
+.joint-project-members > div > span {
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #edf2ff;
+  color: #3d57aa;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.joint-project-members > div.sponsor > span {
+  background: #e8f7ef;
+  color: #237256;
+}
+
+.joint-project-error {
+  margin: 0;
+  color: #c34437;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.joint-project-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 24px;
+  border-top: 1px solid #e5eaf1;
+  background: #fff;
+}
+
+.joint-project-actions button {
+  min-height: 42px;
+  padding: 9px 16px;
+}
+
+.joint-project-actions .primary {
+  border-color: #4158ed;
+  background: #4158ed;
+  color: #fff;
+}
+
+.joint-project-actions .danger {
+  border-color: #e8bcb7;
+  background: #fff4f2;
+  color: #b43c31;
+}
+
+@media (max-width: 680px) {
+  .joint-project-modal {
+    width: 100%;
+    max-height: 94dvh;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .joint-project-body {
+    padding: 16px;
+  }
+
+  .joint-project-members > div {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .joint-project-members > div small,
+  .joint-project-members > div b {
+    grid-column: 2;
+  }
+
+  .joint-project-actions {
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+}

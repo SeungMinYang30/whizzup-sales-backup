@@ -562,6 +562,75 @@ export const salesCampaignTargets = sqliteTable(
   ],
 );
 
+export const jointProjects = sqliteTable(
+  "joint_projects",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    sponsorOrganization: text("sponsor_organization").notNull(),
+    campaignId: integer("campaign_id"),
+    budgetGroupId: integer("budget_group_id"),
+    budgetType: text("budget_type").notNull().default(""),
+    notes: text("notes").notNull().default(""),
+    status: text("status").notNull().default("active"),
+    createdBy: integer("created_by").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("joint_projects_campaign_idx").on(table.campaignId, table.status),
+    index("joint_projects_sponsor_idx").on(
+      table.sponsorOrganization,
+      table.status,
+    ),
+  ],
+);
+
+export const jointProjectMembers = sqliteTable(
+  "joint_project_members",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    projectId: integer("project_id").notNull(),
+    organization: text("organization").notNull(),
+    businessRound: integer("business_round").notNull().default(1),
+    role: text("role").notNull().default("site"),
+    activityId: integer("activity_id"),
+    campaignTargetId: integer("campaign_target_id"),
+    budgetAmount: integer("budget_amount"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("joint_project_members_project_business_idx").on(
+      table.projectId,
+      table.organization,
+      table.businessRound,
+    ),
+    index("joint_project_members_business_idx").on(
+      table.organization,
+      table.businessRound,
+      table.projectId,
+    ),
+    index("joint_project_members_campaign_target_idx").on(
+      table.campaignTargetId,
+    ),
+  ],
+);
+
+export const jointProjectEvents = sqliteTable(
+  "joint_project_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    projectId: integer("project_id").notNull(),
+    action: text("action").notNull(),
+    detailJson: text("detail_json").notNull().default("{}"),
+    changedBy: integer("changed_by").notNull(),
+    changedByName: text("changed_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("joint_project_events_project_idx").on(table.projectId)],
+);
+
 export const equipmentProjects = sqliteTable(
   "equipment_projects",
   {

@@ -21,6 +21,7 @@ import { ensureDataControlReady } from "./data-control-store";
 import { ensureAwardVendorsReady } from "./award-vendors";
 import { ensureQuotationDocumentsReady } from "./quotation-documents";
 import { ensureSchoolDirectoryReady } from "./school-directory";
+import { ensureJointProjectsReady } from "./joint-projects";
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
@@ -80,6 +81,11 @@ const COMPLETE_BUSINESS_BACKUP_TABLES = new Set([
   "deletion_batches",
   "holdem_weekly_scores",
 ]);
+const JOINT_PROJECT_BACKUP_TABLES = new Set([
+  "joint_projects",
+  "joint_project_members",
+  "joint_project_events",
+]);
 
 function legacyBackupMayOmitTable(
   schemaVersion: string,
@@ -89,7 +95,8 @@ function legacyBackupMayOmitTable(
     (PRE_BUDGET_NAME_SCHEMA_VERSIONS.has(schemaVersion) &&
       BUDGET_NAME_BACKUP_TABLES.has(tableName)) ||
     (schemaVersion !== BACKUP_SCHEMA_VERSION &&
-      COMPLETE_BUSINESS_BACKUP_TABLES.has(tableName))
+      (COMPLETE_BUSINESS_BACKUP_TABLES.has(tableName) ||
+        JOINT_PROJECT_BACKUP_TABLES.has(tableName)))
   );
 }
 
@@ -673,6 +680,52 @@ export const BACKUP_TABLES = [
     orderBy: "id",
   },
   {
+    name: "joint_projects",
+    columns: [
+      "id",
+      "name",
+      "sponsor_organization",
+      "campaign_id",
+      "budget_group_id",
+      "budget_type",
+      "notes",
+      "status",
+      "created_by",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "joint_project_members",
+    columns: [
+      "id",
+      "project_id",
+      "organization",
+      "business_round",
+      "role",
+      "activity_id",
+      "campaign_target_id",
+      "budget_amount",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "project_id, id",
+  },
+  {
+    name: "joint_project_events",
+    columns: [
+      "id",
+      "project_id",
+      "action",
+      "detail_json",
+      "changed_by",
+      "changed_by_name",
+      "created_at",
+    ],
+    orderBy: "id",
+  },
+  {
     name: "accounting_settlements",
     columns: [
       "id",
@@ -852,6 +905,7 @@ async function ensureBackupReady() {
   await ensureAwardVendorsReady();
   await ensureQuotationDocumentsReady();
   await ensureSchoolDirectoryReady();
+  await ensureJointProjectsReady();
   const d1 = getD1();
   await ensureInstitutionDecisionsReady(d1);
   await d1.prepare(`CREATE TABLE IF NOT EXISTS holdem_weekly_scores (
@@ -1255,6 +1309,7 @@ function validateRows(
   const campaigns = data.sales_campaigns;
   const projects = data.equipment_projects;
   const vendors = data.award_vendors;
+  const jointProjects = data.joint_projects;
 
   assertUnique(members, (row) => String(asInteger(row.id, "members.id")), "구성원 ID");
   assertUnique(
@@ -1497,6 +1552,38 @@ function validateRows(
     "영업 묶음별 기관",
   );
   assertUnique(
+    jointProjects,
+    (row) => String(asInteger(row.id, "joint_projects.id")),
+    "공동사업 ID",
+  );
+  assertUnique(
+    data.joint_project_members,
+    (row) => String(asInteger(row.id, "joint_project_members.id")),
+    "공동사업 기관 연결 ID",
+  );
+  assertUnique(
+    data.joint_project_members,
+    (row) =>
+      `${asInteger(row.project_id, "joint_project_members.project_id")}|${requiredText(
+        row.organization,
+        "joint_project_members.organization",
+      )}|${asInteger(row.business_round, "joint_project_members.business_round")}`,
+    "공동사업별 기관·차수 연결",
+  );
+  assertUnique(
+    data.joint_project_events,
+    (row) => String(asInteger(row.id, "joint_project_events.id")),
+    "공동사업 변경 이력 ID",
+  );
+  data.joint_project_members.forEach((row) => {
+    const role = requiredText(row.role, "joint_project_members.role");
+    if (role !== "sponsor" && role !== "site") {
+      throw new BackupValidationError(
+        "joint_project_members.role 값이 올바르지 않습니다.",
+      );
+    }
+  });
+  assertUnique(
     projects,
     (row) => String(asInteger(row.id, "equipment_projects.id")),
     "사업 ID",
@@ -1601,7 +1688,13 @@ function validateRows(
   const memberIds = rowSet(members, "id", "members");
   const activityIds = rowSet(activities, "id", "activities");
   const campaignIds = rowSet(campaigns, "id", "sales_campaigns");
+  const campaignTargetIds = rowSet(
+    data.sales_campaign_targets,
+    "id",
+    "sales_campaign_targets",
+  );
   const projectIds = rowSet(projects, "id", "equipment_projects");
+  const jointProjectIds = rowSet(jointProjects, "id", "joint_projects");
   const vendorIds = rowSet(vendors, "id", "award_vendors");
   const budgetGroupIds = rowSet(
     data.budget_name_groups,
@@ -1813,6 +1906,56 @@ function validateRows(
   vendors.forEach((row) => {
     assertReference(row.created_by, memberIds, "award_vendors.created_by", true);
     assertReference(row.updated_by, memberIds, "award_vendors.updated_by", true);
+  });
+  jointProjects.forEach((row) => {
+    assertReference(
+      row.created_by,
+      memberIds,
+      "joint_projects.created_by",
+    );
+    assertReference(
+      row.campaign_id,
+      campaignIds,
+      "joint_projects.campaign_id",
+      true,
+    );
+    assertReference(
+      row.budget_group_id,
+      budgetGroupIds,
+      "joint_projects.budget_group_id",
+      true,
+    );
+  });
+  data.joint_project_members.forEach((row) => {
+    assertReference(
+      row.project_id,
+      jointProjectIds,
+      "joint_project_members.project_id",
+    );
+    assertReference(
+      row.activity_id,
+      activityIds,
+      "joint_project_members.activity_id",
+      true,
+    );
+    assertReference(
+      row.campaign_target_id,
+      campaignTargetIds,
+      "joint_project_members.campaign_target_id",
+      true,
+    );
+  });
+  data.joint_project_events.forEach((row) => {
+    assertReference(
+      row.project_id,
+      jointProjectIds,
+      "joint_project_events.project_id",
+    );
+    assertReference(
+      row.changed_by,
+      memberIds,
+      "joint_project_events.changed_by",
+    );
   });
   data.award_vendor_documents.forEach((row) => {
     assertReference(
@@ -2509,6 +2652,7 @@ type RestorePresence = {
   restoresProductVendorLinks: boolean;
   restoresProductSupplySettings: boolean;
   restoresBudgetNameCatalog: boolean;
+  restoresJointProjects: boolean;
 };
 
 function restorePresenceFromInput(input: unknown): RestorePresence {
@@ -2534,6 +2678,10 @@ function restorePresenceFromInput(input: unknown): RestorePresence {
     restoresBudgetNameCatalog:
       Array.isArray(rawData?.budget_name_groups) &&
       Array.isArray(rawData?.budget_name_aliases),
+    restoresJointProjects:
+      Array.isArray(rawData?.joint_projects) &&
+      Array.isArray(rawData?.joint_project_members) &&
+      Array.isArray(rawData?.joint_project_events),
   };
 }
 
@@ -2550,6 +2698,7 @@ async function replaceDatabaseFromBackup(
     restoresProductVendorLinks: true,
     restoresProductSupplySettings: true,
     restoresBudgetNameCatalog: true,
+    restoresJointProjects: true,
   },
 ) {
   const {
@@ -2563,9 +2712,17 @@ async function replaceDatabaseFromBackup(
     restoresProductVendorLinks,
     restoresProductSupplySettings,
     restoresBudgetNameCatalog,
+    restoresJointProjects,
   } = presence;
   const d1 = await ensureBackupReady();
   const statements = [
+    ...(restoresJointProjects
+      ? [
+          d1.prepare("DELETE FROM joint_project_events"),
+          d1.prepare("DELETE FROM joint_project_members"),
+          d1.prepare("DELETE FROM joint_projects"),
+        ]
+      : []),
     ...(restoresAwardVendorDocuments
       ? [d1.prepare("DELETE FROM award_vendor_documents")]
       : []),
@@ -2650,6 +2807,9 @@ async function replaceDatabaseFromBackup(
     "equipment_projects",
     "activity_authors",
     "sales_campaign_targets",
+    "joint_projects",
+    "joint_project_members",
+    "joint_project_events",
     "equipment_items",
     "budget_name_request_records",
     "budget_name_members",
@@ -2659,6 +2819,14 @@ async function replaceDatabaseFromBackup(
   ];
 
   insertOrder.forEach((tableName) => {
+    if (
+      (tableName === "joint_projects" ||
+        tableName === "joint_project_members" ||
+        tableName === "joint_project_events") &&
+      !restoresJointProjects
+    ) {
+      return;
+    }
     if (tableName === "award_vendors" && !restoresAwardVendors) return;
     if (
       tableName === "award_vendor_documents" &&

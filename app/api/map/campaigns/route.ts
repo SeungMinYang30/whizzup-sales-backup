@@ -33,6 +33,7 @@ import {
   createTrashBatch,
   ensureTrashReady,
 } from "../../../../lib/trash-store";
+import { ensureJointProjectsReady } from "../../../../lib/joint-projects";
 
 export const dynamic = "force-dynamic";
 
@@ -308,6 +309,7 @@ export async function GET() {
     await Promise.all([
       ensureRecordsReady(),
       ensureBudgetNamesReady(),
+      ensureJointProjectsReady(),
     ]);
     const d1 = await ensureCampaignsReady();
     await backfillCampaignInstitutionBasics(d1);
@@ -416,7 +418,11 @@ export async function GET() {
             COALESCE(current_member.id, t.assigned_member_id)
               AS current_assigned_member_id,
             COALESCE(current_member.display_name, assigned_member.display_name, '')
-              AS assigned_member_name
+              AS assigned_member_name,
+            jp.id AS joint_project_id,
+            jp.name AS joint_project_name,
+            jp.sponsor_organization AS joint_project_sponsor,
+            jpm.role AS joint_project_role
           FROM sales_campaign_targets t
           JOIN sales_campaigns c
             ON c.id = t.campaign_id AND c.import_status = 'complete'
@@ -459,6 +465,28 @@ export async function GET() {
             ON assigned_member.id = t.assigned_member_id
            AND assigned_member.status = 'approved'
            AND assigned_member.is_sales = 1
+          LEFT JOIN joint_project_members jpm
+            ON jpm.id = (
+              SELECT linked.id
+              FROM joint_project_members linked
+              JOIN joint_projects linked_project
+                ON linked_project.id = linked.project_id
+               AND linked_project.status = 'active'
+              WHERE (
+                    linked.campaign_target_id = t.id
+                    OR (
+                      linked.organization = t.organization
+                      AND linked.business_round = t.business_round
+                    )
+                  )
+              ORDER BY
+                CASE WHEN linked.campaign_target_id = t.id THEN 0 ELSE 1 END,
+                linked.updated_at DESC,
+                linked.id DESC
+              LIMIT 1
+            )
+          LEFT JOIN joint_projects jp
+            ON jp.id = jpm.project_id AND jp.status = 'active'
           ORDER BY t.campaign_id DESC, t.organization COLLATE NOCASE
         `)
         .all(),
