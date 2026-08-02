@@ -6127,6 +6127,9 @@ export default function CrmApp({
   const [sessionLoading, setSessionLoading] = useState(true);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [teamLoading, setTeamLoading] = useState(false);
+  const [memberInviteEmail, setMemberInviteEmail] = useState("");
+  const [memberInviteName, setMemberInviteName] = useState("");
+  const [memberInviteSaving, setMemberInviteSaving] = useState(false);
   const [memberPresence, setMemberPresence] = useState<
     Record<number, MemberPresence>
   >({});
@@ -10398,6 +10401,57 @@ export default function CrmApp({
       );
     } finally {
       setTeamLoading(false);
+    }
+  }
+
+  async function registerMemberByEmail(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    if (memberInviteSaving) return;
+    try {
+      setMemberInviteSaving(true);
+      const response = await fetch("/api/members", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: memberInviteEmail,
+          displayName: memberInviteName,
+        }),
+      });
+      const payload = (await response.json()) as {
+        created?: boolean;
+        approvedNow?: boolean;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || "구성원을 등록하지 못했습니다.");
+      }
+      setMemberInviteEmail("");
+      setMemberInviteName("");
+      await Promise.all([loadTeam(), loadActivityReviewAssignees()]);
+      if (payload.approvedNow) {
+        setSession((current) =>
+          current
+            ? { ...current, approvedCount: current.approvedCount + 1 }
+            : current,
+        );
+      }
+      setToast(
+        payload.created
+          ? "이메일 구성원을 승인 상태로 등록했습니다."
+          : payload.approvedNow
+            ? "기존 승인 요청을 승인 상태로 전환했습니다."
+            : "이미 승인된 이메일의 이름을 갱신했습니다.",
+      );
+    } catch (caught) {
+      setToast(
+        caught instanceof Error
+          ? caught.message
+          : "구성원을 등록하지 못했습니다.",
+      );
+    } finally {
+      setMemberInviteSaving(false);
     }
   }
 
@@ -15477,6 +15531,42 @@ export default function CrmApp({
                     새로고침
                   </button>
                 </div>
+                <form
+                  className="member-email-register"
+                  onSubmit={(event) => void registerMemberByEmail(event)}
+                >
+                  <div>
+                    <strong>이메일로 구성원 바로 등록</strong>
+                    <span>
+                      로그인 전에 미리 승인합니다. 등록 후 아래에서 역할·권한을 조정할 수 있습니다.
+                    </span>
+                  </div>
+                  <input
+                    type="email"
+                    value={memberInviteEmail}
+                    onChange={(event) => setMemberInviteEmail(event.target.value)}
+                    placeholder="예: teammate@gmail.com"
+                    aria-label="등록할 구성원 이메일"
+                    required
+                  />
+                  <input
+                    value={memberInviteName}
+                    onChange={(event) => setMemberInviteName(event.target.value)}
+                    placeholder="이름"
+                    aria-label="등록할 구성원 이름"
+                    required
+                  />
+                  <button
+                    type="submit"
+                    disabled={
+                      memberInviteSaving ||
+                      !memberInviteEmail.trim() ||
+                      !memberInviteName.trim()
+                    }
+                  >
+                    {memberInviteSaving ? "등록 중" : "승인 등록"}
+                  </button>
+                </form>
                 {session.canViewPresence && (
                   <div className="member-presence-overview">
                     <div>

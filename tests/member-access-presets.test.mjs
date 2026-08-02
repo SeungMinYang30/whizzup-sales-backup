@@ -101,3 +101,17 @@ test("음성과 사진 분석은 대표관리자가 구성원별로 허용한다
   assert.match(crm, /\{canUseVoiceInput && \(/);
   assert.match(crm, /\{canUseImageInput && \(/);
 });
+
+test("관리자는 이메일로 구성원을 미리 승인 등록할 수 있다", () => {
+  const membersRoute = source("../app/api/members/route.ts");
+  const crm = source("../app/crm-app.tsx");
+
+  assert.match(membersRoute, /export async function POST/);
+  assert.match(membersRoute, /requireMemberPermission\("members:manage"\)/);
+  assert.match(membersRoute, /trim\(\)\.toLowerCase\(\)/);
+  assert.match(membersRoute, /status = 'approved'/);
+  assert.match(membersRoute, /LOWER\(email\) = \?/);
+  assert.match(crm, /이메일로 구성원 바로 등록/);
+  assert.match(crm, /method: "POST"/);
+  assert.match(crm, /등록할 구성원 이메일/);
+});

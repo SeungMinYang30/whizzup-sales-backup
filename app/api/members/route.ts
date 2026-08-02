@@ -44,6 +44,69 @@ export async function GET(request: Request) {
   }
 }
 
+export async function POST(request: Request) {
+  try {
+    const actor = await requireMemberPermission("members:manage");
+    const payload = (await request.json()) as {
+      email?: string;
+      displayName?: string;
+    };
+    const email = String(payload.email ?? "").trim().toLowerCase();
+    const displayName = String(payload.displayName ?? "").trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return Response.json(
+        { error: "등록할 이메일 주소를 확인해 주세요." },
+        { status: 400 },
+      );
+    }
+    if (!displayName) {
+      return Response.json(
+        { error: "구성원 이름을 입력해 주세요." },
+        { status: 400 },
+      );
+    }
+
+    const d1 = await ensureCollaborationReady();
+    const existing = await d1
+      .prepare("SELECT * FROM members WHERE LOWER(email) = ?")
+      .bind(email)
+      .first<Record<string, unknown>>();
+    if (existing) {
+      const approvedNow = String(existing.status) !== "approved";
+      const member = await d1
+        .prepare(`
+          UPDATE members SET
+            display_name = ?,
+            status = 'approved',
+            approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
+            approved_by = COALESCE(approved_by, ?)
+          WHERE id = ?
+          RETURNING *
+        `)
+        .bind(displayName, actor.id, Number(existing.id))
+        .first();
+      return Response.json({ member, created: false, approvedNow });
+    }
+
+    const member = await d1
+      .prepare(`
+        INSERT INTO members (
+          email, display_name, role, permissions, status, is_sales,
+          approved_at, approved_by, last_seen_at
+        ) VALUES (?, ?, 'member', '[]', 'approved', 0, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
+        RETURNING *
+      `)
+      .bind(email, displayName, actor.id)
+      .first();
+    return Response.json(
+      { member, created: true, approvedNow: true },
+      { status: 201 },
+    );
+  } catch (error) {
+    return accessErrorResponse(error);
+  }
+}
+
 export async function PUT(request: Request) {
   try {
     const actor = await requireMemberPermission("members:manage");
