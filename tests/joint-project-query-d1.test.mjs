@@ -11,6 +11,10 @@ const campaignsSource = await readFile(
   new URL("../app/api/map/campaigns/route.ts", import.meta.url),
   "utf8",
 );
+const migrationSource = await readFile(
+  new URL("../drizzle/0062_joint_project_budget_period.sql", import.meta.url),
+  "utf8",
+);
 
 function database() {
   const db = new DatabaseSync(":memory:");
@@ -19,7 +23,15 @@ function database() {
       id INTEGER PRIMARY KEY,
       organization TEXT NOT NULL,
       business_round INTEGER NOT NULL,
-      activity_date TEXT NOT NULL
+      activity_date TEXT NOT NULL,
+      budget_group_id INTEGER,
+      budget_type TEXT NOT NULL
+    );
+    CREATE TABLE sales_campaigns (
+      id INTEGER PRIMARY KEY,
+      budget_group_id INTEGER,
+      budget_type TEXT NOT NULL,
+      selection_date TEXT NOT NULL
     );
     CREATE TABLE sales_campaign_targets (
       id INTEGER PRIMARY KEY,
@@ -30,6 +42,9 @@ function database() {
     CREATE TABLE joint_projects (
       id INTEGER PRIMARY KEY,
       name TEXT NOT NULL,
+      budget_group_id INTEGER,
+      budget_type TEXT NOT NULL,
+      project_year INTEGER NOT NULL,
       status TEXT NOT NULL
     );
     CREATE TABLE joint_project_members (
@@ -43,18 +58,44 @@ function database() {
       updated_at TEXT NOT NULL
     );
     INSERT INTO activities VALUES
-      (1, '괴산군청', 1, '2026-07-30'),
-      (2, '괴산군청', 1, '2026-07-29');
+      (1, '괴산군청', 1, '2026-07-30', 10, '가상현실스포츠실'),
+      (2, '괴산군청', 1, '2026-07-29', 10, '가상현실스포츠실'),
+      (3, '괴산군청', 1, '2026-07-28', 20, '자체예산');
+    INSERT INTO sales_campaigns VALUES
+      (1, 10, '가상현실스포츠실', '2026-07-23'),
+      (2, 20, '자체예산', '2026-07-23');
     INSERT INTO sales_campaign_targets VALUES
       (10, 1, '괴산군청', 1),
-      (11, 1, '괴산군노인복지관', 1);
-    INSERT INTO joint_projects VALUES (100, '괴산군 공동사업', 'active');
+      (11, 1, '괴산군노인복지관', 1),
+      (12, 2, '괴산군청', 1);
+    INSERT INTO joint_projects VALUES
+      (100, '괴산군 공동사업', 10, '가상현실스포츠실', 2026, 'active');
     INSERT INTO joint_project_members VALUES
       (1000, 100, '괴산군청', 1, 'sponsor', 1, 10, '2026-07-30'),
       (1001, 100, '괴산군노인복지관', 1, 'site', NULL, NULL, '2026-07-30');
   `);
   return db;
 }
+
+test("공동사업 연도·차수 마이그레이션은 기존 연결을 보존한다", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE joint_projects (
+      id INTEGER PRIMARY KEY,
+      budget_group_id INTEGER,
+      status TEXT NOT NULL
+    );
+    INSERT INTO joint_projects VALUES (7, 10, 'active');
+  `);
+  db.exec(migrationSource);
+  const row = db
+    .prepare("SELECT id, project_year, joint_round FROM joint_projects WHERE id = 7")
+    .get();
+  assert.deepEqual({ ...row }, { id: 7, project_year: 0, joint_round: 1 });
+  const indexes = db.prepare("PRAGMA index_list(joint_projects)").all();
+  assert.ok(indexes.some((index) => index.name === "joint_projects_budget_period_idx"));
+  db.close();
+});
 
 test("활동 공동사업 조회는 외부 별칭을 상관 서브쿼리에서 참조하지 않는다", () => {
   assert.doesNotMatch(recordsSource, /linked\.activity_id\s*=\s*a\.id/);
@@ -74,6 +115,14 @@ test("활동 공동사업 조회는 외부 별칭을 상관 서브쿼리에서 �
             AND linked.business_round = source_activity.business_round)
       JOIN joint_projects linked_project
         ON linked_project.id = linked.project_id AND linked_project.status = 'active'
+       AND (
+         linked.activity_id = source_activity.id
+         OR (
+           source_activity.budget_group_id = linked_project.budget_group_id
+           AND linked_project.project_year =
+               CAST(SUBSTR(source_activity.activity_date, 1, 4) AS INTEGER)
+         )
+       )
     )
     SELECT a.id, jpm.id AS member_id
     FROM activities a
@@ -85,6 +134,7 @@ test("활동 공동사업 조회는 외부 별칭을 상관 서브쿼리에서 �
   assert.deepEqual(rows.map((row) => ({ ...row })), [
     { id: 1, member_id: 1000 },
     { id: 2, member_id: 1000 },
+    { id: 3, member_id: null },
   ]);
 });
 
@@ -101,12 +151,22 @@ test("예산 명단 공동사업 조회는 대상별 후보를 먼저 계산한�
                         linked.updated_at DESC, linked.id DESC
              ) AS row_number
       FROM sales_campaign_targets source_target
+      JOIN sales_campaigns source_campaign
+        ON source_campaign.id = source_target.campaign_id
       JOIN joint_project_members linked
         ON linked.campaign_target_id = source_target.id
         OR (linked.organization = source_target.organization
             AND linked.business_round = source_target.business_round)
       JOIN joint_projects linked_project
         ON linked_project.id = linked.project_id AND linked_project.status = 'active'
+       AND (
+         linked.campaign_target_id = source_target.id
+         OR (
+           source_campaign.budget_group_id = linked_project.budget_group_id
+           AND linked_project.project_year =
+               CAST(SUBSTR(source_campaign.selection_date, 1, 4) AS INTEGER)
+         )
+       )
     )
     SELECT target.id, member.id AS member_id
     FROM sales_campaign_targets target
@@ -118,5 +178,6 @@ test("예산 명단 공동사업 조회는 대상별 후보를 먼저 계산한�
   assert.deepEqual(rows.map((row) => ({ ...row })), [
     { id: 10, member_id: 1000 },
     { id: 11, member_id: 1001 },
+    { id: 12, member_id: null },
   ]);
 });

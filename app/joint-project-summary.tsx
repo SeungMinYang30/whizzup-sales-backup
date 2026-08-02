@@ -7,6 +7,8 @@ type JointProject = {
   name: string;
   sponsor_organization: string;
   budget_type: string;
+  project_year: number;
+  joint_round: number;
 };
 
 type JointMember = {
@@ -130,9 +132,10 @@ export default function JointProjectSummary({
         <span className="joint-project-summary-role">
           {current?.role === "sponsor" ? "공동사업 주관" : "공동사업 설치"}
         </span>
-        <strong>{project.name}</strong>
+        <strong>예산 · {project.budget_type || project.name}</strong>
         <small>
-          주관 {project.sponsor_organization} · 설치 {siteMembers.length}곳 · {formatWon(total)}
+          {project.project_year > 0 ? `${project.project_year}년 · ` : ""}
+          {Math.max(1, Number(project.joint_round) || 1)}차 · 주관 {project.sponsor_organization} · 설치 {siteMembers.length}곳 · {formatWon(total)}
         </small>
       </summary>
       <div className="joint-project-summary-body">

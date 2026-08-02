@@ -3911,6 +3911,17 @@ tr:hover .row-actions { opacity: 1; }
 .campaign-import-dialog .budget-selector-popover-heading small, .campaign-import-dialog .budget-selector-option-list small, .campaign-import-dialog .budget-selector-option-list em { font-size: 11px; }
 .campaign-import-fields input:focus { border-color: #4d50f5; box-shadow: 0 0 0 3px rgba(55,56,245,.08); }
 .campaign-import-guide { margin: 0 24px 13px; padding: 11px 13px; border: 1px solid #cfe5dc; border-radius: 9px; background: #f2faf7; color: #527063; font-size: 11px; line-height: 1.55; }
+.campaign-import-comparison { margin: 0 24px 13px; overflow: hidden; border: 1px solid #d8e0f4; border-radius: 10px; background: #f7f9ff; color: #52627e; }
+.campaign-import-comparison > div { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 11px 13px; font-size: 12px; }
+.campaign-import-comparison > div strong { color: #33486e; }
+.campaign-import-comparison > div b { color: #3154df; }
+.campaign-import-comparison details { border-top: 1px solid #e2e7f3; background: #fff; }
+.campaign-import-comparison summary { padding: 10px 13px; color: #566b94; font-size: 11px; font-weight: 850; cursor: pointer; }
+.campaign-import-comparison ul { max-height: 220px; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.campaign-import-comparison li { display: grid; grid-template-columns: 44px minmax(180px, .8fr) minmax(220px, 1.2fr); gap: 10px; padding: 9px 13px; border-top: 1px solid #edf0f5; font-size: 11px; }
+.campaign-import-comparison li span,
+.campaign-import-comparison li small { color: #8894a8; }
+.campaign-import-no-missing { margin: 0 24px; padding: 28px 16px; border: 1px dashed #cfd8e9; border-radius: 10px; background: #fafbfe; color: #6e7e99; text-align: center; font-size: 12px; }
 .campaign-manual-toolbar { margin: 0 24px 13px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #6a7689; font-size: 11px; }
 .campaign-manual-toolbar button { flex: 0 0 auto; min-height: 38px; padding: 0 13px; border: 1px solid #98a3f5; border-radius: 8px; background: #f1f2ff; color: #3738c9; font-size: 11px; font-weight: 850; cursor: pointer; }
 .campaign-import-preview { margin: 0 24px; overflow: auto; border: 1px solid #e2e7ef; }
@@ -4149,7 +4160,9 @@ tr:hover .row-actions { opacity: 1; }
   .map-location-batch-footer button { flex: 1; min-width: 0; }
   .campaign-import-dialog { width: 100vw; max-height: 100vh; height: 100vh; border-radius: 0; }
   .campaign-import-fields { grid-template-columns: 1fr; padding-left: 16px; padding-right: 16px; }
-  .campaign-import-guide, .campaign-import-preview, .campaign-pdf-preview { margin-left: 16px; margin-right: 16px; }
+  .campaign-import-guide, .campaign-import-preview, .campaign-pdf-preview, .campaign-import-comparison, .campaign-import-no-missing { margin-left: 16px; margin-right: 16px; }
+  .campaign-import-comparison li { grid-template-columns: 34px minmax(0, 1fr); }
+  .campaign-import-comparison li small { grid-column: 2; }
   .campaign-manual-toolbar { margin-left: 16px; margin-right: 16px; align-items: stretch; flex-direction: column; }
   .campaign-manual-toolbar button { width: 100%; min-height: 42px; }
   .campaign-import-dialog > header, .campaign-import-dialog > footer { padding-left: 16px; padding-right: 16px; }
@@ -9369,6 +9382,12 @@ tr:hover .row-actions { opacity: 1; }
   font-size: 12px;
 }
 
+.joint-project-period-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
 .joint-project-members {
   overflow: hidden;
   border: 1px solid #dce3ee;
@@ -9426,6 +9445,30 @@ tr:hover .row-actions { opacity: 1; }
   color: #237256;
 }
 
+.joint-project-member-amount {
+  display: grid;
+  grid-template-columns: minmax(110px, 150px) auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.joint-project-member-amount input {
+  min-width: 0;
+  height: 36px;
+  padding: 0 9px;
+  border: 1px solid #d5ddea;
+  border-radius: 7px;
+  color: #203b7c;
+  font: inherit;
+  font-weight: 800;
+  text-align: right;
+}
+
+.joint-project-member-amount span {
+  color: #66758f;
+  font-size: 12px;
+}
+
 .joint-project-error {
   margin: 0;
   color: #c34437;
@@ -9477,6 +9520,15 @@ tr:hover .row-actions { opacity: 1; }
   .joint-project-members > div small,
   .joint-project-members > div b {
     grid-column: 2;
+  }
+
+  .joint-project-period-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .joint-project-member-amount {
+    grid-column: 2;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .joint-project-actions {

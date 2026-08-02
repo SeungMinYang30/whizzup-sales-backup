@@ -25,8 +25,9 @@ import { ensureJointProjectsReady } from "./joint-projects";
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-08-02-complete-business-backup";
+export const BACKUP_SCHEMA_VERSION = "2026-08-02-joint-budget-period";
 const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
+  "2026-08-02-complete-business-backup",
   "2026-07-31-activity-details",
   "2026-07-30-owner-data-controls",
   "2026-07-18",
@@ -688,6 +689,8 @@ export const BACKUP_TABLES = [
       "campaign_id",
       "budget_group_id",
       "budget_type",
+      "project_year",
+      "joint_round",
       "notes",
       "status",
       "created_by",
@@ -2447,6 +2450,25 @@ export async function validateFullBackup(
                         "expected_target_count" in row
                           ? row.expected_target_count
                           : 0,
+                    }
+                  : row,
+              )
+          : table.name === "joint_projects" &&
+              input.schemaVersion !== BACKUP_SCHEMA_VERSION
+            ? rows.map((row) =>
+                isPlainObject(row)
+                  ? {
+                      ...row,
+                      project_year:
+                        "project_year" in row
+                          ? row.project_year
+                          : Math.max(
+                              2000,
+                              Number(String(row.created_at ?? "").slice(0, 4)) ||
+                                new Date().getFullYear(),
+                            ),
+                      joint_round:
+                        "joint_round" in row ? row.joint_round : 1,
                     }
                   : row,
               )

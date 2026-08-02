@@ -9,6 +9,8 @@ const createProjectsSql = `
     campaign_id INTEGER,
     budget_group_id INTEGER,
     budget_type TEXT NOT NULL DEFAULT '',
+    project_year INTEGER NOT NULL DEFAULT 0,
+    joint_round INTEGER NOT NULL DEFAULT 1,
     notes TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'active',
     created_by INTEGER NOT NULL,
@@ -79,6 +81,18 @@ function positiveId(value: unknown) {
 }
 
 function businessRound(value: unknown) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? Math.min(parsed, 99) : 1;
+}
+
+function projectYear(value: unknown) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 2000 && parsed <= 2100
+    ? parsed
+    : null;
+}
+
+function jointRound(value: unknown) {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? Math.min(parsed, 99) : 1;
 }
@@ -180,8 +194,8 @@ async function ensureGoesanJointProject() {
     .prepare(
       `INSERT INTO joint_projects (
          name, sponsor_organization, campaign_id, budget_group_id,
-         budget_type, notes, status, created_by
-       ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?)`,
+         budget_type, project_year, joint_round, notes, status, created_by
+       ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, 'active', ?)`,
     )
     .bind(
       "괴산군 가상현실스포츠실 공동사업",
@@ -189,6 +203,7 @@ async function ensureGoesanJointProject() {
       campaignId,
       budgetActivity?.budget_group_id ?? null,
       clean(budgetActivity?.budget_type),
+      2026,
       "괴산군청 주관 · 노인복지관/장애인복지관 각 1개소",
       actor.id,
     )
@@ -249,6 +264,47 @@ async function ensureGoesanJointProject() {
 
 let readyPromise: Promise<ReturnType<typeof getD1>> | null = null;
 
+async function ensureJointProjectColumns(d1: ReturnType<typeof getD1>) {
+  const columns = await d1
+    .prepare("PRAGMA table_info(joint_projects)")
+    .all<{ name: string }>();
+  const names = new Set(columns.results.map((column) => column.name));
+  const statements: Array<ReturnType<typeof d1.prepare>> = [];
+  if (!names.has("project_year")) {
+    statements.push(
+      d1.prepare(
+        "ALTER TABLE joint_projects ADD COLUMN project_year INTEGER NOT NULL DEFAULT 0",
+      ),
+    );
+  }
+  if (!names.has("joint_round")) {
+    statements.push(
+      d1.prepare(
+        "ALTER TABLE joint_projects ADD COLUMN joint_round INTEGER NOT NULL DEFAULT 1",
+      ),
+    );
+  }
+  if (statements.length) await d1.batch(statements);
+  await d1
+    .prepare(
+      `UPDATE joint_projects
+       SET project_year = COALESCE(
+         (
+           SELECT CAST(SUBSTR(REPLACE(c.selection_date, '.', '-'), 1, 4) AS INTEGER)
+           FROM sales_campaigns c
+           WHERE c.id = joint_projects.campaign_id
+         ),
+         CASE
+           WHEN CAST(SUBSTR(created_at, 1, 4) AS INTEGER) BETWEEN 2000 AND 2100
+             THEN CAST(SUBSTR(created_at, 1, 4) AS INTEGER)
+           ELSE CAST(STRFTIME('%Y', 'now') AS INTEGER)
+         END
+       )
+       WHERE project_year IS NULL OR project_year < 2000`,
+    )
+    .run();
+}
+
 async function initialize() {
   const d1 = getD1();
   await ensureCollaborationReady();
@@ -256,11 +312,17 @@ async function initialize() {
     d1.prepare(createProjectsSql),
     d1.prepare(createMembersSql),
     d1.prepare(createEventsSql),
+  ]);
+  await ensureJointProjectColumns(d1);
+  await d1.batch([
     d1.prepare(
       "CREATE INDEX IF NOT EXISTS joint_projects_campaign_idx ON joint_projects (campaign_id, status)",
     ),
     d1.prepare(
       "CREATE INDEX IF NOT EXISTS joint_projects_sponsor_idx ON joint_projects (sponsor_organization, status)",
+    ),
+    d1.prepare(
+      "CREATE INDEX IF NOT EXISTS joint_projects_budget_period_idx ON joint_projects (budget_group_id, project_year, joint_round, status)",
     ),
     d1.prepare(
       "CREATE UNIQUE INDEX IF NOT EXISTS joint_project_members_project_business_idx ON joint_project_members (project_id, organization, business_round)",
@@ -333,6 +395,17 @@ export async function listJointProjects() {
              OR (
                a.organization = jpm.organization
                AND a.business_round = jpm.business_round
+               AND (
+                 (a.budget_group_id IS NOT NULL
+                  AND a.budget_group_id = jp.budget_group_id)
+                 OR (
+                   a.budget_group_id IS NULL
+                   AND TRIM(COALESCE(a.budget_type, '')) <> ''
+                   AND a.budget_type = jp.budget_type
+                 )
+               )
+               AND CAST(SUBSTR(REPLACE(a.activity_date, '.', '-'), 1, 4) AS INTEGER) =
+                   jp.project_year
              )
          )
          SELECT
@@ -366,6 +439,8 @@ export async function createJointProject(
     campaignId?: unknown;
     budgetGroupId?: unknown;
     budgetType?: unknown;
+    projectYear?: unknown;
+    jointRound?: unknown;
     notes?: unknown;
     members?: JointProjectMemberInput[];
   },
@@ -413,21 +488,46 @@ export async function createJointProject(
   }
   const campaignId = positiveId(input.campaignId);
   const budgetGroupId = positiveId(input.budgetGroupId);
-  const name =
-    clean(input.name) || `${sponsorOrganization} 공동사업`;
+  if (!budgetGroupId) {
+    throw new Error("관리자가 등록한 활성 표준 예산명을 선택해 주세요.");
+  }
+  const budget = await d1
+    .prepare(
+      `SELECT id, canonical_name, budget_kind, amount_mode, default_amount
+       FROM budget_name_groups
+       WHERE id = ? AND active = 1 AND budget_kind IN ('purpose', 'self')`,
+    )
+    .bind(budgetGroupId)
+    .first<{
+      id: number;
+      canonical_name: string;
+      budget_kind: string;
+      amount_mode: string;
+      default_amount: number | null;
+    }>();
+  if (!budget?.id) {
+    throw new Error("사용 중인 표준 예산명을 찾지 못했습니다.");
+  }
+  const selectedProjectYear = projectYear(input.projectYear);
+  if (!selectedProjectYear) {
+    throw new Error("사업연도를 선택해 주세요.");
+  }
+  const selectedJointRound = jointRound(input.jointRound);
+  const budgetType = clean(budget.canonical_name);
+  const name = `${sponsorOrganization} · ${budgetType} · ${selectedProjectYear}년 ${selectedJointRound}차`;
   const conflictConditions = uniqueMembers
     .map(() => "(jpm.organization = ? AND jpm.business_round = ?)")
     .join(" OR ");
   const scopeCondition = campaignId
-    ? "jp.campaign_id = ?"
+    ? "jp.campaign_id = ? AND jp.budget_group_id = ? AND jp.project_year = ? AND jp.joint_round = ?"
     : budgetGroupId
-      ? "jp.campaign_id IS NULL AND jp.budget_group_id = ?"
-      : "jp.campaign_id IS NULL AND jp.budget_group_id IS NULL";
+      ? "jp.campaign_id IS NULL AND jp.budget_group_id = ? AND jp.project_year = ? AND jp.joint_round = ?"
+      : "jp.campaign_id IS NULL AND jp.budget_group_id IS NULL AND jp.project_year = ? AND jp.joint_round = ?";
   const scopeBindings = campaignId
-    ? [campaignId]
+    ? [campaignId, budgetGroupId, selectedProjectYear, selectedJointRound]
     : budgetGroupId
-      ? [budgetGroupId]
-      : [];
+      ? [budgetGroupId, selectedProjectYear, selectedJointRound]
+      : [selectedProjectYear, selectedJointRound];
   const conflict = await d1
     .prepare(
       `SELECT jp.name, jpm.organization, jpm.business_round
@@ -452,15 +552,17 @@ export async function createJointProject(
     .prepare(
       `INSERT INTO joint_projects (
          name, sponsor_organization, campaign_id, budget_group_id,
-         budget_type, notes, status, created_by
-       ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?)`,
+         budget_type, project_year, joint_round, notes, status, created_by
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
     )
     .bind(
       name,
       sponsorOrganization,
       campaignId,
       budgetGroupId,
-      clean(input.budgetType),
+      budgetType,
+      selectedProjectYear,
+      selectedJointRound,
       clean(input.notes, 1_000),
       member.id,
     )
@@ -494,7 +596,14 @@ export async function createJointProject(
         )
         .bind(
           projectId,
-          JSON.stringify({ sponsorOrganization, members: uniqueMembers }),
+          JSON.stringify({
+            sponsorOrganization,
+            budgetGroupId,
+            budgetType,
+            projectYear: selectedProjectYear,
+            jointRound: selectedJointRound,
+            members: uniqueMembers,
+          }),
           member.id,
           member.displayName,
         ),

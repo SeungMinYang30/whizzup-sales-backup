@@ -20437,6 +20437,19 @@ export default function CrmApp({
           selectedJointProjectCandidates.find((item) => item.budgetType)
             ?.budgetType ?? ""
         }
+        initialProjectYear={
+          Number(
+            records
+              .find(
+                (record) =>
+                  record.id ===
+                  (view === "awards"
+                    ? selectedAwardIds[0]
+                    : selectedInstitutionIds[0]),
+              )
+              ?.activityDate.slice(0, 4),
+          ) || new Date().getFullYear()
+        }
         onClose={() => setJointProjectOpen(false)}
         onSaved={async () => {
           await loadRecords("full");

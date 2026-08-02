@@ -571,6 +571,8 @@ export const jointProjects = sqliteTable(
     campaignId: integer("campaign_id"),
     budgetGroupId: integer("budget_group_id"),
     budgetType: text("budget_type").notNull().default(""),
+    projectYear: integer("project_year").notNull().default(0),
+    jointRound: integer("joint_round").notNull().default(1),
     notes: text("notes").notNull().default(""),
     status: text("status").notNull().default("active"),
     createdBy: integer("created_by").notNull(),
@@ -581,6 +583,12 @@ export const jointProjects = sqliteTable(
     index("joint_projects_campaign_idx").on(table.campaignId, table.status),
     index("joint_projects_sponsor_idx").on(
       table.sponsorOrganization,
+      table.status,
+    ),
+    index("joint_projects_budget_period_idx").on(
+      table.budgetGroupId,
+      table.projectYear,
+      table.jointRound,
       table.status,
     ),
   ],

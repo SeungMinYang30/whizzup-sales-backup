@@ -403,6 +403,8 @@ export async function GET() {
                   linked.id DESC
               ) AS row_number
             FROM sales_campaign_targets source_target
+            JOIN sales_campaigns source_campaign
+              ON source_campaign.id = source_target.campaign_id
             JOIN joint_project_members linked
               ON linked.campaign_target_id = source_target.id
               OR (
@@ -412,6 +414,22 @@ export async function GET() {
             JOIN joint_projects linked_project
               ON linked_project.id = linked.project_id
              AND linked_project.status = 'active'
+             AND (
+               linked.campaign_target_id = source_target.id
+               OR (
+                 (
+                   (source_campaign.budget_group_id IS NOT NULL
+                    AND linked_project.budget_group_id = source_campaign.budget_group_id)
+                   OR (
+                     source_campaign.budget_group_id IS NULL
+                     AND TRIM(COALESCE(source_campaign.budget_type, '')) <> ''
+                     AND linked_project.budget_type = source_campaign.budget_type
+                   )
+                 )
+                 AND linked_project.project_year =
+                     CAST(SUBSTR(REPLACE(source_campaign.selection_date, '.', '-'), 1, 4) AS INTEGER)
+               )
+             )
           )
           SELECT
             t.*,
@@ -661,22 +679,33 @@ export async function POST(request: Request) {
       }
       const currentTargets = await d1
         .prepare(
-          `SELECT organization
+          `SELECT organization, address
            FROM sales_campaign_targets
            WHERE campaign_id = ?`,
         )
         .bind(destinationCampaignId)
-        .all<{ organization: string }>();
+        .all<{ organization: string; address: string }>();
       const currentOrganizationKeys = new Set(
         currentTargets.results
           .map((row) => institutionAliasKey(clean(row.organization)))
           .filter(Boolean),
       );
+      const currentAddressKeys = new Set(
+        currentTargets.results
+          .map((row) => clean(row.address).replace(/\s+/g, "").toLocaleLowerCase("ko-KR"))
+          .filter(Boolean),
+      );
       const missingTargets = targets.filter(
-        (target) =>
-          !currentOrganizationKeys.has(
+        (target) => {
+          const organizationAlreadyExists = currentOrganizationKeys.has(
             institutionAliasKey(clean(target.organization)),
-          ),
+          );
+          const addressKey = clean(target.address)
+            .replace(/\s+/g, "")
+            .toLocaleLowerCase("ko-KR");
+          return !organizationAlreadyExists &&
+            !(addressKey && currentAddressKeys.has(addressKey));
+        },
       );
       skippedExistingCount = targets.length - missingTargets.length;
       targets = missingTargets;

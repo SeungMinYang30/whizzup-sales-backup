@@ -2116,6 +2116,49 @@ export default function SalesMapPage({
       ),
     [activeCampaignTargets],
   );
+  const activeCampaignAddressKeys = useMemo(
+    () =>
+      new Set(
+        activeCampaignTargets
+          .map((target) => institutionSearchText(target.address || ""))
+          .filter(Boolean),
+      ),
+    [activeCampaignTargets],
+  );
+  const campaignImportUsesActiveList = Boolean(
+    campaignImport?.source === "excel" &&
+      activeCampaign &&
+      campaignBudget.budgetGroupId &&
+      activeCampaign.budgetGroupId === campaignBudget.budgetGroupId,
+  );
+  const campaignImportPartition = useMemo(() => {
+    const pending: Array<{ row: CampaignImportRow; index: number }> = [];
+    const excluded: Array<{ row: CampaignImportRow; index: number }> = [];
+    (campaignImport?.rows ?? []).forEach((row, index) => {
+      const organizationKeys = [
+        row.organization,
+        row.confirmedOrganization,
+        ...row.existingOrganizations,
+      ]
+        .map((value) => institutionAliasKey(value))
+        .filter(Boolean);
+      const addressKey = institutionSearchText(row.address || "");
+      const alreadyRegistered =
+        campaignImportUsesActiveList &&
+        (organizationKeys.some((key) => activeCampaignOrganizationKeys.has(key)) ||
+          Boolean(addressKey && activeCampaignAddressKeys.has(addressKey)));
+      (alreadyRegistered ? excluded : pending).push({ row, index });
+    });
+    return { pending, excluded };
+  }, [
+    activeCampaignAddressKeys,
+    activeCampaignOrganizationKeys,
+    campaignImport?.rows,
+    campaignImportUsesActiveList,
+  ]);
+  const pendingCampaignImportRows = campaignImportPartition.pending.map(
+    ({ row }) => row,
+  );
   const campaignExistingOptions = useMemo(() => {
     const query = institutionSearchText(campaignExistingSearch);
     return campaignInstitutionOptions
@@ -3066,7 +3109,7 @@ export default function SalesMapPage({
           [member.email.toLocaleLowerCase(), member.id] as const,
         ]),
       );
-      const targetRows = campaignImport.rows.map((row) => ({
+      const targetRows = pendingCampaignImportRows.map((row) => ({
         ...row,
         notes: campaignTargetNotes(row),
         assignedMemberId:
@@ -3080,8 +3123,8 @@ export default function SalesMapPage({
       }));
       const decisionRows =
         campaignImport.source === "pdf"
-          ? campaignImport.rows
-          : campaignImport.rows.filter((row) => row.existingOrganizations.length);
+          ? pendingCampaignImportRows
+          : pendingCampaignImportRows.filter((row) => row.existingOrganizations.length);
       const institutionDecisions = Object.fromEntries(
         decisionRows
           .map((row) => [
@@ -3128,8 +3171,8 @@ export default function SalesMapPage({
       const campaign = normalizeCampaign(payload.campaign);
       const rowsToMap = Array.isArray(payload.targets)
         ? payload.targets
-        : campaignImport.rows;
-      const targetCount = payload.targetCount ?? campaignImport.rows.length;
+        : pendingCampaignImportRows;
+      const targetCount = payload.targetCount ?? pendingCampaignImportRows.length;
       setCampaignImport(null);
       setCampaignName("");
       setCampaignNotes("");
@@ -6218,6 +6261,31 @@ export default function SalesMapPage({
                 </>
               )}
             </div>
+            {campaignImportUsesActiveList && (
+              <section className="campaign-import-comparison" aria-live="polite">
+                <div>
+                  <strong>엑셀 {campaignImport.rows.length}곳</strong>
+                  <span>현재 명단 제외 {campaignImportPartition.excluded.length}곳</span>
+                  <b>추가 대상 {campaignImportPartition.pending.length}곳</b>
+                </div>
+                {campaignImportPartition.excluded.length > 0 && (
+                  <details>
+                    <summary>
+                      제외된 기존 기관 {campaignImportPartition.excluded.length}곳 확인
+                    </summary>
+                    <ul>
+                      {campaignImportPartition.excluded.map(({ row, index }) => (
+                        <li key={row.clientId || `excluded-campaign-row-${index}`}>
+                          <span>{row.sourceSequence || index + 1}</span>
+                          <strong>{row.confirmedOrganization || row.organization}</strong>
+                          <small>{row.region || row.address || "지역 미입력"}</small>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </section>
+            )}
             {campaignImport.source === "manual" && (
               <div className="campaign-manual-toolbar">
                 <span>
@@ -6229,7 +6297,7 @@ export default function SalesMapPage({
                 </button>
               </div>
             )}
-            {campaignImport.rows.length ? (
+            {campaignImportPartition.pending.length ? (
               <div className="campaign-pdf-preview">
                 <div className="campaign-pdf-preview-head">
                   <span>순번</span>
@@ -6243,7 +6311,7 @@ export default function SalesMapPage({
                   <span>확인할 내용</span>
                   <span aria-hidden="true" />
                 </div>
-                {campaignImport.rows.map((row, index) => {
+                {campaignImportPartition.pending.map(({ row, index }) => {
                   const rowId = row.clientId || `campaign-row-${index}`;
                   const organization =
                     row.confirmedOrganization ||
@@ -6275,9 +6343,7 @@ export default function SalesMapPage({
                           : EMPTY_CAMPAIGN_INSTITUTION_SUGGESTIONS
                       }
                       showInstitutionSuggestions={showInstitutionSuggestions}
-                      alreadyInActiveCampaign={activeCampaignOrganizationKeys.has(
-                        institutionAliasKey(row.organization),
-                      )}
+                      alreadyInActiveCampaign={false}
                       onUpdate={updateCampaignImportRow}
                       onBusinessMatch={updateCampaignBusinessMatch}
                       onSelectInstitution={selectCampaignInstitution}
@@ -6286,6 +6352,10 @@ export default function SalesMapPage({
                     />
                   );
                 })}
+              </div>
+            ) : campaignImportUsesActiveList ? (
+              <div className="campaign-import-no-missing">
+                현재 명단에 없는 기관이 없습니다. 기존 기관은 다시 등록되지 않습니다.
               </div>
             ) : null}
             <footer>
@@ -6312,16 +6382,19 @@ export default function SalesMapPage({
                   !campaignSelectionDate ||
                   !campaignBudget.budgetType.trim() ||
                   !campaignBudget.budgetGroupId ||
-                  !campaignImport.rows.length ||
+                  !campaignImportPartition.pending.length ||
                   campaignImporting
                 }
               >
                 {campaignImporting
                   ? "기관·위치 등록 중"
-                  : activeCampaign &&
+                  : campaignImportUsesActiveList &&
+                      campaignImportPartition.pending.length === 0
+                    ? "추가할 누락 기관 없음"
+                    : activeCampaign &&
                       activeCampaign.budgetGroupId === campaignBudget.budgetGroupId
                     ? "누락 기관만 현재 명단에 추가"
-                    : `${campaignImport.rows.length}개 기관 등록`}
+                    : `${campaignImportPartition.pending.length}개 기관 등록`}
               </button>
             </footer>
           </form>
@@ -6587,6 +6660,10 @@ export default function SalesMapPage({
         campaignId={activeCampaign?.id ?? null}
         budgetGroupId={activeCampaign?.budgetGroupId ?? null}
         budgetType={activeCampaign?.budgetType ?? ""}
+        initialProjectYear={
+          Number(activeCampaign?.selectionDate.slice(0, 4)) ||
+          new Date().getFullYear()
+        }
         onClose={() => setJointProjectOpen(false)}
         onSaved={async () => {
           setBudgetSelectedTargetIds([]);

@@ -83,8 +83,9 @@ test("새 상세 필드는 전체 백업과 이전 백업 복원에 안전하게
   const backupStore = await source("../lib/backup-store.ts");
   assert.match(
     backupStore,
-    /BACKUP_SCHEMA_VERSION = "2026-08-02-complete-business-backup"/,
+    /BACKUP_SCHEMA_VERSION = "2026-08-02-joint-budget-period"/,
   );
+  assert.match(backupStore, /"2026-08-02-complete-business-backup"/);
   assert.match(backupStore, /"2026-07-31-activity-details"/);
   for (const column of [
     "detail_level",

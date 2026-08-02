@@ -456,6 +456,22 @@ export async function GET(request: Request) {
           JOIN joint_projects linked_project
             ON linked_project.id = linked.project_id
            AND linked_project.status = 'active'
+           AND (
+             linked.activity_id = source_activity.id
+             OR (
+               (
+                 (source_activity.budget_group_id IS NOT NULL
+                  AND linked_project.budget_group_id = source_activity.budget_group_id)
+                 OR (
+                   source_activity.budget_group_id IS NULL
+                   AND TRIM(COALESCE(source_activity.budget_type, '')) <> ''
+                   AND linked_project.budget_type = source_activity.budget_type
+                 )
+               )
+               AND linked_project.project_year =
+                   CAST(SUBSTR(REPLACE(source_activity.activity_date, '.', '-'), 1, 4) AS INTEGER)
+             )
+           )
         )
         SELECT
           a.*,
@@ -510,6 +526,22 @@ export async function GET(request: Request) {
           JOIN joint_projects linked_project
             ON linked_project.id = linked.project_id
            AND linked_project.status = 'active'
+           AND (
+             linked.activity_id = source_activity.id
+             OR (
+               (
+                 (source_activity.budget_group_id IS NOT NULL
+                  AND linked_project.budget_group_id = source_activity.budget_group_id)
+                 OR (
+                   source_activity.budget_group_id IS NULL
+                   AND TRIM(COALESCE(source_activity.budget_type, '')) <> ''
+                   AND linked_project.budget_type = source_activity.budget_type
+                 )
+               )
+               AND linked_project.project_year =
+                   CAST(SUBSTR(REPLACE(source_activity.activity_date, '.', '-'), 1, 4) AS INTEGER)
+             )
+           )
         )
         SELECT
           a.*,

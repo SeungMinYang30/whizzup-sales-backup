@@ -13,10 +13,24 @@ const sources = await Promise.all(
     "../app/crm-app.tsx",
     "../app/sales-map.tsx",
     "../lib/backup-store.ts",
+    "../db/schema.ts",
+    "../drizzle/0062_joint_project_budget_period.sql",
   ].map((path) => readFile(new URL(path, import.meta.url), "utf8")),
 );
 
-const [store, api, records, campaigns, modal, summary, crm, map, backup] = sources;
+const [
+  store,
+  api,
+  records,
+  campaigns,
+  modal,
+  summary,
+  crm,
+  map,
+  backup,
+  schema,
+  migration,
+] = sources;
 
 test("공동사업은 기관 병합과 분리된 관계로 저장한다", () => {
   assert.match(store, /CREATE TABLE IF NOT EXISTS joint_projects/);
@@ -55,15 +69,37 @@ test("예산별 기관과 수주 전후 화면이 같은 공동사업 API를 사
   assert.match(summary, /합계는 설치기관만 계산합니다/);
 });
 
+test("공동사업 예산은 활성 표준 예산명과 연도·차수로 구분하고 설치기관별 금액을 저장한다", () => {
+  assert.match(modal, /fetch\("\/api\/budget-catalog"/);
+  assert.match(modal, />예산명</);
+  assert.match(modal, />사업연도</);
+  assert.match(modal, />공동 진행 차수</);
+  assert.match(modal, /selectedBudget\.defaultAmount/);
+  assert.match(modal, /budgetAmount:/);
+  assert.match(store, /FROM budget_name_groups/);
+  assert.match(store, /AND active = 1/);
+  assert.match(store, /project_year = \?/);
+  assert.match(store, /joint_round = \?/);
+  assert.match(store, /jp\.campaign_id = \? AND jp\.budget_group_id = \?/);
+  assert.match(schema, /projectYear: integer\("project_year"\)/);
+  assert.match(schema, /jointRound: integer\("joint_round"\)/);
+  assert.match(migration, /ADD `project_year`/);
+  assert.match(migration, /ADD `joint_round`/);
+});
+
 test("같은 주관기관도 캠페인·표준 예산별 공동사업으로 나누고 정확한 활동을 우선 연결한다", () => {
   assert.match(store, /const scopeCondition = campaignId/);
   assert.match(store, /jp\.campaign_id = \?/);
   assert.match(store, /jp\.budget_group_id = \?/);
   assert.match(records, /WITH joint_member_candidates AS/);
   assert.match(records, /linked\.activity_id = source_activity\.id/);
+  assert.match(records, /linked_project\.budget_group_id = source_activity\.budget_group_id/);
+  assert.match(records, /linked_project\.project_year/);
   assert.match(records, /joint_link\.row_number = 1/);
   assert.doesNotMatch(records, /linked\.activity_id = a\.id/);
   assert.match(campaigns, /WITH joint_target_candidates AS/);
+  assert.match(campaigns, /source_campaign\.budget_group_id/);
+  assert.match(campaigns, /linked_project\.project_year/);
   assert.doesNotMatch(campaigns, /linked\.campaign_target_id = t\.id/);
 });
 
@@ -73,6 +109,8 @@ test("기관·예산 명단 조회와 백업 복원에 공동사업 관계가 �
   assert.match(backup, /name: "joint_projects"/);
   assert.match(backup, /name: "joint_project_members"/);
   assert.match(backup, /name: "joint_project_events"/);
+  assert.match(backup, /"project_year"/);
+  assert.match(backup, /"joint_round"/);
   assert.match(backup, /DELETE FROM joint_project_members/);
   assert.match(backup, /"joint_project_members"/);
 });
