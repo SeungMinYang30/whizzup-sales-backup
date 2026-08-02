@@ -7,12 +7,14 @@ const styles = await readFile(new URL("../app/globals.css", import.meta.url), "u
 
 test("수주 목록은 50건씩 표시하고 현재 페이지와 검색 결과 전체 선택을 구분한다", () => {
   assert.match(crm, /const AWARD_LIST_PAGE_SIZE = 50/);
-  assert.match(crm, /displayedRecords\.slice\(offset, offset \+ AWARD_LIST_PAGE_SIZE\)/);
+  assert.match(crm, /awardDisplayGroups\.slice\(offset, offset \+ AWARD_LIST_PAGE_SIZE\)/);
+  assert.match(crm, /jointProjectGroupMemberIds\(awardPageGroups\)/);
+  assert.match(crm, /jointProjectGroupMemberIds\(awardDisplayGroups\)/);
   assert.match(crm, /aria-label="현재 페이지 수주 전체 선택"/);
-  assert.match(crm, /현재 페이지 \{awardPageRecords\.length\.toLocaleString\(\)\}건이 선택되었습니다/);
-  assert.match(crm, /검색 결과 \{displayedRecords\.length\.toLocaleString\(\)\}건 전체 선택/);
-  assert.match(crm, /검색 결과 \{displayedRecords\.length\.toLocaleString\(\)\}건이 모두 선택되었습니다/);
-  assert.match(crm, /setSelectedAwardIds\(displayedRecords\.map\(\(record\) => record\.id\)\)/);
+  assert.match(crm, /현재 페이지 \{awardPageGroups\.length\.toLocaleString\(\)\}개 사업이 선택되었습니다/);
+  assert.match(crm, /검색 결과 \{awardDisplayGroups\.length\.toLocaleString\(\)\}개 사업 전체 선택/);
+  assert.match(crm, /검색 결과 \{awardDisplayGroups\.length\.toLocaleString\(\)\}개 사업이 모두 선택되었습니다/);
+  assert.match(crm, /setSelectedAwardIds\(allFilteredAwardIds\)/);
 });
 
 test("수주 목록 페이지 이동 UI가 있고 필터 변경 시 선택을 안전하게 초기화한다", () => {

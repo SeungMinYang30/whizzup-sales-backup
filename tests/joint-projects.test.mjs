@@ -10,8 +10,10 @@ const sources = await Promise.all(
     "../app/api/map/campaigns/route.ts",
     "../app/joint-project-modal.tsx",
     "../app/joint-project-summary.tsx",
+    "../lib/joint-project-display.ts",
     "../app/crm-app.tsx",
     "../app/sales-map.tsx",
+    "../app/globals.css",
     "../lib/backup-store.ts",
     "../db/schema.ts",
     "../drizzle/0062_joint_project_budget_period.sql",
@@ -25,8 +27,10 @@ const [
   campaigns,
   modal,
   summary,
+  display,
   crm,
   map,
+  styles,
   backup,
   schema,
   migration,
@@ -54,6 +58,17 @@ test("괴산 소급 연결은 군청을 주관으로 두고 두 복지관 금액
   assert.doesNotMatch(store, /DELETE FROM sales_campaign_targets/);
 });
 
+test("함양 공동사업은 가상현실스포츠실 2026년 1차와 세 설치기관으로 안전하게 소급한다", () => {
+  assert.match(store, /ensureHamyangJointProjectConsistency/);
+  assert.match(store, /"경상남도 함양군\(수동면 생기발랄복지센터\)"/);
+  assert.match(store, /"함양 항노화 건강 문화활력센터"/);
+  assert.match(store, /"함양군청-행복안의봄날센터"/);
+  assert.match(store, /project_year = 2026, joint_round = 1[\s\S]*budget\.canonical_name/);
+  assert.match(store, /role = 'sponsor', budget_amount = NULL/);
+  assert.match(store, /SET role = 'site', budget_amount = \?/);
+  assert.match(store, /WHERE NOT EXISTS \([\s\S]*joint_project_members/);
+});
+
 test("예산별 기관과 수주 전후 화면이 같은 공동사업 API를 사용한다", () => {
   assert.match(crm, /<JointProjectModal/);
   assert.match(crm, /공동사업 연결/);
@@ -69,11 +84,26 @@ test("예산별 기관과 수주 전후 화면이 같은 공동사업 API를 사
   assert.match(summary, /합계는 설치기관만 계산합니다/);
 });
 
+test("공동사업 목록은 주관기관 한 건으로 접고 설치기관과 일괄 선택 범위를 보존한다", () => {
+  assert.match(display, /const key = projectId \? `joint:\$\{projectId\}`/);
+  assert.match(display, /row\.jointProjectRole === "sponsor"/);
+  assert.match(display, /group\.members\.sort/);
+  assert.match(display, /groups\.flatMap\(\(group\) => group\.members/);
+  assert.match(crm, /groupJointProjectRows\(displayedRecords\)/);
+  assert.match(crm, /groupJointProjectRows\(followupRows\)/);
+  assert.match(map, /groupJointProjectRows\(filteredBudgetTargets\)/);
+  assert.match(crm, /설치기관 펼쳐보기/);
+  assert.match(map, /설치기관 펼쳐보기/);
+  assert.match(crm, /setDetailOrganization\(sponsorOrganization\)/);
+  assert.match(styles, /\.joint-project-member-list/);
+  assert.match(styles, /\.joint-project-button[\s\S]*border: 1px solid #88a4f8/);
+});
+
 test("공동사업 예산은 활성 표준 예산명과 연도·차수로 구분하고 설치기관별 금액을 저장한다", () => {
   assert.match(modal, /fetch\("\/api\/budget-catalog"/);
   assert.match(modal, />예산명</);
-  assert.match(modal, />사업연도</);
-  assert.match(modal, />공동 진행 차수</);
+  assert.match(modal, />공동사업 연도</);
+  assert.match(modal, />공동사업 차수</);
   assert.match(modal, /selectedBudget\.defaultAmount/);
   assert.match(modal, /budgetAmount:/);
   assert.match(store, /FROM budget_name_groups/);

@@ -6,6 +6,7 @@ type JointProject = {
   id: number;
   name: string;
   sponsor_organization: string;
+  budget_group_id: number | null;
   budget_type: string;
   project_year: number;
   joint_round: number;
@@ -22,12 +23,10 @@ type JointMember = {
   budget_group_id: number | null;
   activity_budget_amount: string;
   budgets_json: string;
-};
-
-type BudgetRow = {
-  budgetType?: string;
-  budgetGroupId?: number | null;
-  budgetAmount?: string | number | null;
+  award_status: string;
+  award_stage: string;
+  progress_manager: string;
+  resolved_activity_id: number | null;
 };
 
 function money(value: unknown) {
@@ -39,28 +38,17 @@ function formatWon(value: number | null) {
   return value === null ? "금액 미입력" : `${value.toLocaleString("ko-KR")}원`;
 }
 
-function memberBudgets(member: JointMember, fallbackBudgetType: string) {
-  let parsed: BudgetRow[] = [];
-  try {
-    const value = JSON.parse(member.budgets_json || "[]");
-    if (Array.isArray(value)) parsed = value;
-  } catch {
-    parsed = [];
-  }
-  const rows = parsed
-    .map((budget) => ({
-      name: String(budget.budgetType || "").trim(),
-      groupId: Number(budget.budgetGroupId) || null,
-      amount: money(budget.budgetAmount),
-    }))
-    .filter((budget) => budget.name);
-  if (rows.length) return rows;
+function memberBudgets(
+  member: JointMember,
+  fallbackBudgetType: string,
+  fallbackBudgetGroupId: number | null,
+) {
+  if (member.role === "sponsor") return [];
   return [
     {
-      name: member.budget_type || fallbackBudgetType || "예산 미정",
-      groupId: Number(member.budget_group_id) || null,
-      amount:
-        money(member.activity_budget_amount) ?? money(member.budget_amount),
+      name: fallbackBudgetType || "예산 미정",
+      groupId: fallbackBudgetGroupId,
+      amount: money(member.budget_amount),
     },
   ];
 }
@@ -110,7 +98,13 @@ export default function JointProjectSummary({
     const totals = new Map<string, { name: string; amount: number; missing: number }>();
     projectMembers
       .filter((member) => member.role === "site")
-      .flatMap((member) => memberBudgets(member, project?.budget_type || ""))
+      .flatMap((member) =>
+        memberBudgets(
+          member,
+          project?.budget_type || "",
+          project?.budget_group_id ?? null,
+        ),
+      )
       .forEach((budget) => {
         const key = budget.groupId ? `group:${budget.groupId}` : `name:${budget.name}`;
         const current = totals.get(key) ?? { name: budget.name, amount: 0, missing: 0 };
@@ -119,7 +113,7 @@ export default function JointProjectSummary({
         totals.set(key, current);
       });
     return [...totals.values()];
-  }, [project?.budget_type, projectMembers]);
+  }, [project?.budget_group_id, project?.budget_type, projectMembers]);
 
   if (!projectId || failed || !project || !projectMembers.length) return null;
   const current = projectMembers.find((member) => member.organization === organization);
@@ -158,11 +152,26 @@ export default function JointProjectSummary({
             >
               <span>{member.role === "sponsor" ? "주관" : "설치"}</span>
               <strong>{member.organization}</strong>
-              <small>{member.business_round}차 사업</small>
+              <small>
+                기관 사업 {member.business_round}차
+                {member.progress_manager ? ` · 담당 ${member.progress_manager}` : " · 담당 미지정"}
+                {member.award_stage || member.award_status
+                  ? ` · ${member.award_stage || member.award_status}`
+                  : ""}
+              </small>
               <em>
-                {memberBudgets(member, project.budget_type)
-                  .map((budget) => `${budget.name} ${formatWon(budget.amount)}`)
-                  .join(" · ")}
+                {member.role === "sponsor"
+                  ? "공동사업 합계 제외"
+                  : memberBudgets(
+                      member,
+                      project.budget_type,
+                      project.budget_group_id,
+                    )
+                      .map(
+                        (budget) =>
+                          `${budget.name} ${formatWon(budget.amount)}`,
+                      )
+                      .join(" · ")}
               </em>
             </div>
           ))}

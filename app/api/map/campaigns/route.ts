@@ -462,7 +462,12 @@ export async function GET() {
             jp.id AS joint_project_id,
             jp.name AS joint_project_name,
             jp.sponsor_organization AS joint_project_sponsor,
-            jpm.role AS joint_project_role
+            jp.budget_group_id AS joint_project_budget_group_id,
+            jp.budget_type AS joint_project_budget_type,
+            jp.project_year AS joint_project_year,
+            jp.joint_round AS joint_project_round,
+            jpm.role AS joint_project_role,
+            jpm.budget_amount AS joint_project_member_budget_amount
           FROM sales_campaign_targets t
           JOIN sales_campaigns c
             ON c.id = t.campaign_id AND c.import_status = 'complete'

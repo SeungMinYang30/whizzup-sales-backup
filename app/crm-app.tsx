@@ -49,6 +49,10 @@ import JointProjectModal, {
   type JointProjectCandidate,
 } from "./joint-project-modal";
 import JointProjectSummary from "./joint-project-summary";
+import {
+  groupJointProjectRows,
+  jointProjectGroupMemberIds,
+} from "../lib/joint-project-display";
 import { normalizeAiSuggestedStatus } from "../lib/ai-status";
 import { resolveRegisteredSalesName } from "../lib/sales-names";
 import {
@@ -138,6 +142,11 @@ type Activity = {
   jointProjectName?: string;
   jointProjectSponsor?: string;
   jointProjectRole?: "sponsor" | "site" | "";
+  jointProjectBudgetGroupId?: number | null;
+  jointProjectBudgetType?: string;
+  jointProjectYear?: number | null;
+  jointProjectRound?: number | null;
+  jointProjectMemberBudgetAmount?: number | null;
   budgetType: string;
   budgetAmount: string;
   budgetOriginalName?: string;
@@ -1826,6 +1835,25 @@ function normalize(row: Record<string, unknown>): Activity {
         : String(value("jointProjectRole", "joint_project_role")) === "site"
           ? "site"
           : "",
+    jointProjectBudgetGroupId:
+      Number(value("jointProjectBudgetGroupId", "joint_project_budget_group_id")) > 0
+        ? Number(value("jointProjectBudgetGroupId", "joint_project_budget_group_id"))
+        : null,
+    jointProjectBudgetType: String(
+      value("jointProjectBudgetType", "joint_project_budget_type"),
+    ),
+    jointProjectYear:
+      Number(value("jointProjectYear", "joint_project_year")) > 0
+        ? Number(value("jointProjectYear", "joint_project_year"))
+        : null,
+    jointProjectRound:
+      Number(value("jointProjectRound", "joint_project_round")) > 0
+        ? Number(value("jointProjectRound", "joint_project_round"))
+        : null,
+    jointProjectMemberBudgetAmount:
+      Number(value("jointProjectMemberBudgetAmount", "joint_project_member_budget_amount")) >= 0
+        ? Number(value("jointProjectMemberBudgetAmount", "joint_project_member_budget_amount"))
+        : null,
     budgetType: String(value("budgetType", "budget_type")),
     budgetAmount: formatMoneyInput(rawBudgetAmount),
     budgetOriginalName: String(
@@ -7416,15 +7444,27 @@ export default function CrmApp({
     });
   }, [filtered, view, awardSort, equipmentQuoteSummaryByBusinessKey]);
 
+  const awardDisplayGroups = useMemo(
+    () => groupJointProjectRows(displayedRecords),
+    [displayedRecords],
+  );
   const awardPageCount = Math.max(
     1,
-    Math.ceil(displayedRecords.length / AWARD_LIST_PAGE_SIZE),
+    Math.ceil(awardDisplayGroups.length / AWARD_LIST_PAGE_SIZE),
   );
-  const awardPageRecords = useMemo(() => {
-    if (view !== "awards") return displayedRecords;
+  const awardPageGroups = useMemo(() => {
+    if (view !== "awards") return awardDisplayGroups;
     const offset = (awardPage - 1) * AWARD_LIST_PAGE_SIZE;
-    return displayedRecords.slice(offset, offset + AWARD_LIST_PAGE_SIZE);
-  }, [awardPage, displayedRecords, view]);
+    return awardDisplayGroups.slice(offset, offset + AWARD_LIST_PAGE_SIZE);
+  }, [awardDisplayGroups, awardPage, view]);
+  const awardPageRecords = useMemo(
+    () => awardPageGroups.map((group) => group.primary),
+    [awardPageGroups],
+  );
+  const awardPageGroupByPrimaryId = useMemo(
+    () => new Map(awardPageGroups.map((group) => [group.primary.id, group] as const)),
+    [awardPageGroups],
+  );
   const selectedAwardIdSet = useMemo(
     () => new Set(selectedAwardIds),
     [selectedAwardIds],
@@ -7475,12 +7515,14 @@ export default function CrmApp({
       jointProjectName: record.jointProjectName ?? "",
     }));
   }, [records]);
+  const currentAwardPageIds = jointProjectGroupMemberIds(awardPageGroups);
+  const allFilteredAwardIds = jointProjectGroupMemberIds(awardDisplayGroups);
   const currentAwardPageSelected =
-    awardPageRecords.length > 0 &&
-    awardPageRecords.every((record) => selectedAwardIdSet.has(record.id));
+    currentAwardPageIds.length > 0 &&
+    currentAwardPageIds.every((id) => selectedAwardIdSet.has(id));
   const allFilteredAwardsSelected =
-    displayedRecords.length > 0 &&
-    displayedRecords.every((record) => selectedAwardIdSet.has(record.id));
+    allFilteredAwardIds.length > 0 &&
+    allFilteredAwardIds.every((id) => selectedAwardIdSet.has(id));
 
   useEffect(() => {
     if (view !== "awards") return;
@@ -7823,17 +7865,26 @@ export default function CrmApp({
     followupDueSoonOnly,
     followupAlertEndValue,
   ]);
+  const followupDisplayGroups = useMemo(
+    () => groupJointProjectRows(followupRows),
+    [followupRows],
+  );
   const institutionPageCount = Math.max(
     1,
-    Math.ceil(followupRows.length / DATA_LIST_PAGE_SIZE),
+    Math.ceil(followupDisplayGroups.length / DATA_LIST_PAGE_SIZE),
   );
-  const institutionPageRows = useMemo(() => {
+  const institutionPageGroups = useMemo(() => {
     const offset = (institutionPage - 1) * DATA_LIST_PAGE_SIZE;
-    return followupRows.slice(offset, offset + DATA_LIST_PAGE_SIZE);
-  }, [followupRows, institutionPage]);
+    return followupDisplayGroups.slice(offset, offset + DATA_LIST_PAGE_SIZE);
+  }, [followupDisplayGroups, institutionPage]);
+  const institutionPageRows = useMemo(
+    () => institutionPageGroups.map((group) => group.primary),
+    [institutionPageGroups],
+  );
   const institutionPageViewRows = useMemo(
     () =>
-      institutionPageRows.map((record) => {
+      institutionPageGroups.map((group) => {
+        const record = group.primary;
         const history =
           recordsByInstitutionKey.get(
             institutionAliasKey(record.organization),
@@ -7842,21 +7893,36 @@ export default function CrmApp({
           record,
           priorAward: priorAwardReference(record, history),
           salesProgress: effectiveSalesProgress(record, history),
-          budgetAmountDisplay: budgetAmountDisplayForRecord(record),
+          budgetAmountDisplay: group.projectId
+            ? {
+                label: `${group.members
+                  .filter((member) => member.jointProjectRole !== "sponsor")
+                  .reduce(
+                    (total, member) =>
+                      total + (member.jointProjectMemberBudgetAmount ?? 0),
+                    0,
+                  )
+                  .toLocaleString()}원`,
+                detail: `${group.members.filter((member) => member.jointProjectRole !== "sponsor").length}개 설치기관 합계`,
+              }
+            : budgetAmountDisplayForRecord(record),
+          group,
         };
       }),
-    [institutionPageRows, recordsByInstitutionKey],
+    [institutionPageGroups, recordsByInstitutionKey],
   );
   const selectedInstitutionIdSet = useMemo(
     () => new Set(selectedInstitutionIds),
     [selectedInstitutionIds],
   );
+  const currentInstitutionPageIds = jointProjectGroupMemberIds(institutionPageGroups);
+  const allFilteredInstitutionIds = jointProjectGroupMemberIds(followupDisplayGroups);
   const currentInstitutionPageSelected =
-    institutionPageRows.length > 0 &&
-    institutionPageRows.every((record) => selectedInstitutionIdSet.has(record.id));
+    currentInstitutionPageIds.length > 0 &&
+    currentInstitutionPageIds.every((id) => selectedInstitutionIdSet.has(id));
   const allFilteredInstitutionsSelected =
-    followupRows.length > 0 &&
-    followupRows.every((record) => selectedInstitutionIdSet.has(record.id));
+    allFilteredInstitutionIds.length > 0 &&
+    allFilteredInstitutionIds.every((id) => selectedInstitutionIdSet.has(id));
 
   useEffect(() => {
     if (view !== "followup") return;
@@ -7907,6 +7973,34 @@ export default function CrmApp({
     (value) =>
       isUnregisteredBudgetAmount(value) ? "" : formatMoneyInput(value),
   );
+  useEffect(() => {
+    const requestedKey = institutionAliasKey(detailOrganization);
+    if (!requestedKey) return;
+    const requestedRecord = [...records]
+      .filter(
+        (record) =>
+          institutionAliasKey(record.organization) === requestedKey &&
+          Boolean(record.jointProjectId) &&
+          Boolean(record.jointProjectSponsor?.trim()),
+      )
+      .sort(
+        (left, right) =>
+          right.activityDate.localeCompare(left.activityDate) || right.id - left.id,
+      )[0];
+    const sponsorOrganization = requestedRecord?.jointProjectSponsor?.trim();
+    if (
+      !sponsorOrganization ||
+      institutionAliasKey(sponsorOrganization) === requestedKey ||
+      !records.some(
+        (record) =>
+          institutionAliasKey(record.organization) ===
+          institutionAliasKey(sponsorOrganization),
+      )
+    ) {
+      return;
+    }
+    setDetailOrganization(sponsorOrganization);
+  }, [detailOrganization, records]);
   const detailHistory = useMemo(
     () => {
       const detailOrganizationKey = institutionAliasKey(detailOrganization);
@@ -8807,7 +8901,7 @@ export default function CrmApp({
   }, [teamRecordPageCount, view]);
 
   function toggleCurrentAwardPage() {
-    const pageIds = new Set(awardPageRecords.map((record) => record.id));
+    const pageIds = new Set(currentAwardPageIds);
     setSelectedAwardIds((current) =>
       currentAwardPageSelected
         ? current.filter((id) => !pageIds.has(id))
@@ -8816,7 +8910,7 @@ export default function CrmApp({
   }
 
   function selectAllFilteredAwards() {
-    setSelectedAwardIds(displayedRecords.map((record) => record.id));
+    setSelectedAwardIds(allFilteredAwardIds);
   }
 
   function clearAwardSelection() {
@@ -8880,7 +8974,7 @@ export default function CrmApp({
   ]);
 
   function toggleCurrentInstitutionPage() {
-    const pageIds = new Set(institutionPageRows.map((record) => record.id));
+    const pageIds = new Set(currentInstitutionPageIds);
     setSelectedInstitutionIds((current) =>
       currentInstitutionPageSelected
         ? current.filter((id) => !pageIds.has(id))
@@ -8889,7 +8983,7 @@ export default function CrmApp({
   }
 
   function selectAllFilteredInstitutions() {
-    setSelectedInstitutionIds(followupRows.map((record) => record.id));
+    setSelectedInstitutionIds(allFilteredInstitutionIds);
   }
 
   function clearInstitutionSelection() {
@@ -17089,10 +17183,10 @@ export default function CrmApp({
                         : "엑셀 내보내기"}
                     </button>
                   )}
-                  <span className="record-count">{followupRows.length}곳</span>
+                  <span className="record-count">{followupDisplayGroups.length}개 사업</span>
                 </div>
                 <div className="institution-mobile-header-actions">
-                  <span className="record-count">{followupRows.length}곳</span>
+                  <span className="record-count">{followupDisplayGroups.length}개 사업</span>
                   {canExportData && (
                     <button
                       type="button"
@@ -17367,7 +17461,7 @@ export default function CrmApp({
                   {allFilteredInstitutionsSelected ? (
                     <>
                       <strong>
-                        검색 결과 {followupRows.length.toLocaleString()}곳이 모두 선택되었습니다.
+                        검색 결과 {followupDisplayGroups.length.toLocaleString()}개 사업이 모두 선택되었습니다.
                       </strong>
                       <button type="button" onClick={clearInstitutionSelection}>
                         선택 해제
@@ -17376,10 +17470,10 @@ export default function CrmApp({
                   ) : (
                     <>
                       <strong>
-                        현재 페이지 {institutionPageRows.length.toLocaleString()}곳이 선택되었습니다.
+                        현재 페이지 {institutionPageGroups.length.toLocaleString()}개 사업이 선택되었습니다.
                       </strong>
                       <button type="button" onClick={selectAllFilteredInstitutions}>
-                        검색 결과 {followupRows.length.toLocaleString()}곳 전체 선택
+                        검색 결과 {followupDisplayGroups.length.toLocaleString()}개 사업 전체 선택
                       </button>
                     </>
                   )}
@@ -17420,6 +17514,7 @@ export default function CrmApp({
                           priorAward,
                           salesProgress,
                           budgetAmountDisplay,
+                          group,
                         },
                         index,
                       ) => (
@@ -17429,15 +17524,15 @@ export default function CrmApp({
                             ? "recently-updated"
                             : ""
                         }`.trim()}
-                        key={record.id}
+                        key={group.key}
                         tabIndex={0}
                         role="button"
-                        aria-label={`${record.organization} 상세와 이전 히스토리 보기`}
-                        onClick={() => setDetailOrganization(record.organization)}
+                        aria-label={`${group.sponsorOrganization} 상세와 이전 히스토리 보기`}
+                        onClick={() => setDetailOrganization(group.sponsorOrganization)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            setDetailOrganization(record.organization);
+                            setDetailOrganization(group.sponsorOrganization);
                           }
                         }}
                       >
@@ -17445,15 +17540,17 @@ export default function CrmApp({
                           <input
                             className="row-select-checkbox"
                             type="checkbox"
-                            aria-label={`${record.organization} 선택`}
-                            checked={selectedInstitutionIdSet.has(record.id)}
+                            aria-label={`${group.sponsorOrganization} 공동사업 전체 선택`}
+                            checked={group.members.every((member) => selectedInstitutionIdSet.has(member.id))}
                             onClick={(event) => event.stopPropagation()}
                             onChange={() =>
-                              setSelectedInstitutionIds((current) =>
-                                current.includes(record.id)
-                                  ? current.filter((id) => id !== record.id)
-                                  : [...current, record.id],
-                              )
+                              setSelectedInstitutionIds((current) => {
+                                const memberIds = new Set(group.members.map((member) => member.id));
+                                const selected = group.members.every((member) => current.includes(member.id));
+                                return selected
+                                  ? current.filter((id) => !memberIds.has(id))
+                                  : [...new Set([...current, ...memberIds])];
+                              })
                             }
                           />
                         </td>
@@ -17474,16 +17571,26 @@ export default function CrmApp({
                           <span className="region-cell">{record.region || "—"}</span>
                         </td>
                         <td>
-                          <strong className="org-name">{record.organization}</strong>
-                          {record.jointProjectId && (
-                            <span
-                              className={`joint-project-badge ${record.jointProjectRole}`}
-                              title={record.jointProjectName}
-                            >
-                              {record.jointProjectRole === "sponsor"
-                                ? "공동사업 주관"
-                                : "공동사업 설치"}
-                            </span>
+                          <strong className="org-name">{group.sponsorOrganization}</strong>
+                          {group.projectId && (
+                            <>
+                              <span className="joint-project-badge sponsor" title={group.projectName}>
+                                공동사업 주관 · {group.members.filter((member) => member.jointProjectRole !== "sponsor").length}곳
+                              </span>
+                              <details className="joint-project-member-list" onClick={(event) => event.stopPropagation()}>
+                                <summary>설치기관 펼쳐보기</summary>
+                                {group.members
+                                  .filter((member) => member.jointProjectRole !== "sponsor")
+                                  .map((member) => (
+                                    <span key={member.id}>
+                                      <b>{member.organization}</b>
+                                      <small>
+                                        기관 사업 {member.businessRound}차 · {(member.jointProjectMemberBudgetAmount ?? 0).toLocaleString()}원
+                                      </small>
+                                    </span>
+                                  ))}
+                              </details>
+                            </>
                           )}
                           {priorAward ? (
                             <span className="prior-award-badge">{priorAward}</span>
@@ -17506,7 +17613,7 @@ export default function CrmApp({
                         </td>
                         <td>
                           <span className="budget-cell">
-                            {budgetNamesForRecord(record)}
+                            {record.jointProjectBudgetType || budgetNamesForRecord(record)}
                           </span>
                           {record.budgetMatchStatus &&
                             !["auto", "approved", "excluded"].includes(
@@ -17584,7 +17691,7 @@ export default function CrmApp({
               <DataListPagination
                 page={institutionPage}
                 pageCount={institutionPageCount}
-                total={followupRows.length}
+                total={followupDisplayGroups.length}
                 label="기관별 관리 페이지"
                 onPageChange={setInstitutionPage}
               />
@@ -18219,7 +18326,7 @@ export default function CrmApp({
                   {allFilteredAwardsSelected ? (
                     <>
                       <strong>
-                        검색 결과 {displayedRecords.length.toLocaleString()}건이 모두 선택되었습니다.
+                        검색 결과 {awardDisplayGroups.length.toLocaleString()}개 사업이 모두 선택되었습니다.
                       </strong>
                       <button type="button" onClick={clearAwardSelection}>
                         선택 해제
@@ -18228,10 +18335,10 @@ export default function CrmApp({
                   ) : (
                     <>
                       <strong>
-                        현재 페이지 {awardPageRecords.length.toLocaleString()}건이 선택되었습니다.
+                        현재 페이지 {awardPageGroups.length.toLocaleString()}개 사업이 선택되었습니다.
                       </strong>
                       <button type="button" onClick={selectAllFilteredAwards}>
-                        검색 결과 {displayedRecords.length.toLocaleString()}건 전체 선택
+                        검색 결과 {awardDisplayGroups.length.toLocaleString()}개 사업 전체 선택
                       </button>
                     </>
                   )}
@@ -18306,7 +18413,10 @@ export default function CrmApp({
                             ) {
                               return;
                             }
-                            setDetailOrganization(record.organization);
+                            setDetailOrganization(
+                              awardPageGroupByPrimaryId.get(record.id)?.sponsorOrganization ||
+                                record.organization,
+                            );
                           }}
                           onKeyDown={(event) => {
                             if (
@@ -18316,22 +18426,28 @@ export default function CrmApp({
                               return;
                             }
                             event.preventDefault();
-                            setDetailOrganization(record.organization);
+                            setDetailOrganization(
+                              awardPageGroupByPrimaryId.get(record.id)?.sponsorOrganization ||
+                                record.organization,
+                            );
                           }}
                         >
                           <td className="selection-cell">
                             <input
                               className="row-select-checkbox"
                               type="checkbox"
-                              aria-label={`${record.organization} 수주 선택`}
-                              checked={selectedAwardIdSet.has(record.id)}
+                              aria-label={`${awardPageGroupByPrimaryId.get(record.id)?.sponsorOrganization || record.organization} 공동사업 전체 선택`}
+                              checked={(awardPageGroupByPrimaryId.get(record.id)?.members || [record]).every((member) => selectedAwardIdSet.has(member.id))}
                               onClick={(event) => event.stopPropagation()}
                               onChange={() =>
-                                setSelectedAwardIds((current) =>
-                                  current.includes(record.id)
-                                    ? current.filter((id) => id !== record.id)
-                                    : [...current, record.id],
-                                )
+                                setSelectedAwardIds((current) => {
+                                  const members = awardPageGroupByPrimaryId.get(record.id)?.members || [record];
+                                  const memberIds = new Set(members.map((member) => member.id));
+                                  const selected = members.every((member) => current.includes(member.id));
+                                  return selected
+                                    ? current.filter((id) => !memberIds.has(id))
+                                    : [...new Set([...current, ...memberIds])];
+                                })
                               }
                             />
                           </td>
@@ -18341,19 +18457,29 @@ export default function CrmApp({
                           <td><span className="date-cell">{formatDate(record.activityDate)}</span></td>
                           <td><span className="region-cell">{record.region || "—"}</span></td>
                           <td>
-                            <strong className="org-name">{record.organization}</strong>
+                            <strong className="org-name">
+                              {awardPageGroupByPrimaryId.get(record.id)?.sponsorOrganization || record.organization}
+                            </strong>
                             <small>
                               {record.businessRound}차 사업 · {record.category || "기관 구분 미정"}
                             </small>
                             {record.jointProjectId && (
-                              <span
-                                className={`joint-project-badge ${record.jointProjectRole}`}
-                                title={record.jointProjectName}
-                              >
-                                {record.jointProjectRole === "sponsor"
-                                  ? "공동사업 주관"
-                                  : "공동사업 설치"}
-                              </span>
+                              <>
+                                <span className="joint-project-badge sponsor" title={record.jointProjectName}>
+                                  공동사업 주관 · {(awardPageGroupByPrimaryId.get(record.id)?.members || [record]).filter((member) => member.jointProjectRole !== "sponsor").length}곳
+                                </span>
+                                <details className="joint-project-member-list" onClick={(event) => event.stopPropagation()}>
+                                  <summary>설치기관 펼쳐보기</summary>
+                                  {(awardPageGroupByPrimaryId.get(record.id)?.members || [record])
+                                    .filter((member) => member.jointProjectRole !== "sponsor")
+                                    .map((member) => (
+                                      <span key={member.id}>
+                                        <b>{member.organization}</b>
+                                        <small>기관 사업 {member.businessRound}차 · {(member.jointProjectMemberBudgetAmount ?? 0).toLocaleString()}원</small>
+                                      </span>
+                                    ))}
+                                </details>
+                              </>
                             )}
                             {postAwardContactStatus(
                               record,
@@ -18366,9 +18492,9 @@ export default function CrmApp({
                           </td>
                           <td>
                             <strong className="award-budget-name">
-                              {budgetNamesForRecord(record) === "미정"
+                              {(record.jointProjectBudgetType || budgetNamesForRecord(record)) === "미정"
                                 ? "예산 미등록"
-                                : budgetNamesForRecord(record)}
+                                : record.jointProjectBudgetType || budgetNamesForRecord(record)}
                             </strong>
                             <small>
                               {hasResolvedStandardBudget(record)
@@ -18640,7 +18766,7 @@ export default function CrmApp({
                     </div>
                   )}
               </StickyTableWrap>
-              {view === "awards" && displayedRecords.length > 0 && (
+              {view === "awards" && awardDisplayGroups.length > 0 && (
                 <nav className="award-list-pagination" aria-label="수주 목록 페이지">
                   <button
                     type="button"
@@ -18652,7 +18778,7 @@ export default function CrmApp({
                   <span>
                     {awardPage.toLocaleString()} / {awardPageCount.toLocaleString()} 페이지
                     <small>
-                      총 {displayedRecords.length.toLocaleString()}건 · 페이지당 {AWARD_LIST_PAGE_SIZE}건
+                      총 {awardDisplayGroups.length.toLocaleString()}개 사업 · 페이지당 {AWARD_LIST_PAGE_SIZE}개 사업
                     </small>
                   </span>
                   <button
@@ -18826,20 +18952,48 @@ export default function CrmApp({
                   )}
                 </div>
                 <div
-                  className={`history-summary-editable history-summary-budget ${detailInlineField === "budget" ? "editing" : ""}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() =>
-                    beginDetailInlineEdit("budget", detailDisplayRecord)
-                  }
+                  className={`${
+                    detailDisplayRecord.jointProjectId
+                      ? "history-summary-readonly history-summary-joint-budget"
+                      : "history-summary-editable"
+                  } history-summary-budget ${detailInlineField === "budget" ? "editing" : ""}`}
+                  role={detailDisplayRecord.jointProjectId ? undefined : "button"}
+                  tabIndex={detailDisplayRecord.jointProjectId ? undefined : 0}
+                  onClick={() => {
+                    if (!detailDisplayRecord.jointProjectId) {
+                      beginDetailInlineEdit("budget", detailDisplayRecord);
+                    }
+                  }}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
+                    if (
+                      !detailDisplayRecord.jointProjectId &&
+                      (event.key === "Enter" || event.key === " ")
+                    ) {
                       beginDetailInlineEdit("budget", detailDisplayRecord);
                     }
                   }}
                 >
-                  <span>{detailRegisteredContract ? "계약금액" : "예산"}</span>
-                  {detailInlineField === "budget" && detailInlineDraft ? (
+                  <span>
+                    {detailDisplayRecord.jointProjectId
+                      ? "공동사업 예산"
+                      : detailRegisteredContract
+                        ? "계약금액"
+                        : "예산"}
+                  </span>
+                  {detailDisplayRecord.jointProjectId ? (
+                    <>
+                      <strong>
+                        {detailDisplayRecord.jointProjectName ||
+                          "상단 공동사업 예산 참조"}
+                      </strong>
+                      <small>
+                        예산명·기관별 금액·합계는 상단 공동사업 정보가 기준입니다.
+                      </small>
+                      <small>
+                        같은 공동사업의 과거 입력은 원문 이력을 보존하고 공동사업 예산으로 함께 표시합니다. 실제 별도 예산만 새 사업으로 나눕니다.
+                      </small>
+                    </>
+                  ) : detailInlineField === "budget" && detailInlineDraft ? (
                     <div
                       className="history-inline-editor budget multiple"
                       onClick={(event) => event.stopPropagation()}

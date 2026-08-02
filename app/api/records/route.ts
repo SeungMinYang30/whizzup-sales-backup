@@ -479,7 +479,12 @@ export async function GET(request: Request) {
           jp.id AS joint_project_id,
           jp.name AS joint_project_name,
           jp.sponsor_organization AS joint_project_sponsor,
-          jpm.role AS joint_project_role
+          jp.budget_group_id AS joint_project_budget_group_id,
+          jp.budget_type AS joint_project_budget_type,
+          jp.project_year AS joint_project_year,
+          jp.joint_round AS joint_project_round,
+          jpm.role AS joint_project_role,
+          jpm.budget_amount AS joint_project_member_budget_amount
         FROM activities a
         LEFT JOIN activity_authors aa ON aa.activity_id = a.id
         LEFT JOIN joint_member_candidates joint_link
@@ -549,7 +554,12 @@ export async function GET(request: Request) {
           jp.id AS joint_project_id,
           jp.name AS joint_project_name,
           jp.sponsor_organization AS joint_project_sponsor,
-          jpm.role AS joint_project_role
+          jp.budget_group_id AS joint_project_budget_group_id,
+          jp.budget_type AS joint_project_budget_type,
+          jp.project_year AS joint_project_year,
+          jp.joint_round AS joint_project_round,
+          jpm.role AS joint_project_role,
+          jpm.budget_amount AS joint_project_member_budget_amount
         FROM activities a
         LEFT JOIN activity_authors aa ON aa.activity_id = a.id
         LEFT JOIN joint_member_candidates joint_link

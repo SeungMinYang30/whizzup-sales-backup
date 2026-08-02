@@ -386,7 +386,7 @@ export default function JointProjectModal({
           </label>
           <div className="joint-project-period-fields">
             <label className="joint-project-field">
-              <span>사업연도</span>
+              <span>공동사업 연도</span>
               <select
                 value={projectYear}
                 onChange={(event) => setProjectYear(event.target.value)}
@@ -396,9 +396,10 @@ export default function JointProjectModal({
                   <option key={year} value={year}>{year}년</option>
                 ))}
               </select>
+              <small>같은 예산·차수라도 연도가 다르면 별도 공동사업으로 관리됩니다.</small>
             </label>
             <label className="joint-project-field">
-              <span>공동 진행 차수</span>
+              <span>공동사업 차수</span>
               <select
                 value={selectedJointRound}
                 onChange={(event) => setSelectedJointRound(event.target.value)}
@@ -445,7 +446,7 @@ export default function JointProjectModal({
                 <div className={sponsor ? "sponsor" : "site"} key={`${item.organization}-${item.businessRound}`}>
                   <span>{sponsor ? "주관" : "설치"}</span>
                   <strong>{item.organization}</strong>
-                  <small>{item.businessRound}차 사업</small>
+                  <small>기관 사업 {item.businessRound}차</small>
                   {sponsor ? (
                     <b>합계 제외</b>
                   ) : (

@@ -37,6 +37,10 @@ import { institutionAliasKey } from "../lib/institution-names";
 import JointProjectModal, {
   type JointProjectCandidate,
 } from "./joint-project-modal";
+import {
+  groupJointProjectRows,
+  jointProjectGroupMemberIds,
+} from "../lib/joint-project-display";
 
 export type SalesMapRecord = {
   id: number;
@@ -65,6 +69,11 @@ export type SalesMapRecord = {
   jointProjectName?: string;
   jointProjectSponsor?: string;
   jointProjectRole?: "sponsor" | "site" | "";
+  jointProjectBudgetGroupId?: number | null;
+  jointProjectBudgetType?: string;
+  jointProjectYear?: number | null;
+  jointProjectRound?: number | null;
+  jointProjectMemberBudgetAmount?: number | null;
 };
 
 type MapStatus = "영업 중" | "진행 중" | "완료" | "타업체";
@@ -180,6 +189,11 @@ type SalesCampaignTarget = {
   jointProjectName: string;
   jointProjectSponsor: string;
   jointProjectRole: "sponsor" | "site" | "";
+  jointProjectBudgetGroupId: number | null;
+  jointProjectBudgetType: string;
+  jointProjectYear: number | null;
+  jointProjectRound: number | null;
+  jointProjectMemberBudgetAmount: number | null;
 };
 
 type CampaignMember = {
@@ -896,6 +910,25 @@ function normalizeCampaignTarget(
         : String(value("jointProjectRole", "joint_project_role")) === "site"
           ? "site"
           : "",
+    jointProjectBudgetGroupId:
+      Number(value("jointProjectBudgetGroupId", "joint_project_budget_group_id")) > 0
+        ? Number(value("jointProjectBudgetGroupId", "joint_project_budget_group_id"))
+        : null,
+    jointProjectBudgetType: String(
+      value("jointProjectBudgetType", "joint_project_budget_type"),
+    ),
+    jointProjectYear:
+      Number(value("jointProjectYear", "joint_project_year")) > 0
+        ? Number(value("jointProjectYear", "joint_project_year"))
+        : null,
+    jointProjectRound:
+      Number(value("jointProjectRound", "joint_project_round")) > 0
+        ? Number(value("jointProjectRound", "joint_project_round"))
+        : null,
+    jointProjectMemberBudgetAmount:
+      Number(value("jointProjectMemberBudgetAmount", "joint_project_member_budget_amount")) >= 0
+        ? Number(value("jointProjectMemberBudgetAmount", "joint_project_member_budget_amount"))
+        : null,
   };
 }
 
@@ -4524,12 +4557,14 @@ export default function SalesMapPage({
       .toLocaleLowerCase("ko-KR")
       .includes(budgetKeyword);
   });
+  const filteredBudgetTargetGroups = groupJointProjectRows(filteredBudgetTargets);
+  const filteredBudgetTargetIds = jointProjectGroupMemberIds(
+    filteredBudgetTargetGroups,
+  );
   const budgetSelectedTargetIdSet = new Set(budgetSelectedTargetIds);
   const allFilteredBudgetTargetsSelected =
-    filteredBudgetTargets.length > 0 &&
-    filteredBudgetTargets.every((target) =>
-      budgetSelectedTargetIdSet.has(target.id),
-    );
+    filteredBudgetTargetIds.length > 0 &&
+    filteredBudgetTargetIds.every((id) => budgetSelectedTargetIdSet.has(id));
   const budgetAssignedCount = activeCampaignTargets.filter(
     (target) => target.assignedMemberId,
   ).length;
@@ -4792,9 +4827,7 @@ export default function SalesMapPage({
                       type="checkbox"
                       checked={allFilteredBudgetTargetsSelected}
                       onChange={() => {
-                        const resultIds = filteredBudgetTargets.map(
-                          (target) => target.id,
-                        );
+                        const resultIds = filteredBudgetTargetIds;
                         setBudgetSelectedTargetIds((current) =>
                           allFilteredBudgetTargetsSelected
                             ? current.filter((id) => !resultIds.includes(id))
@@ -4891,12 +4924,13 @@ export default function SalesMapPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredBudgetTargets.map((target) => {
+                    {filteredBudgetTargetGroups.map((group) => {
+                      const target = group.primary;
                       const selection = budgetTargetSelection(target);
                       const status = budgetTargetStatus(target);
                       return (
                       <tr
-                        key={target.id}
+                        key={group.key}
                         className={
                           selection
                             ? `budget-selection-row ${selection.kind}`
@@ -4908,28 +4942,40 @@ export default function SalesMapPage({
                             <input
                               type="checkbox"
                               aria-label={`${target.organization} 선택`}
-                              checked={budgetSelectedTargetIdSet.has(target.id)}
+                              checked={group.members.every((member) => budgetSelectedTargetIdSet.has(member.id))}
                               onChange={() =>
-                                setBudgetSelectedTargetIds((current) =>
-                                  current.includes(target.id)
-                                    ? current.filter((id) => id !== target.id)
-                                    : [...current, target.id],
-                                )
+                                setBudgetSelectedTargetIds((current) => {
+                                  const memberIds = new Set(group.members.map((member) => member.id));
+                                  const selected = group.members.every((member) => current.includes(member.id));
+                                  return selected
+                                    ? current.filter((id) => !memberIds.has(id))
+                                    : [...new Set([...current, ...memberIds])];
+                                })
                               }
                             />
                           </td>
                         )}
                         <td>
-                          <strong>{target.organization}</strong>
-                          {target.jointProjectId && (
-                            <em
-                              className={`joint-project-badge ${target.jointProjectRole}`}
-                              title={target.jointProjectName}
-                            >
-                              {target.jointProjectRole === "sponsor"
-                                ? "공동사업 주관"
-                                : "공동사업 설치"}
-                            </em>
+                          <strong>{group.sponsorOrganization}</strong>
+                          {group.projectId && (
+                            <>
+                              <em className="joint-project-badge sponsor" title={group.projectName}>
+                                공동사업 주관 · {group.members.filter((member) => member.jointProjectRole !== "sponsor").length}곳
+                              </em>
+                              <details className="joint-project-member-list">
+                                <summary>설치기관 펼쳐보기</summary>
+                                {group.members
+                                  .filter((member) => member.jointProjectRole !== "sponsor")
+                                  .map((member) => (
+                                    <span key={member.id}>
+                                      <b>{member.organization}</b>
+                                      <small>
+                                        기관 사업 {member.businessRound}차 · {(member.jointProjectMemberBudgetAmount ?? member.budgetAmount ?? 0).toLocaleString()}원
+                                      </small>
+                                    </span>
+                                  ))}
+                              </details>
+                            </>
                           )}
                           <span>
                             {[target.region, target.schoolLevel]
@@ -4937,7 +4983,19 @@ export default function SalesMapPage({
                               .join(" · ") || "지역 미등록"}
                           </span>
                         </td>
-                        <td>{formatWon(target.budgetAmount)}</td>
+                        <td>
+                          {group.projectId
+                            ? formatWon(
+                                group.members
+                                  .filter((member) => member.jointProjectRole !== "sponsor")
+                                  .reduce(
+                                    (total, member) =>
+                                      total + (member.jointProjectMemberBudgetAmount ?? member.budgetAmount ?? 0),
+                                    0,
+                                  ),
+                              )
+                            : formatWon(target.budgetAmount)}
+                        </td>
                         <td>
                           <div className="budget-status-stack">
                             {selection && (
@@ -5002,7 +5060,7 @@ export default function SalesMapPage({
                           <button
                             type="button"
                             onClick={() =>
-                              onOpenOrganization(target.organization)
+                              onOpenOrganization(group.sponsorOrganization)
                             }
                           >
                             상세 보기
@@ -5016,12 +5074,13 @@ export default function SalesMapPage({
               </div>
 
               <div className="budget-institution-mobile-list">
-                {filteredBudgetTargets.map((target) => {
+                {filteredBudgetTargetGroups.map((group) => {
+                  const target = group.primary;
                   const selection = budgetTargetSelection(target);
                   const status = budgetTargetStatus(target);
                   return (
                   <article
-                    key={target.id}
+                    key={group.key}
                     className={
                       selection
                         ? `budget-selection-row ${selection.kind}`
@@ -5034,26 +5093,36 @@ export default function SalesMapPage({
                           <input
                             type="checkbox"
                             aria-label={`${target.organization} 선택`}
-                            checked={budgetSelectedTargetIdSet.has(target.id)}
+                            checked={group.members.every((member) => budgetSelectedTargetIdSet.has(member.id))}
                             onChange={() =>
-                              setBudgetSelectedTargetIds((current) =>
-                                current.includes(target.id)
-                                  ? current.filter((id) => id !== target.id)
-                                  : [...current, target.id],
-                              )
+                              setBudgetSelectedTargetIds((current) => {
+                                const memberIds = new Set(group.members.map((member) => member.id));
+                                const selected = group.members.every((member) => current.includes(member.id));
+                                return selected
+                                  ? current.filter((id) => !memberIds.has(id))
+                                  : [...new Set([...current, ...memberIds])];
+                              })
                             }
                           />
                         )}
-                        <strong>{target.organization}</strong>
-                        {target.jointProjectId && (
-                          <em
-                            className={`joint-project-badge ${target.jointProjectRole}`}
-                            title={target.jointProjectName}
-                          >
-                            {target.jointProjectRole === "sponsor"
-                              ? "공동사업 주관"
-                              : "공동사업 설치"}
-                          </em>
+                        <strong>{group.sponsorOrganization}</strong>
+                        {group.projectId && (
+                          <>
+                            <em className="joint-project-badge sponsor" title={group.projectName}>
+                              공동사업 주관 · {group.members.filter((member) => member.jointProjectRole !== "sponsor").length}곳
+                            </em>
+                            <details className="joint-project-member-list">
+                              <summary>설치기관 펼쳐보기</summary>
+                              {group.members
+                                .filter((member) => member.jointProjectRole !== "sponsor")
+                                .map((member) => (
+                                  <span key={member.id}>
+                                    <b>{member.organization}</b>
+                                    <small>기관 사업 {member.businessRound}차</small>
+                                  </span>
+                                ))}
+                            </details>
+                          </>
                         )}
                         <span>{target.region || "지역 미등록"}</span>
                       </div>
@@ -5071,7 +5140,19 @@ export default function SalesMapPage({
                     <dl>
                       <div>
                         <dt>기관별 금액</dt>
-                        <dd>{formatWon(target.budgetAmount)}</dd>
+                        <dd>
+                          {group.projectId
+                            ? formatWon(
+                                group.members
+                                  .filter((member) => member.jointProjectRole !== "sponsor")
+                                  .reduce(
+                                    (total, member) =>
+                                      total + (member.jointProjectMemberBudgetAmount ?? member.budgetAmount ?? 0),
+                                    0,
+                                  ),
+                              )
+                            : formatWon(target.budgetAmount)}
+                        </dd>
                       </div>
                       <div>
                         <dt>진행 담당자</dt>
@@ -5116,7 +5197,7 @@ export default function SalesMapPage({
                     </dl>
                     <button
                       type="button"
-                      onClick={() => onOpenOrganization(target.organization)}
+                              onClick={() => onOpenOrganization(group.sponsorOrganization)}
                     >
                       기관 상세 보기
                     </button>

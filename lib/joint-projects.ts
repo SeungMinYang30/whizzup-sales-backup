@@ -262,6 +262,222 @@ async function ensureGoesanJointProject() {
   }
 }
 
+async function ensureHamyangJointProjectConsistency() {
+  const d1 = getD1();
+  const sponsorOrganization = "함양군청";
+  const siteOrganizations = [
+    "경상남도 함양군(수동면 생기발랄복지센터)",
+    "함양 항노화 건강 문화활력센터",
+    "함양군청-행복안의봄날센터",
+  ] as const;
+  const project = await d1
+    .prepare(
+      `SELECT jp.id
+       FROM joint_projects jp
+       JOIN joint_project_members sponsor
+         ON sponsor.project_id = jp.id
+        AND sponsor.organization = ?
+       WHERE jp.status = 'active'
+         AND EXISTS (
+           SELECT 1
+           FROM joint_project_members site
+           WHERE site.project_id = jp.id
+             AND site.organization IN (?, ?, ?)
+         )
+       ORDER BY (
+         SELECT COUNT(*)
+         FROM joint_project_members member
+         WHERE member.project_id = jp.id
+           AND member.organization IN (?, ?, ?)
+       ) DESC, jp.id DESC
+       LIMIT 1`,
+    )
+    .bind(
+      sponsorOrganization,
+      ...siteOrganizations,
+      ...siteOrganizations,
+    )
+    .first<{ id: number }>();
+  if (!project?.id) return;
+
+  const budget = await d1
+    .prepare(
+      `SELECT id, canonical_name, default_amount
+       FROM budget_name_groups
+       WHERE active = 1 AND canonical_name = ?
+       LIMIT 1`,
+    )
+    .bind("가상현실스포츠실")
+    .first<{
+      id: number;
+      canonical_name: string;
+      default_amount: number | null;
+    }>();
+  if (!budget?.id) return;
+  const siteBudgetAmount = money(budget.default_amount) ?? 50_000_000;
+  const actor = await d1
+    .prepare(
+      `SELECT id, display_name
+       FROM members
+       WHERE status = 'approved'
+       ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, id
+       LIMIT 1`,
+    )
+    .first<{ id: number; display_name: string }>();
+  if (!actor?.id) return;
+
+  const statements = [
+    d1
+      .prepare(
+        `UPDATE joint_projects
+         SET name = ?, sponsor_organization = ?, budget_group_id = ?,
+             budget_type = ?, project_year = 2026, joint_round = 1,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+      )
+      .bind(
+        `${sponsorOrganization} · ${budget.canonical_name} · 2026년 1차`,
+        sponsorOrganization,
+        budget.id,
+        budget.canonical_name,
+        project.id,
+      ),
+    d1
+      .prepare(
+        `INSERT INTO joint_project_members (
+           project_id, organization, business_round, role, activity_id,
+           campaign_target_id, budget_amount
+         )
+         SELECT ?, ?,
+                COALESCE((
+                  SELECT a.business_round
+                  FROM activities a
+                  WHERE a.organization = ?
+                  ORDER BY a.activity_date DESC, a.id DESC
+                  LIMIT 1
+                ), 1),
+                'sponsor',
+                (SELECT a.id FROM activities a WHERE a.organization = ? ORDER BY a.activity_date DESC, a.id DESC LIMIT 1),
+                NULL,
+                NULL
+         WHERE NOT EXISTS (
+           SELECT 1 FROM joint_project_members
+           WHERE project_id = ? AND organization = ?
+         )`,
+      )
+      .bind(
+        project.id,
+        sponsorOrganization,
+        sponsorOrganization,
+        sponsorOrganization,
+        project.id,
+        sponsorOrganization,
+      ),
+    ...siteOrganizations.map((organization) =>
+      d1
+        .prepare(
+          `INSERT INTO joint_project_members (
+             project_id, organization, business_round, role, activity_id,
+             campaign_target_id, budget_amount
+           )
+           SELECT ?, ?,
+                  COALESCE((
+                    SELECT a.business_round
+                    FROM activities a
+                    WHERE a.organization = ?
+                      AND (
+                        a.budget_group_id = ?
+                        OR (a.budget_group_id IS NULL AND a.budget_type = ?)
+                      )
+                    ORDER BY a.activity_date DESC, a.id DESC
+                    LIMIT 1
+                  ), 1),
+                  'site',
+                  (SELECT a.id
+                   FROM activities a
+                   WHERE a.organization = ?
+                   ORDER BY
+                     CASE WHEN a.budget_group_id = ? OR a.budget_type = ? THEN 0 ELSE 1 END,
+                     a.activity_date DESC, a.id DESC
+                   LIMIT 1),
+                  (SELECT t.id
+                   FROM sales_campaign_targets t
+                   JOIN sales_campaigns c ON c.id = t.campaign_id
+                   WHERE t.organization = ?
+                     AND (c.budget_group_id = ? OR c.budget_type = ?)
+                   ORDER BY t.id DESC
+                   LIMIT 1),
+                  ?
+           WHERE NOT EXISTS (
+             SELECT 1 FROM joint_project_members
+             WHERE project_id = ? AND organization = ?
+           )`,
+        )
+        .bind(
+          project.id,
+          organization,
+          organization,
+          budget.id,
+          budget.canonical_name,
+          organization,
+          budget.id,
+          budget.canonical_name,
+          organization,
+          budget.id,
+          budget.canonical_name,
+          siteBudgetAmount,
+          project.id,
+          organization,
+        ),
+    ),
+    d1
+      .prepare(
+        `UPDATE joint_project_members
+         SET role = 'sponsor', budget_amount = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE project_id = ? AND organization = ?`,
+      )
+      .bind(project.id, sponsorOrganization),
+    ...siteOrganizations.map((organization) =>
+      d1
+        .prepare(
+          `UPDATE joint_project_members
+           SET role = 'site', budget_amount = ?,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE project_id = ? AND organization = ?`,
+        )
+        .bind(siteBudgetAmount, project.id, organization),
+    ),
+    d1
+      .prepare(
+        `INSERT INTO joint_project_events (
+           project_id, action, detail_json, changed_by, changed_by_name
+         )
+         SELECT ?, 'retrofit_budget_scope_vr_2026_1', ?, ?, ?
+         WHERE NOT EXISTS (
+           SELECT 1 FROM joint_project_events
+           WHERE project_id = ?
+             AND action = 'retrofit_budget_scope_vr_2026_1'
+         )`,
+      )
+      .bind(
+        project.id,
+        JSON.stringify({
+          budgetGroupId: budget.id,
+          budgetType: budget.canonical_name,
+          projectYear: 2026,
+          jointRound: 1,
+          siteBudgetAmount,
+          sites: siteOrganizations,
+        }),
+        actor.id,
+        `시스템 소급 정리 · ${clean(actor.display_name) || "관리자"}`,
+        project.id,
+      ),
+  ];
+  await d1.batch(statements);
+}
+
 let readyPromise: Promise<ReturnType<typeof getD1>> | null = null;
 
 async function ensureJointProjectColumns(d1: ReturnType<typeof getD1>) {
@@ -338,6 +554,7 @@ async function initialize() {
     ),
   ]);
   await ensureGoesanJointProject();
+  await ensureHamyangJointProjectConsistency();
   return d1;
 }
 
