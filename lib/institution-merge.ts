@@ -5,6 +5,7 @@ import { ensureActivityReviewsReady } from "./activity-reviews";
 import { ensureCampaignsReady } from "./campaign-store";
 import { ensureEquipmentReady } from "./equipment-store";
 import { ensureInstitutionDecisionsReady } from "./institution-decisions";
+import { ensureJointProjectsReady } from "./joint-projects";
 import {
   INSTITUTION_ALIASES_SETTING_KEY,
   institutionAliasKey,
@@ -171,6 +172,7 @@ async function ensureInstitutionMergeReady() {
     ensureManagerAlertsReady(),
     ensureSchoolDirectoryReady(),
     ensureTrashReady(),
+    ensureJointProjectsReady(),
     ensureInstitutionDecisionsReady(d1),
   ]);
   return d1;
@@ -693,6 +695,95 @@ export async function mergeInstitutionRecords(
   );
 
   const statements = [
+    d1
+      .prepare(
+        `UPDATE joint_project_members
+         SET activity_id = COALESCE(activity_id, (
+               SELECT source.activity_id
+               FROM joint_project_members source
+               WHERE source.project_id = joint_project_members.project_id
+                 AND source.business_round = joint_project_members.business_round
+                 AND source.organization = ?
+               LIMIT 1
+             )),
+             campaign_target_id = COALESCE(campaign_target_id, (
+               SELECT source.campaign_target_id
+               FROM joint_project_members source
+               WHERE source.project_id = joint_project_members.project_id
+                 AND source.business_round = joint_project_members.business_round
+                 AND source.organization = ?
+               LIMIT 1
+             )),
+             role = CASE
+               WHEN role = 'sponsor' OR EXISTS (
+                 SELECT 1 FROM joint_project_members source
+                 WHERE source.project_id = joint_project_members.project_id
+                   AND source.business_round = joint_project_members.business_round
+                   AND source.organization = ? AND source.role = 'sponsor'
+               ) THEN 'sponsor'
+               ELSE role
+             END,
+             budget_amount = CASE
+               WHEN role = 'sponsor' OR EXISTS (
+                 SELECT 1 FROM joint_project_members source
+                 WHERE source.project_id = joint_project_members.project_id
+                   AND source.business_round = joint_project_members.business_round
+                   AND source.organization = ? AND source.role = 'sponsor'
+               ) THEN NULL
+               ELSE COALESCE(budget_amount, (
+                 SELECT source.budget_amount
+                 FROM joint_project_members source
+                 WHERE source.project_id = joint_project_members.project_id
+                   AND source.business_round = joint_project_members.business_round
+                   AND source.organization = ?
+                 LIMIT 1
+               ))
+             END,
+             institution_key = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE organization = ?
+           AND EXISTS (
+             SELECT 1 FROM joint_project_members source
+             WHERE source.project_id = joint_project_members.project_id
+               AND source.business_round = joint_project_members.business_round
+               AND source.organization = ?
+           )`,
+      )
+      .bind(
+        alias,
+        alias,
+        alias,
+        alias,
+        alias,
+        canonicalKey,
+        canonical,
+        alias,
+      ),
+    d1
+      .prepare(
+        `DELETE FROM joint_project_members
+         WHERE organization = ?
+           AND EXISTS (
+             SELECT 1 FROM joint_project_members target
+             WHERE target.project_id = joint_project_members.project_id
+               AND target.business_round = joint_project_members.business_round
+               AND target.organization = ?
+           )`,
+      )
+      .bind(alias, canonical),
+    d1
+      .prepare(
+        `UPDATE joint_project_members
+         SET organization = ?, institution_key = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE organization = ?`,
+      )
+      .bind(canonical, canonicalKey, alias),
+    d1
+      .prepare(
+        `UPDATE joint_projects
+         SET sponsor_organization = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE sponsor_organization = ?`,
+      )
+      .bind(canonical, alias),
     d1
       .prepare(
         `UPDATE activities SET

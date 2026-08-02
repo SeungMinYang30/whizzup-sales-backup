@@ -154,6 +154,7 @@ export default function JointProjectSummary({
               <strong>{member.organization}</strong>
               <small>
                 기관 사업 {member.business_round}차
+                {!member.resolved_activity_id ? " · 수주 기록 미연결" : ""}
                 {member.progress_manager ? ` · 담당 ${member.progress_manager}` : " · 담당 미지정"}
                 {member.award_stage || member.award_status
                   ? ` · ${member.award_stage || member.award_status}`

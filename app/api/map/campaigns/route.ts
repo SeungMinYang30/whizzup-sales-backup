@@ -407,29 +407,9 @@ export async function GET() {
               ON source_campaign.id = source_target.campaign_id
             JOIN joint_project_members linked
               ON linked.campaign_target_id = source_target.id
-              OR (
-                linked.organization = source_target.organization
-                AND linked.business_round = source_target.business_round
-              )
             JOIN joint_projects linked_project
               ON linked_project.id = linked.project_id
              AND linked_project.status = 'active'
-             AND (
-               linked.campaign_target_id = source_target.id
-               OR (
-                 (
-                   (source_campaign.budget_group_id IS NOT NULL
-                    AND linked_project.budget_group_id = source_campaign.budget_group_id)
-                   OR (
-                     source_campaign.budget_group_id IS NULL
-                     AND TRIM(COALESCE(source_campaign.budget_type, '')) <> ''
-                     AND linked_project.budget_type = source_campaign.budget_type
-                   )
-                 )
-                 AND linked_project.project_year =
-                     CAST(SUBSTR(REPLACE(source_campaign.selection_date, '.', '-'), 1, 4) AS INTEGER)
-               )
-             )
           )
           SELECT
             t.*,

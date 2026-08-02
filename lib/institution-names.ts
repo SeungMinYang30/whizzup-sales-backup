@@ -287,6 +287,19 @@ export function rememberedInstitutionAlias(
   return canonicalNames.length === 1 ? canonicalNames[0] ?? "" : "";
 }
 
+/**
+ * 기관명 변경·승인 별칭 이후에도 연결 테이블이 같은 기관을 가리키도록
+ * 저장하는 공통 식별키입니다. 별칭이 여러 기관을 가리키는 경우에는
+ * 잘못 합치지 않고 입력 기관 자체의 정규화 키를 유지합니다.
+ */
+export function institutionIdentityKey(
+  value: unknown,
+  aliasSettingValue: unknown = "",
+) {
+  const remembered = rememberedInstitutionAlias(value, aliasSettingValue);
+  return institutionAliasKey(remembered || value);
+}
+
 export function updateInstitutionAliasSetting(
   settingValue: unknown,
   aliasValue: unknown,

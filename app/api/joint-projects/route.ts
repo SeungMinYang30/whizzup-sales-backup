@@ -5,16 +5,26 @@ import {
   requireMemberPermission,
 } from "../../../lib/collaboration";
 import {
+  JointProjectActivityAmbiguityError,
+  applyJointProjectLinkBackfill,
+  auditAndBackfillJointProjectLinks,
   createJointProject,
   deactivateJointProject,
+  ensureJointProjectsReady,
   listJointProjects,
   type JointProjectMemberInput,
 } from "../../../lib/joint-projects";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const audit = new URL(request.url).searchParams.get("audit") === "1";
+    if (audit) {
+      await requireMemberPermission("records:manage");
+      await ensureJointProjectsReady();
+      return Response.json(await auditAndBackfillJointProjectLinks());
+    }
     await requireApprovedMember();
     return Response.json(await listJointProjects());
   } catch (error) {
@@ -26,6 +36,12 @@ export async function POST(request: Request) {
   try {
     const member = await requireMemberPermission("records:manage");
     const payload = (await request.json()) as Record<string, unknown>;
+    if (payload.action === "backfill_links") {
+      return Response.json({
+        ok: true,
+        ...(await applyJointProjectLinkBackfill()),
+      });
+    }
     const projectId = await createJointProject(
       {
         ...payload,
@@ -41,6 +57,15 @@ export async function POST(request: Request) {
       return accessErrorResponse(error);
     }
     if (error instanceof Error) {
+      if (error instanceof JointProjectActivityAmbiguityError) {
+        return Response.json(
+          {
+            error: error.message,
+            activityCandidates: error.candidatesByMember,
+          },
+          { status: 409 },
+        );
+      }
       return Response.json({ error: error.message }, { status: 400 });
     }
     return accessErrorResponse(error);

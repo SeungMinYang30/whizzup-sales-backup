@@ -1,5 +1,9 @@
 import { getD1 } from "../db";
 import { ensureCollaborationReady } from "./collaboration";
+import {
+  INSTITUTION_ALIASES_SETTING_KEY,
+  institutionIdentityKey,
+} from "./institution-names";
 
 const createProjectsSql = `
   CREATE TABLE IF NOT EXISTS joint_projects (
@@ -24,6 +28,7 @@ const createMembersSql = `
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id INTEGER NOT NULL,
     organization TEXT NOT NULL,
+    institution_key TEXT NOT NULL DEFAULT '',
     business_round INTEGER NOT NULL DEFAULT 1,
     role TEXT NOT NULL DEFAULT 'site',
     activity_id INTEGER,
@@ -48,6 +53,7 @@ const createEventsSql = `
 
 export type JointProjectMemberInput = {
   organization: string;
+  institutionKey?: string;
   businessRound?: number;
   role?: "sponsor" | "site";
   activityId?: number | null;
@@ -59,17 +65,76 @@ type JointActivityRow = {
   id: number;
   organization: string;
   business_round: number;
+  activity_date: string;
   budget_group_id: number | null;
   budget_type: string;
   budget_amount: string;
+  budgets_json: string;
+  award_status: string;
 };
 
 type JointCampaignTargetRow = {
   id: number;
+  campaign_id: number;
   organization: string;
   business_round: number;
   budget_amount: number | null;
+  selection_date?: string;
+  budget_group_id?: number | null;
+  budget_type?: string;
 };
+
+export type JointProjectActivityCandidate = {
+  id: number;
+  organization: string;
+  activityDate: string;
+  budgetType: string;
+  businessRound: number;
+};
+
+export type JointProjectLinkAudit = {
+  scannedMembers: number;
+  activityBackfilled: Array<{
+    projectId: number;
+    memberId: number;
+    organization: string;
+    activityId: number;
+    activityDate: string;
+  }>;
+  campaignTargetBackfilled: Array<{
+    projectId: number;
+    memberId: number;
+    organization: string;
+    campaignTargetId: number;
+  }>;
+  unresolved: Array<{
+    projectId: number;
+    memberId: number;
+    organization: string;
+    reason: "not_found" | "ambiguous";
+    candidates: JointProjectActivityCandidate[];
+  }>;
+};
+
+export class JointProjectActivityAmbiguityError extends Error {
+  readonly candidatesByMember: Array<{
+    organization: string;
+    businessRound: number;
+    candidates: JointProjectActivityCandidate[];
+  }>;
+
+  constructor(
+    candidatesByMember: Array<{
+      organization: string;
+      businessRound: number;
+      candidates: JointProjectActivityCandidate[];
+    }>,
+  ) {
+    super("수주 기록 후보가 여러 건입니다. 기관별 연결 기록을 확인해 주세요.");
+    this.name = "JointProjectActivityAmbiguityError";
+    this.candidatesByMember = candidatesByMember;
+  }
+}
 
 function clean(value: unknown, limit = 160) {
   return String(value ?? "").trim().slice(0, limit);
@@ -103,13 +168,213 @@ function money(value: unknown) {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : null;
 }
 
+function yearFromDate(value: unknown) {
+  const parsed = Number(String(value ?? "").replace(/\./g, "-").slice(0, 4));
+  return Number.isSafeInteger(parsed) && parsed >= 2000 && parsed <= 2100
+    ? parsed
+    : null;
+}
+
+function budgetJsonMatches(
+  value: unknown,
+  budgetGroupId: number | null,
+  budgetType: string,
+) {
+  try {
+    const rows = JSON.parse(String(value || "[]")) as Array<Record<string, unknown>>;
+    if (!Array.isArray(rows)) return false;
+    return rows.some((row) => {
+      const groupId = positiveId(row.budgetGroupId ?? row.groupId);
+      const name = clean(
+        row.budgetType ?? row.canonicalName ?? row.budgetOriginalName,
+      );
+      return budgetGroupId ? groupId === budgetGroupId : Boolean(name && name === budgetType);
+    });
+  } catch {
+    return false;
+  }
+}
+
+function activityBudgetMatches(
+  row: JointActivityRow,
+  budgetGroupId: number | null,
+  budgetType: string,
+) {
+  if (budgetGroupId && Number(row.budget_group_id) === budgetGroupId) return true;
+  if (!budgetGroupId && clean(row.budget_type) === budgetType) return true;
+  return budgetJsonMatches(row.budgets_json, budgetGroupId, budgetType);
+}
+
+async function institutionAliasSetting(d1: ReturnType<typeof getD1>) {
+  const row = await d1
+    .prepare("SELECT value FROM app_settings WHERE key = ? LIMIT 1")
+    .bind(INSTITUTION_ALIASES_SETTING_KEY)
+    .first<{ value: string }>();
+  return row?.value ?? "";
+}
+
+async function resolveActivityLink(
+  d1: ReturnType<typeof getD1>,
+  input: {
+    organization: string;
+    businessRound: number;
+    activityId?: number | null;
+    budgetGroupId: number | null;
+    budgetType: string;
+    projectYear: number;
+    aliasSetting: string;
+  },
+) {
+  const explicitActivityId = positiveId(input.activityId);
+  if (explicitActivityId) {
+    const explicit = await d1
+      .prepare(
+        `SELECT id, organization, business_round, activity_date,
+                budget_group_id, budget_type, budget_amount, budgets_json,
+                award_status
+         FROM activities
+         WHERE id = ?
+         LIMIT 1`,
+      )
+      .bind(explicitActivityId)
+      .first<JointActivityRow>();
+    if (explicit?.id) {
+      return { status: "resolved" as const, row: explicit, candidates: [explicit] };
+    }
+  }
+
+  const rows = await d1
+    .prepare(
+      `SELECT id, organization, business_round, activity_date,
+              budget_group_id, budget_type, budget_amount, budgets_json,
+              award_status
+       FROM activities
+       WHERE business_round = ?
+         AND COALESCE(award_status, '미정') <> '미정'
+       ORDER BY activity_date DESC, id DESC`,
+    )
+    .bind(input.businessRound)
+    .all<JointActivityRow>();
+  const requestedKey = institutionIdentityKey(
+    input.organization,
+    input.aliasSetting,
+  );
+  const candidates = rows.results.filter(
+    (row) =>
+      institutionIdentityKey(row.organization, input.aliasSetting) === requestedKey &&
+      activityBudgetMatches(row, input.budgetGroupId, input.budgetType),
+  );
+  candidates.sort(
+    (left, right) =>
+      Number(yearFromDate(right.activity_date) === input.projectYear) -
+        Number(yearFromDate(left.activity_date) === input.projectYear) ||
+      right.activity_date.localeCompare(left.activity_date) ||
+      Number(right.id) - Number(left.id),
+  );
+  if (candidates.length === 1) {
+    return { status: "resolved" as const, row: candidates[0]!, candidates };
+  }
+  if (candidates.length > 1) {
+    return { status: "ambiguous" as const, row: null, candidates };
+  }
+  return { status: "not_found" as const, row: null, candidates };
+}
+
+async function resolveCampaignTargetLink(
+  d1: ReturnType<typeof getD1>,
+  input: {
+    organization: string;
+    businessRound: number;
+    campaignTargetId?: number | null;
+    budgetGroupId: number | null;
+    budgetType: string;
+    projectYear: number;
+    aliasSetting: string;
+  },
+) {
+  const explicitTargetId = positiveId(input.campaignTargetId);
+  if (explicitTargetId) {
+    const explicit = await d1
+      .prepare(
+        `SELECT t.id, t.campaign_id, t.organization, t.business_round,
+                t.budget_amount, c.selection_date, c.budget_group_id,
+                c.budget_type
+         FROM sales_campaign_targets t
+         JOIN sales_campaigns c ON c.id = t.campaign_id
+         WHERE t.id = ?
+         LIMIT 1`,
+      )
+      .bind(explicitTargetId)
+      .first<JointCampaignTargetRow>();
+    if (explicit?.id) {
+      return { status: "resolved" as const, row: explicit, candidates: [explicit] };
+    }
+  }
+  const rows = await d1
+    .prepare(
+      `SELECT t.id, t.campaign_id, t.organization, t.business_round,
+              t.budget_amount, c.selection_date, c.budget_group_id,
+              c.budget_type
+       FROM sales_campaign_targets t
+       JOIN sales_campaigns c ON c.id = t.campaign_id
+       WHERE t.business_round = ?
+         AND (
+           (? IS NOT NULL AND c.budget_group_id = ?)
+           OR (? IS NULL AND c.budget_type = ?)
+         )
+       ORDER BY c.selection_date DESC, t.id DESC`,
+    )
+    .bind(
+      input.businessRound,
+      input.budgetGroupId,
+      input.budgetGroupId,
+      input.budgetGroupId,
+      input.budgetType,
+    )
+    .all<JointCampaignTargetRow>();
+  const requestedKey = institutionIdentityKey(
+    input.organization,
+    input.aliasSetting,
+  );
+  const candidates = rows.results.filter(
+    (row) =>
+      institutionIdentityKey(row.organization, input.aliasSetting) === requestedKey,
+  );
+  candidates.sort(
+    (left, right) =>
+      Number(yearFromDate(right.selection_date) === input.projectYear) -
+        Number(yearFromDate(left.selection_date) === input.projectYear) ||
+      String(right.selection_date ?? "").localeCompare(String(left.selection_date ?? "")) ||
+      Number(right.id) - Number(left.id),
+  );
+  if (candidates.length === 1) {
+    return { status: "resolved" as const, row: candidates[0]!, candidates };
+  }
+  return {
+    status: candidates.length > 1 ? ("ambiguous" as const) : ("not_found" as const),
+    row: null,
+    candidates,
+  };
+}
+
+function publicActivityCandidates(rows: JointActivityRow[]) {
+  return rows.map((row) => ({
+    id: Number(row.id),
+    organization: row.organization,
+    activityDate: row.activity_date,
+    budgetType: row.budget_type,
+    businessRound: Math.max(1, Number(row.business_round) || 1),
+  }));
+}
+
 async function latestActivity(
   organization: string,
 ): Promise<JointActivityRow | null> {
   return getD1()
     .prepare(
-      `SELECT id, organization, business_round, budget_group_id,
-              budget_type, budget_amount
+      `SELECT id, organization, business_round, activity_date,
+              budget_group_id, budget_type, budget_amount, budgets_json,
+              award_status
        FROM activities
        WHERE organization = ?
        ORDER BY activity_date DESC, id DESC
@@ -217,13 +482,14 @@ async function ensureGoesanJointProject() {
     return d1
       .prepare(
         `INSERT INTO joint_project_members (
-           project_id, organization, business_round, role, activity_id,
+           project_id, organization, institution_key, business_round, role, activity_id,
            campaign_target_id, budget_amount
-         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         projectId,
         organization,
+        institutionIdentityKey(organization),
         target?.business_round ?? activity.business_round ?? 1,
         index === 0 ? "sponsor" : "site",
         activity.id,
@@ -262,60 +528,21 @@ async function ensureGoesanJointProject() {
   }
 }
 
-async function ensureHamyangJointProjectConsistency() {
-  const d1 = getD1();
-  const sponsorOrganization = "함양군청";
-  const siteOrganizations = [
-    "경상남도 함양군(수동면 생기발랄복지센터)",
-    "함양 항노화 건강 문화활력센터",
-    "함양군청-행복안의봄날센터",
-  ] as const;
-  const project = await d1
-    .prepare(
-      `SELECT jp.id
-       FROM joint_projects jp
-       JOIN joint_project_members sponsor
-         ON sponsor.project_id = jp.id
-        AND sponsor.organization = ?
-       WHERE jp.status = 'active'
-         AND EXISTS (
-           SELECT 1
-           FROM joint_project_members site
-           WHERE site.project_id = jp.id
-             AND site.organization IN (?, ?, ?)
-         )
-       ORDER BY (
-         SELECT COUNT(*)
-         FROM joint_project_members member
-         WHERE member.project_id = jp.id
-           AND member.organization IN (?, ?, ?)
-       ) DESC, jp.id DESC
-       LIMIT 1`,
-    )
-    .bind(
-      sponsorOrganization,
-      ...siteOrganizations,
-      ...siteOrganizations,
-    )
-    .first<{ id: number }>();
-  if (!project?.id) return;
+type JointProjectAuditRow = {
+  project_id: number;
+  member_id: number;
+  organization: string;
+  institution_key: string;
+  business_round: number;
+  activity_id: number | null;
+  campaign_target_id: number | null;
+  budget_group_id: number | null;
+  budget_type: string;
+  project_year: number;
+};
 
-  const budget = await d1
-    .prepare(
-      `SELECT id, canonical_name, default_amount
-       FROM budget_name_groups
-       WHERE active = 1 AND canonical_name = ?
-       LIMIT 1`,
-    )
-    .bind("가상현실스포츠실")
-    .first<{
-      id: number;
-      canonical_name: string;
-      default_amount: number | null;
-    }>();
-  if (!budget?.id) return;
-  const siteBudgetAmount = money(budget.default_amount) ?? 50_000_000;
-  const actor = await d1
+async function systemActor(d1: ReturnType<typeof getD1>) {
+  return d1
     .prepare(
       `SELECT id, display_name
        FROM members
@@ -324,158 +551,285 @@ async function ensureHamyangJointProjectConsistency() {
        LIMIT 1`,
     )
     .first<{ id: number; display_name: string }>();
-  if (!actor?.id) return;
+}
 
-  const statements = [
-    d1
-      .prepare(
-        `UPDATE joint_projects
-         SET name = ?, sponsor_organization = ?, budget_group_id = ?,
-             budget_type = ?, project_year = 2026, joint_round = 1,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`,
-      )
-      .bind(
-        `${sponsorOrganization} · ${budget.canonical_name} · 2026년 1차`,
-        sponsorOrganization,
-        budget.id,
-        budget.canonical_name,
-        project.id,
-      ),
-    d1
-      .prepare(
-        `INSERT INTO joint_project_members (
-           project_id, organization, business_round, role, activity_id,
-           campaign_target_id, budget_amount
-         )
-         SELECT ?, ?,
-                COALESCE((
-                  SELECT a.business_round
-                  FROM activities a
-                  WHERE a.organization = ?
-                  ORDER BY a.activity_date DESC, a.id DESC
-                  LIMIT 1
-                ), 1),
-                'sponsor',
-                (SELECT a.id FROM activities a WHERE a.organization = ? ORDER BY a.activity_date DESC, a.id DESC LIMIT 1),
-                NULL,
-                NULL
-         WHERE NOT EXISTS (
-           SELECT 1 FROM joint_project_members
-           WHERE project_id = ? AND organization = ?
-         )`,
-      )
-      .bind(
-        project.id,
-        sponsorOrganization,
-        sponsorOrganization,
-        sponsorOrganization,
-        project.id,
-        sponsorOrganization,
-      ),
-    ...siteOrganizations.map((organization) =>
-      d1
-        .prepare(
-          `INSERT INTO joint_project_members (
-             project_id, organization, business_round, role, activity_id,
-             campaign_target_id, budget_amount
-           )
-           SELECT ?, ?,
-                  COALESCE((
-                    SELECT a.business_round
-                    FROM activities a
-                    WHERE a.organization = ?
-                      AND (
-                        a.budget_group_id = ?
-                        OR (a.budget_group_id IS NULL AND a.budget_type = ?)
-                      )
-                    ORDER BY a.activity_date DESC, a.id DESC
-                    LIMIT 1
-                  ), 1),
-                  'site',
-                  (SELECT a.id
-                   FROM activities a
-                   WHERE a.organization = ?
-                   ORDER BY
-                     CASE WHEN a.budget_group_id = ? OR a.budget_type = ? THEN 0 ELSE 1 END,
-                     a.activity_date DESC, a.id DESC
-                   LIMIT 1),
-                  (SELECT t.id
-                   FROM sales_campaign_targets t
-                   JOIN sales_campaigns c ON c.id = t.campaign_id
-                   WHERE t.organization = ?
-                     AND (c.budget_group_id = ? OR c.budget_type = ?)
-                   ORDER BY t.id DESC
-                   LIMIT 1),
-                  ?
-           WHERE NOT EXISTS (
-             SELECT 1 FROM joint_project_members
-             WHERE project_id = ? AND organization = ?
-           )`,
-        )
-        .bind(
-          project.id,
-          organization,
-          organization,
-          budget.id,
-          budget.canonical_name,
-          organization,
-          budget.id,
-          budget.canonical_name,
-          organization,
-          budget.id,
-          budget.canonical_name,
-          siteBudgetAmount,
-          project.id,
-          organization,
-        ),
-    ),
+function normalizedIsoDate(value: unknown) {
+  return String(value ?? "").trim().replace(/\./g, "-").slice(0, 10);
+}
+
+export async function retrofitHamyangSudoActivityLink() {
+  const d1 = getD1();
+  const project = await d1
+    .prepare(
+      `SELECT jp.id AS project_id, jp.budget_group_id, jp.budget_type, jp.project_year,
+              member.id AS member_id, member.organization,
+              member.business_round, member.activity_id
+       FROM joint_projects jp
+       JOIN joint_project_members sponsor
+         ON sponsor.project_id = jp.id
+        AND sponsor.role = 'sponsor'
+        AND sponsor.organization = '함양군청'
+       JOIN joint_project_members member
+         ON member.project_id = jp.id
+        AND member.role = 'site'
+        AND member.organization = '경상남도 함양군(수동면 생기발랄복지센터)'
+       JOIN budget_name_groups budget
+         ON budget.id = jp.budget_group_id
+        AND budget.canonical_name = '가상현실스포츠실'
+       WHERE jp.status = 'active'
+         AND jp.project_year = 2026
+         AND jp.joint_round = 1
+       ORDER BY jp.id DESC
+       LIMIT 1`,
+    )
+    .first<JointProjectAuditRow>();
+  if (!project?.member_id) {
+    return { status: "project_not_found" as const };
+  }
+  if (positiveId(project.activity_id)) {
+    return {
+      status: "already_linked" as const,
+      projectId: Number(project.project_id),
+      memberId: Number(project.member_id),
+      activityId: Number(project.activity_id),
+    };
+  }
+
+  const aliasSetting = await institutionAliasSetting(d1);
+  const resolved = await resolveActivityLink(d1, {
+    organization: project.organization,
+    businessRound: businessRound(project.business_round),
+    budgetGroupId: positiveId(project.budget_group_id),
+    budgetType: clean(project.budget_type),
+    projectYear: 2026,
+    aliasSetting,
+  });
+  if (
+    resolved.status !== "resolved" ||
+    resolved.candidates.length !== 1 ||
+    normalizedIsoDate(resolved.row.activity_date) !== "2025-01-02"
+  ) {
+    return {
+      status:
+        resolved.status === "ambiguous"
+          ? ("ambiguous" as const)
+          : ("activity_not_found" as const),
+      projectId: Number(project.project_id),
+      memberId: Number(project.member_id),
+      candidates: publicActivityCandidates(resolved.candidates),
+    };
+  }
+  const actor = await systemActor(d1);
+  if (!actor?.id) {
+    return {
+      status: "actor_not_found" as const,
+      projectId: Number(project.project_id),
+      memberId: Number(project.member_id),
+    };
+  }
+  const institutionKey = institutionIdentityKey(project.organization, aliasSetting);
+  await d1.batch([
     d1
       .prepare(
         `UPDATE joint_project_members
-         SET role = 'sponsor', budget_amount = NULL,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE project_id = ? AND organization = ?`,
+         SET activity_id = ?, institution_key = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND activity_id IS NULL`,
       )
-      .bind(project.id, sponsorOrganization),
-    ...siteOrganizations.map((organization) =>
-      d1
-        .prepare(
-          `UPDATE joint_project_members
-           SET role = 'site', budget_amount = ?,
-               updated_at = CURRENT_TIMESTAMP
-           WHERE project_id = ? AND organization = ?`,
-        )
-        .bind(siteBudgetAmount, project.id, organization),
-    ),
+      .bind(resolved.row.id, institutionKey, project.member_id),
     d1
       .prepare(
         `INSERT INTO joint_project_events (
            project_id, action, detail_json, changed_by, changed_by_name
          )
-         SELECT ?, 'retrofit_budget_scope_vr_2026_1', ?, ?, ?
+         SELECT ?, 'retrofit_hamyang_sudo_activity_v1', ?, ?, ?
          WHERE NOT EXISTS (
            SELECT 1 FROM joint_project_events
-           WHERE project_id = ?
-             AND action = 'retrofit_budget_scope_vr_2026_1'
+           WHERE project_id = ? AND action = 'retrofit_hamyang_sudo_activity_v1'
          )`,
       )
       .bind(
-        project.id,
+        project.project_id,
         JSON.stringify({
-          budgetGroupId: budget.id,
-          budgetType: budget.canonical_name,
-          projectYear: 2026,
-          jointRound: 1,
-          siteBudgetAmount,
-          sites: siteOrganizations,
+          memberId: project.member_id,
+          organization: project.organization,
+          activityId: resolved.row.id,
+          activityDate: normalizedIsoDate(resolved.row.activity_date),
+          preservedFields: [
+            "organization",
+            "activityDate",
+            "projectYear",
+            "businessRound",
+            "budget",
+            "amount",
+            "items",
+            "quotations",
+            "manager",
+            "map",
+            "accounting",
+          ],
         }),
         actor.id,
-        `시스템 소급 정리 · ${clean(actor.display_name) || "관리자"}`,
-        project.id,
+        `시스템 소급 연결 · ${clean(actor.display_name) || "관리자"}`,
+        project.project_id,
       ),
-  ];
-  await d1.batch(statements);
+  ]);
+  return {
+    status: "linked" as const,
+    projectId: Number(project.project_id),
+    memberId: Number(project.member_id),
+    activityId: Number(resolved.row.id),
+    activityDate: normalizedIsoDate(resolved.row.activity_date),
+  };
+}
+
+export async function auditAndBackfillJointProjectLinks({
+  apply = false,
+}: {
+  apply?: boolean;
+} = {}): Promise<JointProjectLinkAudit> {
+  const d1 = getD1();
+  const aliasSetting = await institutionAliasSetting(d1);
+  const rows = await d1
+    .prepare(
+      `SELECT jp.id AS project_id, member.id AS member_id,
+              member.organization, member.institution_key,
+              member.business_round, member.activity_id,
+              member.campaign_target_id, jp.budget_group_id,
+              jp.budget_type, jp.project_year
+       FROM joint_project_members member
+       JOIN joint_projects jp ON jp.id = member.project_id
+       WHERE jp.status = 'active'
+       ORDER BY jp.id, member.id`,
+    )
+    .all<JointProjectAuditRow>();
+  const audit: JointProjectLinkAudit = {
+    scannedMembers: rows.results.length,
+    activityBackfilled: [],
+    campaignTargetBackfilled: [],
+    unresolved: [],
+  };
+  const statements: Array<ReturnType<typeof d1.prepare>> = [];
+  const changedByProject = new Map<number, Array<Record<string, unknown>>>();
+
+  for (const row of rows.results) {
+    const key = institutionIdentityKey(row.organization, aliasSetting);
+    let activityId = positiveId(row.activity_id);
+    if (!activityId) {
+      const resolved = await resolveActivityLink(d1, {
+        organization: row.organization,
+        businessRound: businessRound(row.business_round),
+        budgetGroupId: positiveId(row.budget_group_id),
+        budgetType: clean(row.budget_type),
+        projectYear: Number(row.project_year) || 0,
+        aliasSetting,
+      });
+      if (resolved.status === "resolved" && resolved.candidates.length === 1) {
+        activityId = Number(resolved.row.id);
+        audit.activityBackfilled.push({
+          projectId: Number(row.project_id),
+          memberId: Number(row.member_id),
+          organization: row.organization,
+          activityId,
+          activityDate: resolved.row.activity_date,
+        });
+        if (apply) {
+          statements.push(
+            d1
+              .prepare(
+                `UPDATE joint_project_members
+                 SET activity_id = COALESCE(activity_id, ?), institution_key = ?,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?`,
+              )
+              .bind(activityId, key, row.member_id),
+          );
+          const entries = changedByProject.get(Number(row.project_id)) ?? [];
+          entries.push({ memberId: row.member_id, activityId, organization: row.organization });
+          changedByProject.set(Number(row.project_id), entries);
+        }
+      } else {
+        audit.unresolved.push({
+          projectId: Number(row.project_id),
+          memberId: Number(row.member_id),
+          organization: row.organization,
+          reason: resolved.status === "ambiguous" ? "ambiguous" : "not_found",
+          candidates: publicActivityCandidates(resolved.candidates),
+        });
+      }
+    } else if (apply && row.institution_key !== key) {
+      statements.push(
+        d1
+          .prepare(
+            `UPDATE joint_project_members
+             SET institution_key = ?, updated_at = CURRENT_TIMESTAMP
+             WHERE id = ? AND institution_key <> ?`,
+          )
+          .bind(key, row.member_id, key),
+      );
+    }
+
+    if (!positiveId(row.campaign_target_id)) {
+      const resolvedTarget = await resolveCampaignTargetLink(d1, {
+        organization: row.organization,
+        businessRound: businessRound(row.business_round),
+        budgetGroupId: positiveId(row.budget_group_id),
+        budgetType: clean(row.budget_type),
+        projectYear: Number(row.project_year) || 0,
+        aliasSetting,
+      });
+      if (resolvedTarget.status === "resolved") {
+        audit.campaignTargetBackfilled.push({
+          projectId: Number(row.project_id),
+          memberId: Number(row.member_id),
+          organization: row.organization,
+          campaignTargetId: Number(resolvedTarget.row.id),
+        });
+        if (apply) {
+          statements.push(
+            d1
+              .prepare(
+                `UPDATE joint_project_members
+                 SET campaign_target_id = COALESCE(campaign_target_id, ?),
+                     institution_key = ?, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?`,
+              )
+              .bind(resolvedTarget.row.id, key, row.member_id),
+          );
+        }
+      }
+    }
+  }
+
+  if (apply && statements.length) {
+    const actor = await systemActor(d1);
+    if (actor?.id) {
+      for (const [projectId, changes] of changedByProject) {
+        statements.push(
+          d1
+            .prepare(
+              `INSERT INTO joint_project_events (
+                 project_id, action, detail_json, changed_by, changed_by_name
+               ) VALUES (?, 'activity_link_backfill', ?, ?, ?)`,
+            )
+            .bind(
+              projectId,
+              JSON.stringify({ changes }),
+              actor.id,
+              `시스템 연결 보완 · ${clean(actor.display_name) || "관리자"}`,
+            ),
+        );
+      }
+    }
+    await d1.batch(statements);
+  }
+  return audit;
+}
+
+export async function applyJointProjectLinkBackfill() {
+  await ensureJointProjectsReady();
+  const hamyang = await retrofitHamyangSudoActivityLink();
+  const audit = await auditAndBackfillJointProjectLinks({ apply: true });
+  return { hamyang, audit };
 }
 
 let readyPromise: Promise<ReturnType<typeof getD1>> | null = null;
@@ -501,6 +855,37 @@ async function ensureJointProjectColumns(d1: ReturnType<typeof getD1>) {
     );
   }
   if (statements.length) await d1.batch(statements);
+  const memberColumns = await d1
+    .prepare("PRAGMA table_info(joint_project_members)")
+    .all<{ name: string }>();
+  if (!memberColumns.results.some((column) => column.name === "institution_key")) {
+    await d1
+      .prepare(
+        "ALTER TABLE joint_project_members ADD COLUMN institution_key TEXT NOT NULL DEFAULT ''",
+      )
+      .run();
+  }
+  const aliasSetting = await institutionAliasSetting(d1);
+  const memberKeys = await d1
+    .prepare(
+      `SELECT id, organization, institution_key
+       FROM joint_project_members
+       WHERE TRIM(COALESCE(institution_key, '')) = ''`,
+    )
+    .all<{ id: number; organization: string; institution_key: string }>();
+  if (memberKeys.results.length) {
+    await d1.batch(
+      memberKeys.results.map((row) =>
+        d1
+          .prepare(
+            `UPDATE joint_project_members
+             SET institution_key = ?
+             WHERE id = ? AND TRIM(COALESCE(institution_key, '')) = ''`,
+          )
+          .bind(institutionIdentityKey(row.organization, aliasSetting), row.id),
+      ),
+    );
+  }
   await d1
     .prepare(
       `UPDATE joint_projects
@@ -550,11 +935,13 @@ async function initialize() {
       "CREATE INDEX IF NOT EXISTS joint_project_members_campaign_target_idx ON joint_project_members (campaign_target_id)",
     ),
     d1.prepare(
+      "CREATE INDEX IF NOT EXISTS joint_project_members_institution_idx ON joint_project_members (institution_key, business_round, project_id)",
+    ),
+    d1.prepare(
       "CREATE INDEX IF NOT EXISTS joint_project_events_project_idx ON joint_project_events (project_id)",
     ),
   ]);
   await ensureGoesanJointProject();
-  await ensureHamyangJointProjectConsistency();
   return d1;
 }
 
@@ -586,59 +973,19 @@ export async function listJointProjects() {
       .all(),
     d1
       .prepare(
-        `WITH ranked_member_activities AS (
-           SELECT
-             jpm.id AS member_id,
-             a.id AS resolved_activity_id,
-             a.budget_type,
-             a.budget_group_id,
-             a.budget_amount,
-             a.budgets_json,
-             a.award_status,
-             a.award_stage,
-             a.progress_manager,
-             ROW_NUMBER() OVER (
-               PARTITION BY jpm.id
-               ORDER BY
-                 CASE WHEN a.id = jpm.activity_id THEN 0 ELSE 1 END,
-                 a.activity_date DESC,
-                 a.id DESC
-             ) AS row_number
-           FROM joint_project_members jpm
-           JOIN joint_projects jp
-             ON jp.id = jpm.project_id AND jp.status = 'active'
-           LEFT JOIN activities a
-             ON a.id = jpm.activity_id
-             OR (
-               a.organization = jpm.organization
-               AND a.business_round = jpm.business_round
-               AND (
-                 (a.budget_group_id IS NOT NULL
-                  AND a.budget_group_id = jp.budget_group_id)
-                 OR (
-                   a.budget_group_id IS NULL
-                   AND TRIM(COALESCE(a.budget_type, '')) <> ''
-                   AND a.budget_type = jp.budget_type
-                 )
-               )
-               AND CAST(SUBSTR(REPLACE(a.activity_date, '.', '-'), 1, 4) AS INTEGER) =
-                   jp.project_year
-             )
-         )
-         SELECT
+        `SELECT
            jpm.*,
-           ranked.resolved_activity_id,
-           ranked.budget_type,
-           ranked.budget_group_id,
-           ranked.budget_amount AS activity_budget_amount,
-           ranked.budgets_json,
-           ranked.award_status,
-           ranked.award_stage,
-           ranked.progress_manager
+           a.id AS resolved_activity_id,
+           a.budget_type,
+           a.budget_group_id,
+           a.budget_amount AS activity_budget_amount,
+           a.budgets_json,
+           a.award_status,
+           a.award_stage,
+           a.progress_manager
          FROM joint_project_members jpm
          JOIN joint_projects jp ON jp.id = jpm.project_id
-         LEFT JOIN ranked_member_activities ranked
-           ON ranked.member_id = jpm.id AND ranked.row_number = 1
+         LEFT JOIN activities a ON a.id = jpm.activity_id
          WHERE jp.status = 'active'
          ORDER BY jpm.project_id DESC,
                   CASE jpm.role WHEN 'sponsor' THEN 0 ELSE 1 END,
@@ -669,6 +1016,7 @@ export async function createJointProject(
   const normalizedMembers = requestedMembers
     .map((item) => ({
       organization: clean(item.organization, 120),
+      institutionKey: clean(item.institutionKey, 180),
       businessRound: businessRound(item.businessRound),
       role:
         clean(item.organization, 120) === sponsorOrganization
@@ -693,6 +1041,7 @@ export async function createJointProject(
   if (!uniqueMembers.some((item) => item.organization === sponsorOrganization)) {
     uniqueMembers.unshift({
       organization: sponsorOrganization,
+      institutionKey: "",
       businessRound: 1,
       role: "sponsor",
       activityId: null,
@@ -731,9 +1080,47 @@ export async function createJointProject(
   }
   const selectedJointRound = jointRound(input.jointRound);
   const budgetType = clean(budget.canonical_name);
+  const aliasSetting = await institutionAliasSetting(d1);
+  const ambiguities: JointProjectActivityAmbiguityError["candidatesByMember"] = [];
+  for (const item of uniqueMembers) {
+    item.institutionKey = institutionIdentityKey(item.organization, aliasSetting);
+    const resolvedActivity = await resolveActivityLink(d1, {
+      organization: item.organization,
+      businessRound: item.businessRound,
+      activityId: item.activityId,
+      budgetGroupId,
+      budgetType,
+      projectYear: selectedProjectYear,
+      aliasSetting,
+    });
+    if (resolvedActivity.status === "resolved") {
+      item.activityId = Number(resolvedActivity.row.id);
+    } else if (resolvedActivity.status === "ambiguous") {
+      ambiguities.push({
+        organization: item.organization,
+        businessRound: item.businessRound,
+        candidates: publicActivityCandidates(resolvedActivity.candidates),
+      });
+    }
+    const resolvedTarget = await resolveCampaignTargetLink(d1, {
+      organization: item.organization,
+      businessRound: item.businessRound,
+      campaignTargetId: item.campaignTargetId,
+      budgetGroupId,
+      budgetType,
+      projectYear: selectedProjectYear,
+      aliasSetting,
+    });
+    if (resolvedTarget.status === "resolved") {
+      item.campaignTargetId = Number(resolvedTarget.row.id);
+    }
+  }
+  if (ambiguities.length) {
+    throw new JointProjectActivityAmbiguityError(ambiguities);
+  }
   const name = `${sponsorOrganization} · ${budgetType} · ${selectedProjectYear}년 ${selectedJointRound}차`;
   const conflictConditions = uniqueMembers
-    .map(() => "(jpm.organization = ? AND jpm.business_round = ?)")
+    .map(() => "(jpm.institution_key = ? AND jpm.business_round = ?)")
     .join(" OR ");
   const scopeCondition = campaignId
     ? "jp.campaign_id = ? AND jp.budget_group_id = ? AND jp.project_year = ? AND jp.joint_round = ?"
@@ -756,7 +1143,7 @@ export async function createJointProject(
        LIMIT 1`,
     )
     .bind(
-      ...uniqueMembers.flatMap((item) => [item.organization, item.businessRound]),
+      ...uniqueMembers.flatMap((item) => [item.institutionKey, item.businessRound]),
       ...scopeBindings,
     )
     .first<{ name: string; organization: string; business_round: number }>();
@@ -791,13 +1178,14 @@ export async function createJointProject(
         d1
           .prepare(
             `INSERT INTO joint_project_members (
-               project_id, organization, business_round, role, activity_id,
+               project_id, organization, institution_key, business_round, role, activity_id,
                campaign_target_id, budget_amount
-             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             projectId,
             item.organization,
+            item.institutionKey,
             item.businessRound,
             item.role,
             item.activityId,

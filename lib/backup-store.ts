@@ -705,6 +705,7 @@ export const BACKUP_TABLES = [
       "id",
       "project_id",
       "organization",
+      "institution_key",
       "business_round",
       "role",
       "activity_id",

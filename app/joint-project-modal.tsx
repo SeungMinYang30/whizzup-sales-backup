@@ -21,6 +21,20 @@ type StandardBudgetOption = {
   defaultAmount: number | null;
 };
 
+type ActivityLinkCandidate = {
+  id: number;
+  organization: string;
+  activityDate: string;
+  budgetType: string;
+  businessRound: number;
+};
+
+type ActivityLinkAmbiguity = {
+  organization: string;
+  businessRound: number;
+  candidates: ActivityLinkCandidate[];
+};
+
 function sponsorScore(name: string) {
   if (/(시청|군청|구청|도청)$/.test(name)) return 100;
   if (/(교육청|교육지원청|재단|본청)$/.test(name)) return 80;
@@ -130,6 +144,8 @@ export default function JointProjectModal({
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [activityAmbiguities, setActivityAmbiguities] = useState<ActivityLinkAmbiguity[]>([]);
+  const [activitySelections, setActivitySelections] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!open) return;
@@ -154,6 +170,8 @@ export default function JointProjectModal({
     );
     setNotes("");
     setError("");
+    setActivityAmbiguities([]);
+    setActivitySelections({});
     setCatalogLoading(true);
     void fetch("/api/budget-catalog", { cache: "no-store" })
       .then(async (response) => {
@@ -283,19 +301,36 @@ export default function JointProjectModal({
           projectYear: Number(projectYear),
           jointRound: Number(selectedJointRound),
           notes,
-          members: memberCandidates.map((item) => ({
-            ...item,
-            budgetAmount:
-              item.organization === sponsorOrganization
-                ? null
-                : amountValue(memberAmounts[amountKey(item)] ?? ""),
-            role:
-              item.organization === sponsorOrganization ? "sponsor" : "site",
-          })),
+          members: memberCandidates.map((item) => {
+            const selectedActivityId = Number(
+              activitySelections[amountKey(item)] ?? "",
+            );
+            return {
+              ...item,
+              activityId:
+                Number.isSafeInteger(selectedActivityId) && selectedActivityId > 0
+                  ? selectedActivityId
+                  : item.activityId,
+              budgetAmount:
+                item.organization === sponsorOrganization
+                  ? null
+                  : amountValue(memberAmounts[amountKey(item)] ?? ""),
+              role:
+                item.organization === sponsorOrganization ? "sponsor" : "site",
+            };
+          }),
         }),
       });
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as {
+        error?: string;
+        activityCandidates?: ActivityLinkAmbiguity[];
+      };
       if (!response.ok) {
+        if (response.status === 409 && payload.activityCandidates?.length) {
+          setActivityAmbiguities(payload.activityCandidates);
+          setError("기관별 실제 수주 기록을 확인해 선택한 뒤 다시 연결해 주세요.");
+          return;
+        }
         throw new Error(payload.error || "공동사업을 연결하지 못했습니다.");
       }
       await onSaved();
@@ -475,6 +510,35 @@ export default function JointProjectModal({
               );
             })}
           </section>
+          {activityAmbiguities.length > 0 && (
+            <section className="joint-project-link-confirmation">
+              <header>
+                <strong>실제 수주 기록 확인</strong>
+                <span>잘못 연결하지 않도록 후보가 여러 건인 기관만 확인합니다.</span>
+              </header>
+              {activityAmbiguities.map((item) => (
+                <label key={amountKey(item)}>
+                  <span>{item.organization}</span>
+                  <select
+                    value={activitySelections[amountKey(item)] ?? ""}
+                    onChange={(event) =>
+                      setActivitySelections((current) => ({
+                        ...current,
+                        [amountKey(item)]: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">연결할 수주 기록 선택</option>
+                    {item.candidates.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.activityDate} · {candidate.budgetType || "예산 미정"} · {candidate.businessRound}차
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </section>
+          )}
           <label className="joint-project-field">
             <span>메모</span>
             <textarea
@@ -508,6 +572,9 @@ export default function JointProjectModal({
                 !sponsorOrganization ||
                 !sponsorCandidate ||
                 siteCandidates.length < 1 ||
+                activityAmbiguities.some(
+                  (item) => !activitySelections[amountKey(item)],
+                ) ||
                 busy
               }
               onClick={() => void save()}

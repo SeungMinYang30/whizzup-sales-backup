@@ -600,6 +600,7 @@ export const jointProjectMembers = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     projectId: integer("project_id").notNull(),
     organization: text("organization").notNull(),
+    institutionKey: text("institution_key").notNull().default(""),
     businessRound: integer("business_round").notNull().default(1),
     role: text("role").notNull().default("site"),
     activityId: integer("activity_id"),
@@ -616,6 +617,11 @@ export const jointProjectMembers = sqliteTable(
     ),
     index("joint_project_members_business_idx").on(
       table.organization,
+      table.businessRound,
+      table.projectId,
+    ),
+    index("joint_project_members_institution_idx").on(
+      table.institutionKey,
       table.businessRound,
       table.projectId,
     ),
