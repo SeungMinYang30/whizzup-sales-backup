@@ -18,14 +18,14 @@ test("기관별 관리에서 진행·미수주·전체 탭을 표시하지 않�
   assert.doesNotMatch(crm, /label: "미수주 기관"/);
 });
 
-test("기관별 관리는 수주 전 기관 전체를 기본 목록으로 유지한다", () => {
+test("기관별 관리는 수주 후와 동일한 사업 차수를 수주 전에서 제외한다", () => {
   assert.match(
     crm,
-    /const preAwardInstitutionRows = useMemo\(\(\) => \{[\s\S]*latestInstitutionRows\.flatMap\(\(record\) => \{[\s\S]*latestAwardEvidence[\s\S]*isActivePreAwardProgress\(salesProgress\)/,
+    /const awardedBusinessKeys = useMemo\([\s\S]*latestAwardRecords\.map\(\(record\) =>[\s\S]*analyticsBusinessRoundKey\([\s\S]*record\.organization,[\s\S]*record\.businessRound/,
   );
   assert.match(
     crm,
-    /return \["위즈업 수주", "협력사 수주"\]\.includes\(record\.awardStatus\)/,
+    /const preAwardInstitutionRows = useMemo\([\s\S]*const businessKey = analyticsBusinessRoundKey\([\s\S]*record\.organization,[\s\S]*record\.businessRound[\s\S]*if \(awardedBusinessKeys\.has\(businessKey\)\) return \[\];/,
   );
   assert.match(crm, /<option>타업체 수주<\/option>/);
 });

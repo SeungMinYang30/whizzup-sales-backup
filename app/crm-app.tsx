@@ -7033,6 +7033,18 @@ export default function CrmApp({
       });
     return [...byBusinessRound.values()];
   }, [records]);
+  const awardedBusinessKeys = useMemo(
+    () =>
+      new Set(
+        latestAwardRecords.map((record) =>
+          analyticsBusinessRoundKey(
+            record.organization,
+            record.businessRound,
+          ),
+        ),
+      ),
+    [latestAwardRecords],
+  );
   const equipmentQuoteSummaryByBusinessKey = useMemo(
     () =>
       new Map(
@@ -7841,29 +7853,14 @@ export default function CrmApp({
   }, [records]);
   const preAwardInstitutionRows = useMemo(() => {
     return latestInstitutionRows.flatMap((record) => {
-      const key = institutionAliasKey(record.organization);
-      const history = recordsByInstitutionKey.get(key) ?? [];
-      let latestAwardEvidence: Activity | undefined;
-      history.forEach((candidate) => {
-        if (!isAwardDecisionEvidence(candidate)) return;
-        if (
-          !latestAwardEvidence ||
-          candidate.activityDate > latestAwardEvidence.activityDate ||
-          (candidate.activityDate === latestAwardEvidence.activityDate &&
-            candidate.id > latestAwardEvidence.id)
-        ) {
-          latestAwardEvidence = candidate;
-        }
-      });
-      if (
-        latestAwardEvidence &&
-        !isEarlierActivity(latestAwardEvidence, record)
-      ) {
-        return [];
-      }
+      const businessKey = analyticsBusinessRoundKey(
+        record.organization,
+        record.businessRound,
+      );
+      if (awardedBusinessKeys.has(businessKey)) return [];
       return [{ record, salesProgress: "" }];
     });
-  }, [latestInstitutionRows, recordsByInstitutionKey]);
+  }, [awardedBusinessKeys, latestInstitutionRows]);
   const followupRows = useMemo(() => {
     return preAwardInstitutionRows
       .filter(
