@@ -10391,14 +10391,23 @@ tr:hover .row-actions { opacity: 1; }
 .owner-ranking-heading label { display: grid; gap: 5px; color: #7e899d; font-size: 11px; font-weight: 800; }
 .owner-ranking-heading select { min-width: 145px; min-height: 39px; padding: 0 11px; border: 1px solid #d7deeb; border-radius: 9px; background: #fff; color: #273650; font-weight: 800; }
 .owner-ranking-table-wrap { overflow-x: auto; }
-.owner-ranking-table { width: 100%; min-width: 940px; border-collapse: collapse; }
-.owner-ranking-table th { padding: 12px 14px; background: #f4f6fa; color: #6f7c92; font-size: 11px; text-align: right; white-space: nowrap; }
-.owner-ranking-table th:first-child, .owner-ranking-table th:nth-child(2) { text-align: left; }
-.owner-ranking-table td { padding: 15px 14px; border-top: 1px solid #e7ebf2; color: #34415a; font-size: 13px; font-weight: 700; text-align: right; white-space: nowrap; cursor: pointer; }
-.owner-ranking-table td:first-child, .owner-ranking-table td:nth-child(2) { text-align: left; }
+.owner-ranking-table { width: 100%; min-width: 860px; table-layout: fixed; border-collapse: collapse; }
+.owner-ranking-col-rank { width: 6%; }
+.owner-ranking-col-manager { width: 24%; }
+.owner-ranking-col-orders { width: 12%; }
+.owner-ranking-col-sales { width: 20%; }
+.owner-ranking-col-margin { width: 20%; }
+.owner-ranking-col-rate { width: 9%; }
+.owner-ranking-col-quantity { width: 9%; }
+.owner-ranking-table th { padding: 13px 18px; background: #f4f6fa; color: #6f7c92; font-size: 11px; text-align: right; white-space: nowrap; }
+.owner-ranking-table th:first-child, .owner-ranking-table th:nth-child(3) { text-align: center; }
+.owner-ranking-table th:nth-child(2) { text-align: left; }
+.owner-ranking-table td { padding: 17px 18px; border-top: 1px solid #e7ebf2; color: #34415a; font-size: 13px; font-weight: 700; text-align: right; white-space: nowrap; cursor: pointer; }
+.owner-ranking-table td:first-child, .owner-ranking-table td:nth-child(3) { text-align: center; }
+.owner-ranking-table td:nth-child(2) { text-align: left; }
 .owner-ranking-table tr:hover td, .owner-ranking-table tr.selected td { background: #f5f7ff; }
 .owner-ranking-table tr.selected td:first-child { box-shadow: inset 3px 0 #4c59ee; }
-.owner-ranking-table td:first-child b { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; background: #eef0ff; color: #4653d8; }
+.owner-ranking-table td:first-child b { display: grid; place-items: center; width: 30px; height: 30px; margin: 0 auto; border-radius: 10px; background: #eef0ff; color: #4653d8; }
 .owner-ranking-table td button { padding: 0; border: 0; background: transparent; color: #192944; font: inherit; font-weight: 900; cursor: pointer; }
 .owner-ranking-table .owner-margin-cell { color: #10815d; font-weight: 900; }
 .owner-performance-loading { min-height: 180px; display: flex; align-items: center; justify-content: center; gap: 10px; }

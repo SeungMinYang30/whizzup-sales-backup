@@ -100,4 +100,6 @@ test("경영 요약은 대표 본인 전용 API와 프로필 메뉴로만 연결
   );
   assert.match(page, /납품 완료된 위즈업 수주만 집계/);
   assert.match(page, /담당자별 순위/);
+  assert.doesNotMatch(page, /건당 마진/);
+  assert.match(page, /owner-ranking-col-manager/);
 });

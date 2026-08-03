@@ -279,7 +279,16 @@ export default function OwnerPerformancePage({
         ) : rankedManagers.length ? (
           <div className="owner-ranking-table-wrap">
             <table className="owner-ranking-table">
-              <thead><tr><th>순위</th><th>담당자</th><th>수주 건수</th><th>총 수주액</th><th>최종 마진</th><th>마진율</th><th>총 판매량</th><th>건당 마진</th></tr></thead>
+              <colgroup>
+                <col className="owner-ranking-col-rank" />
+                <col className="owner-ranking-col-manager" />
+                <col className="owner-ranking-col-orders" />
+                <col className="owner-ranking-col-sales" />
+                <col className="owner-ranking-col-margin" />
+                <col className="owner-ranking-col-rate" />
+                <col className="owner-ranking-col-quantity" />
+              </colgroup>
+              <thead><tr><th>순위</th><th>담당자</th><th>수주 건수</th><th>총 수주액</th><th>최종 마진</th><th>마진율</th><th>총 판매량</th></tr></thead>
               <tbody>
                 {rankedManagers.map((manager, index) => (
                   <tr
@@ -294,7 +303,6 @@ export default function OwnerPerformancePage({
                     <td className="owner-margin-cell">{formatMoney(manager.margin)}</td>
                     <td>{formatRate(manager.marginRate)}</td>
                     <td>{manager.quantity.toLocaleString("ko-KR")}개</td>
-                    <td>{formatMoney(manager.averageMargin)}</td>
                   </tr>
                 ))}
               </tbody>
