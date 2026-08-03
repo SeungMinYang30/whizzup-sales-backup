@@ -2577,7 +2577,7 @@ function activityReviewFields(
   if (!record.region.trim()) {
     add("region", "지역", "text", "예: 경기 김포", "기관 지역이 비어 있습니다.");
   }
-  if (!record.summary.trim()) {
+  if (contactActivity && !record.summary.trim()) {
     add(
       "summary",
       "상담 내용",
