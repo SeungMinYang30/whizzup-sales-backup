@@ -191,7 +191,7 @@ export default function HomeCalendar({
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           organization: editor.organizationQuery.trim(), activityDate: today, activityType: "기타", region: "",
-          summary: "HOME 일정에서 신규 기관 등록", businessRound: 1, awardStatus: "미정", awardStage: "미정",
+          summary: "대시보드 일정에서 신규 기관 등록", businessRound: 1, awardStatus: "미정", awardStage: "미정",
           skipInstitutionStateLookup: true,
         }),
       });

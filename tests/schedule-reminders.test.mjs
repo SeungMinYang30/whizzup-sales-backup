@@ -5,6 +5,7 @@ import {
   canCompleteScheduleReminder,
   canMemberSeeScheduleReminder,
   isSharedPostAwardSchedule,
+  isSharedSalesSchedule,
 } from "../lib/schedule-reminder-policy.ts";
 
 const employee = {
@@ -22,6 +23,55 @@ test("personal sales schedules are visible only to their assignee", () => {
     creatorName: "양승민 이사",
   };
   assert.equal(canMemberSeeScheduleReminder(schedule, employee), true);
+  assert.equal(
+    canMemberSeeScheduleReminder(schedule, {
+      id: 1,
+      displayName: "양승민 이사",
+      role: "admin",
+    }),
+    false,
+  );
+});
+
+test("explicit sales calendar schedules remain shared after reassignment", () => {
+  const schedule = {
+    awardStatus: "미정",
+    category: "general",
+    label: "영업 · 재연락",
+    progressManager: "김동훈 과장",
+    creatorMemberId: 3,
+    creatorName: "양승민 이사",
+  };
+  assert.equal(isSharedSalesSchedule(schedule), true);
+  assert.equal(canMemberSeeScheduleReminder(schedule, employee), true);
+  assert.equal(
+    canMemberSeeScheduleReminder(schedule, {
+      id: 1,
+      displayName: "양승민 이사",
+      role: "admin",
+    }),
+    true,
+  );
+  assert.equal(
+    canMemberSeeScheduleReminder(schedule, {
+      id: 8,
+      displayName: "이준상 본부장",
+      role: "member",
+    }),
+    true,
+  );
+});
+
+test("plain follow-up reminders remain private", () => {
+  const schedule = {
+    awardStatus: "미정",
+    category: "general",
+    label: "재연락",
+    progressManager: "김동훈 과장",
+    creatorMemberId: 3,
+    creatorName: "양승민 이사",
+  };
+  assert.equal(isSharedSalesSchedule(schedule), false);
   assert.equal(
     canMemberSeeScheduleReminder(schedule, {
       id: 1,

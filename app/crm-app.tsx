@@ -1579,7 +1579,7 @@ const emptyForm: FormState = {
 };
 
 const navItems: { id: View; label: string; mark: string }[] = [
-  { id: "dashboard", label: "HOME", mark: "H" },
+  { id: "dashboard", label: "대시보드", mark: "D" },
   { id: "budget-institutions", label: "예산별 기관", mark: "B" },
   { id: "followup", label: "기관별 관리(수주 전)", mark: "F" },
   { id: "awards", label: "기관별 관리(수주 후)", mark: "W" },
@@ -1589,7 +1589,7 @@ const navItems: { id: View; label: string; mark: string }[] = [
 ];
 
 const presenceViewLabels: Record<View, string> = {
-  dashboard: "HOME",
+  dashboard: "대시보드",
   "budget-institutions": "예산별 기관",
   records: "영업 기록",
   followup: "기관별 관리(수주 전)",
@@ -2894,7 +2894,7 @@ type ScheduleReminderRecord = {
   businessRound: number;
   label: string;
   scheduledDate: string;
-  visibility: "private" | "shared-post-award";
+  visibility: "private" | "shared" | "shared-post-award";
   assigneeName: string;
   updatedAt: string;
   updatedByName: string;
@@ -14758,7 +14758,7 @@ export default function CrmApp({
 
   const title =
     view === "dashboard"
-      ? "HOME"
+      ? "대시보드"
       : view === "budget-institutions"
         ? "예산별 기관"
         : view === "records"
@@ -15919,17 +15919,6 @@ export default function CrmApp({
                   확인 완료한 지난 일정은 목록에서 사라지고 기록은 안전하게 유지됩니다.
                 </p>
               </section>}
-
-              <Suspense fallback={<DeferredPageFallback />}>
-                <ConstructionSchedulePage
-                  embedded
-                  records={records}
-                  onOpenOrganization={(organization, businessRound) => {
-                    setDetailBusinessRound(businessRound);
-                    setDetailOrganization(organization);
-                  }}
-                />
-              </Suspense>
 
               {false && <>
               <section className="metric-grid" aria-label="핵심 지표">

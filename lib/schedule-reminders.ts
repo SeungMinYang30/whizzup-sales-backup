@@ -9,9 +9,10 @@ import {
   canCompleteScheduleReminder,
   canMemberSeeScheduleReminder,
   isSharedPostAwardSchedule,
+  isSharedSalesSchedule,
 } from "./schedule-reminder-policy";
 
-export type ScheduleReminderVisibility = "private" | "shared-post-award";
+export type ScheduleReminderVisibility = "private" | "shared" | "shared-post-award";
 
 export type ScheduleReminder = {
   id: number;
@@ -37,14 +38,20 @@ function scheduleReminderFromRow(
 ): ScheduleReminder {
   const label = String(row.label);
   const storedCategory = clean(row.category);
+  const sharedSales = isSharedSalesSchedule({
+    category: storedCategory,
+    label,
+  });
   const category: ScheduleReminder["category"] =
     storedCategory === "construction"
       ? "construction"
       : storedCategory === "showroom" || /쇼룸|전시/.test(label)
         ? "showroom"
-        : /재연락|다시\s*연락|연락\s*예정/.test(label)
-          ? "personal"
-          : "sales";
+        : sharedSales
+          ? "sales"
+          : /재연락|다시\s*연락|연락\s*예정/.test(label)
+            ? "personal"
+            : "sales";
   return {
     id: Number(row.id),
     organization: String(row.organization),
@@ -53,12 +60,14 @@ function scheduleReminderFromRow(
     category,
     scheduledDate: String(row.scheduled_date),
     endDate: String(row.end_date || row.scheduled_date),
-    visibility: isSharedPostAwardSchedule({
-      awardStatus: row.award_status,
-      label: row.label,
-    })
-      ? "shared-post-award"
-      : "private",
+    visibility: sharedSales
+      ? "shared"
+      : isSharedPostAwardSchedule({
+          awardStatus: row.award_status,
+          label: row.label,
+        })
+        ? "shared-post-award"
+        : "private",
     assigneeName: hasAssignedManager(row.assignee_name)
       ? clean(row.assignee_name)
       : hasAssignedManager(row.progress_manager)
@@ -172,6 +181,7 @@ export async function listScheduleRemindersForMember(
       canMemberSeeScheduleReminder(
         {
           awardStatus: row.award_status,
+          category: row.category,
           label: row.label,
           progressManager: row.assignee_name || row.progress_manager,
           creatorMemberId: row.created_by ?? row.source_author_id,
@@ -225,6 +235,7 @@ export async function listScheduleCalendarForMember(
       canMemberSeeScheduleReminder(
         {
           awardStatus: row.award_status,
+          category: row.category,
           label: row.label,
           progressManager: row.assignee_name || row.progress_manager,
           creatorMemberId: row.created_by ?? row.source_author_id,
@@ -256,9 +267,10 @@ export async function completeScheduleReminderForMember(
     !canCompleteScheduleReminder(
       {
         awardStatus: row.award_status,
+        category: row.category,
         label: row.label,
         scheduledDate: row.scheduled_date,
-        progressManager: row.progress_manager,
+        progressManager: row.assignee_name || row.progress_manager,
         creatorMemberId: row.created_by ?? row.source_author_id,
         creatorName: row.created_by_name || row.source_author_name,
       },

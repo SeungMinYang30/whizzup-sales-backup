@@ -5,6 +5,7 @@ export type ScheduleReminderMember = {
 };
 
 const sharedInstallationSchedulePattern = /(?:설치|납품|시공|공사|입고|출고|철거|통신|목공|도장|바닥|시스템|사인|검수)/;
+const sharedSalesSchedulePattern = /^영업\s*[·•-]\s*/;
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -29,9 +30,20 @@ export function isSharedPostAwardSchedule(input: {
   );
 }
 
+export function isSharedSalesSchedule(input: {
+  category: unknown;
+  label: unknown;
+}) {
+  return (
+    text(input.category) === "general" &&
+    sharedSalesSchedulePattern.test(text(input.label))
+  );
+}
+
 export function canMemberSeeScheduleReminder(
   row: {
     awardStatus: unknown;
+    category?: unknown;
     label: unknown;
     progressManager: unknown;
     creatorMemberId: unknown;
@@ -43,6 +55,10 @@ export function canMemberSeeScheduleReminder(
     awardStatus: row.awardStatus,
     label: row.label,
   });
+  const sharedSales = isSharedSalesSchedule({
+    category: row.category,
+    label: row.label,
+  });
   const viewerName = normalizedPersonName(member.displayName);
   const managerName = normalizedPersonName(row.progressManager);
   const creatorName = normalizedPersonName(row.creatorName);
@@ -51,6 +67,7 @@ export function canMemberSeeScheduleReminder(
     Number(row.creatorMemberId) === member.id ||
     (Boolean(viewerName) && creatorName === viewerName);
 
+  if (sharedSales) return true;
   if (shared) {
     return member.role === "admin" || assignedToViewer || createdByViewer;
   }
