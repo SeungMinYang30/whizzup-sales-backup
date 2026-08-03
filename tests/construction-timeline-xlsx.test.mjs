@@ -59,6 +59,15 @@ test("시공·납품 일정표 엑셀은 유효한 스타일 번호와 화면 �
   assert.match(sheet, /오늘/);
   assert.match(styles, /<cellXfs count="30">/);
 
+  const autoFilterIndex = sheet.indexOf("<autoFilter");
+  const mergeCellsIndex = sheet.indexOf("<mergeCells");
+  assert.ok(autoFilterIndex >= 0, "엑셀 자동 필터가 생성되어야 한다");
+  assert.ok(mergeCellsIndex >= 0, "제목 병합 셀이 생성되어야 한다");
+  assert.ok(
+    autoFilterIndex < mergeCellsIndex,
+    "Excel OOXML 순서에 맞게 자동 필터가 병합 셀보다 먼저 와야 한다",
+  );
+
   const styleCount = Number(styles.match(/<cellXfs count="(\d+)">/)?.[1] ?? 0);
   const styleIndexes = [...sheet.matchAll(/\ss="(\d+)"/g)].map((match) => Number(match[1]));
   assert.ok(styleIndexes.length > 0);

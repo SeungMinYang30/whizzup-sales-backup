@@ -702,8 +702,8 @@ export function downloadConstructionTimelineXlsx(
     <row r="2" ht="42" customHeight="1">${headerCells}</row>
     ${dataRows}
   </sheetData>
-  <mergeCells count="1"><mergeCell ref="A1:${lastColumn}1"/></mergeCells>
   <autoFilter ref="A2:${lastColumn}${Math.max(2, options.rows.length + 2)}"/>
+  <mergeCells count="1"><mergeCell ref="A1:${lastColumn}1"/></mergeCells>
   <printOptions horizontalCentered="1"/>
   <pageMargins left="0.2" right="0.2" top="0.35" bottom="0.35" header="0.15" footer="0.15"/>
   <pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>
