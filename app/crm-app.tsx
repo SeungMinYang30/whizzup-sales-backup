@@ -15767,7 +15767,18 @@ export default function CrmApp({
                     setDetailBusinessRound(businessRound);
                     setDetailOrganization(organization);
                   }}
-                  onOpenConstructionSchedule={() => navigate("construction-schedule")}
+                  onOpenConstructionSchedule={() => navigateTo("installation-schedule")}
+                />
+              </Suspense>
+
+              <Suspense fallback={<DeferredPageFallback />}>
+                <ConstructionSchedulePage
+                  embedded
+                  records={records}
+                  onOpenOrganization={(organization, businessRound) => {
+                    setDetailBusinessRound(businessRound);
+                    setDetailOrganization(organization);
+                  }}
                 />
               </Suspense>
 

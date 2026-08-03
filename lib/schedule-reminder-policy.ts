@@ -6,6 +6,7 @@ export type ScheduleReminderMember = {
 
 const sharedInstallationSchedulePattern = /(?:설치|납품|시공|공사|입고|출고|철거|통신|목공|도장|바닥|시스템|사인|검수)/;
 const sharedSalesSchedulePattern = /^영업\s*[·•-]\s*/;
+const sharedGeneralCategories = new Set(["meeting", "showroom", "other"]);
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -34,9 +35,9 @@ export function isSharedSalesSchedule(input: {
   category: unknown;
   label: unknown;
 }) {
-  return (
-    text(input.category) === "general" &&
-    sharedSalesSchedulePattern.test(text(input.label))
+  const category = text(input.category);
+  return sharedGeneralCategories.has(category) || (
+    category === "general" && sharedSalesSchedulePattern.test(text(input.label))
   );
 }
 

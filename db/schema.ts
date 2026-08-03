@@ -116,6 +116,8 @@ export const organizationSchedules = sqliteTable(
     businessRound: integer("business_round").notNull().default(1),
     label: text("label").notNull(),
     scheduledDate: text("scheduled_date").notNull(),
+    startTime: text("start_time").notNull().default(""),
+    endTime: text("end_time").notNull().default(""),
     category: text("category").notNull().default("general"),
     stage: text("stage").notNull().default(""),
     endDate: text("end_date").notNull().default(""),
@@ -125,6 +127,8 @@ export const organizationSchedules = sqliteTable(
       .notNull()
       .default(false),
     sourceActivityId: integer("source_activity_id"),
+    assigneeMemberId: integer("assignee_member_id"),
+    assigneeName: text("assignee_name").notNull().default(""),
     createdBy: integer("created_by"),
     createdByName: text("created_by_name").notNull().default(""),
     updatedBy: integer("updated_by"),
@@ -150,6 +154,7 @@ export const constructionScheduleProjects = sqliteTable(
     organization: text("organization").notNull(),
     businessRound: integer("business_round").notNull().default(1),
     workSummary: text("work_summary").notNull().default(""),
+    workSummaryMode: text("work_summary_mode").notNull().default("auto"),
     completed: integer("completed", { mode: "boolean" })
       .notNull()
       .default(false),

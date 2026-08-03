@@ -10796,12 +10796,16 @@ tr:hover .row-actions { opacity: 1; }
 .home-calendar-day-items small { font-size: 11px; }
 .home-calendar-day-items em { font-size: 10px; }
 .home-calendar-day-items > span.sales { border-color: #4f72dc; background: #eef3ff; color: #3157ad; }
+.home-calendar-day-items > span.meeting { border-color: #26a7a0; background: #ecfbfa; color: #16716c; }
 .home-calendar-day-items > span.construction { border-color: #e99b1d; background: #fff6e5; color: #8a5900; }
 .home-calendar-day-items > span.showroom { border-color: #885ee6; background: #f5efff; color: #6740b8; }
+.home-calendar-day-items > span.other { border-color: #7b879b; background: #f3f5f8; color: #536075; }
 .home-calendar-day-items > span.personal { border-color: #17a978; background: #eef9f5; color: #16785a; }
 .home-calendar-agenda-list i.sales { background: #4f72dc; }
+.home-calendar-agenda-list i.meeting { background: #26a7a0; }
 .home-calendar-agenda-list i.construction { background: #e99b1d; }
 .home-calendar-agenda-list i.showroom { background: #885ee6; }
+.home-calendar-agenda-list i.other { background: #7b879b; }
 .home-calendar-agenda-list i.personal { background: #17a978; }
 .home-calendar-agenda-list strong { font-size: 14px; }
 .home-calendar-agenda-list small { font-size: 12px; }
@@ -10823,9 +10827,21 @@ tr:hover .row-actions { opacity: 1; }
 .home-schedule-institution-results strong { font-size: 14px; }
 .home-schedule-institution-results small { color: #7d899c; font-size: 12px; }
 .home-schedule-link-note { color: #77849a; font-size: 11px; font-weight: 650; line-height: 1.5; }
-.home-schedule-kind { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
+.home-schedule-kind { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 16px; }
 .home-schedule-kind button { min-height: 40px; border: 1px solid #d4dceb; border-radius: 9px; background: #fff; color: #53627a; font-size: 13px; font-weight: 850; }
 .home-schedule-kind button.active { border-color: #4561ea; background: #eef2ff; color: #354fce; }
+.home-schedule-date-grid,
+.home-schedule-time-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: end; gap: 10px; margin-top: 13px; }
+.home-schedule-date-grid > label,
+.home-schedule-time-grid > label { display: grid; gap: 7px; color: #35445d; font-size: 13px; font-weight: 850; }
+.home-schedule-date-grid input,
+.home-schedule-time-grid select { width: 100%; min-height: 44px; margin: 0 !important; padding: 0 12px; border: 1px solid #ccd6e8; border-radius: 8px; background: #fff; color: #1e2c44; font-size: 14px; }
+.home-schedule-date-grid > .schedule-all-day { display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 12px; border: 1px solid #dce4f1; border-radius: 8px; background: #f8fafc; }
+.home-schedule-date-grid > .schedule-all-day input { width: 16px; height: 16px; min-height: 0; margin: 0; padding: 0; accent-color: #3f49e6; }
+.schedule-readonly-dialog > dl { display: grid; grid-template-columns: 96px minmax(0, 1fr); margin: 18px 0 0; border: 1px solid #dfe5ef; border-radius: 10px; overflow: hidden; }
+.schedule-readonly-dialog > dl > * { margin: 0; padding: 12px 14px; border-bottom: 1px solid #e8ecf3; }
+.schedule-readonly-dialog > dl > dt { background: #f6f8fb; color: #68758b; font-size: 12px; font-weight: 850; }
+.schedule-readonly-dialog > dl > dd { color: #253650; font-size: 13px; }
 .home-schedule-editor footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; padding-top: 15px; border-top: 1px solid #e5e9f0; }
 .home-schedule-editor footer button { min-width: 82px; min-height: 42px; }
 
@@ -10850,5 +10866,7 @@ tr:hover .row-actions { opacity: 1; }
   .construction-new-institution-form > button { grid-column: auto; }
   .home-calendar-filters button { flex: 1 1 auto; }
   .home-schedule-kind { grid-template-columns: 1fr 1fr; }
+  .home-schedule-date-grid,
+  .home-schedule-time-grid { grid-template-columns: 1fr; }
   .home-calendar-day-items b { font-size: 10px; }
 }

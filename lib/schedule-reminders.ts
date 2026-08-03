@@ -19,8 +19,10 @@ export type ScheduleReminder = {
   organization: string;
   businessRound: number;
   label: string;
-  category: "sales" | "construction" | "showroom" | "personal";
+  category: "sales" | "meeting" | "construction" | "showroom" | "other" | "personal";
   scheduledDate: string;
+  startTime: string;
+  endTime: string;
   endDate: string;
   visibility: ScheduleReminderVisibility;
   assigneeName: string;
@@ -45,8 +47,14 @@ function scheduleReminderFromRow(
   const category: ScheduleReminder["category"] =
     storedCategory === "construction"
       ? "construction"
+      : storedCategory === "meeting"
+        ? "meeting"
       : storedCategory === "showroom" || /쇼룸|전시/.test(label)
         ? "showroom"
+        : storedCategory === "other"
+          ? "other"
+        : storedCategory === "personal"
+          ? "personal"
         : sharedSales
           ? "sales"
           : /재연락|다시\s*연락|연락\s*예정/.test(label)
@@ -59,6 +67,8 @@ function scheduleReminderFromRow(
     label,
     category,
     scheduledDate: String(row.scheduled_date),
+    startTime: String(row.start_time ?? ""),
+    endTime: String(row.end_time ?? ""),
     endDate: String(row.end_date || row.scheduled_date),
     visibility: sharedSales
       ? "shared"
@@ -91,6 +101,8 @@ type ReminderRow = {
   label: string;
   category: string;
   scheduled_date: string;
+  start_time: string;
+  end_time: string;
   end_date: string;
   created_by: number | null;
   created_by_name: string;
@@ -138,6 +150,8 @@ SELECT
   s.label,
   COALESCE(s.category, 'general') AS category,
   s.scheduled_date,
+  COALESCE(s.start_time, '') AS start_time,
+  COALESCE(s.end_time, '') AS end_time,
   COALESCE(NULLIF(s.end_date, ''), s.scheduled_date) AS end_date,
   s.created_by,
   s.created_by_name,
@@ -168,7 +182,7 @@ export async function listScheduleRemindersForMember(
       `${reminderSelect}
        WHERE s.completed = 0
          AND s.scheduled_date <= ?
-       ORDER BY s.scheduled_date ASC, s.id ASC`,
+       ORDER BY s.scheduled_date ASC, COALESCE(s.start_time, '') ASC, s.id ASC`,
     )
     .bind(endDate)
     .all<ReminderRow>();
@@ -225,7 +239,7 @@ export async function listScheduleCalendarForMember(
        WHERE s.completed = 0
          AND s.scheduled_date <= ?
          AND COALESCE(NULLIF(s.end_date, ''), s.scheduled_date) >= ?
-       ORDER BY s.scheduled_date ASC, s.id ASC`,
+       ORDER BY s.scheduled_date ASC, COALESCE(s.start_time, '') ASC, s.id ASC`,
     )
     .bind(endDate, startDate)
     .all<ReminderRow>();

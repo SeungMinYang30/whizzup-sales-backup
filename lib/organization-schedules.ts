@@ -11,6 +11,8 @@ export type OrganizationSchedule = {
   businessRound: number;
   label: string;
   scheduledDate: string;
+  startTime: string;
+  endTime: string;
   category: string;
   stage: string;
   endDate: string;
@@ -59,6 +61,8 @@ const schemaStatements = [
     business_round INTEGER NOT NULL DEFAULT 1,
     label TEXT NOT NULL,
     scheduled_date TEXT NOT NULL,
+    start_time TEXT NOT NULL DEFAULT '',
+    end_time TEXT NOT NULL DEFAULT '',
     category TEXT NOT NULL DEFAULT 'general',
     stage TEXT NOT NULL DEFAULT '',
     end_date TEXT NOT NULL DEFAULT '',
@@ -108,6 +112,8 @@ async function initializeOrganizationSchedules() {
   const columns = await d1.prepare("PRAGMA table_info(organization_schedules)").all<{ name: string }>();
   const names = new Set(columns.results.map((column) => column.name));
   const additions = [
+    ["start_time", "TEXT NOT NULL DEFAULT ''"],
+    ["end_time", "TEXT NOT NULL DEFAULT ''"],
     ["category", "TEXT NOT NULL DEFAULT 'general'"],
     ["stage", "TEXT NOT NULL DEFAULT ''"],
     ["end_date", "TEXT NOT NULL DEFAULT ''"],
@@ -147,6 +153,24 @@ function validDate(value: unknown) {
     : date;
 }
 
+function validTime(value: unknown) {
+  const time = clean(value);
+  if (!time) return "";
+  const match = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!match) return "";
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59 || minute % 10 !== 0) return "";
+  return `${match[1]}:${match[2]}`;
+}
+
+function normalizeScheduleCategory(value: unknown) {
+  const category = clean(value);
+  return ["general", "meeting", "showroom", "other", "personal"].includes(category)
+    ? category
+    : "general";
+}
+
 export function normalizeOrganizationScheduleInputs(value: unknown) {
   if (!Array.isArray(value)) return [];
   const unique = new Map<string, OrganizationScheduleInput>();
@@ -176,6 +200,8 @@ function scheduleJson(row: Record<string, unknown>): OrganizationSchedule {
     businessRound: Math.max(0, Number(row.business_round) || 0),
     label: String(row.label ?? ""),
     scheduledDate: String(row.scheduled_date ?? ""),
+    startTime: String(row.start_time ?? ""),
+    endTime: String(row.end_time ?? ""),
     category: String(row.category ?? "general"),
     stage: String(row.stage ?? ""),
     endDate: String(row.end_date ?? row.scheduled_date ?? ""),
@@ -423,6 +449,8 @@ export async function addOrganizationSchedule(input: {
   businessRound: unknown;
   label: unknown;
   scheduledDate: unknown;
+  startTime?: unknown;
+  endTime?: unknown;
   category?: unknown;
   linked?: unknown;
   assigneeMemberId?: unknown;
@@ -435,31 +463,42 @@ export async function addOrganizationSchedule(input: {
   const businessRound = linked ? Math.max(1, Number(input.businessRound) || 1) : 0;
   const label = clean(input.label).slice(0, 120);
   const scheduledDate = validDate(input.scheduledDate);
-  const category = clean(input.category) === "showroom" ? "showroom" : "general";
+  const category = normalizeScheduleCategory(input.category);
+  const rawStartTime = clean(input.startTime);
+  const rawEndTime = clean(input.endTime);
+  const startTime = validTime(rawStartTime);
+  const endTime = validTime(rawEndTime);
   const assigneeMemberId = Number(input.assigneeMemberId);
   const assigneeName = clean(input.assigneeName).slice(0, 120) || input.memberName;
   if (!organization || !label || !scheduledDate) {
     throw new Error("기관, 일정 제목, 날짜를 확인해 주세요.");
   }
+  if ((rawStartTime && !startTime) || (rawEndTime && !endTime)) {
+    throw new Error("시간은 10분 단위로 입력해 주세요.");
+  }
+  if (endTime && !startTime) throw new Error("종료 시간보다 시작 시간을 먼저 입력해 주세요.");
+  if (startTime && endTime && endTime < startTime) throw new Error("종료 시간은 시작 시간 이후여야 합니다.");
   const d1 = await ensureOrganizationSchedulesReady();
   const existing = await d1.prepare(
     `SELECT id FROM organization_schedules
      WHERE organization = ? AND business_round = ? AND label = ?
-       AND scheduled_date = ? AND completed = 0
+       AND scheduled_date = ? AND start_time = ? AND completed = 0
      LIMIT 1`,
-  ).bind(organization, businessRound, label, scheduledDate).first<{ id: number }>();
+  ).bind(organization, businessRound, label, scheduledDate, startTime).first<{ id: number }>();
   if (!existing) {
     await d1.prepare(
       `INSERT INTO organization_schedules (
-         organization, business_round, label, scheduled_date, category, completed,
+         organization, business_round, label, scheduled_date, start_time, end_time, category, completed,
          created_by, created_by_name, updated_by, updated_by_name,
          assignee_member_id, assignee_name
-       ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       organization,
       businessRound,
       label,
       scheduledDate,
+      startTime,
+      endTime,
       category,
       input.memberId,
       input.memberName,
@@ -766,6 +805,8 @@ export async function updateOrganizationSchedule(input: {
   id: unknown;
   label: unknown;
   scheduledDate: unknown;
+  startTime?: unknown;
+  endTime?: unknown;
   category?: unknown;
   assigneeMemberId?: unknown;
   assigneeName?: unknown;
@@ -776,18 +817,29 @@ export async function updateOrganizationSchedule(input: {
   const label = clean(input.label).slice(0, 120);
   const scheduledDate = validDate(input.scheduledDate);
   if (!label || !scheduledDate) throw new Error("일정 제목과 날짜를 확인해 주세요.");
-  const category = clean(input.category) === "showroom" ? "showroom" : "general";
+  const category = normalizeScheduleCategory(input.category);
+  const rawStartTime = clean(input.startTime);
+  const rawEndTime = clean(input.endTime);
+  const startTime = validTime(rawStartTime);
+  const endTime = validTime(rawEndTime);
+  if ((rawStartTime && !startTime) || (rawEndTime && !endTime)) {
+    throw new Error("시간은 10분 단위로 입력해 주세요.");
+  }
+  if (endTime && !startTime) throw new Error("종료 시간보다 시작 시간을 먼저 입력해 주세요.");
+  if (startTime && endTime && endTime < startTime) throw new Error("종료 시간은 시작 시간 이후여야 합니다.");
   const assigneeMemberId = Number(input.assigneeMemberId);
   const assigneeName = clean(input.assigneeName).slice(0, 120) || input.member.displayName;
   await d1.prepare(
     `UPDATE organization_schedules
-     SET label = ?, scheduled_date = ?, end_date = ?, category = ?, completed = ?,
+     SET label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, category = ?, completed = ?,
          assignee_member_id = ?, assignee_name = ?,
          updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
   ).bind(
     label,
     scheduledDate,
+    startTime,
+    endTime,
     scheduledDate,
     category,
     input.completed === true ? 1 : 0,
@@ -807,7 +859,8 @@ export async function updateOrganizationSchedule(input: {
       await listOrganizationSchedules(organization, businessRound),
     );
   }
-  return scheduleJson({ ...row, id, label, scheduled_date: scheduledDate, end_date: scheduledDate,
+  return scheduleJson({ ...row, id, label, scheduled_date: scheduledDate, start_time: startTime,
+    end_time: endTime, end_date: scheduledDate,
     category, completed: input.completed === true ? 1 : 0,
     assignee_member_id: Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0 ? assigneeMemberId : null,
     assignee_name: assigneeName, updated_by_name: input.member.displayName });
