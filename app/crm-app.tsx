@@ -2879,6 +2879,29 @@ type OrganizationScheduleDraft = {
   completed: boolean;
 };
 
+type ScheduleReminderRecord = {
+  id: number;
+  organization: string;
+  businessRound: number;
+  label: string;
+  scheduledDate: string;
+  visibility: "private" | "shared-post-award";
+  assigneeName: string;
+};
+
+function scheduleReminderTiming(dateValue: string, todayValue: string) {
+  if (dateValue < todayValue) {
+    return { label: "기한 지남", tone: "overdue" } as const;
+  }
+  if (dateValue === todayValue) {
+    return { label: "오늘", tone: "today" } as const;
+  }
+  const due = Date.parse(`${dateValue}T00:00:00Z`);
+  const today = Date.parse(`${todayValue}T00:00:00Z`);
+  const days = Math.max(1, Math.round((due - today) / 86_400_000));
+  return { label: `D-${days}`, tone: "soon" } as const;
+}
+
 function parseProgressSchedule(value: string): ProgressScheduleItem[] {
   const currentYear = new Date().getFullYear();
   const datePattern =
@@ -3399,6 +3422,20 @@ async function requestSession() {
       permissions: normalizeMemberPermissions(payload.member.permissions),
     },
   };
+}
+
+async function requestScheduleReminders() {
+  const response = await fetch("/api/schedules?scope=reminders", {
+    cache: "no-store",
+  });
+  const payload = (await response.json()) as {
+    reminders?: ScheduleReminderRecord[];
+    error?: string;
+  };
+  if (!response.ok) {
+    throw new Error(payload.error || "내 일정을 불러오지 못했습니다.");
+  }
+  return Array.isArray(payload.reminders) ? payload.reminders : [];
 }
 
 async function requestActivityReviewAcknowledgements() {
@@ -6267,6 +6304,13 @@ export default function CrmApp({
     OrganizationScheduleDraft[]
   >([]);
   const [detailScheduleSaving, setDetailScheduleSaving] = useState(false);
+  const [scheduleReminders, setScheduleReminders] = useState<
+    ScheduleReminderRecord[]
+  >([]);
+  const [scheduleRemindersLoading, setScheduleRemindersLoading] =
+    useState(false);
+  const [scheduleReminderRefreshVersion, setScheduleReminderRefreshVersion] =
+    useState(0);
   const [selectedOrganizations, setSelectedOrganizations] = useState<string[]>(
     [],
   );
@@ -6728,6 +6772,30 @@ export default function CrmApp({
     const timer = window.setInterval(heartbeat, 15_000);
     return () => window.clearInterval(timer);
   }, [sessionStatus, view]);
+
+  useEffect(() => {
+    if (sessionStatus !== "approved" || view !== "dashboard") return;
+    let active = true;
+    setScheduleRemindersLoading(true);
+    void requestScheduleReminders()
+      .then((reminders) => {
+        if (active) setScheduleReminders(reminders);
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setToast(
+          caught instanceof Error
+            ? caught.message
+            : "내 일정을 불러오지 못했습니다.",
+        );
+      })
+      .finally(() => {
+        if (active) setScheduleRemindersLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [scheduleReminderRefreshVersion, sessionStatus, view]);
 
   useEffect(() => {
     if (view !== "team" || !session?.canViewPresence) return;
@@ -8220,6 +8288,7 @@ export default function CrmApp({
       );
       setDetailScheduleEditing(false);
       setToast("일정만 저장했습니다. 영업·수주 상태는 변경하지 않았습니다.");
+      setScheduleReminderRefreshVersion((current) => current + 1);
       void refreshRecordsInBackground();
     } catch (caught) {
       setToast(
@@ -15673,6 +15742,65 @@ export default function CrmApp({
                         ? "확인할 업무 보기"
                         : "점검 완료"}
                 </button>
+              </section>
+
+              <section className="my-schedule-panel" aria-labelledby="my-schedule-title">
+                <div className="my-schedule-heading">
+                  <div>
+                    <span className="section-kicker">MY SCHEDULE</span>
+                    <h2 id="my-schedule-title">내 일정</h2>
+                    <p>
+                      기한이 지났거나 2일 안에 다가오는 일정입니다. 개인 영업 일정은 담당자 본인에게만 보입니다.
+                    </p>
+                  </div>
+                  <strong>{scheduleReminders.length}건</strong>
+                </div>
+                {scheduleRemindersLoading ? (
+                  <div className="my-schedule-empty">내 일정을 확인하는 중입니다.</div>
+                ) : scheduleReminders.length > 0 ? (
+                  <div className="my-schedule-list">
+                    {scheduleReminders.map((reminder) => {
+                      const timing = scheduleReminderTiming(
+                        reminder.scheduledDate,
+                        todayValue,
+                      );
+                      return (
+                        <button
+                          type="button"
+                          className="my-schedule-row"
+                          key={reminder.id}
+                          onClick={() => {
+                            setDetailBusinessRound(reminder.businessRound);
+                            setDetailOrganization(reminder.organization);
+                          }}
+                        >
+                          <span className={`my-schedule-timing ${timing.tone}`}>
+                            {timing.label}
+                          </span>
+                          <span className="my-schedule-copy">
+                            <strong>{reminder.organization}</strong>
+                            <small>{reminder.label}</small>
+                          </span>
+                          <span className="my-schedule-meta">
+                            <b>{formatScheduleDate(reminder.scheduledDate)}</b>
+                            <small>
+                              {reminder.visibility === "shared-post-award"
+                                ? "수주 후 공유 일정"
+                                : "개인 일정"}
+                            </small>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="my-schedule-empty">
+                    지금 확인할 개인 일정이 없습니다.
+                  </div>
+                )}
+                <p className="my-schedule-note">
+                  수주 후 설치·납품 일정만 관련 담당자와 관리자에게 함께 표시됩니다.
+                </p>
               </section>
 
               <section className="metric-grid" aria-label="핵심 지표">

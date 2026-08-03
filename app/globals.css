@@ -1780,6 +1780,27 @@ kbd { padding: 3px 6px; border: 1px solid #dce2eb; border-bottom-width: 2px; bac
 .ai-preview-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 14px; }
 .ai-preview-actions button { min-height: 36px; padding: 0 13px; border: 1px solid #d9e0eb; background: #fff; color: #526078; font-size: 9px; font-weight: 850; cursor: pointer; }
 .ai-preview-actions .ai-preview-primary { border-color: #234c9e; background: #234c9e; color: #fff; }
+.my-schedule-panel { margin-bottom: 14px; overflow: hidden; border: 1px solid #dce4f1; border-radius: 16px; background: #fff; box-shadow: var(--shadow); }
+.my-schedule-heading { min-height: 86px; padding: 18px 21px 15px; display: flex; align-items: center; justify-content: space-between; gap: 18px; border-bottom: 1px solid #edf0f5; }
+.my-schedule-heading h2 { margin: 5px 0 4px; font-size: 17px; line-height: 1.15; }
+.my-schedule-heading p { margin: 0; color: #7f8ca1; font-size: 10px; line-height: 1.55; }
+.my-schedule-heading > strong { flex: 0 0 auto; min-width: 54px; min-height: 34px; padding: 0 12px; display: grid; place-items: center; border-radius: 999px; background: #eef2ff; color: #3d55c8; font-size: 12px; }
+.my-schedule-list { max-height: 310px; overflow-y: auto; scrollbar-width: thin; }
+.my-schedule-row { width: 100%; min-height: 68px; padding: 10px 21px; display: grid; grid-template-columns: 72px minmax(0, 1fr) minmax(118px, auto); align-items: center; gap: 14px; border: 0; border-bottom: 1px solid #edf0f5; background: #fff; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.my-schedule-row:hover { background: #f8faff; }
+.my-schedule-row:focus-visible { position: relative; outline: 2px solid #5d72dc; outline-offset: -2px; }
+.my-schedule-timing { min-height: 28px; padding: 0 8px; display: inline-grid; place-items: center; border-radius: 999px; background: #eef3ff; color: #4868c8; font-size: 10px; font-weight: 900; }
+.my-schedule-timing.today { background: #fff1d7; color: #a76516; }
+.my-schedule-timing.overdue { background: #ffebe8; color: #c75347; }
+.my-schedule-copy, .my-schedule-meta { min-width: 0; }
+.my-schedule-copy strong, .my-schedule-copy small, .my-schedule-meta b, .my-schedule-meta small { display: block; }
+.my-schedule-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #263754; font-size: 12px; }
+.my-schedule-copy small { margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #6f7e94; font-size: 10px; }
+.my-schedule-meta { text-align: right; }
+.my-schedule-meta b { color: #314d87; font-size: 11px; }
+.my-schedule-meta small { margin-top: 5px; color: #8b97a9; font-size: 9px; }
+.my-schedule-note { margin: 0; padding: 10px 21px; background: #f7f9fc; color: #75849a; font-size: 9px; line-height: 1.5; }
+.my-schedule-empty { min-height: 88px; padding: 20px; display: grid; place-items: center; color: #8490a4; font-size: 11px; text-align: center; }
 .metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
 .metric-card { position: relative; overflow: hidden; min-height: 145px; padding: 20px 21px 17px; background: white; border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease; }
 .metric-card:hover { transform: translateY(-2px); border-color: #cdd6e8; box-shadow: 0 15px 34px rgba(32,50,88,.11); }
@@ -4033,6 +4054,11 @@ tr:hover .row-actions { opacity: 1; }
   .nav-scrim { display: block; position: fixed; inset: 0; z-index: 25; border: 0; background: rgba(5,13,28,.45); }
   .workspace { width: 100%; margin-left: 0; }
   .topbar { height: 65px; padding: 0 16px; gap: 10px; }
+  .my-schedule-heading { align-items: flex-start; padding: 16px; }
+  .my-schedule-row { grid-template-columns: 62px minmax(0, 1fr); gap: 10px; padding: 11px 16px; }
+  .my-schedule-meta { grid-column: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; }
+  .my-schedule-meta small { margin-top: 0; }
+  .my-schedule-note { padding: 10px 16px; }
   .menu-button { display: block; }
   .global-search { flex: 1; width: auto; }
   .global-search kbd { display: none; }

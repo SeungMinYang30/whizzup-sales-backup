@@ -1,0 +1,59 @@
+export type ScheduleReminderMember = {
+  id: number;
+  displayName: string;
+  role: "admin" | "assistant" | "member";
+};
+
+const sharedInstallationSchedulePattern = /(?:설치|납품|시공|공사|입고)/;
+
+function text(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizedPersonName(value: unknown) {
+  return text(value).replace(/\s+/g, " ").toLocaleLowerCase("ko-KR");
+}
+
+function hasAssignedManager(value: unknown) {
+  const manager = text(value);
+  return Boolean(manager) && !["미정", "미지정", "해당 없음"].includes(manager);
+}
+
+export function isSharedPostAwardSchedule(input: {
+  awardStatus: unknown;
+  label: unknown;
+}) {
+  return (
+    ["위즈업 수주", "협력사 수주"].includes(text(input.awardStatus)) &&
+    sharedInstallationSchedulePattern.test(text(input.label))
+  );
+}
+
+export function canMemberSeeScheduleReminder(
+  row: {
+    awardStatus: unknown;
+    label: unknown;
+    progressManager: unknown;
+    creatorMemberId: unknown;
+    creatorName: unknown;
+  },
+  member: ScheduleReminderMember,
+) {
+  const shared = isSharedPostAwardSchedule({
+    awardStatus: row.awardStatus,
+    label: row.label,
+  });
+  const viewerName = normalizedPersonName(member.displayName);
+  const managerName = normalizedPersonName(row.progressManager);
+  const creatorName = normalizedPersonName(row.creatorName);
+  const assignedToViewer = Boolean(viewerName) && managerName === viewerName;
+  const createdByViewer =
+    Number(row.creatorMemberId) === member.id ||
+    (Boolean(viewerName) && creatorName === viewerName);
+
+  if (shared) {
+    return member.role === "admin" || assignedToViewer || createdByViewer;
+  }
+  if (hasAssignedManager(row.progressManager)) return assignedToViewer;
+  return createdByViewer;
+}
