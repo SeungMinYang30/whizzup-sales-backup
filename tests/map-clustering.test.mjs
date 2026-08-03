@@ -84,6 +84,20 @@ test("시도 약칭과 과거 행정명도 17개 공식 시도로 통일한다",
   assert.equal(KOREA_PROVINCES.length, 17);
 });
 
+test("지역값이 불완전하면 뒤의 실제 주소에서 시도를 찾는다", () => {
+  assert.equal(
+    canonicalProvinceName(
+      "보성 전남광주통합특별시 보성군 보성읍 현충로 186",
+    )?.province,
+    "전라남도",
+  );
+  assert.equal(
+    canonicalProvinceName("전라 광주 전남광주통합특별시 동구 조선대길 146")
+      ?.province,
+    "광주광역시",
+  );
+});
+
 test("첫 전국 화면에서는 기관을 17개 시도 단위로 묶는다", () => {
   const provincePoints = KOREA_PROVINCES.map(([province], index) => ({
     item: { province },

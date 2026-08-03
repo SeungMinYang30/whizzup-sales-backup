@@ -5992,7 +5992,7 @@ export default function CrmApp({
   const [institutionBudgetType, setInstitutionBudgetType] = useState("");
   const [institutionBudgetAmount, setInstitutionBudgetAmount] = useState("");
   const [institutionBulkBudgetEnabled, setInstitutionBulkBudgetEnabled] =
-    useState(true);
+    useState(false);
   const [institutionBulkManagerEnabled, setInstitutionBulkManagerEnabled] =
     useState(false);
   const [institutionBulkProgressManager, setInstitutionBulkProgressManager] =
@@ -13054,6 +13054,7 @@ export default function CrmApp({
       setInstitutionBudgetOpen(false);
       setInstitutionBudgetType("");
       setInstitutionBudgetAmount("");
+      setInstitutionBulkBudgetEnabled(false);
       setInstitutionBulkProgressManager("");
       setInstitutionBulkContactName("");
       setInstitutionBulkFollowUpDate("");
@@ -13088,7 +13089,18 @@ export default function CrmApp({
     }
     setInstitutionBudgetType(selectedBudgetTypeState.value);
     setInstitutionBudgetAmount(selectedBudgetAmountState.value);
-    setInstitutionBulkBudgetEnabled(true);
+    setInstitutionBulkBudgetEnabled(false);
+    setInstitutionBulkManagerEnabled(false);
+    setInstitutionBulkProgressManager("");
+    setInstitutionBulkContactNameEnabled(false);
+    setInstitutionBulkContactName("");
+    setInstitutionBulkFollowUpEnabled(false);
+    setInstitutionBulkFollowUpDate("");
+    setInstitutionBulkNextActionEnabled(false);
+    setInstitutionBulkNextAction("");
+    setInstitutionBulkAwardEnabled(false);
+    setInstitutionBulkAwardStatus("미정");
+    setInstitutionBulkAwardCompany("");
     setInstitutionBudgetOpen(true);
   }
 

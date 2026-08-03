@@ -85,13 +85,14 @@ const PROVINCE_ALIASES: Array<{
 ];
 
 export function canonicalProvinceName(value: string) {
-  const firstToken = value.trim().replace(/\s+/g, " ").split(" ")[0] ?? "";
-  if (!firstToken) return null;
-  return (
-    PROVINCE_ALIASES.find(({ aliases }) =>
-      aliases.some((alias) => firstToken.startsWith(alias)),
-    ) ?? null
-  );
+  const tokens = value.trim().replace(/\s+/g, " ").split(" ").filter(Boolean);
+  for (const token of tokens) {
+    const resolved = PROVINCE_ALIASES.find(({ aliases }) =>
+      aliases.some((alias) => token.startsWith(alias)),
+    );
+    if (resolved) return resolved;
+  }
+  return null;
 }
 
 export function shouldRenderProvinceClusters(
