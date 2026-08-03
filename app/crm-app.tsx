@@ -124,6 +124,7 @@ const ProductCatalogPage = lazy(() => import("./product-catalog-page"));
 const AwardVendorPage = lazy(() => import("./award-vendor-page"));
 const AccountingPage = lazy(() => import("./accounting-page"));
 const AnalyticsPage = lazy(() => import("./analytics-page"));
+const OwnerPerformancePage = lazy(() => import("./owner-performance-page"));
 const InventoryPage = lazy(() => import("./inventory-page"));
 const QuotationDocuments = lazy(() => import("./quotation-documents"));
 const SalesMapPage = lazy(() => import("./sales-map"));
@@ -1018,6 +1019,7 @@ type View =
   | "backup"
   | "accounting"
   | "analytics"
+  | "owner-performance"
   | "inventory"
   | "integration";
 
@@ -1598,6 +1600,7 @@ const presenceViewLabels: Record<View, string> = {
   backup: "데이터 백업·복구",
   accounting: "수금·채권 관리",
   analytics: "수주·제품 통계",
+  "owner-performance": "대시보드",
   inventory: "물류·재고 관리",
   integration: "API 등록·관리",
 };
@@ -1656,6 +1659,7 @@ const availableViews = new Set<View>([
   "backup",
   "accounting",
   "analytics",
+  "owner-performance",
   "inventory",
   "integration",
 ]);
@@ -6325,6 +6329,7 @@ export default function CrmApp({
   const sessionRole = session?.member.role;
   const sessionStatus = session?.member.status;
   const isOwner = session?.member.role === "admin";
+  const isPrimaryOwner = Boolean(session?.canViewPresence);
   const isApprovedMember = sessionStatus === "approved";
   const canManageMembers = Boolean(
     session && memberCan(session.member, "members:manage"),
@@ -6712,7 +6717,9 @@ export default function CrmApp({
       void fetch("/api/presence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ view }),
+        body: JSON.stringify({
+          view: view === "owner-performance" ? "dashboard" : view,
+        }),
         cache: "no-store",
         keepalive: true,
       }).catch(() => undefined);
@@ -6857,6 +6864,7 @@ export default function CrmApp({
         (nextView === "team" && !canManageMembers) ||
         (nextView === "accounting" && !canManageAccounting) ||
         (nextView === "analytics" && !canViewAnalytics) ||
+        (nextView === "owner-performance" && !isPrimaryOwner) ||
         (nextView === "inventory" && !canManageInventory) ||
         (nextView === "integration" && !canManageIntegration) ||
         (nextView === "backup" && !canManageBackup && !canManageTrash)
@@ -6906,7 +6914,9 @@ export default function CrmApp({
             whizzupFollowupDueSoonOnly: nextFollowupDueSoonOnly,
           },
           "",
-          nextView === "dashboard" ? baseUrl : `${baseUrl}#${nextView}`,
+          nextView === "dashboard" || nextView === "owner-performance"
+            ? baseUrl
+            : `${baseUrl}#${nextView}`,
         );
       }
     };
@@ -6930,6 +6940,7 @@ export default function CrmApp({
     canViewAnalytics,
     canManageInventory,
     isOwner,
+    isPrimaryOwner,
     presentationMode,
   ]);
 
@@ -11312,7 +11323,9 @@ export default function CrmApp({
     };
     const baseUrl = `${window.location.pathname}${window.location.search}`;
     const nextUrl =
-      nextView === "dashboard" ? baseUrl : `${baseUrl}#${nextView}`;
+      nextView === "dashboard" || nextView === "owner-performance"
+        ? baseUrl
+        : `${baseUrl}#${nextView}`;
     const sameView =
       view === nextView &&
       recordDateScope === nextRecordDateScope &&
@@ -11339,6 +11352,7 @@ export default function CrmApp({
       (nextView === "team" && !canManageMembers) ||
       (nextView === "accounting" && !canManageAccounting) ||
       (nextView === "analytics" && !canViewAnalytics) ||
+      (nextView === "owner-performance" && !isPrimaryOwner) ||
       (nextView === "inventory" && !canManageInventory) ||
       (nextView === "integration" && !canManageIntegration) ||
       (nextView === "backup" && !canManageBackup && !canManageTrash)
@@ -14623,6 +14637,8 @@ export default function CrmApp({
                   ? "수금·채권 관리"
                 : view === "analytics"
                   ? "수주·제품 통계"
+                : view === "owner-performance"
+                  ? "경영 요약"
                 : view === "inventory"
                   ? "물류·재고 관리"
                   : "API 등록·관리";
@@ -15030,6 +15046,19 @@ export default function CrmApp({
                   <strong>♣ 사내 휴게실</strong>
                   <span>몽글이·콩이와 가볍게 홀덤을 즐겨보세요.</span>
                 </button>
+                {isPrimaryOwner && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      void selectView("owner-performance");
+                    }}
+                  >
+                    <strong>경영 요약</strong>
+                    <span>담당자별 수주·마진·판매 실적을 확인합니다.</span>
+                  </button>
+                )}
                 {isOwner && (
                   <button
                     type="button"
@@ -15063,7 +15092,7 @@ export default function CrmApp({
           <button className="menu-button" onClick={() => setMobileNav(true)} aria-label="메뉴 열기">
             ☰
           </button>
-          {view !== "dashboard" && view !== "map" && view !== "budget-institutions" && view !== "trash" && view !== "accounting" && view !== "analytics" && view !== "inventory" && (
+          {view !== "dashboard" && view !== "map" && view !== "budget-institutions" && view !== "trash" && view !== "accounting" && view !== "analytics" && view !== "owner-performance" && view !== "inventory" && (
             <div className="global-search">
               <span>⌕</span>
               <BufferedInput
@@ -15093,7 +15122,7 @@ export default function CrmApp({
           </div>
         </header>
 
-        <div className={`content ${view === "followup" || view === "map" || view === "budget-institutions" || view === "backup" || view === "records" || view === "organizations" || view === "awards" || view === "products" || view === "vendors" || view === "accounting" || view === "analytics" || view === "inventory" ? "content-wide" : ""}`}>
+        <div className={`content ${view === "followup" || view === "map" || view === "budget-institutions" || view === "backup" || view === "records" || view === "organizations" || view === "awards" || view === "products" || view === "vendors" || view === "accounting" || view === "analytics" || view === "owner-performance" || view === "inventory" ? "content-wide" : ""}`}>
           <div className="page-heading">
             <div>
               <p className="eyebrow">TM · MEETING MANAGEMENT</p>
@@ -15107,6 +15136,8 @@ export default function CrmApp({
                     ? "위즈업 수주의 입금 예정액을 확인하고, 실제 수금액과 미수금을 관리합니다."
                   : view === "analytics"
                     ? "회계 확인 기준의 월간·연간 수주와 제품 흐름을 확인합니다."
+                  : view === "owner-performance"
+                    ? "대표관리자 본인만 담당자별 수주·마진·판매 실적을 확인할 수 있습니다."
                   : view === "inventory"
                     ? "보유 장비의 현재 수량과 입고·출고·조정 이력을 한곳에서 관리합니다."
                    : view === "integration"
@@ -15758,6 +15789,15 @@ export default function CrmApp({
                 onOpenCollectionAnalysis={() => {
                   void selectView("accounting", { accountingTab: "analysis" });
                 }}
+                onOpenOrganization={(organization, businessRound) => {
+                  setDetailBusinessRound(businessRound);
+                  setDetailOrganization(organization);
+                }}
+              />
+            </Suspense>
+          ) : view === "owner-performance" && isPrimaryOwner ? (
+            <Suspense fallback={<DeferredPageFallback />}>
+              <OwnerPerformancePage
                 onOpenOrganization={(organization, businessRound) => {
                   setDetailBusinessRound(businessRound);
                   setDetailOrganization(organization);

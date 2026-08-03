@@ -3,6 +3,7 @@ import {
   hasMemberPermission,
   requireApprovedMember,
   requireMemberPermission,
+  requirePrimaryOwner,
 } from "../../../lib/collaboration";
 import {
   ensureAccountingReady,
@@ -288,8 +289,7 @@ const awardAccountingQuery = `
   LEFT JOIN construction_totals ct ON ct.activity_id = a.id
   WHERE a.award_status IN ('위즈업 수주', '협력사 수주', '타업체 수주')`;
 
-async function analyticsResponse() {
-  await requireMemberPermission("analytics:view");
+async function buildAnalyticsPayload() {
   const d1 = await ensureAccountingReady();
   await ensureBudgetNamesReady();
   await linkEquipmentProjectsToWhizzupAwards(d1);
@@ -952,7 +952,7 @@ async function analyticsResponse() {
         analyticsBusinessRoundKey(row.organization, row.business_round),
       ),
   );
-  return Response.json({
+  return {
     awards,
     receipts,
     products,
@@ -990,13 +990,26 @@ async function analyticsResponse() {
         }),
       ),
     },
-  });
+  };
+}
+
+async function analyticsResponse() {
+  await requireMemberPermission("analytics:view");
+  return Response.json(await buildAnalyticsPayload());
+}
+
+async function ownerPerformanceResponse() {
+  await requirePrimaryOwner();
+  return Response.json(await buildAnalyticsPayload());
 }
 
 export async function GET(request: Request) {
   try {
     const params = new URL(request.url).searchParams;
     if (params.get("mode") === "analytics") return analyticsResponse();
+    if (params.get("mode") === "owner-performance") {
+      return ownerPerformanceResponse();
+    }
     const member = await requireApprovedMember();
     const d1 = await ensureAccountingReady();
     const historyActivityId = Number(params.get("historyActivityId"));
