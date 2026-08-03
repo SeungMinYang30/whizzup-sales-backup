@@ -23,6 +23,25 @@ export type ScheduleReminder = {
   assigneeName: string;
 };
 
+function scheduleReminderFromRow(row: ReminderRow): ScheduleReminder {
+  return {
+    id: Number(row.id),
+    organization: String(row.organization),
+    businessRound: Math.max(1, Number(row.business_round) || 1),
+    label: String(row.label),
+    scheduledDate: String(row.scheduled_date),
+    visibility: isSharedPostAwardSchedule({
+      awardStatus: row.award_status,
+      label: row.label,
+    })
+      ? "shared-post-award"
+      : "private",
+    assigneeName: hasAssignedManager(row.progress_manager)
+      ? clean(row.progress_manager)
+      : "",
+  };
+}
+
 type ReminderRow = {
   id: number;
   organization: string;
@@ -114,24 +133,41 @@ export async function listScheduleRemindersForMember(
       ),
     )
     .slice(0, 100)
-    .map(
-      (row): ScheduleReminder => ({
-        id: Number(row.id),
-        organization: String(row.organization),
-        businessRound: Math.max(1, Number(row.business_round) || 1),
-        label: String(row.label),
-        scheduledDate: String(row.scheduled_date),
-        visibility: isSharedPostAwardSchedule({
+    .map(scheduleReminderFromRow);
+}
+
+export async function listScheduleCalendarForMember(
+  member: Pick<Member, "id" | "displayName" | "role">,
+  startDate: string,
+  endDate: string,
+) {
+  await ensureOrganizationSchedulesReady();
+  const d1 = getD1();
+  const result = await d1
+    .prepare(
+      `${reminderSelect}
+       WHERE s.completed = 0
+         AND s.scheduled_date BETWEEN ? AND ?
+       ORDER BY s.scheduled_date ASC, s.id ASC`,
+    )
+    .bind(startDate, endDate)
+    .all<ReminderRow>();
+
+  return result.results
+    .filter((row) =>
+      canMemberSeeScheduleReminder(
+        {
           awardStatus: row.award_status,
           label: row.label,
-        })
-          ? "shared-post-award"
-          : "private",
-        assigneeName: hasAssignedManager(row.progress_manager)
-          ? clean(row.progress_manager)
-          : "",
-      }),
-    );
+          progressManager: row.progress_manager,
+          creatorMemberId: row.created_by ?? row.source_author_id,
+          creatorName: row.created_by_name || row.source_author_name,
+        },
+        member,
+      ),
+    )
+    .slice(0, 500)
+    .map(scheduleReminderFromRow);
 }
 
 export async function completeScheduleReminderForMember(

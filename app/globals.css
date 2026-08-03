@@ -1833,6 +1833,61 @@ kbd { padding: 3px 6px; border: 1px solid #dce2eb; border-bottom-width: 2px; bac
 .schedule-dashboard-controls > button { min-height: 32px; padding: 0 11px; border: 1px solid #d9e0ec; border-radius: 8px; background: #fff; color: #566a93; font-size: 9px; font-weight: 850; cursor: pointer; }
 .schedule-dashboard-controls > button:hover, .schedule-dashboard-controls > button.active { border-color: #b7c4e6; background: #f1f4ff; color: #344cc1; }
 .schedule-dashboard-controls > button b { min-width: 18px; height: 18px; margin-left: 6px; padding: 0 5px; border-radius: 999px; background: #e6eaff; display: inline-grid; place-items: center; font-size: 8px; }
+.home-calendar-panel { margin: 14px 0; border: 1px solid #dfe5ef; border-radius: 16px; background: #fff; box-shadow: var(--shadow); overflow: hidden; }
+.home-calendar-header { padding: 20px 22px 16px; display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; border-bottom: 1px solid #e5eaf2; }
+.home-calendar-header h2 { margin: 5px 0 4px; color: #1d2c49; font-size: 22px; }
+.home-calendar-header p { margin: 0; color: #75839a; font-size: 12px; }
+.home-calendar-month-controls { display: flex; align-items: center; gap: 6px; }
+.home-calendar-month-controls button { min-height: 34px; padding: 0 11px; border: 1px solid #d6deeb; border-radius: 8px; background: #fff; color: #526584; font-size: 11px; font-weight: 850; cursor: pointer; }
+.home-calendar-month-controls button:hover, .home-calendar-month-controls .home-calendar-today { border-color: #aebbf2; background: #f1f3ff; color: #3648ce; }
+.home-calendar-month-controls strong { min-width: 108px; margin-left: 7px; color: #223453; font-size: 16px; text-align: right; }
+.home-calendar-filters { min-height: 52px; padding: 9px 22px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #e6eaf1; background: #f8faff; }
+.home-calendar-filters button { min-height: 32px; padding: 0 11px; border: 1px solid #d6deeb; border-radius: 8px; background: #fff; color: #60708c; font-size: 11px; font-weight: 850; cursor: pointer; }
+.home-calendar-filters button.active { border-color: #6875ee; background: #eef0ff; color: #3846ce; box-shadow: 0 0 0 2px rgba(80,91,225,.08); }
+.home-calendar-filters button b { margin-left: 4px; color: inherit; }
+.home-calendar-filters > span { margin-left: auto; display: flex; align-items: center; gap: 6px; color: #7c899d; font-size: 10px; }
+.home-calendar-filters i, .home-calendar-agenda-list i { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+.home-calendar-filters i.private, .home-calendar-agenda-list i.private { background: #5568dc; }
+.home-calendar-filters i.shared, .home-calendar-agenda-list i.shared { background: #17a978; }
+.home-calendar-error { padding: 10px 22px; border-bottom: 1px solid #f3d7d4; background: #fff4f2; color: #a84f47; font-size: 12px; }
+.home-calendar-layout { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(280px, .62fr); min-width: 0; }
+.home-calendar-grid { min-width: 0; padding: 0 0 1px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-right: 1px solid #e3e8f0; }
+.home-calendar-weekday { min-height: 34px; display: grid; place-items: center; border-bottom: 1px solid #e3e8f0; background: #f5f7fb; color: #71809a; font-size: 10px; font-weight: 850; }
+.home-calendar-weekday:first-child { color: #d15d5d; }
+.home-calendar-weekday:nth-child(7) { color: #526bc6; }
+.home-calendar-day { position: relative; min-width: 0; min-height: 112px; padding: 9px 7px 7px; border: 0; border-right: 1px solid #e8ecf3; border-bottom: 1px solid #e8ecf3; background: #fff; color: #263756; text-align: left; cursor: pointer; }
+.home-calendar-day:nth-child(7n) { border-right: 0; }
+.home-calendar-day:hover { background: #fafbff; }
+.home-calendar-day.outside { background: #fafbfc; color: #adb5c3; }
+.home-calendar-day.today { box-shadow: inset 0 0 0 2px #5665e9; }
+.home-calendar-day.selected { background: #f5f6ff; box-shadow: inset 0 0 0 2px #3748d7; }
+.home-calendar-day-number { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 999px; font-size: 11px; font-weight: 900; }
+.home-calendar-day.today .home-calendar-day-number { background: #4657dc; color: #fff; }
+.home-calendar-day-items { margin-top: 5px; display: grid; gap: 4px; }
+.home-calendar-day-items > span { min-width: 0; padding: 5px 6px; border-left: 3px solid; border-radius: 5px; display: grid; background: #f2f4ff; }
+.home-calendar-day-items > span.private { border-color: #5568dc; color: #344eaa; }
+.home-calendar-day-items > span.shared { border-color: #17a978; background: #eef9f5; color: #16785a; }
+.home-calendar-day-items b, .home-calendar-day-items small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-calendar-day-items b { font-size: 9px; }
+.home-calendar-day-items small { margin-top: 2px; font-size: 8px; opacity: .78; }
+.home-calendar-day-items em { color: #6b7890; font-size: 8px; font-style: normal; font-weight: 800; text-align: center; }
+.home-calendar-agenda { min-width: 0; padding: 20px; background: linear-gradient(180deg, #fbfcff 0%, #f7f9fd 100%); }
+.home-calendar-agenda-heading { position: relative; padding-bottom: 15px; border-bottom: 1px solid #e1e6ef; }
+.home-calendar-agenda-heading span { color: #6e7fe3; font-size: 10px; font-weight: 900; }
+.home-calendar-agenda-heading h3 { margin: 6px 40px 0 0; color: #253653; font-size: 19px; }
+.home-calendar-agenda-heading b { position: absolute; top: 0; right: 0; min-width: 32px; height: 28px; padding: 0 7px; border-radius: 999px; display: grid; place-items: center; background: #e8ecff; color: #4353d0; font-size: 10px; }
+.home-calendar-agenda-list { margin-top: 13px; display: grid; gap: 8px; }
+.home-calendar-agenda-list button { width: 100%; min-width: 0; padding: 11px; border: 1px solid #dfe5ee; border-radius: 9px; display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; background: #fff; color: #263754; text-align: left; cursor: pointer; }
+.home-calendar-agenda-list button:hover { border-color: #aebaf0; box-shadow: 0 3px 12px rgba(49,68,135,.08); }
+.home-calendar-agenda-list span { min-width: 0; }
+.home-calendar-agenda-list strong, .home-calendar-agenda-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-calendar-agenda-list strong { font-size: 12px; }
+.home-calendar-agenda-list small { margin-top: 4px; color: #77859a; font-size: 10px; }
+.home-calendar-agenda-list em { padding: 3px 6px; border-radius: 999px; background: #edf0f7; color: #758299; font-size: 8px; font-style: normal; font-weight: 850; }
+.home-calendar-agenda-empty { min-height: 180px; margin: 13px 0 0; display: grid; place-items: center; border: 1px dashed #d9e0eb; border-radius: 10px; color: #8b96a8; font-size: 11px; text-align: center; }
+.home-calendar-privacy { margin-top: 14px; display: block; color: #8a96a9; font-size: 9px; line-height: 1.6; }
+@media (max-width: 1080px) { .home-calendar-layout { grid-template-columns: 1fr; } .home-calendar-grid { border-right: 0; } .home-calendar-agenda { border-top: 1px solid #e3e8f0; } }
+@media (max-width: 720px) { .home-calendar-header { align-items: stretch; flex-direction: column; } .home-calendar-month-controls { justify-content: space-between; } .home-calendar-month-controls strong { margin-left: auto; } .home-calendar-filters { align-items: stretch; flex-wrap: wrap; } .home-calendar-filters > span { width: 100%; margin-left: 0; } .home-calendar-weekday { min-height: 30px; font-size: 9px; } .home-calendar-day { min-height: 72px; padding: 6px 4px; } .home-calendar-day-items > span { padding: 3px 4px; } .home-calendar-day-items small { display: none; } .home-calendar-day-items b { font-size: 8px; } .home-calendar-day-items > span:nth-child(n+3) { display: none; } .home-calendar-day-items em { font-size: 7px; } }
 .record-count { padding: 5px 9px; background: #f0f3f8; color: #6d7990; font-weight: 750; }
 .followup-list { padding: 3px 20px 8px; }
 .followup-row { width: 100%; min-height: 63px; padding: 9px 2px; border: 0; border-bottom: 1px solid #edf0f5; background: white; display: flex; align-items: center; gap: 12px; text-align: left; cursor: pointer; }

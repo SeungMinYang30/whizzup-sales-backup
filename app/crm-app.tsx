@@ -128,6 +128,7 @@ const OwnerPerformancePage = lazy(() => import("./owner-performance-page"));
 const InventoryPage = lazy(() => import("./inventory-page"));
 const QuotationDocuments = lazy(() => import("./quotation-documents"));
 const SalesMapPage = lazy(() => import("./sales-map"));
+const HomeCalendar = lazy(() => import("./home-calendar"));
 
 type Activity = {
   id: number;
@@ -1574,7 +1575,7 @@ const emptyForm: FormState = {
 };
 
 const navItems: { id: View; label: string; mark: string }[] = [
-  { id: "dashboard", label: "대시보드", mark: "D" },
+  { id: "dashboard", label: "HOME", mark: "H" },
   { id: "budget-institutions", label: "예산별 기관", mark: "B" },
   { id: "followup", label: "기관별 관리(수주 전)", mark: "F" },
   { id: "awards", label: "기관별 관리(수주 후)", mark: "W" },
@@ -1584,7 +1585,7 @@ const navItems: { id: View; label: string; mark: string }[] = [
 ];
 
 const presenceViewLabels: Record<View, string> = {
-  dashboard: "대시보드",
+  dashboard: "HOME",
   "budget-institutions": "예산별 기관",
   records: "영업 기록",
   followup: "기관별 관리(수주 전)",
@@ -14735,7 +14736,7 @@ export default function CrmApp({
 
   const title =
     view === "dashboard"
-      ? "영업 대시보드"
+      ? "HOME"
       : view === "budget-institutions"
         ? "예산별 기관"
         : view === "records"
@@ -15253,13 +15254,15 @@ export default function CrmApp({
           </div>
         </header>
 
-        <div className={`content ${view === "followup" || view === "map" || view === "budget-institutions" || view === "backup" || view === "records" || view === "organizations" || view === "awards" || view === "products" || view === "vendors" || view === "accounting" || view === "analytics" || view === "owner-performance" || view === "inventory" ? "content-wide" : ""}`}>
+        <div className={`content ${view === "dashboard" || view === "followup" || view === "map" || view === "budget-institutions" || view === "backup" || view === "records" || view === "organizations" || view === "awards" || view === "products" || view === "vendors" || view === "accounting" || view === "analytics" || view === "owner-performance" || view === "inventory" ? "content-wide" : ""}`}>
           <div className="page-heading">
             <div>
               <p className="eyebrow">TM · MEETING MANAGEMENT</p>
               <h1>{title}</h1>
               <p>
-                {view === "team"
+                {view === "dashboard"
+                  ? "오늘 업무와 개인 일정, 수주 후 설치·납품 일정을 한눈에 확인합니다."
+                  : view === "team"
                   ? "가입 승인, 역할·권한, 영업 담당자와 실시간 접속 현황을 관리합니다."
                   : view === "backup"
                     ? "전체 업무 데이터를 안전하게 보관하고, 필요할 때 검증 후 복원합니다."
@@ -15723,6 +15726,17 @@ export default function CrmApp({
                   </section>
                 )}
               </section>
+
+              <Suspense fallback={<DeferredPageFallback />}>
+                <HomeCalendar
+                  key={scheduleReminderRefreshVersion}
+                  refreshVersion={scheduleReminderRefreshVersion}
+                  onOpenOrganization={(organization, businessRound) => {
+                    setDetailBusinessRound(businessRound);
+                    setDetailOrganization(organization);
+                  }}
+                />
+              </Suspense>
 
               <section
                 className={`my-record-review-card ${
