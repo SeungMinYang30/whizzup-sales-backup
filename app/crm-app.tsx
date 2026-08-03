@@ -1101,6 +1101,7 @@ type MemberPresence = {
   memberId: number;
   lastSeenAt: string;
   isOnline: boolean;
+  currentView: string;
 };
 
 async function requestMemberPresence() {
@@ -1120,6 +1121,7 @@ async function requestMemberPresence() {
       memberId,
       lastSeenAt: String(row.last_seen_at ?? ""),
       isOnline: Number(row.is_online ?? 0) === 1,
+      currentView: String(row.current_view ?? ""),
     };
   }
   return {
@@ -1578,6 +1580,31 @@ const navItems: { id: View; label: string; mark: string }[] = [
   { id: "products", label: "제품·견적 관리", mark: "P" },
   { id: "map", label: "영업·수주 지도", mark: "M" },
 ];
+
+const presenceViewLabels: Record<View, string> = {
+  dashboard: "대시보드",
+  "budget-institutions": "예산별 기관",
+  records: "영업 기록",
+  followup: "기관별 관리(수주 전)",
+  schedules: "일정",
+  organizations: "관리자 영업 점검",
+  awards: "기관별 관리(수주 후)",
+  vendors: "협력사 관리",
+  products: "제품·견적 관리",
+  map: "영업·수주 지도",
+  lounge: "휴게실",
+  team: "구성원 관리",
+  trash: "휴지통",
+  backup: "데이터 백업·복구",
+  accounting: "수금·채권 관리",
+  analytics: "수주·제품 통계",
+  inventory: "물류·재고 관리",
+  integration: "API 등록·관리",
+};
+
+function presenceViewLabel(value: string) {
+  return presenceViewLabels[value as View] ?? "";
+}
 
 const menuOrderStoragePrefix = "whizzup:menu-order:v1:";
 type MenuGroup = "workspace" | "management";
@@ -6684,6 +6711,8 @@ export default function CrmApp({
     const heartbeat = () => {
       void fetch("/api/presence", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ view }),
         cache: "no-store",
         keepalive: true,
       }).catch(() => undefined);
@@ -6691,7 +6720,7 @@ export default function CrmApp({
     heartbeat();
     const timer = window.setInterval(heartbeat, 15_000);
     return () => window.clearInterval(timer);
-  }, [sessionStatus]);
+  }, [sessionStatus, view]);
 
   useEffect(() => {
     if (view !== "team" || !session?.canViewPresence) return;
@@ -16000,7 +16029,20 @@ export default function CrmApp({
                             >
                               <i aria-hidden="true" />
                               {memberPresence[member.id]?.isOnline
-                                ? "접속 중"
+                                ? (
+                                  <>
+                                    접속 중
+                                    {presenceViewLabel(
+                                      memberPresence[member.id]?.currentView || "",
+                                    ) && (
+                                      <em>
+                                        · {presenceViewLabel(
+                                          memberPresence[member.id]?.currentView || "",
+                                        )}
+                                      </em>
+                                    )}
+                                  </>
+                                )
                                 : presenceTimeLabel(
                                     memberPresence[member.id]?.lastSeenAt || member.lastSeenAt,
                                     presenceUpdatedAt,

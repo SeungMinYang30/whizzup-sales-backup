@@ -29,6 +29,7 @@ export type Member = {
   createdAt: string;
   approvedAt: string | null;
   lastSeenAt: string;
+  currentView: string;
 };
 
 export class AccessError extends Error {
@@ -170,6 +171,7 @@ function mapMember(row: Record<string, unknown>): Member {
     createdAt: String(row.created_at),
     approvedAt: row.approved_at ? String(row.approved_at) : null,
     lastSeenAt: String(row.last_seen_at),
+    currentView: String(row.current_view ?? ""),
   };
 }
 

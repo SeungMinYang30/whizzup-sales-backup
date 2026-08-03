@@ -2430,6 +2430,7 @@ tr:hover .row-actions { opacity: 1; }
 .member-presence-badge { width: fit-content; margin-top: 6px; display: inline-flex; align-items: center; gap: 5px; color: #8b97aa; font-size: 8px; font-weight: 750; }
 .member-presence-badge i { width: 6px; height: 6px; border-radius: 50%; background: #a8b0bd; }
 .member-presence-badge.online { color: #23866a; }
+.member-presence-badge em { color: #526f66; font-style: normal; font-weight: 800; }
 .member-presence-badge.online i { background: #28b889; box-shadow: 0 0 0 3px rgba(40,184,137,.1); }
 .member-presence-empty { padding: 25px 12px; color: #8390a4; text-align: center; font-size: 9px; }
 .member-name-editor { display: flex; align-items: center; gap: 5px; }

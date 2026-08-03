@@ -150,6 +150,7 @@ export const members = sqliteTable("members", {
   approvedAt: text("approved_at"),
   approvedBy: integer("approved_by"),
   lastSeenAt: text("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  currentView: text("current_view").notNull().default(""),
 });
 
 export const dataControlEvents = sqliteTable(
