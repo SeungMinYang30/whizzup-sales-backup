@@ -3,8 +3,12 @@ import {
   requireApprovedMember,
 } from "../../../lib/collaboration";
 import {
+  addOrganizationSchedule,
+  addConstructionScheduleProject,
+  listConstructionScheduleBoard,
   listOrganizationSchedules,
   replaceOrganizationSchedules,
+  saveConstructionSchedules,
 } from "../../../lib/organization-schedules";
 import {
   completeScheduleReminderForMember,
@@ -24,6 +28,9 @@ export async function GET(request: Request) {
   try {
     const member = await requireApprovedMember();
     const url = new URL(request.url);
+    if (url.searchParams.get("scope") === "construction-board") {
+      return Response.json(await listConstructionScheduleBoard());
+    }
     if (url.searchParams.get("scope") === "calendar") {
       const start = url.searchParams.get("start") ?? "";
       const end = url.searchParams.get("end") ?? "";
@@ -59,6 +66,17 @@ export async function PUT(request: Request) {
   try {
     const member = await requireApprovedMember();
     const payload = (await request.json()) as Record<string, unknown>;
+    if (payload.action === "save-construction") {
+      return Response.json(await saveConstructionSchedules({
+        organization: payload.organization,
+        businessRound: payload.businessRound,
+        workSummary: payload.workSummary,
+        completed: payload.completed,
+        schedules: payload.schedules,
+        memberId: member.id,
+        memberName: member.displayName,
+      }));
+    }
     const schedules = await replaceOrganizationSchedules({
       organization: payload.organization,
       businessRound: payload.businessRound,
@@ -67,6 +85,36 @@ export async function PUT(request: Request) {
       memberName: member.displayName,
     });
     return Response.json({ schedules });
+  } catch (error) {
+    return accessErrorResponse(error);
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const member = await requireApprovedMember();
+    const payload = (await request.json()) as Record<string, unknown>;
+    if (payload.action === "add-general-schedule") {
+      return Response.json({ schedules: await addOrganizationSchedule({
+        organization: payload.organization,
+        businessRound: payload.businessRound,
+        label: payload.label,
+        scheduledDate: payload.scheduledDate,
+        category: payload.category,
+        memberId: member.id,
+        memberName: member.displayName,
+      }) });
+    }
+    if (payload.action !== "add-construction-project") {
+      throw new Error("추가할 일정 정보를 확인해 주세요.");
+    }
+    return Response.json(await addConstructionScheduleProject({
+      organization: payload.organization,
+      businessRound: payload.businessRound,
+      workSummary: payload.workSummary,
+      memberId: member.id,
+      memberName: member.displayName,
+    }));
   } catch (error) {
     return accessErrorResponse(error);
   }

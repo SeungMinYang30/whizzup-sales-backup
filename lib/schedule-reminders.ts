@@ -18,6 +18,7 @@ export type ScheduleReminder = {
   organization: string;
   businessRound: number;
   label: string;
+  category: "sales" | "construction" | "showroom" | "personal";
   scheduledDate: string;
   visibility: ScheduleReminderVisibility;
   assigneeName: string;
@@ -27,11 +28,22 @@ export type ScheduleReminder = {
 };
 
 function scheduleReminderFromRow(row: ReminderRow, conflict = false): ScheduleReminder {
+  const label = String(row.label);
+  const storedCategory = clean(row.category);
+  const category: ScheduleReminder["category"] =
+    storedCategory === "construction"
+      ? "construction"
+      : storedCategory === "showroom" || /쇼룸|전시/.test(label)
+        ? "showroom"
+        : /재연락|다시\s*연락|연락\s*예정/.test(label)
+          ? "personal"
+          : "sales";
   return {
     id: Number(row.id),
     organization: String(row.organization),
     businessRound: Math.max(1, Number(row.business_round) || 1),
-    label: String(row.label),
+    label,
+    category,
     scheduledDate: String(row.scheduled_date),
     visibility: isSharedPostAwardSchedule({
       awardStatus: row.award_status,
@@ -53,6 +65,7 @@ type ReminderRow = {
   organization: string;
   business_round: number;
   label: string;
+  category: string;
   scheduled_date: string;
   created_by: number | null;
   created_by_name: string;
@@ -96,6 +109,7 @@ SELECT
   s.organization,
   s.business_round,
   s.label,
+  COALESCE(s.category, 'general') AS category,
   s.scheduled_date,
   s.created_by,
   s.created_by_name,
@@ -130,6 +144,9 @@ export async function listScheduleRemindersForMember(
     .all<ReminderRow>();
 
   const visible = result.results
+    .filter((row: ReminderRow) =>
+      /재연락|다시\s*연락|연락\s*예정/.test(clean(row.label)),
+    )
     .filter((row: ReminderRow) =>
       canMemberSeeScheduleReminder(
         {

@@ -1584,7 +1584,6 @@ const navItems: { id: View; label: string; mark: string }[] = [
   { id: "awards", label: "기관별 관리(수주 후)", mark: "W" },
   { id: "vendors", label: "협력사 관리", mark: "V" },
   { id: "products", label: "제품·견적 관리", mark: "P" },
-  { id: "installation-schedule", label: "시공·납품 일정", mark: "D" },
   { id: "map", label: "영업·수주 지도", mark: "M" },
 ];
 
@@ -15757,6 +15756,7 @@ export default function CrmApp({
                 <HomeCalendar
                   key={scheduleReminderRefreshVersion}
                   refreshVersion={scheduleReminderRefreshVersion}
+                  records={records}
                   onOpenOrganization={(organization, businessRound) => {
                     setDetailBusinessRound(businessRound);
                     setDetailOrganization(organization);
@@ -15832,7 +15832,7 @@ export default function CrmApp({
                     <span className="section-kicker">MY SCHEDULE</span>
                     <h2 id="my-schedule-title">내 일정</h2>
                     <p>
-                      기한이 지났거나 2일 안에 다가오는 일정입니다. 개인 영업 일정은 담당자 본인에게만 보입니다.
+                      기한이 지났거나 2일 안에 다가오는 내 재연락 일정입니다. 담당자 본인에게만 보입니다.
                     </p>
                   </div>
                   <strong>{scheduleReminders.length}건</strong>
@@ -15909,10 +15909,22 @@ export default function CrmApp({
                   </div>
                 )}
                 <p className="my-schedule-note">
-                  수주 후 설치·납품 일정만 관련 담당자와 관리자에게 함께 표시됩니다.
+                  확인 완료한 지난 일정은 목록에서 사라지고 기록은 안전하게 유지됩니다.
                 </p>
               </section>
 
+              <Suspense fallback={<DeferredPageFallback />}>
+                <ConstructionSchedulePage
+                  embedded
+                  records={records}
+                  onOpenOrganization={(organization, businessRound) => {
+                    setDetailBusinessRound(businessRound);
+                    setDetailOrganization(organization);
+                  }}
+                />
+              </Suspense>
+
+              {false && <>
               <section className="metric-grid" aria-label="핵심 지표">
                 <button
                   type="button"
@@ -16005,6 +16017,7 @@ export default function CrmApp({
                 </article>
 
               </section>
+              </>}
             </>
           )}
 

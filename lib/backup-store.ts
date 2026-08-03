@@ -28,8 +28,9 @@ import { ensureAuthoredQuotationsReady } from "./authored-quotations";
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-08-03-authored-quotations";
+export const BACKUP_SCHEMA_VERSION = "2026-08-03-construction-schedule-board";
 const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
+  "2026-08-03-authored-quotations",
   "2026-08-03-organization-schedules",
   "2026-08-03-inventory-ledger",
   "2026-08-02-joint-budget-period",
@@ -100,6 +101,7 @@ const INVENTORY_BACKUP_TABLES = new Set([
 ]);
 const ORGANIZATION_SCHEDULE_BACKUP_TABLES = new Set([
   "organization_schedules",
+  "construction_schedule_projects",
 ]);
 
 function legacyBackupMayOmitTable(
@@ -697,8 +699,30 @@ export const BACKUP_TABLES = [
       "business_round",
       "label",
       "scheduled_date",
+      "category",
+      "stage",
+      "end_date",
+      "vendor_name",
+      "details",
       "completed",
       "source_activity_id",
+      "created_by",
+      "created_by_name",
+      "updated_by",
+      "updated_by_name",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "construction_schedule_projects",
+    columns: [
+      "id",
+      "organization",
+      "business_round",
+      "work_summary",
+      "completed",
       "created_by",
       "created_by_name",
       "updated_by",
@@ -2993,6 +3017,7 @@ async function replaceDatabaseFromBackup(
     d1.prepare("DELETE FROM sales_campaigns"),
     d1.prepare("DELETE FROM app_settings"),
     d1.prepare("DELETE FROM institution_name_decisions"),
+    d1.prepare("DELETE FROM construction_schedule_projects"),
     d1.prepare("DELETE FROM organization_schedules"),
     d1.prepare("DELETE FROM activities"),
     d1.prepare("DELETE FROM members"),
@@ -3012,6 +3037,7 @@ async function replaceDatabaseFromBackup(
     "manager_alert_acknowledgements",
     "activities",
     "organization_schedules",
+    "construction_schedule_projects",
     "activity_change_batches",
     "activity_change_items",
     "data_control_events",

@@ -10659,3 +10659,138 @@ tr:hover .row-actions { opacity: 1; }
   .owner-institution-row { grid-template-columns: 1fr 1fr; padding: 15px 16px; gap: 12px; }
   .owner-institution-name, .owner-product-summary { grid-column: 1 / -1; }
 }
+/* 2026-08 HOME calendar and construction board readability */
+.construction-schedule-workspace.is-embedded { margin: 16px 0 0; border-radius: 16px; box-shadow: var(--shadow); }
+.construction-schedule-header { align-items: flex-end; }
+.construction-schedule-header h2 { font-size: 25px; }
+.construction-schedule-header p { font-size: 14px; }
+.construction-schedule-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; flex-wrap: wrap; }
+.construction-schedule-actions > button,
+.construction-completed-filter { min-height: 42px; padding: 0 14px; border: 1px solid #ccd7e8; border-radius: 9px; display: inline-flex; align-items: center; gap: 8px; background: #fff; color: #344b72; font-size: 13px; font-weight: 850; cursor: pointer; }
+.construction-schedule-actions > button.primary-button { border-color: #3e49e9; background: #3e49e9; color: #fff; }
+.construction-completed-filter input { width: 17px; height: 17px; accent-color: #3e49e9; }
+.construction-schedule-toolbar { display: grid; grid-template-columns: auto minmax(340px, 1fr); align-items: end; gap: 16px; padding: 14px 20px; border-bottom: 1px solid #e3e8f1; background: #f7f9fd; }
+.construction-schedule-search { padding: 0; border: 0; background: transparent; }
+.construction-schedule-controls button { min-height: 42px; padding: 0 13px; font-size: 13px; }
+.construction-schedule-controls label { font-size: 12px; }
+.construction-schedule-controls input { min-height: 42px; font-size: 13px; }
+.construction-schedule-search input { min-height: 44px; font-size: 14px; }
+.construction-schedule-search span { font-size: 13px; }
+.construction-timeline { max-height: 620px; }
+.construction-timeline-head,
+.construction-timeline-row { grid-template-columns: 640px minmax(2294px, 1fr); min-width: 2934px; }
+.construction-fixed-head,
+.construction-fixed-cells { grid-template-columns: 120px 220px 200px 100px; }
+.construction-fixed-head { font-size: 13px; }
+.construction-fixed-head span,
+.construction-fixed-cells > span,
+.construction-fixed-cells > button { padding: 13px; }
+.construction-fixed-cells { min-height: 72px; }
+.construction-fixed-cells strong { color: #172943; font-size: 14px; }
+.construction-fixed-cells small { margin-top: 4px; font-size: 12px; }
+.construction-fixed-cells span { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.construction-days { grid-template-columns: repeat(31, 74px); }
+.construction-days > span { min-height: 45px; padding: 10px 3px; font-size: 12px; }
+.construction-row-days { min-height: 72px; }
+.construction-row-days > span { min-height: 72px; cursor: cell; }
+.construction-event { min-height: 29px; padding: 6px 4px; font-size: 12px; }
+.construction-event.stage-0 { background: #e5f6c8; color: #4e7200; }
+.construction-event.stage-1 { background: #ffe4ab; color: #835500; }
+.construction-event.stage-2 { background: #ffd9df; color: #a33a4a; }
+.construction-event.stage-3 { background: #d9e7ff; color: #315da1; }
+.construction-event.stage-4 { background: #d9f3eb; color: #06785b; }
+.construction-mobile-edit { width: 100%; min-height: 40px; margin-top: 10px; border: 1px solid #cbd7ed; border-radius: 8px; background: #fff; color: #355bb1; font-size: 13px; font-weight: 850; }
+.construction-add-dialog { width: min(580px, 94vw); max-height: 82vh; padding: 22px; overflow: hidden; border-radius: 18px; background: #fff; }
+.construction-add-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid #e2e7ef; }
+.construction-add-dialog h3 { margin: 5px 0; font-size: 22px; }
+.construction-add-dialog p { margin: 0; color: #79869a; font-size: 13px; line-height: 1.55; }
+.construction-add-dialog header > button { width: 38px; height: 38px; border: 1px solid #d7dfeb; background: #fff; color: #65748c; font-size: 23px; }
+.construction-add-dialog > input { width: 100%; min-height: 46px; margin: 16px 0 10px; padding: 0 14px; border: 1px solid #cfd9e9; border-radius: 9px; font-size: 14px; }
+.construction-add-results { max-height: 52vh; overflow-y: auto; }
+.construction-add-results > button { width: 100%; min-height: 62px; padding: 11px 12px; border: 0; border-bottom: 1px solid #edf0f4; display: flex; align-items: center; justify-content: space-between; gap: 14px; background: #fff; color: #243650; text-align: left; }
+.construction-add-results > button:hover { background: #f5f7ff; }
+.construction-add-results span { min-width: 0; display: grid; gap: 5px; }
+.construction-add-results strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.construction-add-results small { color: #7f8b9e; font-size: 12px; }
+.construction-add-results b { color: #3e49d8; font-size: 13px; }
+.construction-new-institution-toggle { width: 100%; min-height: 42px; margin-top: 14px; border: 1px dashed #8ba3ff; border-radius: 9px; background: #f5f7ff; color: #3854d8; font-weight: 850; }
+.construction-new-institution-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; padding: 16px; border: 1px solid #dce3f3; border-radius: 12px; background: #f8faff; }
+.construction-new-institution-form label { display: grid; gap: 6px; color: #26334a; font-size: 13px; font-weight: 800; }
+.construction-new-institution-form label:nth-child(3) { grid-column: 1 / -1; }
+.construction-new-institution-form input { min-height: 42px; border: 1px solid #ccd6e9; border-radius: 8px; padding: 0 12px; background: #fff; color: #17233a; font-size: 14px; }
+.construction-new-institution-form > button { grid-column: 1 / -1; justify-self: end; min-height: 42px; }
+.construction-stage-editor { width: min(900px, 96vw); }
+.construction-editor-summary { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 14px; margin: 16px 0; }
+.construction-editor-summary > label:first-child { display: grid; gap: 6px; color: #53627b; font-size: 13px; font-weight: 850; }
+.construction-editor-summary input[type="text"] { min-height: 43px; font-size: 14px; }
+.construction-project-complete { min-height: 43px; padding: 0 13px; border: 1px solid #cfe4da; border-radius: 9px; display: flex; align-items: center; gap: 8px; background: #effaf5; color: #147454; font-size: 13px; font-weight: 850; }
+.construction-project-complete input { width: 17px; height: 17px; accent-color: #13a071; }
+.construction-stage-table { overflow-x: auto; border: 1px solid #d9e1ed; border-radius: 11px; }
+.construction-stage-head,
+.construction-stage-row { min-width: 800px; display: grid; grid-template-columns: 50px 90px 1fr 150px 150px 52px; align-items: center; }
+.construction-stage-head { min-height: 42px; background: #f1f4f9; color: #68768d; font-size: 12px; font-weight: 900; text-align: center; }
+.construction-stage-row { min-height: 49px; border-top: 1px solid #e5eaf1; background: #fbfcfe; opacity: .72; }
+.construction-stage-row.active { background: #fff; opacity: 1; }
+.construction-stage-row > * { min-width: 0; margin: 0 5px; }
+.construction-stage-row > input[type="checkbox"] { width: 17px; height: 17px; justify-self: center; accent-color: #3f49e6; }
+.construction-stage-row > strong { font-size: 13px; text-align: center; }
+.construction-stage-row > input:not([type="checkbox"]) { min-height: 37px; padding: 0 9px; font-size: 13px; }
+.construction-stage-row > button { width: 34px; height: 34px; border: 0; border-radius: 8px; background: #3161e9; color: #fff; font-size: 19px; font-weight: 900; }
+
+.home-calendar-header p { font-size: 14px; }
+.home-calendar-filters { gap: 9px; flex-wrap: wrap; }
+.home-calendar-filters button { min-height: 38px; padding: 0 14px; font-size: 13px; }
+.home-calendar-day-number { font-size: 13px; }
+.home-calendar-day-items b { font-size: 12px; }
+.home-calendar-day-items small { font-size: 11px; }
+.home-calendar-day-items em { font-size: 10px; }
+.home-calendar-day-items > span.sales { border-color: #4f72dc; background: #eef3ff; color: #3157ad; }
+.home-calendar-day-items > span.construction { border-color: #e99b1d; background: #fff6e5; color: #8a5900; }
+.home-calendar-day-items > span.showroom { border-color: #885ee6; background: #f5efff; color: #6740b8; }
+.home-calendar-day-items > span.personal { border-color: #17a978; background: #eef9f5; color: #16785a; }
+.home-calendar-agenda-list i.sales { background: #4f72dc; }
+.home-calendar-agenda-list i.construction { background: #e99b1d; }
+.home-calendar-agenda-list i.showroom { background: #885ee6; }
+.home-calendar-agenda-list i.personal { background: #17a978; }
+.home-calendar-agenda-list strong { font-size: 14px; }
+.home-calendar-agenda-list small { font-size: 12px; }
+.home-calendar-agenda-list em { font-size: 10px; }
+.home-calendar-privacy { font-size: 11px; }
+.home-calendar-add { border-color: #3f49e6 !important; background: #3f49e6 !important; color: #fff !important; }
+.home-schedule-editor { width: min(560px, 94vw); padding: 22px; border-radius: 18px; background: #fff; box-shadow: 0 24px 70px rgba(22, 35, 62, .22); }
+.home-schedule-editor > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 15px; border-bottom: 1px solid #e2e7ef; }
+.home-schedule-editor h3 { margin: 5px 0; font-size: 23px; }
+.home-schedule-editor header p { margin: 0; color: #75839a; font-size: 13px; line-height: 1.55; }
+.home-schedule-editor header > button { width: 38px; height: 38px; border: 1px solid #d7dfeb; background: #fff; color: #65748c; font-size: 23px; }
+.home-schedule-editor > label { display: grid; gap: 7px; margin-top: 13px; color: #35445d; font-size: 13px; font-weight: 850; }
+.home-schedule-editor > label input,
+.home-schedule-editor > label select { width: 100%; min-height: 44px; border: 1px solid #ccd6e8; border-radius: 8px; padding: 0 12px; background: #fff; color: #1e2c44; font-size: 14px; }
+.home-schedule-kind { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
+.home-schedule-kind button { min-height: 40px; border: 1px solid #d4dceb; border-radius: 9px; background: #fff; color: #53627a; font-size: 13px; font-weight: 850; }
+.home-schedule-kind button.active { border-color: #4561ea; background: #eef2ff; color: #354fce; }
+.home-schedule-editor footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; padding-top: 15px; border-top: 1px solid #e5e9f0; }
+.home-schedule-editor footer button { min-width: 82px; min-height: 42px; }
+
+@media (max-width: 1000px) {
+  .construction-schedule-toolbar { grid-template-columns: 1fr; }
+  .construction-schedule-actions { justify-content: flex-start; }
+  .construction-mobile-list p { font-size: 13px; }
+  .construction-mobile-list article > div button { font-size: 12px; }
+}
+
+@media (max-width: 700px) {
+  .construction-schedule-header h2 { font-size: 22px; }
+  .construction-schedule-actions { width: 100%; }
+  .construction-schedule-actions > button,
+  .construction-completed-filter { flex: 1 1 auto; justify-content: center; }
+  .construction-schedule-toolbar { padding: 12px; }
+  .construction-schedule-controls { width: 100%; }
+  .construction-schedule-search { width: 100%; }
+  .construction-editor-summary { grid-template-columns: 1fr; }
+  .construction-new-institution-form { grid-template-columns: 1fr; }
+  .construction-new-institution-form label:nth-child(3),
+  .construction-new-institution-form > button { grid-column: auto; }
+  .home-calendar-filters button { flex: 1 1 auto; }
+  .home-schedule-kind { grid-template-columns: 1fr 1fr; }
+  .home-calendar-day-items b { font-size: 10px; }
+}

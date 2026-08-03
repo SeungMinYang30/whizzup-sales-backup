@@ -116,6 +116,11 @@ export const organizationSchedules = sqliteTable(
     businessRound: integer("business_round").notNull().default(1),
     label: text("label").notNull(),
     scheduledDate: text("scheduled_date").notNull(),
+    category: text("category").notNull().default("general"),
+    stage: text("stage").notNull().default(""),
+    endDate: text("end_date").notNull().default(""),
+    vendorName: text("vendor_name").notNull().default(""),
+    details: text("details").notNull().default(""),
     completed: integer("completed", { mode: "boolean" })
       .notNull()
       .default(false),
@@ -134,6 +139,31 @@ export const organizationSchedules = sqliteTable(
       table.completed,
       table.scheduledDate,
       table.id,
+    ),
+  ],
+);
+
+export const constructionScheduleProjects = sqliteTable(
+  "construction_schedule_projects",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organization: text("organization").notNull(),
+    businessRound: integer("business_round").notNull().default(1),
+    workSummary: text("work_summary").notNull().default(""),
+    completed: integer("completed", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    createdBy: integer("created_by"),
+    createdByName: text("created_by_name").notNull().default(""),
+    updatedBy: integer("updated_by"),
+    updatedByName: text("updated_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("construction_schedule_projects_scope_idx").on(
+      table.organization,
+      table.businessRound,
     ),
   ],
 );
