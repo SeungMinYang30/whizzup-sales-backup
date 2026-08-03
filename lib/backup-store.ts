@@ -728,6 +728,7 @@ export const BACKUP_TABLES = [
       "work_summary",
       "work_summary_mode",
       "completed",
+      "hidden_at",
       "created_by",
       "created_by_name",
       "updated_by",

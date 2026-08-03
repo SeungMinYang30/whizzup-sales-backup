@@ -29,6 +29,7 @@ type ConstructionProject = {
   workSummaryMode: "auto" | "manual";
   sourceProductNames: string[];
   completed: boolean;
+  hidden: boolean;
   updatedAt: string;
 };
 
@@ -100,6 +101,9 @@ export default function ConstructionSchedulePage({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [hideCompleted, setHideCompleted] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showExcluded, setShowExcluded] = useState(false);
+  const [rowMenuKey, setRowMenuKey] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -170,6 +174,7 @@ export default function ConstructionSchedulePage({
   const rows = useMemo(() => {
     const keyword = query.trim().toLocaleLowerCase("ko-KR");
     return projects
+      .filter((project) => !project.hidden)
       .map((project) => {
         const record = latestByScope.get(scopeKey(project.organization, project.businessRound));
         return {
@@ -191,6 +196,13 @@ export default function ConstructionSchedulePage({
         return left.localeCompare(right) || a.project.organization.localeCompare(b.project.organization, "ko-KR");
       });
   }, [hideCompleted, latestByScope, projects, query, schedulesByScope]);
+
+  const excludedProjects = useMemo(
+    () => projects
+      .filter((project) => project.hidden)
+      .sort((a, b) => a.organization.localeCompare(b.organization, "ko-KR")),
+    [projects],
+  );
 
   const addOptions = useMemo(() => {
     const keyword = addQuery.trim().toLocaleLowerCase("ko-KR");
@@ -351,15 +363,16 @@ export default function ConstructionSchedulePage({
     }
   }
 
-  async function removeProject(project: ConstructionProject) {
-    if (saving || !window.confirm(`${project.organization}을(를) 시공 일정표에서 뺄까요?\n기관 정보와 영업·수주 기록은 유지됩니다.`)) return;
+  async function setProjectHidden(project: ConstructionProject, hidden: boolean) {
+    if (saving) return;
+    if (hidden && !window.confirm("이 기관을 시공·납품 일정표에서 제외하시겠습니까? 기관·수주 기록은 삭제되지 않습니다.")) return;
     setSaving(true);
     try {
       const response = await fetch("/api/schedules", {
-        method: "DELETE",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "remove-construction-project",
+          action: hidden ? "hide-construction-project" : "restore-construction-project",
           organization: project.organization,
           businessRound: project.businessRound,
         }),
@@ -369,12 +382,13 @@ export default function ConstructionSchedulePage({
         schedules?: ConstructionSchedule[];
         error?: string;
       };
-      if (!response.ok) throw new Error(payload.error || "일정표에서 기관을 빼지 못했습니다.");
+      if (!response.ok) throw new Error(payload.error || (hidden ? "일정표에서 기관을 제외하지 못했습니다." : "기관을 다시 표시하지 못했습니다."));
       setProjects(payload.projects ?? []);
       setSchedules(payload.schedules ?? []);
-      setMessage("기관을 일정표에서 뺐습니다. 기관 정보와 영업·수주 기록은 유지됩니다.");
+      setRowMenuKey("");
+      setMessage(hidden ? "일정표에서만 제외했습니다. 기관·수주·품목·일정 기록은 그대로 유지됩니다." : "기관을 일정표에 다시 표시했습니다.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "일정표에서 기관을 빼지 못했습니다.");
+      setMessage(error instanceof Error ? error.message : (hidden ? "일정표에서 기관을 제외하지 못했습니다." : "기관을 다시 표시하지 못했습니다."));
     } finally {
       setSaving(false);
     }
@@ -424,12 +438,30 @@ export default function ConstructionSchedulePage({
         <div className="construction-schedule-actions">
           <button type="button" className="primary-button" onClick={() => setAddOpen(true)}>+ 기관 추가</button>
           <button type="button" onClick={exportExcel}>엑셀 내보내기</button>
-          <label className="construction-completed-filter">
-            <input type="checkbox" checked={hideCompleted} onChange={(event) => setHideCompleted(event.target.checked)} />
-            완료 기관 제외
-          </label>
+          <div className="construction-settings-wrap">
+            <button type="button" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((current) => !current)}>보기 설정</button>
+            {settingsOpen ? <div className="construction-settings-popover">
+              <label className="construction-completed-filter">
+                <input type="checkbox" checked={hideCompleted} onChange={(event) => setHideCompleted(event.target.checked)} />
+                완료 기관 제외
+              </label>
+              <button type="button" className={showExcluded ? "active" : ""} onClick={() => setShowExcluded((current) => !current)}>
+                제외된 기관 보기 <b>{excludedProjects.length}</b>
+              </button>
+            </div> : null}
+          </div>
         </div>
       </header>
+
+      {showExcluded ? <section className="construction-excluded-panel" aria-label="일정표에서 제외된 기관">
+        <header><div><strong>제외된 기관</strong><small>기관·수주·품목·일정 기록은 삭제되지 않았습니다.</small></div><button type="button" onClick={() => setShowExcluded(false)}>닫기</button></header>
+        {excludedProjects.length ? <div className="construction-excluded-list">
+          {excludedProjects.map((project) => <div key={scopeKey(project.organization, project.businessRound)}>
+            <span><strong>{project.organization}</strong><small>{project.businessRound}차 사업</small></span>
+            <button type="button" disabled={saving} onClick={() => void setProjectHidden(project, false)}>일정표에 다시 표시</button>
+          </div>)}
+        </div> : <p>제외된 기관이 없습니다.</p>}
+      </section> : null}
 
       <div className="construction-schedule-toolbar">
         <div className="construction-schedule-controls">
@@ -464,7 +496,13 @@ export default function ConstructionSchedulePage({
           <article className="construction-timeline-row" key={scopeKey(project.organization, project.businessRound)}>
             <div className="construction-fixed-cells">
               <span>{record?.region || "지역 미등록"}</span>
-              <span className="construction-institution-cell"><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}><strong>{project.organization}</strong><small>{project.businessRound}차 사업</small></button><button type="button" className="construction-remove-project" onClick={() => void removeProject(project)}>일정표에서 빼기</button></span>
+              <span className="construction-institution-cell">
+                <button type="button" className="construction-institution-main" onClick={() => onOpenOrganization(project.organization, project.businessRound)}><strong>{project.organization}</strong><small>{project.businessRound}차 사업</small></button>
+                <span className="construction-row-menu">
+                  <button type="button" className="construction-row-menu-trigger" aria-label={`${project.organization} 일정표 메뉴`} aria-expanded={rowMenuKey === scopeKey(project.organization, project.businessRound)} onClick={() => setRowMenuKey((current) => current === scopeKey(project.organization, project.businessRound) ? "" : scopeKey(project.organization, project.businessRound))}>⋯</button>
+                  {rowMenuKey === scopeKey(project.organization, project.businessRound) ? <span className="construction-row-menu-popover"><button type="button" onClick={() => void setProjectHidden(project, true)}>일정표에서 제외</button></span> : null}
+                </span>
+              </span>
               <button
                 type="button"
                 className="construction-work-summary"
@@ -506,14 +544,13 @@ export default function ConstructionSchedulePage({
       <div className="construction-mobile-list">
         {rows.map(({ project, record, items }) => (
           <article key={scopeKey(project.organization, project.businessRound)}>
-            <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{record?.progressManager || "미정"}</span></header>
+            <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{record?.progressManager || "미정"}</span><span className="construction-row-menu"><button type="button" className="construction-row-menu-trigger" aria-label={`${project.organization} 일정표 메뉴`} onClick={() => setRowMenuKey((current) => current === scopeKey(project.organization, project.businessRound) ? "" : scopeKey(project.organization, project.businessRound))}>⋯</button>{rowMenuKey === scopeKey(project.organization, project.businessRound) ? <span className="construction-row-menu-popover"><button type="button" onClick={() => void setProjectHidden(project, true)}>일정표에서 제외</button></span> : null}</span></header>
             <p>{record?.region || "지역 미등록"} · {displayWorkSummary(project) || "공사·품목 미등록"}</p>
             <div>{items.map((item) => {
               const day = dayMetaByDate.get(item.scheduledDate);
               return <button type="button" className={day ? dayClassName(day) : ""} key={item.id} onClick={() => openEditor(project, item.scheduledDate)}><b>{item.scheduledDate.slice(5).replace("-", "/")}</b>{item.stage || item.label}{day?.holidayName ? <small>{day.holidayName}</small> : null}</button>;
             })}</div>
             <button className="construction-mobile-edit" type="button" onClick={() => openEditor(project)}>일정 관리</button>
-            <button className="construction-mobile-remove" type="button" onClick={() => void removeProject(project)}>일정표에서 빼기</button>
           </article>
         ))}
       </div>

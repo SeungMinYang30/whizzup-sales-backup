@@ -281,7 +281,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       </header>
       <div className="home-calendar-filters">
         {FILTERS.map(([key, label]) => (
-          <button type="button" key={key} className={filter === key ? "active" : ""}
+          <button type="button" key={key} className={`home-calendar-filter home-calendar-filter-${key}${filter === key ? " active" : ""}`}
             disabled={key === "google" && !googleState.configured}
             title={key === "google" && !googleState.configured ? "위즈업 공유 캘린더 주소가 아직 등록되지 않았습니다." : ""}
             onClick={() => setFilter(key)}>{label} <b>{counts[key]}</b></button>
@@ -310,7 +310,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
           {loading ? <p className="home-calendar-agenda-empty">일정을 확인하는 중입니다.</p> : selectedSchedules.length ? (
             <div className="home-calendar-agenda-list">{selectedSchedules.map((item) => (
               <button type="button" key={item.id} onClick={() => openEdit(item)}>
-                <i className={item.category} /><span><strong>{item.startTime ? `${item.startTime} ` : ""}{item.organization}</strong><small>{cleanScheduleTitle(item.label)}</small><small className="schedule-assignee">담당 {item.assigneeName || "미정"}</small></span><em>{CATEGORY_LABEL[item.category]}</em>
+                <i className={item.category} /><span><strong>{item.startTime ? `${item.startTime} ` : ""}{item.organization}</strong><small>{cleanScheduleTitle(item.label)}</small><small className="schedule-assignee">담당 {item.assigneeName || "미정"}</small></span><em className={item.category}>{CATEGORY_LABEL[item.category]}</em>
               </button>
             ))}</div>
           ) : <p className="home-calendar-agenda-empty">이 날짜에 등록된 일정이 없습니다.</p>}

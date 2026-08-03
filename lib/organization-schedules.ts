@@ -51,6 +51,7 @@ export type ConstructionScheduleProject = {
   workSummaryMode: "auto" | "manual";
   sourceProductNames: string[];
   completed: boolean;
+  hidden: boolean;
   updatedAt: string;
 };
 
@@ -90,6 +91,7 @@ const schemaStatements = [
     work_summary TEXT NOT NULL DEFAULT '',
     work_summary_mode TEXT NOT NULL DEFAULT 'auto',
     completed INTEGER NOT NULL DEFAULT 0,
+    hidden_at TEXT NOT NULL DEFAULT '',
     created_by INTEGER,
     created_by_name TEXT NOT NULL DEFAULT '',
     updated_by INTEGER,
@@ -130,6 +132,9 @@ async function initializeOrganizationSchedules() {
   const projectColumns = await d1.prepare("PRAGMA table_info(construction_schedule_projects)").all<{ name: string }>();
   if (!projectColumns.results.some((column) => column.name === "work_summary_mode")) {
     await d1.prepare("ALTER TABLE construction_schedule_projects ADD COLUMN work_summary_mode TEXT NOT NULL DEFAULT 'auto'").run();
+  }
+  if (!projectColumns.results.some((column) => column.name === "hidden_at")) {
+    await d1.prepare("ALTER TABLE construction_schedule_projects ADD COLUMN hidden_at TEXT NOT NULL DEFAULT ''").run();
   }
   return d1;
 }
@@ -400,6 +405,7 @@ export async function listConstructionScheduleBoard() {
         workSummaryMode: mode,
         sourceProductNames,
         completed: Number(row.completed) === 1,
+        hidden: clean(row.hidden_at) !== "",
         updatedAt: String(row.updated_at ?? ""),
       } satisfies ConstructionScheduleProject;
     }),
@@ -429,6 +435,7 @@ export async function addConstructionScheduleProject(input: {
      ON CONFLICT(organization, business_round) DO UPDATE SET
        work_summary = CASE WHEN excluded.work_summary <> '' THEN excluded.work_summary ELSE work_summary END,
        completed = 0,
+       hidden_at = '',
        updated_by = excluded.updated_by,
        updated_by_name = excluded.updated_by_name,
        updated_at = CURRENT_TIMESTAMP`,
@@ -654,6 +661,33 @@ export async function removeConstructionScheduleProject(input: {
     businessRound,
     generalResult.results.map(scheduleJson),
   );
+  return listConstructionScheduleBoard();
+}
+
+export async function setConstructionScheduleProjectHidden(input: {
+  organization: unknown;
+  businessRound: unknown;
+  hidden: boolean;
+  memberId: number;
+  memberName: string;
+}) {
+  const organization = clean(input.organization).slice(0, 120);
+  const businessRound = Math.max(1, Number(input.businessRound) || 1);
+  if (!organization) throw new Error("일정표 기관을 확인해 주세요.");
+  const d1 = await ensureOrganizationSchedulesReady();
+  const result = await d1.prepare(
+    `UPDATE construction_schedule_projects
+     SET hidden_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE '' END,
+         updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE organization = ? AND business_round = ?`,
+  ).bind(
+    input.hidden ? 1 : 0,
+    input.memberId,
+    input.memberName,
+    organization,
+    businessRound,
+  ).run();
+  if (!result.meta.changes) throw new Error("일정표 기관을 찾지 못했습니다.");
   return listConstructionScheduleBoard();
 }
 

@@ -11,6 +11,7 @@ import {
   removeConstructionScheduleProject,
   replaceOrganizationSchedules,
   saveConstructionSchedules,
+  setConstructionScheduleProjectHidden,
   updateOrganizationSchedule,
 } from "../../../lib/organization-schedules";
 import {
@@ -135,6 +136,15 @@ export async function POST(request: Request) {
         memberId: member.id,
         memberName: member.displayName,
       }) });
+    }
+    if (payload.action === "hide-construction-project" || payload.action === "restore-construction-project") {
+      return Response.json(await setConstructionScheduleProjectHidden({
+        organization: payload.organization,
+        businessRound: payload.businessRound,
+        hidden: payload.action === "hide-construction-project",
+        memberId: member.id,
+        memberName: member.displayName,
+      }));
     }
     if (payload.action !== "add-construction-project") {
       throw new Error("추가할 일정 정보를 확인해 주세요.");

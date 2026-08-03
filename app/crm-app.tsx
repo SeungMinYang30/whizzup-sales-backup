@@ -1036,6 +1036,12 @@ type AccountingActivityStatus = {
   accountingStatus: string;
 };
 
+type ConstructionDashboardCounts = {
+  planned: number;
+  active: number;
+  completed: number;
+};
+
 type ViewHistoryState = {
   whizzupView?: View;
   whizzupRecordDateScope?: "all" | "recent";
@@ -6138,6 +6144,12 @@ export default function CrmApp({
     null,
   );
   const [view, setView] = useState<View>("dashboard");
+  const [constructionDashboardCounts, setConstructionDashboardCounts] =
+    useState<ConstructionDashboardCounts>({
+      planned: 0,
+      active: 0,
+      completed: 0,
+    });
   const [accountingInitialTab, setAccountingInitialTab] =
     useState<AccountingWorkspaceTab>("collections");
   const [accountingStatusByBusinessKey, setAccountingStatusByBusinessKey] =
@@ -6534,6 +6546,69 @@ export default function CrmApp({
     }
     setMenuOrderEditing(false);
   }, [session?.member.id]);
+
+  useEffect(() => {
+    if (!session || view !== "dashboard") return;
+    let cancelled = false;
+    void fetch("/api/schedules?scope=construction-board", {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          projects?: Array<{
+            organization?: string;
+            businessRound?: number;
+            completed?: boolean;
+            hidden?: boolean;
+          }>;
+          schedules?: Array<{
+            organization?: string;
+            businessRound?: number;
+            scheduledDate?: string;
+            endDate?: string;
+            completed?: boolean;
+          }>;
+        };
+        if (!response.ok) throw new Error("시공 현황을 불러오지 못했습니다.");
+        const today = new Date().toLocaleDateString("sv-SE");
+        const schedulesByProject = new Map<string, typeof payload.schedules>();
+        (payload.schedules ?? []).forEach((schedule) => {
+          const key = `${String(schedule.organization ?? "").trim()}\u001f${Math.max(1, Number(schedule.businessRound) || 1)}`;
+          const current = schedulesByProject.get(key) ?? [];
+          current.push(schedule);
+          schedulesByProject.set(key, current);
+        });
+        const counts = (payload.projects ?? [])
+          .filter((project) => !project.hidden)
+          .reduce<ConstructionDashboardCounts>(
+            (result, project) => {
+              if (project.completed) {
+                result.completed += 1;
+                return result;
+              }
+              const key = `${String(project.organization ?? "").trim()}\u001f${Math.max(1, Number(project.businessRound) || 1)}`;
+              const hasStarted = (schedulesByProject.get(key) ?? []).some(
+                (schedule) =>
+                  !schedule.completed &&
+                  Boolean(schedule.scheduledDate) &&
+                  String(schedule.scheduledDate) <= today,
+              );
+              result[hasStarted ? "active" : "planned"] += 1;
+              return result;
+            },
+            { planned: 0, active: 0, completed: 0 },
+          );
+        if (!cancelled) setConstructionDashboardCounts(counts);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setConstructionDashboardCounts({ planned: 0, active: 0, completed: 0 });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, view]);
 
   useEffect(() => {
     function releaseWhenHidden() {
@@ -8451,6 +8526,29 @@ export default function CrmApp({
       ).length,
     [latestAwardRecords],
   );
+  const dashboardSalesCounts = useMemo(() => {
+    const completed = latestInstitutionRows.filter(
+      (record) =>
+        record.awardStatus !== "미정" ||
+        record.status.includes("완료") ||
+        record.status.includes("종료"),
+    ).length;
+    return {
+      total: latestInstitutionRows.length,
+      active: Math.max(0, latestInstitutionRows.length - completed),
+      completed,
+    };
+  }, [latestInstitutionRows]);
+  const dashboardAwardCounts = useMemo(() => {
+    const completed = latestAwardRecords.filter((record) =>
+      completedAwardStages.has(record.awardStage),
+    ).length;
+    return {
+      total: latestAwardRecords.length,
+      active: Math.max(0, latestAwardRecords.length - completed),
+      completed,
+    };
+  }, [latestAwardRecords]);
 
   const progressSchedules = useMemo(() => {
     const scheduleMap = new Map<string, ProgressScheduleItem[]>();
@@ -15246,7 +15344,7 @@ export default function CrmApp({
       {mobileNav && <button className="nav-scrim" aria-label="메뉴 닫기" onClick={() => setMobileNav(false)} />}
 
       <section className="workspace">
-        <header className="topbar">
+        <header className={`topbar${view === "dashboard" ? " has-dashboard-status" : ""}`}>
           <button className="menu-button" onClick={() => setMobileNav(true)} aria-label="메뉴 열기">
             ☰
           </button>
@@ -15277,6 +15375,46 @@ export default function CrmApp({
               <kbd>⌘ K</kbd>
             </div>
           )}
+          {view === "dashboard" ? (
+            <nav className="dashboard-status-strip" aria-label="업무 현황 바로가기">
+              <button
+                type="button"
+                className="dashboard-status-card sales"
+                onClick={() => void selectView("followup")}
+              >
+                <span>영업 현황</span>
+                <dl>
+                  <div><dt>전체</dt><dd>{dashboardSalesCounts.total}</dd></div>
+                  <div><dt>진행</dt><dd>{dashboardSalesCounts.active}</dd></div>
+                  <div><dt>완료</dt><dd>{dashboardSalesCounts.completed}</dd></div>
+                </dl>
+              </button>
+              <button
+                type="button"
+                className="dashboard-status-card awards"
+                onClick={() => void selectView("awards")}
+              >
+                <span>수주·계약 현황</span>
+                <dl>
+                  <div><dt>전체</dt><dd>{dashboardAwardCounts.total}</dd></div>
+                  <div><dt>진행</dt><dd>{dashboardAwardCounts.active}</dd></div>
+                  <div><dt>완료</dt><dd>{dashboardAwardCounts.completed}</dd></div>
+                </dl>
+              </button>
+              <button
+                type="button"
+                className="dashboard-status-card construction"
+                onClick={() => void selectView("installation-schedule")}
+              >
+                <span>시공·납품 현황</span>
+                <dl>
+                  <div><dt>예정</dt><dd>{constructionDashboardCounts.planned}</dd></div>
+                  <div><dt>진행</dt><dd>{constructionDashboardCounts.active}</dd></div>
+                  <div><dt>완료</dt><dd>{constructionDashboardCounts.completed}</dd></div>
+                </dl>
+              </button>
+            </nav>
+          ) : null}
           <div className="top-actions">
             <button className="ai-button" onClick={openAiRecorder}>
               <span>●</span> AI로 기록
