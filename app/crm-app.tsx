@@ -9981,18 +9981,30 @@ export default function CrmApp({
       return;
     }
     const organizationKey = institutionAliasKey(resolvedOrganization);
-    const latest = records
+    const institutionHistory = records
       .filter(
         (record) =>
-          institutionAliasKey(record.organization) === organizationKey &&
-          record.businessRound === form.businessRound,
+          institutionAliasKey(record.organization) === organizationKey,
       )
       .sort(
         (left, right) =>
           right.activityDate.localeCompare(left.activityDate) ||
           right.id - left.id,
-      )[0];
+      );
+    const latestInstitutionRegion =
+      institutionHistory.find((record) => record.region.trim())?.region.trim() ??
+      "";
+    const latest = institutionHistory.find(
+      (record) => record.businessRound === form.businessRound,
+    );
     if (!latest) {
+      if (!region && latestInstitutionRegion) {
+        setForm((current) =>
+          current.region.trim()
+            ? current
+            : { ...current, region: latestInstitutionRegion },
+        );
+      }
       setInheritedFormOrganization("");
       return;
     }
@@ -10008,6 +10020,7 @@ export default function CrmApp({
         current,
         {
           ...latest,
+          region: latest.region.trim() || latestInstitutionRegion,
           // 연락처는 최종 사업 차수가 정해진 뒤 서버에서 같은 차수의
           // 이전 기록 한 건을 기준으로만 보완합니다.
           contactRole: "",
@@ -21717,10 +21730,31 @@ export default function CrmApp({
                   )}
                 </label>
                 <label><span>활동 날짜</span><input type="date" value={form.activityDate.length === 10 ? form.activityDate : ""} onChange={(event) => setForm({ ...form, activityDate: event.target.value })} /></label>
-                <label><span>지역</span><BufferedInput value={form.region} onCommit={(region) => {
-                  setForm((current) => ({ ...current, region }));
-                  inheritLatestInstitutionDetails(form.organization, region);
-                }} placeholder="예: 경기 성남, 충북 청주" /></label>
+                <div className="activity-region-field">
+                  <span className="activity-region-label">지역</span>
+                  <div className="activity-region-summary">
+                    <div>
+                      <strong>{form.region.trim() || "자동 확인"}</strong>
+                      <small>
+                        {form.region.trim()
+                          ? "확인된 지역입니다. 필요할 때만 수정하세요."
+                          : "저장할 때 기존 기관·지도 주소에서 자동으로 확인합니다."}
+                      </small>
+                    </div>
+                    <details className="activity-region-manual">
+                      <summary>{form.region.trim() ? "지역 수정" : "직접 입력"}</summary>
+                      <BufferedInput
+                        aria-label="지역 직접 입력"
+                        value={form.region}
+                        onCommit={(region) => {
+                          setForm((current) => ({ ...current, region }));
+                          inheritLatestInstitutionDetails(form.organization, region);
+                        }}
+                        placeholder="예: 경기 성남, 충북 청주"
+                      />
+                    </details>
+                  </div>
+                </div>
               </div>
 
               <div className="form-section-title"><span>02</span><strong>상담 내용</strong></div>

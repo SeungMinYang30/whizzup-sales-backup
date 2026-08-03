@@ -6,6 +6,7 @@ import {
   canonicalProvinceName,
   clusterMapPoints,
   clusterMapPointsByProvince,
+  individualMapPointClusters,
   KOREA_PROVINCES,
   pointIsInsideMapViewport,
   shouldRenderProvinceClusters,
@@ -125,4 +126,18 @@ test("선택 해제는 지역 검색 조건도 비워 전국 지도로 복귀한
     /function clearMapSelection\(\) \{[\s\S]*?setSelected\(\[\]\);[\s\S]*?setFocusedOrganization\(""\);[\s\S]*?onSearchChange\(""\);[\s\S]*?\}/,
   );
   assert.match(salesMapSource, /onClick=\{clearMapSelection\}/);
+});
+
+test("광역지역을 선택한 뒤에는 지도 배율과 관계없이 기관을 하나씩 표시한다", () => {
+  const clusters = individualMapPointClusters(points);
+  assert.equal(clusters.length, points.length);
+  assert.ok(clusters.every((cluster) => cluster.points.length === 1));
+  assert.match(
+    salesMapSource,
+    /provinceDrilldownMode\s*\?\s*individualMapPointClusters\(backgroundPoints\)/,
+  );
+  assert.match(
+    salesMapSource,
+    /\(provinceDrilldownMode \|\| mapLevel <= 4\)/,
+  );
 });

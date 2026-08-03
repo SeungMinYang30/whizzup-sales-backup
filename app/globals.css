@@ -2891,6 +2891,18 @@ tr:hover .row-actions { opacity: 1; }
 .form-grid input, .form-grid select, .form-grid textarea { width: 100%; min-height: 39px; border: 1px solid #dce2eb; border-radius: 0; background: white; padding: 9px 10px; color: #23314d; font-size: 10px; outline: 0; resize: vertical; }
 .form-grid input:focus, .form-grid select:focus, .form-grid textarea:focus { border-color: #7e9de6; box-shadow: 0 0 0 3px rgba(70,110,210,.08); }
 .form-grid input:disabled, .form-grid select:disabled { background: #f3f5f8; color: #78869b; }
+.activity-region-field { min-width: 0; }
+.activity-region-label { display: block; margin-bottom: 6px; color: #66738a; font-size: 9px; font-weight: 700; }
+.activity-region-summary { min-height: 39px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 10px; border: 1px solid #dce2eb; background: #f8fafc; }
+.activity-region-summary > div { min-width: 0; display: grid; gap: 2px; }
+.activity-region-summary strong { color: #23314d; font-size: 10px; }
+.activity-region-summary small { color: #78869b; font-size: 8px; line-height: 1.4; }
+.activity-region-manual { position: relative; flex: 0 0 auto; }
+.activity-region-manual summary { min-height: 28px; display: inline-flex; align-items: center; padding: 0 9px; border: 1px solid #ccd7e8; background: white; color: #435b91; font-size: 9px; font-weight: 800; cursor: pointer; list-style: none; }
+.activity-region-manual summary::-webkit-details-marker { display: none; }
+.activity-region-manual[open] { width: min(260px, 100%); }
+.activity-region-manual[open] summary { margin: 0 0 6px auto; }
+.activity-region-manual input { min-height: 36px; }
 .automatic-field-note { display: block; margin-top: 6px; color: #526fbb; font-size: 9px; line-height: 1.5; }
 .span-2 { grid-column: span 2; }
 .toggle-label { display: flex; align-items: center; gap: 9px; min-height: 39px; padding: 8px 11px; background: #f7f9fc; border: 1px solid #e3e8f0; cursor: pointer; }
@@ -4512,6 +4524,11 @@ tr:hover .row-actions { opacity: 1; }
   .form-section-title span { font-size: 10px; }
   .form-section-title strong { font-size: 14px; }
   .form-grid label > span:first-child { font-size: 12px; }
+  .activity-region-label { font-size: 12px; }
+  .activity-region-summary { min-height: 44px; }
+  .activity-region-summary strong { font-size: 14px; }
+  .activity-region-summary small,
+  .activity-region-manual summary { font-size: 11px; }
   .form-grid input,
   .form-grid select,
   .form-grid textarea {

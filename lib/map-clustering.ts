@@ -102,6 +102,17 @@ export function shouldRenderProvinceClusters(
   return provinceModeEnabled && selectedInstitutionCount === 0;
 }
 
+export function individualMapPointClusters<T>(
+  points: MapPoint<T>[],
+): MapPointCluster<T>[] {
+  return points.map((point, index) => ({
+    key: `point-${index}-${point.latitude}-${point.longitude}`,
+    latitude: point.latitude,
+    longitude: point.longitude,
+    points: [point],
+  }));
+}
+
 export function clusterMapPointsByProvince<T>(
   points: MapPoint<T>[],
   provinceSource: (point: MapPoint<T>) => string,
@@ -186,12 +197,7 @@ export function clusterMapPoints<T>(
   densityMode = false,
 ): MapPointCluster<T>[] {
   if (!densityMode && level <= 4) {
-    return points.map((point, index) => ({
-      key: `point-${index}-${point.latitude}-${point.longitude}`,
-      latitude: point.latitude,
-      longitude: point.longitude,
-      points: [point],
-    }));
+    return individualMapPointClusters(points);
   }
 
   const cellSize = clusterCellSize(level, densityMode);

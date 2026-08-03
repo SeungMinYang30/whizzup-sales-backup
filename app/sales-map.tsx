@@ -28,6 +28,7 @@ import {
   canonicalProvinceName,
   clusterMapPoints,
   clusterMapPointsByProvince,
+  individualMapPointClusters,
   pointIsInsideMapViewport,
   shouldRenderProvinceClusters,
   type NumericMapViewport,
@@ -3513,6 +3514,7 @@ export default function SalesMapPage({
       provinceClustersVisible,
       activeSelected.length,
     );
+    const provinceDrilldownMode = !provinceClustersVisible;
     const clusters = provinceMode
       ? clusterMapPointsByProvince(backgroundPoints, ({ item }) =>
           [
@@ -3523,7 +3525,9 @@ export default function SalesMapPage({
             .filter(Boolean)
             .join(" "),
         )
-      : clusterMapPoints(backgroundPoints, mapLevel);
+      : provinceDrilldownMode
+        ? individualMapPointClusters(backgroundPoints)
+        : clusterMapPoints(backgroundPoints, mapLevel);
 
     clusters.forEach((cluster) => {
       const position = new maps.LatLng(cluster.latitude, cluster.longitude);
@@ -3532,7 +3536,7 @@ export default function SalesMapPage({
       const isIndividual =
         !provinceCluster &&
         cluster.points.length === 1 &&
-        mapLevel <= 4;
+        (provinceDrilldownMode || mapLevel <= 4);
       const marker = document.createElement("button");
       marker.type = "button";
 
