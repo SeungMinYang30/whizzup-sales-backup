@@ -7,6 +7,11 @@ import {
   getConstructionTimelineDays,
   type ConstructionDayMeta,
 } from "../lib/construction-calendar";
+import {
+  CONSTRUCTION_STAGES,
+  constructionStageIndex,
+  isConstructionStage,
+} from "../lib/construction-stages";
 import { downloadConstructionTimelineXlsx } from "./activity-xlsx";
 
 type ScheduleRecord = {
@@ -65,9 +70,10 @@ type EditorState = {
   selectedProductNames: string[];
   completed: boolean;
   items: EditorItem[];
+  preservedItems: EditorItem[];
 };
 
-const STAGES = ["출고", "철거", "통신", "목공", "도장", "바닥", "시스템", "납품", "사인", "검수"];
+const STAGES = [...CONSTRUCTION_STAGES];
 const localDate = (date = new Date()) =>
   new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 const scopeKey = (organization: string, businessRound: number) =>
@@ -180,7 +186,12 @@ export default function ConstructionSchedulePage({
         return {
           project,
           record,
-          items: schedulesByScope.get(scopeKey(project.organization, project.businessRound)) ?? [],
+          items: (schedulesByScope.get(scopeKey(project.organization, project.businessRound)) ?? [])
+            .filter((item) => isConstructionStage(item.stage || item.label))
+            .sort((a, b) =>
+              a.scheduledDate.localeCompare(b.scheduledDate)
+              || constructionStageIndex(a.stage || a.label) - constructionStageIndex(b.stage || b.label),
+            ),
         };
       })
       .filter(({ project }) => !hideCompleted || !project.completed)
@@ -249,7 +260,7 @@ export default function ConstructionSchedulePage({
 
   function openEditor(project: ConstructionProject, selectedDate = today) {
     const current = schedulesByScope.get(scopeKey(project.organization, project.businessRound)) ?? [];
-    const items: EditorItem[] = current.map((schedule) => ({
+    const toEditorItem = (schedule: ConstructionSchedule): EditorItem => ({
       key: `saved-${schedule.id}`,
       stage: schedule.stage || schedule.label,
       scheduledDate: schedule.scheduledDate,
@@ -257,7 +268,14 @@ export default function ConstructionSchedulePage({
       vendorName: schedule.vendorName,
       details: schedule.details,
       active: true,
-    }));
+    });
+    const items = current
+      .filter((schedule) => isConstructionStage(schedule.stage || schedule.label))
+      .map(toEditorItem)
+      .sort((a, b) => constructionStageIndex(a.stage) - constructionStageIndex(b.stage));
+    const preservedItems = current
+      .filter((schedule) => !isConstructionStage(schedule.stage || schedule.label))
+      .map(toEditorItem);
     STAGES.forEach((stage) => {
       if (!items.some((item) => item.stage === stage)) {
         items.push({
@@ -271,6 +289,10 @@ export default function ConstructionSchedulePage({
         });
       }
     });
+    items.sort((a, b) =>
+      constructionStageIndex(a.stage) - constructionStageIndex(b.stage)
+      || a.scheduledDate.localeCompare(b.scheduledDate),
+    );
     setEditor({
       organization: project.organization,
       businessRound: project.businessRound,
@@ -282,6 +304,7 @@ export default function ConstructionSchedulePage({
         : project.sourceProductNames.filter((name) => project.workSummary.includes(name)),
       completed: project.completed,
       items,
+      preservedItems,
     });
   }
 
@@ -329,7 +352,10 @@ export default function ConstructionSchedulePage({
     if (!editor || saving) return;
     setSaving(true);
     try {
-      const activeItems = editor.items.filter((item) => item.active);
+      const activeItems = [
+        ...editor.items.filter((item) => item.active),
+        ...editor.preservedItems,
+      ];
       if (activeItems.some((item) => !item.scheduledDate || !item.endDate || item.endDate < item.scheduledDate)) {
         throw new Error("시작일과 종료일을 확인해 주세요.");
       }

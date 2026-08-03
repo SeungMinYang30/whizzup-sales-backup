@@ -1,5 +1,6 @@
 import { getD1 } from "../db";
 import { ensureEquipmentReady } from "./equipment-store";
+import { isConstructionStage } from "./construction-stages";
 import {
   clean,
   parseProgressScheduleEntries,
@@ -596,7 +597,9 @@ export async function saveConstructionSchedules(input: {
     )),
   ]);
   const hasInspection = schedules.some((schedule) => schedule.stage === "검수");
-  const hasShipment = schedules.some((schedule) => schedule.stage === "출고");
+  const hasConstructionWork = schedules.some(
+    (schedule) => isConstructionStage(schedule.stage) || schedule.stage === "출고",
+  );
   if (hasInspection && projectCompleted) {
     await d1.prepare(
       `UPDATE activities
@@ -607,7 +610,7 @@ export async function saveConstructionSchedules(input: {
          ORDER BY activity_date DESC, id DESC LIMIT 1
        )`,
     ).bind(organization, businessRound).run();
-  } else if (hasShipment) {
+  } else if (hasConstructionWork) {
     await d1.prepare(
       `UPDATE activities
        SET award_stage = CASE WHEN award_stage = '납품 완료' THEN award_stage ELSE '설치·공사 진행' END,

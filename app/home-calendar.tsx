@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  constructionStageIndex,
+  isConstructionStage,
+} from "../lib/construction-stages";
 
 type ScheduleCategory = "sales" | "meeting" | "construction" | "showroom" | "other" | "personal" | "google";
 type CalendarFilter = "all" | ScheduleCategory;
@@ -241,7 +245,14 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
     finally { setSaving(false); }
   }
 
-  const filtered = useMemo(() => schedules.filter((item) => filter === "all" || item.category === filter), [filter, schedules]);
+  const visibleSchedules = useMemo(
+    () => schedules.filter((item) => item.category !== "construction" || isConstructionStage(item.label)),
+    [schedules],
+  );
+  const filtered = useMemo(
+    () => visibleSchedules.filter((item) => filter === "all" || item.category === filter),
+    [filter, visibleSchedules],
+  );
   const grouped = useMemo(() => {
     const map = new Map<string, HomeCalendarSchedule[]>();
     filtered.forEach((item) => {
@@ -254,15 +265,21 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
     map.forEach((items, key) => map.set(key, [...items].sort((a, b) => {
       const timeA = eventTime(a); const timeB = eventTime(b);
       if (!timeA && timeB) return -1; if (timeA && !timeB) return 1;
-      return timeA.localeCompare(timeB) || a.organization.localeCompare(b.organization, "ko");
+      const timeOrder = timeA.localeCompare(timeB);
+      if (timeOrder) return timeOrder;
+      if (a.category === "construction" && b.category === "construction") {
+        const stageOrder = constructionStageIndex(a.label) - constructionStageIndex(b.label);
+        if (stageOrder) return stageOrder;
+      }
+      return a.organization.localeCompare(b.organization, "ko");
     })));
     return map;
   }, [filtered]);
   const monthPrefix = `${monthValue}-`;
   const counts = useMemo(() => {
-    const inMonth = schedules.filter((item) => item.scheduledDate.startsWith(monthPrefix));
+    const inMonth = visibleSchedules.filter((item) => item.scheduledDate.startsWith(monthPrefix));
     return Object.fromEntries(FILTERS.map(([key]) => [key, key === "all" ? inMonth.length : inMonth.filter((item) => item.category === key).length])) as Record<CalendarFilter, number>;
-  }, [monthPrefix, schedules]);
+  }, [monthPrefix, visibleSchedules]);
   const selectedSchedules = grouped.get(selectedDate) || [];
   const changeMonth = (value: string) => { setMonthValue(value); setSelectedDate(`${value}-01`); };
   const linkedDetailAvailable = editor.linked && editor.businessRound > 0;
