@@ -33,7 +33,10 @@ import {
   shouldRenderProvinceClusters,
   type NumericMapViewport,
 } from "../lib/map-clustering";
-import { isCompletedAwardStage } from "../lib/sales-taxonomy";
+import {
+  isCompletedAwardStage,
+  normalizeAwardStage,
+} from "../lib/sales-taxonomy";
 import { institutionAliasKey } from "../lib/institution-names";
 import JointProjectModal, {
   type JointProjectCandidate,
@@ -967,19 +970,17 @@ function formatWon(value: number | null) {
 
 function budgetTargetStatus(target: SalesCampaignTarget) {
   if (target.currentAwardStatus === "위즈업 수주") {
-    return isCompletedAwardStage(target.currentAwardStage)
-      ? "완료"
-      : target.currentAwardStage || "수주 후 진행";
+    if (isCompletedAwardStage(target.currentAwardStage)) return "완료";
+    const awardStage = normalizeAwardStage(
+      target.currentAwardStage,
+      target.currentAwardStatus,
+    );
+    return awardStage === "미정" || awardStage === "해당 없음"
+      ? "위즈업 선정"
+      : "수주 후 진행";
   }
   if (target.currentAwardStatus === "타업체 수주") return "타업체 선정";
-  if (target.currentAwardStatus === "협력사 수주") return "협력사 수주";
-  if (
-    target.createdActivity &&
-    (!target.currentStatus || target.currentStatus === "재접촉 필요")
-  ) {
-    return "미접촉";
-  }
-  return target.currentStatus || "미접촉";
+  return "진행 중";
 }
 
 function budgetTargetSelection(target: SalesCampaignTarget) {
@@ -4513,8 +4514,12 @@ export default function SalesMapPage({
     Boolean(focusedSchoolLookupKey) &&
     officialSchoolPhoneLoadingKey === focusedSchoolLookupKey;
   const budgetStatuses = [
-    ...new Set(activeCampaignTargets.map(budgetTargetStatus)),
-  ].sort((left, right) => left.localeCompare(right, "ko-KR"));
+    "진행 중",
+    "위즈업 선정",
+    "타업체 선정",
+    "수주 후 진행",
+    "완료",
+  ];
   const budgetKeyword = search.trim().toLocaleLowerCase("ko-KR");
   const matchesBudgetTargetFilters = (target: SalesCampaignTarget) => {
     if (
@@ -4531,15 +4536,13 @@ export default function SalesMapPage({
     }
     if (
       budgetQuickFilter === "post-award" &&
-      (target.currentAwardStatus !== "위즈업 수주" ||
-        isCompletedAwardStage(target.currentAwardStage))
+      budgetTargetStatus(target) !== "수주 후 진행"
     ) {
       return false;
     }
     if (
       budgetQuickFilter === "complete" &&
-      (target.currentAwardStatus !== "위즈업 수주" ||
-        !isCompletedAwardStage(target.currentAwardStage))
+      budgetTargetStatus(target) !== "완료"
     ) {
       return false;
     }
@@ -4588,9 +4591,7 @@ export default function SalesMapPage({
     (target) => budgetTargetStatus(target) === "완료",
   ).length;
   const budgetPostAwardInProgressCount = activeCampaignTargets.filter(
-    (target) =>
-      target.currentAwardStatus === "위즈업 수주" &&
-      !isCompletedAwardStage(target.currentAwardStage),
+    (target) => budgetTargetStatus(target) === "수주 후 진행",
   ).length;
   const budgetWhizzupSelectionCount = activeCampaignTargets.filter(
     (target) => target.currentAwardStatus === "위즈업 수주",

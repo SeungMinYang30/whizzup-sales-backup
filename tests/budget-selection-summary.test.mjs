@@ -21,11 +21,11 @@ test("예산별 기관 요약 카드는 선정 유형과 진행 상태를 눌러
   );
   assert.match(
     page,
-    /budgetQuickFilter === "post-award"[\s\S]*isCompletedAwardStage/,
+    /budgetQuickFilter === "post-award"[\s\S]*budgetTargetStatus\(target\) !== "수주 후 진행"/,
   );
   assert.match(
     page,
-    /budgetQuickFilter === "complete"[\s\S]*!isCompletedAwardStage/,
+    /budgetQuickFilter === "complete"[\s\S]*budgetTargetStatus\(target\) !== "완료"/,
   );
   assert.match(
     page,
@@ -34,6 +34,29 @@ test("예산별 기관 요약 카드는 선정 유형과 진행 상태를 눌러
   assert.match(
     page,
     /current === "complete" \? "" : "complete"/,
+  );
+});
+
+test("예산별 기관은 수주 전 세부 영업 단계를 진행 중으로 통합한다", async () => {
+  const page = await source("../app/sales-map.tsx");
+  const statusResolver = page.slice(
+    page.indexOf("function budgetTargetStatus"),
+    page.indexOf("function budgetTargetSelection"),
+  );
+
+  assert.match(
+    statusResolver,
+    /awardStage === "미정" \|\| awardStage === "해당 없음"[\s\S]*"위즈업 선정"[\s\S]*"수주 후 진행"/,
+  );
+  assert.match(statusResolver, /"타업체 선정"/);
+  assert.match(statusResolver, /return "진행 중"/);
+  assert.doesNotMatch(
+    statusResolver,
+    /currentStatus|신규 접촉|상담 진행|제안·견적|결과 대기|재영업 상담/,
+  );
+  assert.match(
+    page,
+    /const budgetStatuses = \[[\s\S]*"진행 중"[\s\S]*"위즈업 선정"[\s\S]*"타업체 선정"[\s\S]*"수주 후 진행"[\s\S]*"완료"/,
   );
 });
 
