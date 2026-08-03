@@ -4,7 +4,7 @@ export type ScheduleReminderMember = {
   role: "admin" | "assistant" | "member";
 };
 
-const sharedInstallationSchedulePattern = /(?:설치|납품|시공|공사|입고)/;
+const sharedInstallationSchedulePattern = /(?:설치|납품|시공|공사|입고|출고|철거|통신|목공|도장|바닥|시스템|사인|검수)/;
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";

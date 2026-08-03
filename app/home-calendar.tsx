@@ -9,6 +9,7 @@ type HomeCalendarSchedule = {
   label: string;
   category: "sales" | "construction" | "showroom" | "personal";
   scheduledDate: string;
+  endDate: string;
   visibility: "private" | "shared-post-award";
   assigneeName: string;
 };
@@ -87,6 +88,7 @@ export default function HomeCalendar({
   const [saving, setSaving] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({
     organizationKey: "",
+    organizationQuery: "",
     kind: "영업",
     title: "",
     scheduledDate: todayValue,
@@ -142,27 +144,77 @@ export default function HomeCalendar({
     );
   }, [records]);
 
+  const matchedInstitutions = useMemo(() => {
+    const keyword = scheduleForm.organizationQuery.trim().toLocaleLowerCase("ko-KR");
+    if (keyword.length < 2) return [];
+    return institutionOptions
+      .filter(([, option]) =>
+        `${option.organization} ${option.region ?? ""}`.toLocaleLowerCase("ko-KR").includes(keyword),
+      )
+      .slice(0, 8);
+  }, [institutionOptions, scheduleForm.organizationQuery]);
+
+  function selectInstitution(key: string, option: CalendarInstitution) {
+    setScheduleForm((current) => ({
+      ...current,
+      organizationKey: key,
+      organizationQuery: option.organization,
+    }));
+  }
+
   async function saveSchedule() {
-    const selected = institutionOptions.find(([key]) => key === scheduleForm.organizationKey)?.[1];
-    if (!selected || !scheduleForm.title.trim() || saving) return;
+    const exactInstitutions = institutionOptions.filter(([, option]) =>
+      option.organization.trim().toLocaleLowerCase("ko-KR") ===
+      scheduleForm.organizationQuery.trim().toLocaleLowerCase("ko-KR"),
+    );
+    const selected = institutionOptions.find(([key]) => key === scheduleForm.organizationKey)?.[1]
+      ?? (exactInstitutions.length === 1 ? exactInstitutions[0][1] : undefined);
+    const organizationQuery = scheduleForm.organizationQuery.trim();
+    if (!organizationQuery || !scheduleForm.title.trim() || saving) return;
     setSaving(true);
     try {
+      let linked = Boolean(selected);
+      let organization = selected?.organization ?? organizationQuery;
+      let businessRound = selected?.businessRound ?? 0;
+      if (scheduleForm.kind === "영업" && !selected) {
+        const recordResponse = await fetch("/api/records", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            organization: organizationQuery,
+            activityDate: todayValue,
+            activityType: "기타",
+            region: "",
+            summary: "HOME 영업 일정 기관 등록",
+            businessRound: 1,
+            awardStatus: "미정",
+            awardStage: "미정",
+            skipInstitutionStateLookup: true,
+          }),
+        });
+        const recordPayload = (await recordResponse.json()) as { error?: string };
+        if (!recordResponse.ok) throw new Error(recordPayload.error || "기관을 등록하지 못했습니다.");
+        linked = true;
+        organization = organizationQuery;
+        businessRound = 1;
+      }
       const response = await fetch("/api/schedules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "add-general-schedule",
-          organization: selected.organization,
-          businessRound: selected.businessRound,
+          organization,
+          businessRound,
           label: `${scheduleForm.kind} · ${scheduleForm.title.trim()}`,
           scheduledDate: scheduleForm.scheduledDate,
           category: scheduleForm.kind === "쇼룸" ? "showroom" : "general",
+          linked,
         }),
       });
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(payload.error || "일정을 등록하지 못했습니다.");
       setEditorOpen(false);
-      setScheduleForm({ organizationKey: "", kind: "영업", title: "", scheduledDate: scheduleForm.scheduledDate });
+      setScheduleForm({ organizationKey: "", organizationQuery: "", kind: "영업", title: "", scheduledDate: scheduleForm.scheduledDate });
       setReloadVersion((current) => current + 1);
       setError("");
     } catch (caught) {
@@ -172,10 +224,7 @@ export default function HomeCalendar({
     }
   }
 
-  const usefulSchedules = useMemo(
-    () => schedules.filter((schedule) => schedule.visibility !== "private" || schedule.category === "personal"),
-    [schedules],
-  );
+  const usefulSchedules = schedules;
   const filteredSchedules = useMemo(
     () => usefulSchedules.filter((schedule) => filter === "all" || schedule.category === filter),
     [filter, usefulSchedules],
@@ -183,9 +232,14 @@ export default function HomeCalendar({
   const schedulesByDate = useMemo(() => {
     const grouped = new Map<string, HomeCalendarSchedule[]>();
     filteredSchedules.forEach((schedule) => {
-      const current = grouped.get(schedule.scheduledDate) ?? [];
-      current.push(schedule);
-      grouped.set(schedule.scheduledDate, current);
+      let currentDate = schedule.scheduledDate;
+      const lastDate = schedule.endDate || schedule.scheduledDate;
+      while (currentDate <= lastDate) {
+        const current = grouped.get(currentDate) ?? [];
+        current.push(schedule);
+        grouped.set(currentDate, current);
+        currentDate = dateValue(addDays(dateFromValue(currentDate), 1));
+      }
     });
     return grouped;
   }, [filteredSchedules]);
@@ -257,15 +311,33 @@ export default function HomeCalendar({
                 <button type="button" className={scheduleForm.kind === kind ? "active" : ""} key={kind} onClick={() => setScheduleForm({ ...scheduleForm, kind })}>{kind}</button>
               ))}
             </div>
-            <label>기관 <b>*</b>
-              <select value={scheduleForm.organizationKey} onChange={(event) => setScheduleForm({ ...scheduleForm, organizationKey: event.target.value })}>
-                <option value="">기관을 선택하세요</option>
-                {institutionOptions.map(([key, option]) => <option key={key} value={key}>{option.organization} · {option.businessRound}차{option.region ? ` · ${option.region}` : ""}</option>)}
-              </select>
+            <label className="home-schedule-institution">기관 또는 일정 장소 <b>*</b>
+              <input
+                value={scheduleForm.organizationQuery}
+                onChange={(event) => setScheduleForm({ ...scheduleForm, organizationQuery: event.target.value, organizationKey: "" })}
+                placeholder="기관명 2글자 이상 검색 또는 직접 입력"
+              />
+              {!scheduleForm.organizationKey && matchedInstitutions.length ? (
+                <div className="home-schedule-institution-results">
+                  {matchedInstitutions.map(([key, option]) => (
+                    <button type="button" key={key} onClick={() => selectInstitution(key, option)}>
+                      <strong>{option.organization}</strong>
+                      <small>{option.region || "지역 미등록"} · {option.businessRound}차 사업</small>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <small className="home-schedule-link-note">
+                {scheduleForm.organizationKey
+                  ? "기존 기관과 연결되어 상세 이력에도 표시됩니다."
+                  : scheduleForm.kind === "영업"
+                    ? "검색 결과가 없으면 새 기관으로 등록한 뒤 영업 일정에 연결합니다."
+                    : "기존 기관을 선택하면 상세 이력에 연결되고, 선택하지 않으면 자유 일정으로만 저장됩니다."}
+              </small>
             </label>
             <label>일정 제목 <b>*</b><input value={scheduleForm.title} onChange={(event) => setScheduleForm({ ...scheduleForm, title: event.target.value })} placeholder="예: 담당자 방문 미팅" /></label>
             <label>날짜 <b>*</b><input type="date" value={scheduleForm.scheduledDate} onChange={(event) => setScheduleForm({ ...scheduleForm, scheduledDate: event.target.value })} /></label>
-            <footer><button type="button" onClick={() => setEditorOpen(false)}>취소</button><button type="button" className="primary-button" disabled={saving || !scheduleForm.organizationKey || !scheduleForm.title.trim()} onClick={() => void saveSchedule()}>{saving ? "등록 중…" : "등록"}</button></footer>
+            <footer><button type="button" onClick={() => setEditorOpen(false)}>취소</button><button type="button" className="primary-button" disabled={saving || !scheduleForm.organizationQuery.trim() || !scheduleForm.title.trim()} onClick={() => void saveSchedule()}>{saving ? "등록 중…" : "등록"}</button></footer>
           </div>
         </div>
       ) : null}
@@ -311,7 +383,7 @@ export default function HomeCalendar({
           ) : selectedSchedules.length > 0 ? (
             <div className="home-calendar-agenda-list">
               {selectedSchedules.map((item) => (
-                <button type="button" key={item.id} onClick={() => onOpenOrganization(item.organization, item.businessRound)}>
+                <button type="button" key={item.id} onClick={() => { if (item.businessRound > 0) onOpenOrganization(item.organization, item.businessRound); }}>
                   <i className={item.category} />
                   <span><strong>{item.organization}</strong><small>{item.label}</small></span>
                   <em>{item.category === "personal" ? "개인" : item.category === "construction" ? "시공" : item.category === "showroom" ? "쇼룸" : "영업"}</em>

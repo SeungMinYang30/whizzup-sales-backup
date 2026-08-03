@@ -93,12 +93,6 @@ export default function ConstructionSchedulePage({
   const [hideCompleted, setHideCompleted] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState("");
-  const [newInstitutionOpen, setNewInstitutionOpen] = useState(false);
-  const [newInstitution, setNewInstitution] = useState({
-    organization: "",
-    region: "",
-    workSummary: "",
-  });
   const [editor, setEditor] = useState<EditorState | null>(null);
   const days = useMemo(
     () => Array.from({ length: 31 }, (_, index) => addDays(start, index)),
@@ -118,9 +112,9 @@ export default function ConstructionSchedulePage({
 
   const institutionOptions = useMemo(
     () =>
-      [...latestByScope.values()].sort((a, b) =>
-        a.organization.localeCompare(b.organization, "ko-KR"),
-      ),
+      [...latestByScope.values()]
+        .filter((record) => record.awardStatus === "위즈업 수주")
+        .sort((a, b) => a.organization.localeCompare(b.organization, "ko-KR")),
     [latestByScope],
   );
 
@@ -227,61 +221,6 @@ export default function ConstructionSchedulePage({
     }
   }
 
-  async function addNewInstitution() {
-    const organization = newInstitution.organization.trim();
-    if (!organization || saving) return;
-    setSaving(true);
-    try {
-      const recordResponse = await fetch("/api/records", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          organization,
-          activityDate: today,
-          activityType: "기타",
-          region: newInstitution.region.trim(),
-          summary: newInstitution.workSummary.trim() || "시공 일정표 기관 등록",
-          businessRound: 1,
-          awardStatus: "미정",
-          awardStage: "미정",
-          skipInstitutionStateLookup: true,
-        }),
-      });
-      const recordPayload = (await recordResponse.json()) as { error?: string };
-      if (!recordResponse.ok) {
-        throw new Error(recordPayload.error || "기관을 등록하지 못했습니다.");
-      }
-      const projectResponse = await fetch("/api/schedules", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "add-construction-project",
-          organization,
-          businessRound: 1,
-          workSummary: newInstitution.workSummary.trim(),
-        }),
-      });
-      const projectPayload = (await projectResponse.json()) as {
-        projects?: ConstructionProject[];
-        schedules?: ConstructionSchedule[];
-        error?: string;
-      };
-      if (!projectResponse.ok) {
-        throw new Error(projectPayload.error || "시공 일정표에 기관을 추가하지 못했습니다.");
-      }
-      setProjects(projectPayload.projects ?? []);
-      setSchedules(projectPayload.schedules ?? []);
-      setNewInstitution({ organization: "", region: "", workSummary: "" });
-      setNewInstitutionOpen(false);
-      setAddOpen(false);
-      setMessage("새 기관을 등록하고 시공 일정표에 연결했습니다.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "기관을 등록하지 못했습니다.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   function openEditor(project: ConstructionProject, selectedDate = today) {
     const current = schedulesByScope.get(scopeKey(project.organization, project.businessRound)) ?? [];
     const items: EditorItem[] = current.map((schedule) => ({
@@ -379,42 +318,53 @@ export default function ConstructionSchedulePage({
     }
   }
 
+  async function removeProject(project: ConstructionProject) {
+    if (saving || !window.confirm(`${project.organization}을(를) 시공 일정표에서 뺄까요?\n기관 정보와 영업·수주 기록은 유지됩니다.`)) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/schedules", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "remove-construction-project",
+          organization: project.organization,
+          businessRound: project.businessRound,
+        }),
+      });
+      const payload = (await response.json()) as {
+        projects?: ConstructionProject[];
+        schedules?: ConstructionSchedule[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || "일정표에서 기관을 빼지 못했습니다.");
+      setProjects(payload.projects ?? []);
+      setSchedules(payload.schedules ?? []);
+      setMessage("기관을 일정표에서 뺐습니다. 기관 정보와 영업·수주 기록은 유지됩니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "일정표에서 기관을 빼지 못했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function exportExcel() {
-    const exportRows = rows.flatMap(({ project, record, items }) =>
-      items.length
-        ? items.map((item) => [
-            record?.region || "지역 미등록",
-            project.organization,
-            `${project.businessRound}차 사업`,
-            project.workSummary,
-            record?.progressManager || "미정",
-            item.stage || item.label,
-            item.vendorName,
-            item.scheduledDate,
-            item.endDate || item.scheduledDate,
-            item.details,
-            project.completed ? "완료" : "진행",
-          ])
-        : [[
-            record?.region || "지역 미등록",
-            project.organization,
-            `${project.businessRound}차 사업`,
-            project.workSummary,
-            record?.progressManager || "미정",
-            "일정 미등록",
-            "",
-            "",
-            "",
-            "",
-            project.completed ? "완료" : "진행",
-          ]],
-    );
+    const exportRows = rows.map(({ project, record, items }) => [
+      record?.region || "지역 미등록",
+      project.organization,
+      `${project.businessRound}차 사업`,
+      project.workSummary || "공사·품목 미등록",
+      record?.progressManager || "미정",
+      ...days.map((day) => items
+        .filter((item) => item.scheduledDate <= day && (item.endDate || item.scheduledDate) >= day)
+        .map((item) => `${item.stage || item.label}${item.vendorName ? ` (${item.vendorName})` : ""}`)
+        .join(" / ")),
+    ]);
     downloadRowsXlsx({
       filename: `위즈업_시공납품일정_${start}.xlsx`,
       sheetName: "시공 납품 일정",
-      headers: ["지역", "기관명", "사업", "공사·품목", "진행 담당자", "단계", "시공 업체", "시작일", "종료일", "내용", "기관 상태"],
+      headers: ["지역", "기관명", "사업", "공사·품목", "진행 담당자", ...days.map((day) => dayLabel.format(new Date(`${day}T00:00:00Z`)))],
       rows: exportRows,
-      widths: [14, 28, 12, 28, 16, 12, 20, 13, 13, 32, 12],
+      widths: [14, 28, 12, 30, 16, ...days.map(() => 15)],
     });
   }
 
@@ -465,7 +415,7 @@ export default function ConstructionSchedulePage({
           <article className="construction-timeline-row" key={scopeKey(project.organization, project.businessRound)}>
             <div className="construction-fixed-cells">
               <span>{record?.region || "지역 미등록"}</span>
-              <button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}><strong>{project.organization}</strong><small>{project.businessRound}차 사업</small></button>
+              <span className="construction-institution-cell"><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}><strong>{project.organization}</strong><small>{project.businessRound}차 사업</small></button><button type="button" className="construction-remove-project" onClick={() => void removeProject(project)}>일정표에서 빼기</button></span>
               <span title={project.workSummary}>{project.workSummary || "공사·품목 미등록"}</span>
               <span>{record?.progressManager || "미정"}</span>
             </div>
@@ -485,7 +435,7 @@ export default function ConstructionSchedulePage({
                           openEditor(project, day);
                         }}
                       >
-                        {day === item.scheduledDate || day === days[0] ? item.stage || item.label : "·"}
+                        {item.stage || item.label}
                       </button>
                     ))}
                   </span>
@@ -504,6 +454,7 @@ export default function ConstructionSchedulePage({
             <p>{record?.region || "지역 미등록"} · {project.workSummary || "공사·품목 미등록"}</p>
             <div>{items.map((item) => <button type="button" key={item.id} onClick={() => openEditor(project, item.scheduledDate)}><b>{item.scheduledDate.slice(5).replace("-", "/")}</b>{item.stage || item.label}</button>)}</div>
             <button className="construction-mobile-edit" type="button" onClick={() => openEditor(project)}>일정 관리</button>
+            <button className="construction-mobile-remove" type="button" onClick={() => void removeProject(project)}>일정표에서 빼기</button>
           </article>
         ))}
       </div>
@@ -511,8 +462,8 @@ export default function ConstructionSchedulePage({
       {addOpen ? (
         <div className="schedule-editor-shell" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setAddOpen(false); }}>
           <div className="construction-add-dialog" role="dialog" aria-modal="true">
-            <header><div><span className="section-kicker">ADD INSTITUTION</span><h3>시공 일정표에 기관 추가</h3><p>기존 기관을 연결하므로 기관 관리와 상세페이지에 그대로 연동됩니다.</p></div><button type="button" onClick={() => setAddOpen(false)}>×</button></header>
-            <input autoFocus value={addQuery} onChange={(event) => setAddQuery(event.target.value)} placeholder="기관명 또는 지역 검색" />
+            <header><div><span className="section-kicker">ADD INSTITUTION</span><h3>시공 일정표에 기관 추가</h3><p>위즈업 수주로 전환된 기관만 검색되며 기관 상세페이지와 그대로 연결됩니다.</p></div><button type="button" onClick={() => setAddOpen(false)}>×</button></header>
+            <input autoFocus value={addQuery} onChange={(event) => setAddQuery(event.target.value)} placeholder="위즈업 수주 기관명 또는 지역 검색" />
             <div className="construction-add-results">
               {addOptions.map((option) => (
                 <button type="button" key={scopeKey(option.organization, option.businessRound)} disabled={saving} onClick={() => void addProject(option)}>
@@ -521,49 +472,6 @@ export default function ConstructionSchedulePage({
               ))}
               {!addOptions.length ? <p>추가할 수 있는 기관이 없습니다.</p> : null}
             </div>
-            <button
-              type="button"
-              className="construction-new-institution-toggle"
-              onClick={() => setNewInstitutionOpen((current) => !current)}
-            >
-              + 없는 기관 새로 등록
-            </button>
-            {newInstitutionOpen ? (
-              <div className="construction-new-institution-form">
-                <label>
-                  기관명 <b>*</b>
-                  <input
-                    value={newInstitution.organization}
-                    onChange={(event) => setNewInstitution({ ...newInstitution, organization: event.target.value })}
-                    placeholder="기관명을 입력하세요"
-                  />
-                </label>
-                <label>
-                  지역
-                  <input
-                    value={newInstitution.region}
-                    onChange={(event) => setNewInstitution({ ...newInstitution, region: event.target.value })}
-                    placeholder="예: 경기 하남"
-                  />
-                </label>
-                <label>
-                  공사·품목
-                  <input
-                    value={newInstitution.workSummary}
-                    onChange={(event) => setNewInstitution({ ...newInstitution, workSummary: event.target.value })}
-                    placeholder="예: 스크린·시스템 설치"
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="primary-button"
-                  disabled={saving || !newInstitution.organization.trim()}
-                  onClick={() => void addNewInstitution()}
-                >
-                  {saving ? "등록 중…" : "기관 등록 후 일정표에 추가"}
-                </button>
-              </div>
-            ) : null}
           </div>
         </div>
       ) : null}

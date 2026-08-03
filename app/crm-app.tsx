@@ -15826,7 +15826,7 @@ export default function CrmApp({
                 </button>
               </section>
 
-              <section className="my-schedule-panel" aria-labelledby="my-schedule-title">
+              {false && <section className="my-schedule-panel" aria-labelledby="my-schedule-title">
                 <div className="my-schedule-heading">
                   <div>
                     <span className="section-kicker">MY SCHEDULE</span>
@@ -15911,7 +15911,7 @@ export default function CrmApp({
                 <p className="my-schedule-note">
                   확인 완료한 지난 일정은 목록에서 사라지고 기록은 안전하게 유지됩니다.
                 </p>
-              </section>
+              </section>}
 
               <Suspense fallback={<DeferredPageFallback />}>
                 <ConstructionSchedulePage

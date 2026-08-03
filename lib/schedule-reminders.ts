@@ -20,6 +20,7 @@ export type ScheduleReminder = {
   label: string;
   category: "sales" | "construction" | "showroom" | "personal";
   scheduledDate: string;
+  endDate: string;
   visibility: ScheduleReminderVisibility;
   assigneeName: string;
   updatedAt: string;
@@ -41,10 +42,11 @@ function scheduleReminderFromRow(row: ReminderRow, conflict = false): ScheduleRe
   return {
     id: Number(row.id),
     organization: String(row.organization),
-    businessRound: Math.max(1, Number(row.business_round) || 1),
+    businessRound: Math.max(0, Number(row.business_round) || 0),
     label,
     category,
     scheduledDate: String(row.scheduled_date),
+    endDate: String(row.end_date || row.scheduled_date),
     visibility: isSharedPostAwardSchedule({
       awardStatus: row.award_status,
       label: row.label,
@@ -67,6 +69,7 @@ type ReminderRow = {
   label: string;
   category: string;
   scheduled_date: string;
+  end_date: string;
   created_by: number | null;
   created_by_name: string;
   source_author_id: number | null;
@@ -111,6 +114,7 @@ SELECT
   s.label,
   COALESCE(s.category, 'general') AS category,
   s.scheduled_date,
+  COALESCE(NULLIF(s.end_date, ''), s.scheduled_date) AS end_date,
   s.created_by,
   s.created_by_name,
   s.updated_at,
@@ -191,10 +195,11 @@ export async function listScheduleCalendarForMember(
     .prepare(
       `${reminderSelect}
        WHERE s.completed = 0
-         AND s.scheduled_date BETWEEN ? AND ?
+         AND s.scheduled_date <= ?
+         AND COALESCE(NULLIF(s.end_date, ''), s.scheduled_date) >= ?
        ORDER BY s.scheduled_date ASC, s.id ASC`,
     )
-    .bind(startDate, endDate)
+    .bind(endDate, startDate)
     .all<ReminderRow>();
 
   return result.results

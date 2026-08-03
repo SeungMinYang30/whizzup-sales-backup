@@ -7,6 +7,7 @@ import {
   addConstructionScheduleProject,
   listConstructionScheduleBoard,
   listOrganizationSchedules,
+  removeConstructionScheduleProject,
   replaceOrganizationSchedules,
   saveConstructionSchedules,
 } from "../../../lib/organization-schedules";
@@ -101,6 +102,7 @@ export async function POST(request: Request) {
         label: payload.label,
         scheduledDate: payload.scheduledDate,
         category: payload.category,
+        linked: payload.linked,
         memberId: member.id,
         memberName: member.displayName,
       }) });
@@ -114,6 +116,22 @@ export async function POST(request: Request) {
       workSummary: payload.workSummary,
       memberId: member.id,
       memberName: member.displayName,
+    }));
+  } catch (error) {
+    return accessErrorResponse(error);
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    await requireApprovedMember();
+    const payload = (await request.json()) as Record<string, unknown>;
+    if (payload.action !== "remove-construction-project") {
+      throw new Error("삭제할 일정표 기관을 확인해 주세요.");
+    }
+    return Response.json(await removeConstructionScheduleProject({
+      organization: payload.organization,
+      businessRound: payload.businessRound,
     }));
   } catch (error) {
     return accessErrorResponse(error);

@@ -159,7 +159,7 @@ function scheduleJson(row: Record<string, unknown>): OrganizationSchedule {
   return {
     id: Number(row.id),
     organization: String(row.organization ?? ""),
-    businessRound: Math.max(1, Number(row.business_round) || 1),
+    businessRound: Math.max(0, Number(row.business_round) || 0),
     label: String(row.label ?? ""),
     scheduledDate: String(row.scheduled_date ?? ""),
     category: String(row.category ?? "general"),
@@ -178,6 +178,50 @@ function scheduleJson(row: Record<string, unknown>): OrganizationSchedule {
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
   };
+}
+
+async function requireWhizzupAwardScope(
+  d1: Awaited<ReturnType<typeof ensureOrganizationSchedulesReady>>,
+  organization: string,
+  businessRound: number,
+) {
+  const latest = await d1.prepare(
+    `SELECT award_status
+     FROM activities
+     WHERE organization = ? AND business_round = ?
+     ORDER BY activity_date DESC, id DESC
+     LIMIT 1`,
+  ).bind(organization, businessRound).first<{ award_status: string }>();
+  if (clean(latest?.award_status) !== "위즈업 수주") {
+    throw new Error("시공 일정표에는 위즈업 수주 기관만 추가할 수 있습니다.");
+  }
+}
+
+async function pruneConstructionBoardToWhizzupAwards(
+  d1: Awaited<ReturnType<typeof ensureOrganizationSchedulesReady>>,
+) {
+  const latestWhizzupAward = (owner: string) => `EXISTS (
+    SELECT 1 FROM activities latest
+    WHERE latest.id = (
+      SELECT candidate.id FROM activities candidate
+      WHERE candidate.organization = ${owner}.organization
+        AND candidate.business_round = ${owner}.business_round
+      ORDER BY candidate.activity_date DESC, candidate.id DESC
+      LIMIT 1
+    )
+      AND TRIM(COALESCE(latest.award_status, '')) = '위즈업 수주'
+  )`;
+  await d1.batch([
+    d1.prepare(
+      `DELETE FROM organization_schedules
+       WHERE category = 'construction'
+         AND NOT ${latestWhizzupAward("organization_schedules")}`,
+    ),
+    d1.prepare(
+      `DELETE FROM construction_schedule_projects
+       WHERE NOT ${latestWhizzupAward("construction_schedule_projects")}`,
+    ),
+  ]);
 }
 
 async function importLegacyScheduleIfNeeded(
@@ -274,6 +318,7 @@ function normalizeConstructionScheduleInputs(value: unknown) {
 
 export async function listConstructionScheduleBoard() {
   const d1 = await ensureOrganizationSchedulesReady();
+  await pruneConstructionBoardToWhizzupAwards(d1);
   const [projectsResult, schedulesResult] = await Promise.all([
     d1.prepare(
       `SELECT * FROM construction_schedule_projects
@@ -309,6 +354,7 @@ export async function addConstructionScheduleProject(input: {
   const businessRound = Math.max(1, Number(input.businessRound) || 1);
   if (!organization) throw new Error("추가할 기관을 선택해 주세요.");
   const d1 = await ensureOrganizationSchedulesReady();
+  await requireWhizzupAwardScope(d1, organization, businessRound);
   await d1.prepare(
     `INSERT INTO construction_schedule_projects (
        organization, business_round, work_summary, completed,
@@ -338,11 +384,13 @@ export async function addOrganizationSchedule(input: {
   label: unknown;
   scheduledDate: unknown;
   category?: unknown;
+  linked?: unknown;
   memberId: number;
   memberName: string;
 }) {
   const organization = clean(input.organization).slice(0, 120);
-  const businessRound = Math.max(1, Number(input.businessRound) || 1);
+  const linked = input.linked !== false;
+  const businessRound = linked ? Math.max(1, Number(input.businessRound) || 1) : 0;
   const label = clean(input.label).slice(0, 120);
   const scheduledDate = validDate(input.scheduledDate);
   const category = clean(input.category) === "showroom" ? "showroom" : "general";
@@ -374,6 +422,7 @@ export async function addOrganizationSchedule(input: {
       input.memberName,
     ).run();
   }
+  if (!linked) return [];
   const general = await listOrganizationSchedules(organization, businessRound);
   const construction = await d1.prepare(
     `SELECT * FROM organization_schedules
@@ -400,6 +449,8 @@ export async function saveConstructionSchedules(input: {
   if (!organization) throw new Error("기관을 확인해 주세요.");
   const schedules = normalizeConstructionScheduleInputs(input.schedules);
   const d1 = await ensureOrganizationSchedulesReady();
+  await requireWhizzupAwardScope(d1, organization, businessRound);
+  const projectCompleted = input.completed === true;
   await d1.batch([
     d1.prepare(
       `INSERT INTO construction_schedule_projects (
@@ -416,7 +467,7 @@ export async function saveConstructionSchedules(input: {
       organization,
       businessRound,
       clean(input.workSummary).slice(0, 240),
-      input.completed === true ? 1 : 0,
+      projectCompleted ? 1 : 0,
       input.memberId,
       input.memberName,
       input.memberId,
@@ -441,22 +492,79 @@ export async function saveConstructionSchedules(input: {
       schedule.endDate || schedule.scheduledDate,
       schedule.vendorName || "",
       schedule.details || "",
-      schedule.completed ? 1 : 0,
+      schedule.completed || projectCompleted ? 1 : 0,
       input.memberId,
       input.memberName,
       input.memberId,
       input.memberName,
     )),
   ]);
+  const hasInspection = schedules.some((schedule) => schedule.stage === "검수");
+  const hasShipment = schedules.some((schedule) => schedule.stage === "출고");
+  if (hasInspection && projectCompleted) {
+    await d1.prepare(
+      `UPDATE activities
+       SET award_stage = '납품 완료', updated_at = CURRENT_TIMESTAMP
+       WHERE id = (
+         SELECT id FROM activities
+         WHERE organization = ? AND business_round = ? AND award_status = '위즈업 수주'
+         ORDER BY activity_date DESC, id DESC LIMIT 1
+       )`,
+    ).bind(organization, businessRound).run();
+  } else if (hasShipment) {
+    await d1.prepare(
+      `UPDATE activities
+       SET award_stage = CASE WHEN award_stage = '납품 완료' THEN award_stage ELSE '설치·공사 진행' END,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = (
+         SELECT id FROM activities
+         WHERE organization = ? AND business_round = ? AND award_status = '위즈업 수주'
+         ORDER BY activity_date DESC, id DESC LIMIT 1
+       )`,
+    ).bind(organization, businessRound).run();
+  }
   const general = await listOrganizationSchedules(organization, businessRound);
   await mirrorOpenSchedulesToLatestActivity(d1, organization, businessRound, [
     ...general,
     ...schedules.map((schedule) => ({
       label: schedule.stage,
       scheduledDate: schedule.scheduledDate,
-      completed: schedule.completed,
+      completed: schedule.completed || projectCompleted,
     })),
   ]);
+  return listConstructionScheduleBoard();
+}
+
+export async function removeConstructionScheduleProject(input: {
+  organization: unknown;
+  businessRound: unknown;
+}) {
+  const organization = clean(input.organization).slice(0, 120);
+  const businessRound = Math.max(1, Number(input.businessRound) || 1);
+  if (!organization) throw new Error("일정표에서 뺄 기관을 확인해 주세요.");
+  const d1 = await ensureOrganizationSchedulesReady();
+  const generalResult = await d1.prepare(
+    `SELECT * FROM organization_schedules
+     WHERE organization = ? AND business_round = ?
+       AND COALESCE(category, 'general') <> 'construction'
+     ORDER BY completed ASC, scheduled_date ASC, id ASC`,
+  ).bind(organization, businessRound).all<Record<string, unknown>>();
+  await d1.batch([
+    d1.prepare(
+      `DELETE FROM organization_schedules
+       WHERE organization = ? AND business_round = ? AND category = 'construction'`,
+    ).bind(organization, businessRound),
+    d1.prepare(
+      `DELETE FROM construction_schedule_projects
+       WHERE organization = ? AND business_round = ?`,
+    ).bind(organization, businessRound),
+  ]);
+  await mirrorOpenSchedulesToLatestActivity(
+    d1,
+    organization,
+    businessRound,
+    generalResult.results.map(scheduleJson),
+  );
   return listConstructionScheduleBoard();
 }
 

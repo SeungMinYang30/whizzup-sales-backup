@@ -10689,6 +10689,9 @@ tr:hover .row-actions { opacity: 1; }
 .construction-fixed-cells strong { color: #172943; font-size: 14px; }
 .construction-fixed-cells small { margin-top: 4px; font-size: 12px; }
 .construction-fixed-cells span { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.construction-institution-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; overflow: visible !important; white-space: normal !important; }
+.construction-institution-cell > button:first-child { display: flex; width: 100%; padding: 0; flex-direction: column; align-items: flex-start; gap: 4px; border: 0; background: transparent; color: inherit; text-align: left; }
+.construction-remove-project { padding: 0; border: 0; background: transparent; color: #c54d42; font-size: 11px; font-weight: 800; }
 .construction-days { grid-template-columns: repeat(31, 74px); }
 .construction-days > span { min-height: 45px; padding: 10px 3px; font-size: 12px; }
 .construction-row-days { min-height: 72px; }
@@ -10700,6 +10703,7 @@ tr:hover .row-actions { opacity: 1; }
 .construction-event.stage-3 { background: #d9e7ff; color: #315da1; }
 .construction-event.stage-4 { background: #d9f3eb; color: #06785b; }
 .construction-mobile-edit { width: 100%; min-height: 40px; margin-top: 10px; border: 1px solid #cbd7ed; border-radius: 8px; background: #fff; color: #355bb1; font-size: 13px; font-weight: 850; }
+.construction-mobile-remove { width: 100%; min-height: 38px; margin-top: 7px; border: 1px solid #efcbc6; border-radius: 8px; background: #fff8f7; color: #b84338; font-size: 12px; font-weight: 850; }
 .construction-add-dialog { width: min(580px, 94vw); max-height: 82vh; padding: 22px; overflow: hidden; border-radius: 18px; background: #fff; }
 .construction-add-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid #e2e7ef; }
 .construction-add-dialog h3 { margin: 5px 0; font-size: 22px; }
@@ -10765,6 +10769,13 @@ tr:hover .row-actions { opacity: 1; }
 .home-schedule-editor > label { display: grid; gap: 7px; margin-top: 13px; color: #35445d; font-size: 13px; font-weight: 850; }
 .home-schedule-editor > label input,
 .home-schedule-editor > label select { width: 100%; min-height: 44px; border: 1px solid #ccd6e8; border-radius: 8px; padding: 0 12px; background: #fff; color: #1e2c44; font-size: 14px; }
+.home-schedule-institution { position: relative; }
+.home-schedule-institution-results { display: grid; max-height: 220px; overflow-y: auto; border: 1px solid #ccd6e8; border-radius: 9px; background: #fff; box-shadow: 0 12px 28px rgba(29, 46, 78, .12); }
+.home-schedule-institution-results > button { display: grid; gap: 4px; padding: 10px 12px; border: 0; border-bottom: 1px solid #edf0f5; background: #fff; color: #24344e; text-align: left; }
+.home-schedule-institution-results > button:hover { background: #f4f6ff; }
+.home-schedule-institution-results strong { font-size: 14px; }
+.home-schedule-institution-results small { color: #7d899c; font-size: 12px; }
+.home-schedule-link-note { color: #77849a; font-size: 11px; font-weight: 650; line-height: 1.5; }
 .home-schedule-kind { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
 .home-schedule-kind button { min-height: 40px; border: 1px solid #d4dceb; border-radius: 9px; background: #fff; color: #53627a; font-size: 13px; font-weight: 850; }
 .home-schedule-kind button.active { border-color: #4561ea; background: #eef2ff; color: #354fce; }
