@@ -34,6 +34,7 @@ import {
   ensureTrashReady,
 } from "../../../../lib/trash-store";
 import { ensureJointProjectsReady } from "../../../../lib/joint-projects";
+import { parseStoredActivityBudgetMoney } from "../../../../lib/activity-budgets";
 
 export const dynamic = "force-dynamic";
 
@@ -218,6 +219,46 @@ async function backfillCampaignInstitutionBasics(d1: D1Database) {
   for (const statement of buildCampaignAssignmentBackfillStatements()) {
     await d1.prepare(statement).run();
   }
+  const linkedBudgets = await d1
+    .prepare(
+      `SELECT
+         target.id,
+         target.budget_amount,
+         activity.budget_amount AS activity_budget_amount
+       FROM sales_campaign_targets target
+       JOIN activities activity ON activity.id = target.activity_id
+       WHERE target.budget_amount IS NOT NULL
+         AND TRIM(COALESCE(activity.budget_amount, '')) <> ''`,
+    )
+    .all<{
+      id: number;
+      budget_amount: number;
+      activity_budget_amount: string;
+    }>();
+  const budgetRepairs = linkedBudgets.results.flatMap((row) => {
+    const oldParsedAmount = parseMoney(row.activity_budget_amount);
+    const correctedAmount = parseStoredActivityBudgetMoney(
+      row.activity_budget_amount,
+    );
+    if (
+      oldParsedAmount === null ||
+      correctedAmount <= 0 ||
+      correctedAmount === oldParsedAmount ||
+      Number(row.budget_amount) !== oldParsedAmount
+    ) {
+      return [];
+    }
+    return [
+      d1
+        .prepare(
+          `UPDATE sales_campaign_targets
+           SET budget_amount = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ? AND budget_amount = ?`,
+        )
+        .bind(correctedAmount, Number(row.id), oldParsedAmount),
+    ];
+  });
+  await runStatementsInChunks(d1, budgetRepairs);
 }
 
 async function removeCreatedActivities(
@@ -1621,7 +1662,8 @@ export async function PATCH(request: Request) {
           `${campaign.name} 기존 기관 연결`,
           Number(row.assigned_member_id) || null,
           Number(row.id),
-          parseMoney(row.budget_amount) ?? campaign.default_budget_amount,
+          parseStoredActivityBudgetMoney(row.budget_amount) ||
+            campaign.default_budget_amount,
           Math.max(1, Number(row.business_round) || 1),
         ),
     );

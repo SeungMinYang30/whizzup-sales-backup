@@ -4865,6 +4865,16 @@ export default function SalesMapPage({
                   <strong>
                     {budgetSelectedTargetIds.length.toLocaleString("ko-KR")}곳 선택
                   </strong>
+                  <button
+                    type="button"
+                    disabled={!budgetSelectedTargetIds.length}
+                    onClick={() => {
+                      setBudgetSelectedTargetIds([]);
+                      setBudgetBulkAssigneeId("");
+                    }}
+                  >
+                    선택 전체 해제
+                  </button>
                   <select
                     value={budgetBulkAssigneeId}
                     onChange={(event) =>

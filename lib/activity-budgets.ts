@@ -203,6 +203,54 @@ export function parseBudgetMoney(value: unknown) {
   return Number.isFinite(number) && number > 0 ? Math.round(number) : 0;
 }
 
+/**
+ * 과거 영업 기록의 금액 입력은 단위 없는 1,000,000 미만 숫자를
+ * `만원` 단위로 저장했습니다. 이 규칙은 일반 금액 입력에는 적용하지 않고,
+ * 이미 저장된 활동 기록을 원 단위 데이터로 옮길 때만 사용합니다.
+ */
+export function parseStoredActivityBudgetMoney(value: unknown) {
+  const source = String(value ?? "").trim();
+  if (!source || source === "미정") return 0;
+  const normalized = source.replace(/,/g, "").replace(/\s+/g, "");
+  const parseKoreanPart = (part: string) => {
+    const direct = Number(part);
+    if (Number.isFinite(direct)) return direct;
+    let total = 0;
+    let remainder = part;
+    (["천", "백", "십"] as const).forEach((unit) => {
+      const multiplier = unit === "천" ? 1_000 : unit === "백" ? 100 : 10;
+      const matched = remainder.match(
+        new RegExp(`(\\d+(?:\\.\\d+)?)${unit}`),
+      );
+      if (!matched) return;
+      total += Number(matched[1]) * multiplier;
+      remainder = remainder.replace(matched[0], "");
+    });
+    const plain = Number(remainder);
+    return total + (Number.isFinite(plain) ? plain : 0);
+  };
+  let remainder = normalized.replace(/원/g, "");
+  let total = 0;
+  let hasLargeUnit = false;
+  const eok = remainder.match(/^(.+?)억/);
+  if (eok) {
+    total += parseKoreanPart(eok[1]) * 100_000_000;
+    remainder = remainder.slice(eok[0].length);
+    hasLargeUnit = true;
+  }
+  const man = remainder.match(/^(.+?)만/);
+  if (man) {
+    total += parseKoreanPart(man[1]) * 10_000;
+    remainder = remainder.slice(man[0].length);
+    hasLargeUnit = true;
+  }
+  if (hasLargeUnit) return Math.round(total);
+  const parsed = Number(remainder.replace(/[^\d.-]/g, ""));
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  if (/원/.test(normalized)) return Math.round(parsed);
+  return parsed < 1_000_000 ? Math.round(parsed * 10_000) : Math.round(parsed);
+}
+
 export function summarizeActivityBudgets(
   budgets: ActivityBudgetAllocation[],
 ) {

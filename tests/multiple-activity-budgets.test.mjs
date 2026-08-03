@@ -6,6 +6,7 @@ import {
   activityBudgetsFromRecord,
   canonicalBusinessRoundBudgets,
   parseBudgetMoney,
+  parseStoredActivityBudgetMoney,
   serializeActivityBudgets,
   summarizeActivityBudgets,
 } from "../lib/activity-budgets.ts";
@@ -48,6 +49,14 @@ test("keeps multiple budgets in one activity while retaining the legacy primary 
     enteredAmountCount: 2,
     missingAmountCount: 0,
   });
+});
+
+test("stored activity budgets preserve the legacy man-won convention only when the unit is omitted", () => {
+  assert.equal(parseStoredActivityBudgetMoney("5000"), 50_000_000);
+  assert.equal(parseStoredActivityBudgetMoney("5,000만원"), 50_000_000);
+  assert.equal(parseStoredActivityBudgetMoney("5천만원"), 50_000_000);
+  assert.equal(parseStoredActivityBudgetMoney("50,000,000"), 50_000_000);
+  assert.equal(parseStoredActivityBudgetMoney("5,000원"), 5_000);
 });
 
 test("multiple budget summary reports only actionable missing amounts", () => {

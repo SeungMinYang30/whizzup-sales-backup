@@ -7651,7 +7651,6 @@ export default function CrmApp({
     awardManagerFilter,
     awardSort,
     budgetGroupFilter,
-    search,
     statusFilter,
     view,
   ]);
@@ -8006,7 +8005,6 @@ export default function CrmApp({
     budgetGroupFilter,
     followupDueSoonOnly,
     followupSort,
-    search,
     statusFilter,
     typeFilter,
     view,
@@ -17396,6 +17394,15 @@ export default function CrmApp({
                         : ""
                     }`}
                   </button>
+                  {selectedInstitutionIds.length > 0 && (
+                    <button
+                      type="button"
+                      className="excel-export-button"
+                      onClick={clearInstitutionSelection}
+                    >
+                      선택 전체 해제
+                    </button>
+                  )}
                   {canManageRecords && (
                     <button
                       type="button"
@@ -18344,6 +18351,15 @@ export default function CrmApp({
                       onClick={toggleAwardBulkEditor}
                     >
                       선택 정보 변경
+                    </button>
+                  )}
+                  {view === "awards" && selectedAwardIds.length > 0 && (
+                    <button
+                      type="button"
+                      className="excel-export-button"
+                      onClick={clearAwardSelection}
+                    >
+                      선택 전체 해제
                     </button>
                   )}
                   {view === "awards" && canManageRecords && (
