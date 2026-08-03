@@ -1,6 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  addConstructionDays,
+  constructionStageTone,
+  getConstructionTimelineDays,
+  type ConstructionDayMeta,
+} from "../lib/construction-calendar";
 import { downloadConstructionTimelineXlsx } from "./activity-xlsx";
 
 type ScheduleRecord = {
@@ -63,17 +69,6 @@ type EditorState = {
 const STAGES = ["출고", "철거", "통신", "목공", "도장", "바닥", "시스템", "납품", "사인", "검수"];
 const localDate = (date = new Date()) =>
   new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-const addDays = (value: string, days: number) => {
-  const date = new Date(`${value}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-};
-const dayLabel = new Intl.DateTimeFormat("ko-KR", {
-  month: "numeric",
-  day: "numeric",
-  weekday: "short",
-  timeZone: "UTC",
-});
 const scopeKey = (organization: string, businessRound: number) =>
   `${organization}\u001f${businessRound}`;
 const itemKey = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -108,9 +103,14 @@ export default function ConstructionSchedulePage({
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [editor, setEditor] = useState<EditorState | null>(null);
-  const days = useMemo(
-    () => Array.from({ length: 31 }, (_, index) => addDays(start, index)),
-    [start],
+  const dayMetas = useMemo(
+    () => getConstructionTimelineDays(start, 31, today),
+    [start, today],
+  );
+  const days = useMemo(() => dayMetas.map((day) => day.date), [dayMetas]);
+  const dayMetaByDate = useMemo(
+    () => new Map(dayMetas.map((day) => [day.date, day])),
+    [dayMetas],
   );
 
   const latestByScope = useMemo(() => {
@@ -383,8 +383,7 @@ export default function ConstructionSchedulePage({
   function exportExcel() {
     const exportRows = rows.map(({ project, record, items }) => [
       record?.region || "지역 미등록",
-      project.organization,
-      `${project.businessRound}차 사업`,
+      `${project.organization}\n${project.businessRound}차 사업`,
       displayWorkSummary(project) || "공사·품목 미등록",
       record?.progressManager || "미정",
       ...days.map((day) => items
@@ -396,15 +395,23 @@ export default function ConstructionSchedulePage({
       filename: `위즈업_시공납품일정_${start}.xlsx`,
       startDate: start,
       endDate: days.at(-1) ?? start,
-      headers: ["지역", "기관명", "사업", "공사·품목", "진행 담당자", ...days.map((day) => dayLabel.format(new Date(`${day}T00:00:00Z`)))],
+      headers: ["지역", "기관명", "공사·품목", "담당자", ...dayMetas.map((day) => day.label)],
       rows: exportRows,
-      widths: [14, 28, 12, 30, 16, ...days.map(() => 15)],
-      fixedColumnCount: 5,
-      todayColumnIndex: days.indexOf(today) >= 0 ? days.indexOf(today) + 5 : -1,
+      widths: [14, 28, 30, 16, ...days.map(() => 15)],
+      fixedColumnCount: 4,
+      days: dayMetas,
+      filterSummary: `${query.trim() ? `검색: ${query.trim()}` : "전체 기관"} · ${hideCompleted ? "완료 기관 제외" : "완료 기관 포함"}`,
     });
   }
 
-  const shift = (amount: number) => setStart(addDays(start, amount));
+  const shift = (amount: number) => setStart(addConstructionDays(start, amount));
+
+  const dayClassName = (day: ConstructionDayMeta) => [
+    day.isSaturday ? "saturday" : "",
+    day.isSunday ? "sunday" : "",
+    day.isHoliday ? "holiday" : "",
+    day.isToday ? "today" : "",
+  ].filter(Boolean).join(" ");
 
   return (
     <section className={`construction-schedule-workspace${embedded ? " is-embedded" : ""}`}>
@@ -443,7 +450,13 @@ export default function ConstructionSchedulePage({
         <div className="construction-timeline-head">
           <div className="construction-fixed-head"><span>지역</span><span>기관명</span><span>공사·품목</span><span>담당자</span></div>
           <div className="construction-days">
-            {days.map((day) => <span className={day === today ? "today" : ""} key={day}>{dayLabel.format(new Date(`${day}T00:00:00Z`))}</span>)}
+            {dayMetas.map((day) => (
+              <span className={dayClassName(day)} key={day.date} title={day.holidayName || undefined}>
+                <b className="construction-day-label">{day.label}</b>
+                {day.holidayName ? <small className="construction-holiday-name">{day.holidayName}</small> : null}
+                {day.isToday ? <i className="construction-today-badge">오늘</i> : null}
+              </span>
+            ))}
           </div>
         </div>
         {loading ? <div className="empty-state">일정표를 불러오는 중입니다.</div> : null}
@@ -466,11 +479,11 @@ export default function ConstructionSchedulePage({
               {days.map((day) => {
                 const dayItems = items.filter((item) => item.scheduledDate <= day && (item.endDate || item.scheduledDate) >= day);
                 return (
-                  <span className={day === today ? "today" : ""} key={day} onClick={() => openEditor(project, day)}>
+                  <span className={dayClassName(dayMetaByDate.get(day) as ConstructionDayMeta)} key={day} onClick={() => openEditor(project, day)}>
                     {dayItems.map((item) => (
                       <button
                         type="button"
-                        className={`construction-event stage-${STAGES.indexOf(item.stage || item.label) % 5}`}
+                        className={`construction-event stage-${constructionStageTone(item.stage || item.label)}`}
                         key={item.id}
                         title={`${item.stage || item.label} · ${item.vendorName || "업체 미정"} · ${item.scheduledDate}~${item.endDate || item.scheduledDate}`}
                         onClick={(event) => {
@@ -495,7 +508,10 @@ export default function ConstructionSchedulePage({
           <article key={scopeKey(project.organization, project.businessRound)}>
             <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{record?.progressManager || "미정"}</span></header>
             <p>{record?.region || "지역 미등록"} · {displayWorkSummary(project) || "공사·품목 미등록"}</p>
-            <div>{items.map((item) => <button type="button" key={item.id} onClick={() => openEditor(project, item.scheduledDate)}><b>{item.scheduledDate.slice(5).replace("-", "/")}</b>{item.stage || item.label}</button>)}</div>
+            <div>{items.map((item) => {
+              const day = dayMetaByDate.get(item.scheduledDate);
+              return <button type="button" className={day ? dayClassName(day) : ""} key={item.id} onClick={() => openEditor(project, item.scheduledDate)}><b>{item.scheduledDate.slice(5).replace("-", "/")}</b>{item.stage || item.label}{day?.holidayName ? <small>{day.holidayName}</small> : null}</button>;
+            })}</div>
             <button className="construction-mobile-edit" type="button" onClick={() => openEditor(project)}>일정 관리</button>
             <button className="construction-mobile-remove" type="button" onClick={() => void removeProject(project)}>일정표에서 빼기</button>
           </article>

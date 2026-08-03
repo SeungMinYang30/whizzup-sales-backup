@@ -10845,6 +10845,31 @@ tr:hover .row-actions { opacity: 1; }
 .home-schedule-editor footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; padding-top: 15px; border-top: 1px solid #e5e9f0; }
 .home-schedule-editor footer button { min-width: 82px; min-height: 42px; }
 
+/* 시공·납품 일정표의 화면/엑셀 공통 의미 색상: 토요일, 휴일, 오늘 */
+.construction-days > span { position: relative; flex-direction: column; gap: 2px; }
+.construction-day-label { font: inherit; font-weight: 850; }
+.construction-holiday-name { max-width: 100%; overflow: hidden; color: #c94343; font-size: 9px; font-weight: 850; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.construction-today-badge { padding: 1px 4px; border-radius: 999px; background: #d7f4eb; color: #087a63; font-size: 9px; font-style: normal; font-weight: 900; line-height: 1.2; }
+.construction-days > span.saturday { background: #fff8f2; color: #9a6548; }
+.construction-days > span.sunday,
+.construction-days > span.holiday { background: #fff0f0; color: #c94343; }
+.construction-days > span.today { background: #e8f8f4; color: #087a63; box-shadow: inset 2px 0 #17a887, inset -2px 0 #17a887; }
+.construction-days > span.today.saturday,
+.construction-days > span.today.sunday,
+.construction-days > span.today.holiday { background: linear-gradient(135deg, #e8f8f4 0 52%, #fff0f0 52% 100%); color: #087a63; box-shadow: inset 2px 0 #17a887, inset -2px 0 #17a887; }
+.construction-row-days > span.saturday { background: #fffaf6; }
+.construction-row-days > span.sunday,
+.construction-row-days > span.holiday { background: #fff5f5; }
+.construction-row-days > span.today { background: #f0fbf8; }
+.construction-row-days > span.today.saturday,
+.construction-row-days > span.today.sunday,
+.construction-row-days > span.today.holiday { background: linear-gradient(135deg, #f0fbf8 0 52%, #fff5f5 52% 100%); }
+.construction-mobile-list article > div button.saturday { background: #fff8f2; color: #8f5b3f; }
+.construction-mobile-list article > div button.sunday,
+.construction-mobile-list article > div button.holiday { background: #fff0f0; color: #b43e3e; }
+.construction-mobile-list article > div button.today { outline: 2px solid #17a887; background: #e8f8f4; color: #087a63; }
+.construction-mobile-list article > div button small { font-size: 10px; opacity: .8; }
+
 @media (max-width: 1000px) {
   .construction-schedule-toolbar { grid-template-columns: 1fr; }
   .construction-schedule-actions { justify-content: flex-start; }

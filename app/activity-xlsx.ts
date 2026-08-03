@@ -2,6 +2,10 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { canonicalInstitutionName } from "../lib/institution-names";
 import { regionFromAddress } from "../lib/region-from-address";
 import {
+  constructionStageTone,
+  type ConstructionDayMeta,
+} from "../lib/construction-calendar";
+import {
   AWARD_STAGE_OPTIONS,
   COMPLETED_AWARD_STAGE,
   normalizeAwardStage,
@@ -618,23 +622,15 @@ export type ConstructionTimelineExportOptions = {
   rows: string[][];
   widths: number[];
   fixedColumnCount: number;
-  todayColumnIndex: number;
+  days: ConstructionDayMeta[];
+  filterSummary?: string;
 };
 
-function constructionStageStyle(value: string, fallback: number) {
-  const normalized = value.replaceAll(" ", "");
-  if (!normalized) return fallback;
-  if (normalized.includes("출고")) return 8;
-  if (normalized.includes("검수") || normalized.includes("납품")) return 11;
-  if (normalized.includes("목공") || normalized.includes("통신")) return 10;
-  if (
-    normalized.includes("철거") ||
-    normalized.includes("도장") ||
-    normalized.includes("바닥") ||
-    normalized.includes("시스템") ||
-    normalized.includes("사인")
-  ) return 9;
-  return 12;
+function constructionStageStyle(value: string, fallback: number, isToday: boolean) {
+  if (!value.trim()) return fallback;
+  const tone = constructionStageTone(value);
+  if (tone < 0) return isToday ? 29 : 15;
+  return (isToday ? 24 : 10) + tone;
 }
 
 export function downloadConstructionTimelineXlsx(
@@ -642,35 +638,44 @@ export function downloadConstructionTimelineXlsx(
 ) {
   const lastColumnIndex = Math.max(0, options.headers.length - 1);
   const lastColumn = columnName(lastColumnIndex);
-  const title = `시공·납품 일정표  ${options.startDate} ~ ${options.endDate}`;
-  const todayColumn = options.todayColumnIndex;
+  const title = `시공·납품 일정표  ${options.startDate} ~ ${options.endDate}${options.filterSummary ? `  |  ${options.filterSummary}` : ""}`;
   const headerCells = options.headers
     .map((value, columnIndex) => {
-      const style =
-        columnIndex === todayColumn
+      if (columnIndex < options.fixedColumnCount) {
+        return inlineCell(`${columnName(columnIndex)}2`, value, 2);
+      }
+      const day = options.days[columnIndex - options.fixedColumnCount];
+      const annotations = [day?.holidayName, day?.isToday ? "오늘" : ""].filter(Boolean);
+      const label = `${day?.label ?? value}${annotations.length ? `\n${annotations.join(" · ")}` : ""}`;
+      const isHolidayLike = Boolean(day?.isHoliday || day?.isSunday || day?.isSaturday);
+      const style = day?.isToday
+        ? isHolidayLike ? 7 : 6
+        : day?.isHoliday || day?.isSunday
           ? 5
-          : columnIndex >= options.fixedColumnCount && /\([토일]\)/.test(value)
+          : day?.isSaturday
             ? 4
-            : columnIndex >= options.fixedColumnCount
-              ? 3
-              : 2;
-      return inlineCell(`${columnName(columnIndex)}2`, value, style);
+            : 3;
+      return inlineCell(`${columnName(columnIndex)}2`, label, style);
     })
     .join("");
   const dataRows = options.rows
     .map((row, rowIndex) => {
-      const fallback = rowIndex % 2 === 0 ? 6 : 7;
       const cells = options.headers
         .map((_, columnIndex) => {
           const value = String(row[columnIndex] ?? "");
-          const style =
-            columnIndex === todayColumn
-              ? value
-                ? constructionStageStyle(value, 14)
-                : 14
-              : columnIndex >= options.fixedColumnCount
-                ? constructionStageStyle(value, fallback)
-                : fallback;
+          let style = rowIndex % 2 === 0 ? 8 : 9;
+          if (columnIndex >= options.fixedColumnCount) {
+            const day = options.days[columnIndex - options.fixedColumnCount];
+            const isHolidayLike = Boolean(day?.isHoliday || day?.isSunday || day?.isSaturday);
+            const blankStyle = day?.isToday
+              ? isHolidayLike ? 23 : 22
+              : day?.isHoliday || day?.isSunday
+                ? rowIndex % 2 === 0 ? 20 : 21
+                : day?.isSaturday
+                  ? rowIndex % 2 === 0 ? 18 : 19
+                  : rowIndex % 2 === 0 ? 16 : 17;
+            style = constructionStageStyle(value, blankStyle, Boolean(day?.isToday));
+          }
           return inlineCell(
             `${columnName(columnIndex)}${rowIndex + 3}`,
             value,
@@ -678,7 +683,7 @@ export function downloadConstructionTimelineXlsx(
           );
         })
         .join("");
-      return `<row r="${rowIndex + 3}" ht="34" customHeight="1">${cells}</row>`;
+      return `<row r="${rowIndex + 3}" ht="38" customHeight="1">${cells}</row>`;
     })
     .join("");
   const columns = options.widths
@@ -694,7 +699,7 @@ export function downloadConstructionTimelineXlsx(
   <cols>${columns}</cols>
   <sheetData>
     <row r="1" ht="34" customHeight="1">${inlineCell("A1", title, 1)}</row>
-    <row r="2" ht="28" customHeight="1">${headerCells}</row>
+    <row r="2" ht="42" customHeight="1">${headerCells}</row>
     ${dataRows}
   </sheetData>
   <mergeCells count="1"><mergeCell ref="A1:${lastColumn}1"/></mergeCells>
@@ -725,26 +730,41 @@ export function downloadConstructionTimelineXlsx(
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="4"><font><sz val="10"/><name val="맑은 고딕"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="15"/><name val="맑은 고딕"/></font><font><b/><color rgb="FF26354D"/><sz val="10"/><name val="맑은 고딕"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="10"/><name val="맑은 고딕"/></font></fonts>
-  <fills count="12"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F2D43"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEAF0F8"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF2F2"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFE7E7"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFFFFF"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F6FC"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDFF4B8"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFD995"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9E8FF"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD8F3E5"/></patternFill></fill></fills>
-  <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFD9E2EF"/></left><right style="thin"><color rgb="FFD9E2EF"/></right><top style="thin"><color rgb="FFD9E2EF"/></top><bottom style="thin"><color rgb="FFD9E2EF"/></bottom><diagonal/></border></borders>
+  <fonts count="6"><font><color rgb="FF26354D"/><sz val="10"/><name val="맑은 고딕"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="15"/><name val="맑은 고딕"/></font><font><b/><color rgb="FF26354D"/><sz val="10"/><name val="맑은 고딕"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="10"/><name val="맑은 고딕"/></font><font><b/><color rgb="FFC94343"/><sz val="9"/><name val="맑은 고딕"/></font><font><b/><color rgb="FF087A63"/><sz val="10"/><name val="맑은 고딕"/></font></fonts>
+  <fills count="16"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F2D43"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEAF0F8"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFFFFF"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF8F2"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF0F0"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE8F8F4"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFFFFF"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF4F7FB"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE5F6C8"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFE4AB"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFD9DF"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9E7FF"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9F3EB"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEDF2FF"/></patternFill></fill></fills>
+  <borders count="3"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFD9E2EF"/></left><right style="thin"><color rgb="FFD9E2EF"/></right><top style="thin"><color rgb="FFD9E2EF"/></top><bottom style="thin"><color rgb="FFD9E2EF"/></bottom><diagonal/></border><border><left style="medium"><color rgb="FF17A887"/></left><right style="medium"><color rgb="FF17A887"/></right><top style="thin"><color rgb="FF17A887"/></top><bottom style="thin"><color rgb="FF17A887"/></bottom><diagonal/></border></borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="15">
+  <cellXfs count="30">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
-    <xf numFmtId="0" fontId="2" fillId="6" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
     <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
     <xf numFmtId="0" fontId="2" fillId="5" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
-    <xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
-    <xf numFmtId="0" fontId="0" fillId="7" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
-    <xf numFmtId="0" fontId="2" fillId="8" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
-    <xf numFmtId="0" fontId="2" fillId="9" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="6" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="5" fillId="7" borderId="2" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="6" borderId="2" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="8" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="9" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
     <xf numFmtId="0" fontId="2" fillId="10" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
     <xf numFmtId="0" fontId="2" fillId="11" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
-    <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
-    <xf numFmtId="0" fontId="3" fillId="9" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="12" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="13" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="14" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="15" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="8" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="9" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
     <xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="7" borderId="2" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="6" borderId="2" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="10" borderId="2" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="11" borderId="2" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="12" borderId="2" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="13" borderId="2" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="14" borderId="2" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="15" borderId="2" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
   </cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
