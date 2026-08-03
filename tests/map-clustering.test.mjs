@@ -141,3 +141,41 @@ test("광역지역을 선택한 뒤에는 지도 배율과 관계없이 기관�
     /\(provinceDrilldownMode \|\| mapLevel <= 4\)/,
   );
 });
+
+test("광역지역 선택 상태는 지도 재계산과 검색 변경에도 명시적으로 유지한다", () => {
+  assert.match(
+    salesMapSource,
+    /const \[selectedProvince, setSelectedProvince\] = useState\(""\)/,
+  );
+  assert.match(
+    salesMapSource,
+    /setSelectedProvince\(provinceCluster\.province\)/,
+  );
+  assert.match(
+    salesMapSource,
+    /const provinceDrilldownMode = Boolean\(selectedProvince\)/,
+  );
+  assert.match(
+    salesMapSource,
+    /canonicalProvinceName\([\s\S]*?\)\?\.province === selectedProvince/,
+  );
+  assert.match(
+    salesMapSource,
+    /function clearMapSelection\(\) \{[\s\S]*?setSelectedProvince\(""\)/,
+  );
+});
+
+test("같은 좌표의 기관도 숫자로 합치지 않고 서로 떨어진 개별 마커로 만든다", () => {
+  const overlapping = [
+    { latitude: 35.1595, longitude: 126.8526, item: "가" },
+    { latitude: 35.1595, longitude: 126.8526, item: "나" },
+  ];
+  const clusters = individualMapPointClusters(overlapping);
+
+  assert.equal(clusters.length, 2);
+  assert.ok(clusters.every((cluster) => cluster.points.length === 1));
+  assert.notDeepEqual(
+    [clusters[0].latitude, clusters[0].longitude],
+    [clusters[1].latitude, clusters[1].longitude],
+  );
+});

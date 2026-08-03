@@ -1309,7 +1309,7 @@ export default function SalesMapPage({
   const [mobileView, setMobileView] = useState<"map" | "list">("map");
   const [isMobileMapLayout, setIsMobileMapLayout] = useState(false);
   const [mapLevel, setMapLevel] = useState(13);
-  const [provinceClustersVisible, setProvinceClustersVisible] = useState(true);
+  const [selectedProvince, setSelectedProvince] = useState("");
   const [mapViewport, setMapViewport] =
     useState<NumericMapViewport | null>(null);
   const [campaigns, setCampaigns] = useState<SalesCampaign[]>([]);
@@ -1589,7 +1589,7 @@ export default function SalesMapPage({
     setActiveCampaignId("all");
     setMobileView("map");
     skipNextVisibleBoundsFitRef.current = false;
-    setProvinceClustersVisible(true);
+    setSelectedProvince("");
     onSearchChangeRef.current("");
 
     if (active && mapRef.current && sdkRef.current) {
@@ -2370,7 +2370,24 @@ export default function SalesMapPage({
     searchDraft,
   ]);
 
-  const visibleOrganizations = filteredOrganizations;
+  const visibleOrganizations = useMemo(
+    () =>
+      selectedProvince
+        ? filteredOrganizations.filter(
+            (item) =>
+              canonicalProvinceName(
+                [
+                  item.region,
+                  item.location?.roadAddress,
+                  item.location?.address,
+                ]
+                  .filter(Boolean)
+                  .join(" "),
+              )?.province === selectedProvince,
+          )
+        : filteredOrganizations,
+    [filteredOrganizations, selectedProvince],
+  );
 
   const visibleMapped = useMemo(
     () => visibleOrganizations.filter((item) => item.location),
@@ -2612,7 +2629,7 @@ export default function SalesMapPage({
 
   function clearMapSelection() {
     skipNextVisibleBoundsFitRef.current = false;
-    setProvinceClustersVisible(true);
+    setSelectedProvince("");
     setSelected([]);
     setRouteOrder([]);
     setRouteMessage("");
@@ -2624,7 +2641,7 @@ export default function SalesMapPage({
 
   function selectCampaign(campaignId: number | "all") {
     skipNextVisibleBoundsFitRef.current = false;
-    setProvinceClustersVisible(true);
+    setSelectedProvince("");
     setActiveCampaignId(campaignId);
     setNearbyOrigin(null);
     setNearbyRadius(null);
@@ -2643,7 +2660,7 @@ export default function SalesMapPage({
 
   function clearNearbyFilter() {
     skipNextVisibleBoundsFitRef.current = false;
-    setProvinceClustersVisible(true);
+    setSelectedProvince("");
     setNearbyOrigin(null);
     setNearbyRadius(null);
     setNearbyMessage("");
@@ -3512,10 +3529,10 @@ export default function SalesMapPage({
         item,
       }));
     const provinceMode = shouldRenderProvinceClusters(
-      provinceClustersVisible,
+      !selectedProvince,
       activeSelected.length,
     );
-    const provinceDrilldownMode = !provinceClustersVisible;
+    const provinceDrilldownMode = Boolean(selectedProvince);
     const clusters = provinceMode
       ? clusterMapPointsByProvince(backgroundPoints, ({ item }) =>
           [
@@ -3575,7 +3592,7 @@ export default function SalesMapPage({
           } else {
             map.setBounds(provinceBounds, 48, 48, 48, 48);
           }
-          setProvinceClustersVisible(false);
+          setSelectedProvince(provinceCluster.province);
           onSearchChange(provinceCluster.provinceLabel);
           setSelected(provinceOrganizations);
           setRouteOrder([]);
@@ -3731,7 +3748,7 @@ export default function SalesMapPage({
     nearbyOrigin,
     nearbyRadius,
     mapLevel,
-    provinceClustersVisible,
+    selectedProvince,
   ]);
 
   useEffect(() => {

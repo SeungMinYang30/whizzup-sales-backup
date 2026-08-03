@@ -105,12 +105,33 @@ export function shouldRenderProvinceClusters(
 export function individualMapPointClusters<T>(
   points: MapPoint<T>[],
 ): MapPointCluster<T>[] {
-  return points.map((point, index) => ({
-    key: `point-${index}-${point.latitude}-${point.longitude}`,
-    latitude: point.latitude,
-    longitude: point.longitude,
-    points: [point],
-  }));
+  const coordinateGroups = new Map<string, MapPoint<T>[]>();
+  points.forEach((point) => {
+    const key = `${point.latitude.toFixed(6)}:${point.longitude.toFixed(6)}`;
+    const group = coordinateGroups.get(key) ?? [];
+    group.push(point);
+    coordinateGroups.set(key, group);
+  });
+
+  let index = 0;
+  return Array.from(coordinateGroups.values()).flatMap((group) => {
+    const spreadRadius = group.length > 1 ? 0.00018 : 0;
+    const latitudeRadians = (group[0].latitude * Math.PI) / 180;
+    const longitudeScale = Math.max(0.2, Math.cos(latitudeRadians));
+
+    return group.map((point, groupIndex) => {
+      const angle = (Math.PI * 2 * groupIndex) / group.length;
+      const currentIndex = index++;
+      return {
+        key: `point-${currentIndex}-${point.latitude}-${point.longitude}`,
+        latitude: point.latitude + Math.sin(angle) * spreadRadius,
+        longitude:
+          point.longitude +
+          (Math.cos(angle) * spreadRadius) / longitudeScale,
+        points: [point],
+      };
+    });
+  });
 }
 
 export function clusterMapPointsByProvince<T>(
