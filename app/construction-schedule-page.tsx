@@ -20,6 +20,8 @@ type ConstructionProject = {
   organization: string;
   businessRound: number;
   workSummary: string;
+  workSummaryMode: "auto" | "manual";
+  sourceProductNames: string[];
   completed: boolean;
   updatedAt: string;
 };
@@ -51,6 +53,9 @@ type EditorState = {
   organization: string;
   businessRound: number;
   workSummary: string;
+  workSummaryMode: "auto" | "manual";
+  sourceProductNames: string[];
+  selectedProductNames: string[];
   completed: boolean;
   items: EditorItem[];
 };
@@ -72,6 +77,15 @@ const dayLabel = new Intl.DateTimeFormat("ko-KR", {
 const scopeKey = (organization: string, businessRound: number) =>
   `${organization}\u001f${businessRound}`;
 const itemKey = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const summarizeProducts = (names: string[]) => {
+  const unique = [...new Set(names.map((name) => name.trim()).filter(Boolean))];
+  if (unique.length <= 5) return unique.join(" · ");
+  return `${unique.slice(0, 5).join(" · ")} 외 ${unique.length - 5}종`;
+};
+const displayWorkSummary = (project: ConstructionProject) =>
+  project.workSummaryMode === "auto" && project.sourceProductNames.length
+    ? summarizeProducts(project.sourceProductNames)
+    : project.workSummary;
 
 export default function ConstructionSchedulePage({
   records,
@@ -200,7 +214,7 @@ export default function ConstructionSchedulePage({
           action: "add-construction-project",
           organization: record.organization,
           businessRound: record.businessRound,
-          workSummary: record.summary,
+          workSummary: "",
         }),
       });
       const payload = (await response.json()) as {
@@ -249,6 +263,11 @@ export default function ConstructionSchedulePage({
       organization: project.organization,
       businessRound: project.businessRound,
       workSummary: project.workSummary,
+      workSummaryMode: project.workSummaryMode,
+      sourceProductNames: project.sourceProductNames,
+      selectedProductNames: project.workSummaryMode === "auto"
+        ? project.sourceProductNames
+        : project.sourceProductNames.filter((name) => project.workSummary.includes(name)),
       completed: project.completed,
       items,
     });
@@ -281,6 +300,19 @@ export default function ConstructionSchedulePage({
     });
   }
 
+  function toggleEditorProduct(name: string) {
+    if (!editor) return;
+    const selectedProductNames = editor.selectedProductNames.includes(name)
+      ? editor.selectedProductNames.filter((item) => item !== name)
+      : [...editor.selectedProductNames, name];
+    setEditor({
+      ...editor,
+      selectedProductNames,
+      workSummary: summarizeProducts(selectedProductNames),
+      workSummaryMode: "manual",
+    });
+  }
+
   async function saveEditor() {
     if (!editor || saving) return;
     setSaving(true);
@@ -297,6 +329,7 @@ export default function ConstructionSchedulePage({
           organization: editor.organization,
           businessRound: editor.businessRound,
           workSummary: editor.workSummary,
+          workSummaryMode: editor.workSummaryMode,
           completed: editor.completed,
           schedules: activeItems,
         }),
@@ -352,7 +385,7 @@ export default function ConstructionSchedulePage({
       record?.region || "지역 미등록",
       project.organization,
       `${project.businessRound}차 사업`,
-      project.workSummary || "공사·품목 미등록",
+      displayWorkSummary(project) || "공사·품목 미등록",
       record?.progressManager || "미정",
       ...days.map((day) => items
         .filter((item) => item.scheduledDate <= day && (item.endDate || item.scheduledDate) >= day)
@@ -416,7 +449,14 @@ export default function ConstructionSchedulePage({
             <div className="construction-fixed-cells">
               <span>{record?.region || "지역 미등록"}</span>
               <span className="construction-institution-cell"><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}><strong>{project.organization}</strong><small>{project.businessRound}차 사업</small></button><button type="button" className="construction-remove-project" onClick={() => void removeProject(project)}>일정표에서 빼기</button></span>
-              <span title={project.workSummary}>{project.workSummary || "공사·품목 미등록"}</span>
+              <button
+                type="button"
+                className="construction-work-summary"
+                title={project.sourceProductNames.length ? project.sourceProductNames.join(" · ") : project.workSummary}
+                onClick={() => openEditor(project)}
+              >
+                {displayWorkSummary(project) || "공사·품목 미등록"}
+              </button>
               <span>{record?.progressManager || "미정"}</span>
             </div>
             <div className="construction-days construction-row-days">
@@ -451,7 +491,7 @@ export default function ConstructionSchedulePage({
         {rows.map(({ project, record, items }) => (
           <article key={scopeKey(project.organization, project.businessRound)}>
             <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{record?.progressManager || "미정"}</span></header>
-            <p>{record?.region || "지역 미등록"} · {project.workSummary || "공사·품목 미등록"}</p>
+            <p>{record?.region || "지역 미등록"} · {displayWorkSummary(project) || "공사·품목 미등록"}</p>
             <div>{items.map((item) => <button type="button" key={item.id} onClick={() => openEditor(project, item.scheduledDate)}><b>{item.scheduledDate.slice(5).replace("-", "/")}</b>{item.stage || item.label}</button>)}</div>
             <button className="construction-mobile-edit" type="button" onClick={() => openEditor(project)}>일정 관리</button>
             <button className="construction-mobile-remove" type="button" onClick={() => void removeProject(project)}>일정표에서 빼기</button>
@@ -481,9 +521,40 @@ export default function ConstructionSchedulePage({
           <div className="schedule-editor construction-stage-editor" role="dialog" aria-modal="true">
             <header><div><span className="section-kicker">CONSTRUCTION SCHEDULE</span><h3>{editor.organization}</h3><p>체크한 단계만 저장됩니다. + 버튼으로 같은 단계의 기간을 추가할 수 있습니다.</p></div><button type="button" onClick={() => setEditor(null)}>×</button></header>
             <div className="construction-editor-summary">
-              <label>공사·품목<input value={editor.workSummary} onChange={(event) => setEditor({ ...editor, workSummary: event.target.value })} placeholder="예: 스크린·시스템 설치" /></label>
+              <label>공사·품목<input value={editor.workSummary} onChange={(event) => setEditor({ ...editor, workSummary: event.target.value, workSummaryMode: "manual" })} placeholder="예: 스크린·시스템 설치" /></label>
               <label className="construction-project-complete"><input type="checkbox" checked={editor.completed} onChange={(event) => setEditor({ ...editor, completed: event.target.checked })} />기관 일정 완료</label>
             </div>
+            {editor.sourceProductNames.length ? (
+              <div className="construction-product-picker">
+                <div>
+                  <strong>상세페이지 등록 품목</strong>
+                  <button
+                    type="button"
+                    onClick={() => setEditor({
+                      ...editor,
+                      selectedProductNames: editor.sourceProductNames,
+                      workSummary: summarizeProducts(editor.sourceProductNames),
+                      workSummaryMode: "auto",
+                    })}
+                  >상세 품목 다시 불러오기</button>
+                </div>
+                <p>일정표에 표시할 주요 품목만 선택할 수 있습니다. 원본 품목·금액·수수료 정보는 변경되지 않습니다.</p>
+                <div>
+                  {editor.sourceProductNames.map((name) => (
+                    <label key={name}>
+                      <input
+                        type="checkbox"
+                        checked={editor.selectedProductNames.includes(name)}
+                        onChange={() => toggleEditorProduct(name)}
+                      />
+                      {name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="construction-products-empty">상세페이지에 등록된 품목이 없어 공사·품목을 직접 입력해 주세요.</p>
+            )}
             <div className="construction-stage-table">
               <div className="construction-stage-head"><span>사용</span><span>단계</span><span>시공 업체</span><span>시작일</span><span>종료일</span><span>추가</span></div>
               {editor.items.map((item, index) => (

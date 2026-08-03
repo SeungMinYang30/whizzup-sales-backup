@@ -72,6 +72,7 @@ export async function PUT(request: Request) {
         organization: payload.organization,
         businessRound: payload.businessRound,
         workSummary: payload.workSummary,
+        workSummaryMode: payload.workSummaryMode,
         completed: payload.completed,
         schedules: payload.schedules,
         memberId: member.id,

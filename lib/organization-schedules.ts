@@ -1,5 +1,6 @@
 import { getD1 } from "../db";
 import { ensureCollaborationReady } from "./collaboration";
+import { ensureEquipmentReady } from "./equipment-store";
 import {
   clean,
   ensureRecordsReady,
@@ -45,6 +46,8 @@ export type ConstructionScheduleProject = {
   organization: string;
   businessRound: number;
   workSummary: string;
+  workSummaryMode: "auto" | "manual";
+  sourceProductNames: string[];
   completed: boolean;
   updatedAt: string;
 };
@@ -79,6 +82,7 @@ const schemaStatements = [
     organization TEXT NOT NULL,
     business_round INTEGER NOT NULL DEFAULT 1,
     work_summary TEXT NOT NULL DEFAULT '',
+    work_summary_mode TEXT NOT NULL DEFAULT 'auto',
     completed INTEGER NOT NULL DEFAULT 0,
     created_by INTEGER,
     created_by_name TEXT NOT NULL DEFAULT '',
@@ -110,6 +114,10 @@ async function initializeOrganizationSchedules() {
     if (!names.has(name)) {
       await d1.prepare(`ALTER TABLE organization_schedules ADD COLUMN ${name} ${definition}`).run();
     }
+  }
+  const projectColumns = await d1.prepare("PRAGMA table_info(construction_schedule_projects)").all<{ name: string }>();
+  if (!projectColumns.results.some((column) => column.name === "work_summary_mode")) {
+    await d1.prepare("ALTER TABLE construction_schedule_projects ADD COLUMN work_summary_mode TEXT NOT NULL DEFAULT 'auto'").run();
   }
   return d1;
 }
@@ -318,8 +326,9 @@ function normalizeConstructionScheduleInputs(value: unknown) {
 
 export async function listConstructionScheduleBoard() {
   const d1 = await ensureOrganizationSchedulesReady();
+  await ensureEquipmentReady();
   await pruneConstructionBoardToWhizzupAwards(d1);
-  const [projectsResult, schedulesResult] = await Promise.all([
+  const [projectsResult, schedulesResult, productResult] = await Promise.all([
     d1.prepare(
       `SELECT * FROM construction_schedule_projects
        ORDER BY completed ASC, updated_at DESC, organization COLLATE NOCASE ASC`,
@@ -329,16 +338,41 @@ export async function listConstructionScheduleBoard() {
        WHERE COALESCE(category, 'general') = 'construction'
        ORDER BY scheduled_date ASC, id ASC`,
     ).all<Record<string, unknown>>(),
+    d1.prepare(
+      `SELECT p.organization, p.business_round, i.product_name, i.sort_order, i.id
+       FROM equipment_projects p
+       JOIN equipment_items i ON i.project_id = p.id
+       WHERE TRIM(COALESCE(i.product_name, '')) <> ''
+       ORDER BY p.organization COLLATE NOCASE ASC, p.business_round ASC,
+                p.updated_at DESC, i.sort_order ASC, i.id ASC`,
+    ).all<Record<string, unknown>>(),
   ]);
+  const productNamesByScope = new Map<string, string[]>();
+  productResult.results.forEach((row) => {
+    const key = `${String(row.organization ?? "")}\u001f${Math.max(1, Number(row.business_round) || 1)}`;
+    const name = clean(row.product_name);
+    const current = productNamesByScope.get(key) ?? [];
+    if (name && !current.includes(name)) productNamesByScope.set(key, [...current, name]);
+  });
   return {
-    projects: projectsResult.results.map((row) => ({
-      id: Number(row.id),
-      organization: String(row.organization ?? ""),
-      businessRound: Math.max(1, Number(row.business_round) || 1),
-      workSummary: String(row.work_summary ?? ""),
-      completed: Number(row.completed) === 1,
-      updatedAt: String(row.updated_at ?? ""),
-    } satisfies ConstructionScheduleProject)),
+    projects: projectsResult.results.map((row) => {
+      const organization = String(row.organization ?? "");
+      const businessRound = Math.max(1, Number(row.business_round) || 1);
+      const sourceProductNames = productNamesByScope.get(`${organization}\u001f${businessRound}`) ?? [];
+      const mode = row.work_summary_mode === "manual" ? "manual" : "auto";
+      return {
+        id: Number(row.id),
+        organization,
+        businessRound,
+        workSummary: mode === "auto" && sourceProductNames.length
+          ? sourceProductNames.join(" · ")
+          : String(row.work_summary ?? ""),
+        workSummaryMode: mode,
+        sourceProductNames,
+        completed: Number(row.completed) === 1,
+        updatedAt: String(row.updated_at ?? ""),
+      } satisfies ConstructionScheduleProject;
+    }),
     schedules: schedulesResult.results.map(scheduleJson),
   };
 }
@@ -439,6 +473,7 @@ export async function saveConstructionSchedules(input: {
   organization: unknown;
   businessRound: unknown;
   workSummary?: unknown;
+  workSummaryMode?: unknown;
   completed?: unknown;
   schedules: unknown;
   memberId: number;
@@ -454,11 +489,12 @@ export async function saveConstructionSchedules(input: {
   await d1.batch([
     d1.prepare(
       `INSERT INTO construction_schedule_projects (
-         organization, business_round, work_summary, completed,
+         organization, business_round, work_summary, work_summary_mode, completed,
          created_by, created_by_name, updated_by, updated_by_name
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(organization, business_round) DO UPDATE SET
          work_summary = excluded.work_summary,
+         work_summary_mode = excluded.work_summary_mode,
          completed = excluded.completed,
          updated_by = excluded.updated_by,
          updated_by_name = excluded.updated_by_name,
@@ -467,6 +503,7 @@ export async function saveConstructionSchedules(input: {
       organization,
       businessRound,
       clean(input.workSummary).slice(0, 240),
+      input.workSummaryMode === "manual" ? "manual" : "auto",
       projectCompleted ? 1 : 0,
       input.memberId,
       input.memberName,
