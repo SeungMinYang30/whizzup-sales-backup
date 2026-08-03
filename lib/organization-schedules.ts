@@ -264,6 +264,50 @@ export async function replaceOrganizationSchedules(input: {
   return listOrganizationSchedules(organization, businessRound);
 }
 
+export async function markOrganizationScheduleCompleted(input: {
+  id: number;
+  organization: string;
+  businessRound: number;
+  memberId: number;
+  memberName: string;
+}) {
+  const d1 = await ensureOrganizationSchedulesReady();
+  const result = await d1
+    .prepare(
+      `UPDATE organization_schedules
+       SET completed = 1,
+           updated_by = ?,
+           updated_by_name = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?
+         AND organization = ?
+         AND business_round = ?
+         AND completed = 0`,
+    )
+    .bind(
+      input.memberId,
+      clean(input.memberName).slice(0, 120),
+      input.id,
+      input.organization,
+      input.businessRound,
+    )
+    .run();
+  if (Number(result.meta.changes) !== 1) {
+    throw new Error("이미 확인했거나 찾을 수 없는 일정입니다.");
+  }
+  const schedules = await listOrganizationSchedules(
+    input.organization,
+    input.businessRound,
+  );
+  await mirrorOpenSchedulesToLatestActivity(
+    d1,
+    input.organization,
+    input.businessRound,
+    schedules,
+  );
+  return schedules.find((schedule) => schedule.id === input.id) ?? null;
+}
+
 export async function mergeActivityProgressSchedule(input: {
   activityId: number;
   organization: unknown;

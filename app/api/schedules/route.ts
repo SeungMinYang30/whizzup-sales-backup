@@ -6,7 +6,10 @@ import {
   listOrganizationSchedules,
   replaceOrganizationSchedules,
 } from "../../../lib/organization-schedules";
-import { listScheduleRemindersForMember } from "../../../lib/schedule-reminders";
+import {
+  completeScheduleReminderForMember,
+  listScheduleRemindersForMember,
+} from "../../../lib/schedule-reminders";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +44,20 @@ export async function PUT(request: Request) {
       memberName: member.displayName,
     });
     return Response.json({ schedules });
+  } catch (error) {
+    return accessErrorResponse(error);
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const member = await requireApprovedMember();
+    const payload = (await request.json()) as Record<string, unknown>;
+    const schedule = await completeScheduleReminderForMember(
+      payload.scheduleId,
+      member,
+    );
+    return Response.json({ schedule });
   } catch (error) {
     return accessErrorResponse(error);
   }

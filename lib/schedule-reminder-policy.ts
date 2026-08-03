@@ -57,3 +57,18 @@ export function canMemberSeeScheduleReminder(
   if (hasAssignedManager(row.progressManager)) return assignedToViewer;
   return createdByViewer;
 }
+
+export function canCompleteScheduleReminder(
+  row: Parameters<typeof canMemberSeeScheduleReminder>[0] & {
+    scheduledDate: unknown;
+  },
+  member: ScheduleReminderMember,
+  todayValue: string,
+) {
+  const scheduledDate = text(row.scheduledDate);
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(scheduledDate) &&
+    scheduledDate < todayValue &&
+    canMemberSeeScheduleReminder(row, member)
+  );
+}

@@ -3438,6 +3438,18 @@ async function requestScheduleReminders() {
   return Array.isArray(payload.reminders) ? payload.reminders : [];
 }
 
+async function requestCompleteScheduleReminder(scheduleId: number) {
+  const response = await fetch("/api/schedules?scope=reminders", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scheduleId }),
+  });
+  const payload = (await response.json()) as { error?: string };
+  if (!response.ok) {
+    throw new Error(payload.error || "일정을 확인 완료하지 못했습니다.");
+  }
+}
+
 async function requestActivityReviewAcknowledgements() {
   const response = await fetch("/api/record-reviews", { cache: "no-store" });
   const payload = (await response.json()) as {
@@ -6309,6 +6321,8 @@ export default function CrmApp({
   >([]);
   const [scheduleRemindersLoading, setScheduleRemindersLoading] =
     useState(false);
+  const [scheduleReminderCompletingId, setScheduleReminderCompletingId] =
+    useState<number | null>(null);
   const [scheduleReminderRefreshVersion, setScheduleReminderRefreshVersion] =
     useState(0);
   const [selectedOrganizations, setSelectedOrganizations] = useState<string[]>(
@@ -6796,6 +6810,34 @@ export default function CrmApp({
       active = false;
     };
   }, [scheduleReminderRefreshVersion, sessionStatus, view]);
+
+  const completePastScheduleReminder = async (
+    reminder: ScheduleReminderRecord,
+  ) => {
+    if (
+      scheduleReminderCompletingId !== null ||
+      reminder.scheduledDate >= todayValue
+    ) {
+      return;
+    }
+    try {
+      setScheduleReminderCompletingId(reminder.id);
+      await requestCompleteScheduleReminder(reminder.id);
+      setScheduleReminders((current) =>
+        current.filter((item) => item.id !== reminder.id),
+      );
+      setToast("지난 일정을 확인 완료했습니다.");
+      void refreshRecordsInBackground();
+    } catch (caught) {
+      setToast(
+        caught instanceof Error
+          ? caught.message
+          : "일정을 확인 완료하지 못했습니다.",
+      );
+    } finally {
+      setScheduleReminderCompletingId(null);
+    }
+  };
 
   useEffect(() => {
     if (view !== "team" || !session?.canViewPresence) return;
@@ -15765,31 +15807,47 @@ export default function CrmApp({
                         todayValue,
                       );
                       return (
-                        <button
-                          type="button"
-                          className="my-schedule-row"
-                          key={reminder.id}
-                          onClick={() => {
-                            setDetailBusinessRound(reminder.businessRound);
-                            setDetailOrganization(reminder.organization);
-                          }}
-                        >
-                          <span className={`my-schedule-timing ${timing.tone}`}>
-                            {timing.label}
-                          </span>
-                          <span className="my-schedule-copy">
-                            <strong>{reminder.organization}</strong>
-                            <small>{reminder.label}</small>
-                          </span>
-                          <span className="my-schedule-meta">
-                            <b>{formatScheduleDate(reminder.scheduledDate)}</b>
-                            <small>
-                              {reminder.visibility === "shared-post-award"
-                                ? "수주 후 공유 일정"
-                                : "개인 일정"}
-                            </small>
-                          </span>
-                        </button>
+                        <div className="my-schedule-row" key={reminder.id}>
+                          <button
+                            type="button"
+                            className="my-schedule-open"
+                            onClick={() => {
+                              setDetailBusinessRound(reminder.businessRound);
+                              setDetailOrganization(reminder.organization);
+                            }}
+                            aria-label={`${reminder.organization} 일정 상세 보기`}
+                          >
+                            <span className={`my-schedule-timing ${timing.tone}`}>
+                              {timing.label}
+                            </span>
+                            <span className="my-schedule-copy">
+                              <strong>{reminder.organization}</strong>
+                              <small>{reminder.label}</small>
+                            </span>
+                            <span className="my-schedule-meta">
+                              <b>{formatScheduleDate(reminder.scheduledDate)}</b>
+                              <small>
+                                {reminder.visibility === "shared-post-award"
+                                  ? "수주 후 공유 일정"
+                                  : "개인 일정"}
+                              </small>
+                            </span>
+                          </button>
+                          {timing.tone === "overdue" ? (
+                            <button
+                              type="button"
+                              className="my-schedule-complete"
+                              disabled={scheduleReminderCompletingId !== null}
+                              onClick={() =>
+                                void completePastScheduleReminder(reminder)
+                              }
+                            >
+                              {scheduleReminderCompletingId === reminder.id
+                                ? "처리 중"
+                                : "확인 완료"}
+                            </button>
+                          ) : null}
+                        </div>
                       );
                     })}
                   </div>

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  canCompleteScheduleReminder,
   canMemberSeeScheduleReminder,
   isSharedPostAwardSchedule,
 } from "../lib/schedule-reminder-policy.ts";
@@ -95,4 +96,30 @@ test("ambiguous post-award schedules remain private", () => {
     label: "추가 확인",
   };
   assert.equal(isSharedPostAwardSchedule(schedule), false);
+});
+
+test("only visible schedules before today can be completed from reminders", () => {
+  const base = {
+    awardStatus: "미정",
+    label: "재연락",
+    progressManager: "김동훈 과장",
+    creatorMemberId: 3,
+    creatorName: "양승민 이사",
+  };
+  assert.equal(
+    canCompleteScheduleReminder(
+      { ...base, scheduledDate: "2026-08-02" },
+      employee,
+      "2026-08-03",
+    ),
+    true,
+  );
+  assert.equal(
+    canCompleteScheduleReminder(
+      { ...base, scheduledDate: "2026-08-03" },
+      employee,
+      "2026-08-03",
+    ),
+    false,
+  );
 });

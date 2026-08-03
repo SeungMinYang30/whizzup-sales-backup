@@ -1786,9 +1786,13 @@ kbd { padding: 3px 6px; border: 1px solid #dce2eb; border-bottom-width: 2px; bac
 .my-schedule-heading p { margin: 0; color: #7f8ca1; font-size: 10px; line-height: 1.55; }
 .my-schedule-heading > strong { flex: 0 0 auto; min-width: 54px; min-height: 34px; padding: 0 12px; display: grid; place-items: center; border-radius: 999px; background: #eef2ff; color: #3d55c8; font-size: 12px; }
 .my-schedule-list { max-height: 310px; overflow-y: auto; scrollbar-width: thin; }
-.my-schedule-row { width: 100%; min-height: 68px; padding: 10px 21px; display: grid; grid-template-columns: 72px minmax(0, 1fr) minmax(118px, auto); align-items: center; gap: 14px; border: 0; border-bottom: 1px solid #edf0f5; background: #fff; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.my-schedule-row:hover { background: #f8faff; }
-.my-schedule-row:focus-visible { position: relative; outline: 2px solid #5d72dc; outline-offset: -2px; }
+.my-schedule-row { width: 100%; min-height: 68px; display: flex; align-items: stretch; border-bottom: 1px solid #edf0f5; background: #fff; }
+.my-schedule-open { flex: 1 1 auto; min-width: 0; padding: 10px 21px; display: grid; grid-template-columns: 72px minmax(0, 1fr) minmax(118px, auto); align-items: center; gap: 14px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.my-schedule-open:hover { background: #f8faff; }
+.my-schedule-open:focus-visible { position: relative; outline: 2px solid #5d72dc; outline-offset: -2px; }
+.my-schedule-complete { align-self: center; flex: 0 0 auto; min-height: 34px; margin-right: 21px; padding: 0 12px; border: 1px solid #f0aaa2; border-radius: 9px; background: #fff8f6; color: #ba5147; font: inherit; font-size: 10px; font-weight: 900; white-space: nowrap; cursor: pointer; }
+.my-schedule-complete:hover { border-color: #dd756b; background: #ffefec; }
+.my-schedule-complete:disabled { opacity: .55; cursor: wait; }
 .my-schedule-timing { min-height: 28px; padding: 0 8px; display: inline-grid; place-items: center; border-radius: 999px; background: #eef3ff; color: #4868c8; font-size: 10px; font-weight: 900; }
 .my-schedule-timing.today { background: #fff1d7; color: #a76516; }
 .my-schedule-timing.overdue { background: #ffebe8; color: #c75347; }
@@ -4055,7 +4059,9 @@ tr:hover .row-actions { opacity: 1; }
   .workspace { width: 100%; margin-left: 0; }
   .topbar { height: 65px; padding: 0 16px; gap: 10px; }
   .my-schedule-heading { align-items: flex-start; padding: 16px; }
-  .my-schedule-row { grid-template-columns: 62px minmax(0, 1fr); gap: 10px; padding: 11px 16px; }
+  .my-schedule-row { align-items: center; }
+  .my-schedule-open { grid-template-columns: 62px minmax(0, 1fr); gap: 10px; padding: 11px 10px 11px 16px; }
+  .my-schedule-complete { margin-right: 12px; padding: 0 9px; }
   .my-schedule-meta { grid-column: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; }
   .my-schedule-meta small { margin-top: 0; }
   .my-schedule-note { padding: 10px 16px; }
