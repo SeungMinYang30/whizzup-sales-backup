@@ -67,7 +67,7 @@ function amountInKorean(value: number) {
 }
 
 function buildSheet(input: QuotationWorkbookInput) {
-  const startRow = 9;
+  const startRow = 11;
   const lineCount = Math.max(input.lines.length, 8);
   const totalRow = startRow + lineCount;
   const noteRow = totalRow + 2;
@@ -115,20 +115,24 @@ function buildSheet(input: QuotationWorkbookInput) {
     <row r="1" ht="44" customHeight="1">${inlineCell("A1", "견 적 서", 1)}</row>
     <row r="3" ht="26" customHeight="1">
       ${inlineCell("A3", "견적일", 3)}${inlineCell("B3", input.quoteDate, 4)}
-      ${inlineCell("F3", "공급자", 3)}${inlineCell("G3", "(주)위즈업", 4)}
+      ${inlineCell("F3", "상호", 3)}${inlineCell("G3", "주식회사 위즈업", 4)}
     </row>
     <row r="4" ht="26" customHeight="1">
       ${inlineCell("A4", "수신", 3)}${inlineCell("B4", `${input.customerName} 귀중`, 4)}
-      ${inlineCell("F4", "구분", 3)}${inlineCell("G4", "견적서", 4)}
+      ${inlineCell("F4", "사업자번호", 3)}${inlineCell("G4", "286-86-03454", 4)}
     </row>
     <row r="5" ht="26" customHeight="1">
-      ${inlineCell("A5", "사업명", 3)}${inlineCell("B5", input.projectTitle || "제품 공급", 4)}
+      ${inlineCell("A5", "견적명", 3)}${inlineCell("B5", input.projectTitle || "제품 공급", 4)}
+      ${inlineCell("F5", "대표자", 3)}${inlineCell("G5", "박원석", 4)}
     </row>
-    <row r="7" ht="28" customHeight="1">${inlineCell("A7", amountInKorean(total), 5)}</row>
-    <row r="8" ht="32" customHeight="1">
-      ${inlineCell("A8", "순번", 6)}${inlineCell("B8", "품명", 6)}${inlineCell("C8", "규격", 6)}
-      ${inlineCell("D8", "수량", 6)}${inlineCell("E8", "단위", 6)}${inlineCell("F8", "단가", 6)}
-      ${inlineCell("G8", "금액", 6)}${inlineCell("H8", "비고", 6)}
+    <row r="6" ht="30" customHeight="1">${inlineCell("F6", "주소", 3)}${inlineCell("G6", "경기도 하남시 하남대로 947, D동 1208호(풍산동)", 4)}</row>
+    <row r="7" ht="26" customHeight="1">${inlineCell("F7", "업태", 3)}${inlineCell("G7", "도매 및 소매업 · 정보통신업", 4)}</row>
+    <row r="8" ht="32" customHeight="1">${inlineCell("F8", "종목", 3)}${inlineCell("G8", "컴퓨터 및 주변장치 공급 · 소프트웨어 개발 및 공급", 4)}</row>
+    <row r="9" ht="30" customHeight="1">${inlineCell("A9", amountInKorean(total), 5)}</row>
+    <row r="10" ht="32" customHeight="1">
+      ${inlineCell("A10", "순번", 6)}${inlineCell("B10", "품명", 6)}${inlineCell("C10", "규격", 6)}
+      ${inlineCell("D10", "수량", 6)}${inlineCell("E10", "단위", 6)}${inlineCell("F10", "단가", 6)}
+      ${inlineCell("G10", "금액", 6)}${inlineCell("H10", "비고", 6)}
     </row>
     ${itemRows}
     <row r="${totalRow}" ht="34" customHeight="1">
@@ -136,10 +140,11 @@ function buildSheet(input: QuotationWorkbookInput) {
     </row>
     <row r="${noteRow}" ht="26" customHeight="1">${inlineCell(`A${noteRow}`, "※ 위 금액은 부가가치세가 포함된 금액입니다.", 12)}</row>
   </sheetData>
-  <mergeCells count="10">
+  <mergeCells count="16">
     <mergeCell ref="A1:H1"/><mergeCell ref="B3:E3"/><mergeCell ref="G3:H3"/>
-    <mergeCell ref="B4:E4"/><mergeCell ref="G4:H4"/><mergeCell ref="B5:H5"/>
-    <mergeCell ref="A7:H7"/><mergeCell ref="A${totalRow}:E${totalRow}"/>
+    <mergeCell ref="B4:E4"/><mergeCell ref="G4:H4"/><mergeCell ref="B5:E5"/><mergeCell ref="G5:H5"/>
+    <mergeCell ref="A6:E6"/><mergeCell ref="G6:H6"/><mergeCell ref="A7:E7"/><mergeCell ref="G7:H7"/>
+    <mergeCell ref="A8:E8"/><mergeCell ref="G8:H8"/><mergeCell ref="A9:H9"/><mergeCell ref="A${totalRow}:E${totalRow}"/>
     <mergeCell ref="F${totalRow}:H${totalRow}"/><mergeCell ref="A${noteRow}:H${noteRow}"/>
   </mergeCells>
   <pageMargins left="0.3" right="0.3" top="0.45" bottom="0.45" header="0.2" footer="0.2"/>

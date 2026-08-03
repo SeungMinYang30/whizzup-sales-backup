@@ -127,7 +127,6 @@ const AnalyticsPage = lazy(() => import("./analytics-page"));
 const OwnerPerformancePage = lazy(() => import("./owner-performance-page"));
 const InventoryPage = lazy(() => import("./inventory-page"));
 const ConstructionSchedulePage = lazy(() => import("./construction-schedule-page"));
-const QuotationManagementPage = lazy(() => import("./quotation-management-page"));
 const QuotationDocuments = lazy(() => import("./quotation-documents"));
 const SalesMapPage = lazy(() => import("./sales-map"));
 const HomeCalendar = lazy(() => import("./home-calendar"));
@@ -1585,7 +1584,6 @@ const navItems: { id: View; label: string; mark: string }[] = [
   { id: "awards", label: "기관별 관리(수주 후)", mark: "W" },
   { id: "vendors", label: "협력사 관리", mark: "V" },
   { id: "products", label: "제품·견적 관리", mark: "P" },
-  { id: "quotations", label: "견적서 관리", mark: "Q" },
   { id: "installation-schedule", label: "시공·납품 일정", mark: "D" },
   { id: "map", label: "영업·수주 지도", mark: "M" },
 ];
@@ -16074,9 +16072,15 @@ export default function CrmApp({
                 }}
               />
             </Suspense>
-          ) : view === "quotations" ? (
+          ) : view === "inventory" ? (
             <Suspense fallback={<DeferredPageFallback />}>
-              <QuotationManagementPage
+              <InventoryPage />
+            </Suspense>
+          ) : view === "products" || view === "quotations" ? (
+            <Suspense fallback={<DeferredPageFallback />}>
+              <ProductCatalogPage
+                search={search}
+                onSearchChange={setSearch}
                 institutions={[
                   ...new Map(
                     records
@@ -16093,18 +16097,6 @@ export default function CrmApp({
                 ].sort((left, right) =>
                   left.organization.localeCompare(right.organization, "ko-KR"),
                 )}
-              />
-            </Suspense>
-          ) : view === "inventory" ? (
-            <Suspense fallback={<DeferredPageFallback />}>
-              <InventoryPage />
-            </Suspense>
-          ) : view === "products" ? (
-            <Suspense fallback={<DeferredPageFallback />}>
-              <ProductCatalogPage
-                search={search}
-                onSearchChange={setSearch}
-                canCreateQuotation={isOwner}
               />
             </Suspense>
           ) : view === "schedules" ? (

@@ -22,11 +22,14 @@ import {
   createQuotationWorkbook,
   type QuotationLine,
 } from "../lib/quotation-xlsx";
+import QuotationManagementPage, {
+  type QuotationInstitutionOption,
+} from "./quotation-management-page";
 
 type ProductCatalogPageProps = {
   search: string;
   onSearchChange: (value: string) => void;
-  canCreateQuotation: boolean;
+  institutions: QuotationInstitutionOption[];
 };
 
 type ProductForm = {
@@ -324,7 +327,7 @@ function buildImportPreview(
 export default function ProductCatalogPage({
   search,
   onSearchChange,
-  canCreateQuotation,
+  institutions,
 }: ProductCatalogPageProps) {
   const [products, setProducts] =
     useState<ProductCatalogItem[]>(PRODUCT_CATALOG);
@@ -1061,22 +1064,7 @@ export default function ProductCatalogPage({
 
   return (
     <>
-      {canCreateQuotation && (
-        <section className="panel product-quotation-launch">
-          <div>
-            <span className="section-kicker">QUOTATION TEST</span>
-            <h2>견적서 작성</h2>
-            <p>현재 대표관리자에게만 보이는 시험 운영 기능입니다.</p>
-          </div>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={openQuotation}
-          >
-            견적서 만들기
-          </button>
-        </section>
-      )}
+      <QuotationManagementPage institutions={institutions} />
 
       <section className="panel product-catalog-panel">
         <div className="product-catalog-sticky-controls">
