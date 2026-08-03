@@ -1,9 +1,7 @@
 import { getD1 } from "../db";
-import { ensureCollaborationReady } from "./collaboration";
 import { ensureEquipmentReady } from "./equipment-store";
 import {
   clean,
-  ensureRecordsReady,
   parseProgressScheduleEntries,
 } from "./records-store";
 
@@ -102,8 +100,10 @@ let schedulesReadyPromise: Promise<ReturnType<typeof getD1>> | null = null;
 
 async function initializeOrganizationSchedules() {
   const d1 = getD1();
-  await ensureCollaborationReady();
-  await ensureRecordsReady();
+  // 일정 조회는 HOME 첫 화면에서 여러 API와 동시에 실행됩니다. 여기서
+  // 활동 전체의 데이터 보정까지 기다리면 일정 조회 하나가 D1 쓰기 잠금을
+  // 오래 잡아 다른 초기 화면 요청도 함께 멈춥니다. 일정 테이블은 독립
+  // 테이블이므로 필요한 스키마만 준비하고 즉시 읽을 수 있게 합니다.
   await d1.batch(schemaStatements.map((statement) => d1.prepare(statement)));
   const columns = await d1.prepare("PRAGMA table_info(organization_schedules)").all<{ name: string }>();
   const names = new Set(columns.results.map((column) => column.name));
@@ -216,33 +216,6 @@ async function requireWhizzupAwardScope(
   }
 }
 
-async function pruneConstructionBoardToWhizzupAwards(
-  d1: Awaited<ReturnType<typeof ensureOrganizationSchedulesReady>>,
-) {
-  const latestWhizzupAward = (owner: string) => `EXISTS (
-    SELECT 1 FROM activities latest
-    WHERE latest.id = (
-      SELECT candidate.id FROM activities candidate
-      WHERE candidate.organization = ${owner}.organization
-        AND candidate.business_round = ${owner}.business_round
-      ORDER BY candidate.activity_date DESC, candidate.id DESC
-      LIMIT 1
-    )
-      AND TRIM(COALESCE(latest.award_status, '')) = '위즈업 수주'
-  )`;
-  await d1.batch([
-    d1.prepare(
-      `DELETE FROM organization_schedules
-       WHERE category = 'construction'
-         AND NOT ${latestWhizzupAward("organization_schedules")}`,
-    ),
-    d1.prepare(
-      `DELETE FROM construction_schedule_projects
-       WHERE NOT ${latestWhizzupAward("construction_schedule_projects")}`,
-    ),
-  ]);
-}
-
 async function importLegacyScheduleIfNeeded(
   organization: string,
   businessRound: number,
@@ -338,8 +311,9 @@ function normalizeConstructionScheduleInputs(value: unknown) {
 export async function listConstructionScheduleBoard() {
   const d1 = await ensureOrganizationSchedulesReady();
   await ensureEquipmentReady();
-  await pruneConstructionBoardToWhizzupAwards(d1);
-  const [projectsResult, schedulesResult, productResult] = await Promise.all([
+  // GET 요청에서 대량 DELETE를 실행하지 않습니다. 최신 수주 상태를 한 번
+  // 읽어 화면에서 필터링하면 D1 쓰기 잠금 없이 동일한 결과를 얻습니다.
+  const [projectsResult, schedulesResult, productResult, latestAwardsResult] = await Promise.all([
     d1.prepare(
       `SELECT * FROM construction_schedule_projects
        ORDER BY completed ASC, updated_at DESC, organization COLLATE NOCASE ASC`,
@@ -355,9 +329,26 @@ export async function listConstructionScheduleBoard() {
        JOIN equipment_items i ON i.project_id = p.id
        WHERE TRIM(COALESCE(i.product_name, '')) <> ''
        ORDER BY p.organization COLLATE NOCASE ASC, p.business_round ASC,
-                p.updated_at DESC, i.sort_order ASC, i.id ASC`,
+                 p.updated_at DESC, i.sort_order ASC, i.id ASC`,
+    ).all<Record<string, unknown>>(),
+    d1.prepare(
+      `SELECT organization, business_round, award_status
+       FROM (
+         SELECT organization, business_round, award_status,
+                ROW_NUMBER() OVER (
+                  PARTITION BY organization, business_round
+                  ORDER BY activity_date DESC, id DESC
+                ) AS row_number
+         FROM activities
+       )
+       WHERE row_number = 1`,
     ).all<Record<string, unknown>>(),
   ]);
+  const whizzupScopes = new Set(
+    latestAwardsResult.results
+      .filter((row) => clean(row.award_status) === "위즈업 수주")
+      .map((row) => `${String(row.organization ?? "")}\u001f${Math.max(1, Number(row.business_round) || 1)}`),
+  );
   const productNamesByScope = new Map<string, string[]>();
   productResult.results.forEach((row) => {
     const key = `${String(row.organization ?? "")}\u001f${Math.max(1, Number(row.business_round) || 1)}`;
@@ -366,7 +357,9 @@ export async function listConstructionScheduleBoard() {
     if (name && !current.includes(name)) productNamesByScope.set(key, [...current, name]);
   });
   return {
-    projects: projectsResult.results.map((row) => {
+    projects: projectsResult.results.filter((row) =>
+      whizzupScopes.has(`${String(row.organization ?? "")}\u001f${Math.max(1, Number(row.business_round) || 1)}`),
+    ).map((row) => {
       const organization = String(row.organization ?? "");
       const businessRound = Math.max(1, Number(row.business_round) || 1);
       const sourceProductNames = productNamesByScope.get(`${organization}\u001f${businessRound}`) ?? [];
@@ -384,7 +377,9 @@ export async function listConstructionScheduleBoard() {
         updatedAt: String(row.updated_at ?? ""),
       } satisfies ConstructionScheduleProject;
     }),
-    schedules: schedulesResult.results.map(scheduleJson),
+    schedules: schedulesResult.results.filter((row) =>
+      whizzupScopes.has(`${String(row.organization ?? "")}\u001f${Math.max(1, Number(row.business_round) || 1)}`),
+    ).map(scheduleJson),
   };
 }
 
