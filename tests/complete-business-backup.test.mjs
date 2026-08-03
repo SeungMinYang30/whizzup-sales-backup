@@ -14,6 +14,7 @@ const activityCsv = await readFile(
 test("full backup includes every durable business table added after the original backup screen", () => {
   for (const table of [
     "quotation_documents",
+    "authored_quotations",
     "award_vendor_documents",
     "organization_school_links",
     "deletion_batches",
@@ -33,6 +34,7 @@ test("older backups preserve current post-July business data instead of clearing
   );
   assert.match(backup, /LEGACY_COMPLETE_BUSINESS_NOTICE/);
   assert.match(backup, /restoresQuotationDocuments/);
+  assert.match(backup, /restoresAuthoredQuotations/);
   assert.match(backup, /restoresAwardVendorDocuments/);
   assert.match(backup, /restoresOrganizationSchoolLinks/);
   assert.match(backup, /restoresDeletionBatches/);
@@ -42,6 +44,8 @@ test("older backups preserve current post-July business data instead of clearing
 test("backup validates document, trash, school-link, and holdem ownership references", () => {
   assert.match(backup, /award_vendor_documents\.vendor_id/);
   assert.match(backup, /quotation_documents\.created_by/);
+  assert.match(backup, /authored_quotations\.created_by/);
+  assert.match(backup, /authored_quotations\.updated_by/);
   assert.match(backup, /deletion_batches\.deleted_by_member_id/);
   assert.match(backup, /holdem_weekly_scores\.member_id/);
 });

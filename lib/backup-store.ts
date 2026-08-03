@@ -24,11 +24,13 @@ import { ensureSchoolDirectoryReady } from "./school-directory";
 import { ensureJointProjectsReady } from "./joint-projects";
 import { ensureInventoryReady } from "./inventory-store";
 import { ensureOrganizationSchedulesReady } from "./organization-schedules";
+import { ensureAuthoredQuotationsReady } from "./authored-quotations";
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-08-03-organization-schedules";
+export const BACKUP_SCHEMA_VERSION = "2026-08-03-authored-quotations";
 const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
+  "2026-08-03-organization-schedules",
   "2026-08-03-inventory-ledger",
   "2026-08-02-joint-budget-period",
   "2026-08-02-complete-business-backup",
@@ -81,6 +83,7 @@ export const BACKUP_MAX_ROWS = 20_000;
 
 const COMPLETE_BUSINESS_BACKUP_TABLES = new Set([
   "quotation_documents",
+  "authored_quotations",
   "award_vendor_documents",
   "organization_school_links",
   "deletion_batches",
@@ -651,6 +654,42 @@ export const BACKUP_TABLES = [
     orderBy: "id",
   },
   {
+    name: "authored_quotations",
+    columns: [
+      "id",
+      "quote_number",
+      "organization",
+      "business_round",
+      "project_title",
+      "quote_date",
+      "valid_until",
+      "status",
+      "execution_type",
+      "consortium_company",
+      "consortium_rate",
+      "discount_amount",
+      "extra_amount",
+      "subtotal_amount",
+      "supply_amount",
+      "tax_amount",
+      "total_amount",
+      "expected_earning",
+      "consortium_payment",
+      "margin_amount",
+      "margin_rate",
+      "include_stamp",
+      "memo",
+      "items_json",
+      "created_by",
+      "created_by_name",
+      "updated_by",
+      "updated_by_name",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "id",
+  },
+  {
     name: "organization_schedules",
     columns: [
       "id",
@@ -980,6 +1019,7 @@ async function ensureBackupReady() {
   await ensureJointProjectsReady();
   await ensureInventoryReady();
   await ensureOrganizationSchedulesReady();
+  await ensureAuthoredQuotationsReady();
   const d1 = getD1();
   await ensureInstitutionDecisionsReady(d1);
   await d1.prepare(`CREATE TABLE IF NOT EXISTS holdem_weekly_scores (
@@ -1425,6 +1465,16 @@ function validateRows(
         "activity_change_items.activity_id",
       )}`,
     "일괄 변경별 활동 연결",
+  );
+  assertUnique(
+    data.authored_quotations,
+    (row) => String(asInteger(row.id, "authored_quotations.id")),
+    "작성 견적서 ID",
+  );
+  assertUnique(
+    data.authored_quotations,
+    (row) => requiredText(row.quote_number, "authored_quotations.quote_number"),
+    "작성 견적서 번호",
   );
   assertUnique(
     data.manager_alert_acknowledgements,
@@ -2098,6 +2148,18 @@ function validateRows(
       true,
     ),
   );
+  data.authored_quotations.forEach((row) => {
+    assertReference(
+      row.created_by,
+      memberIds,
+      "authored_quotations.created_by",
+    );
+    assertReference(
+      row.updated_by,
+      memberIds,
+      "authored_quotations.updated_by",
+    );
+  });
   data.deletion_batches.forEach((row) => {
     assertReference(
       row.deleted_by_member_id,
@@ -2785,6 +2847,7 @@ type RestorePresence = {
   restoresAwardVendors: boolean;
   restoresAwardVendorDocuments: boolean;
   restoresQuotationDocuments: boolean;
+  restoresAuthoredQuotations: boolean;
   restoresOrganizationSchoolLinks: boolean;
   restoresDeletionBatches: boolean;
   restoresHoldemScores: boolean;
@@ -2806,6 +2869,7 @@ function restorePresenceFromInput(input: unknown): RestorePresence {
       rawData?.award_vendor_documents,
     ),
     restoresQuotationDocuments: Array.isArray(rawData?.quotation_documents),
+    restoresAuthoredQuotations: Array.isArray(rawData?.authored_quotations),
     restoresOrganizationSchoolLinks: Array.isArray(
       rawData?.organization_school_links,
     ),
@@ -2835,6 +2899,7 @@ async function replaceDatabaseFromBackup(
     restoresAwardVendors: true,
     restoresAwardVendorDocuments: true,
     restoresQuotationDocuments: true,
+    restoresAuthoredQuotations: true,
     restoresOrganizationSchoolLinks: true,
     restoresDeletionBatches: true,
     restoresHoldemScores: true,
@@ -2850,6 +2915,7 @@ async function replaceDatabaseFromBackup(
     restoresAwardVendors,
     restoresAwardVendorDocuments,
     restoresQuotationDocuments,
+    restoresAuthoredQuotations,
     restoresOrganizationSchoolLinks,
     restoresDeletionBatches,
     restoresHoldemScores,
@@ -2879,6 +2945,9 @@ async function replaceDatabaseFromBackup(
       : []),
     ...(restoresQuotationDocuments
       ? [d1.prepare("DELETE FROM quotation_documents")]
+      : []),
+    ...(restoresAuthoredQuotations
+      ? [d1.prepare("DELETE FROM authored_quotations")]
       : []),
     ...(restoresOrganizationSchoolLinks
       ? [d1.prepare("DELETE FROM organization_school_links")]
@@ -2958,6 +3027,7 @@ async function replaceDatabaseFromBackup(
     "organization_school_links",
     "organization_locations",
     "quotation_documents",
+    "authored_quotations",
     "sales_campaigns",
     "equipment_projects",
     "activity_authors",
@@ -2997,6 +3067,9 @@ async function replaceDatabaseFromBackup(
       return;
     }
     if (tableName === "quotation_documents" && !restoresQuotationDocuments) {
+      return;
+    }
+    if (tableName === "authored_quotations" && !restoresAuthoredQuotations) {
       return;
     }
     if (

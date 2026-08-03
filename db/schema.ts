@@ -1000,6 +1000,52 @@ export const accountingSettlementHistory = sqliteTable(
   ],
 );
 
+export const authoredQuotations = sqliteTable(
+  "authored_quotations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    quoteNumber: text("quote_number").notNull().unique(),
+    organization: text("organization").notNull(),
+    businessRound: integer("business_round").notNull().default(1),
+    projectTitle: text("project_title").notNull().default(""),
+    quoteDate: text("quote_date").notNull(),
+    validUntil: text("valid_until").notNull().default(""),
+    status: text("status").notNull().default("draft"),
+    executionType: text("execution_type").notNull().default("직영"),
+    consortiumCompany: text("consortium_company").notNull().default(""),
+    consortiumRate: text("consortium_rate").notNull().default("0"),
+    discountAmount: integer("discount_amount").notNull().default(0),
+    extraAmount: integer("extra_amount").notNull().default(0),
+    subtotalAmount: integer("subtotal_amount").notNull().default(0),
+    supplyAmount: integer("supply_amount").notNull().default(0),
+    taxAmount: integer("tax_amount").notNull().default(0),
+    totalAmount: integer("total_amount").notNull().default(0),
+    expectedEarning: integer("expected_earning").notNull().default(0),
+    consortiumPayment: integer("consortium_payment").notNull().default(0),
+    marginAmount: integer("margin_amount").notNull().default(0),
+    marginRate: text("margin_rate").notNull().default("0"),
+    includeStamp: integer("include_stamp", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    memo: text("memo").notNull().default(""),
+    itemsJson: text("items_json").notNull().default("[]"),
+    createdBy: integer("created_by").notNull(),
+    createdByName: text("created_by_name").notNull().default(""),
+    updatedBy: integer("updated_by").notNull(),
+    updatedByName: text("updated_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("authored_quotations_org_date_idx").on(
+      table.organization,
+      table.businessRound,
+      table.quoteDate,
+      table.id,
+    ),
+  ],
+);
+
 export const inventoryProducts = sqliteTable(
   "inventory_products",
   {

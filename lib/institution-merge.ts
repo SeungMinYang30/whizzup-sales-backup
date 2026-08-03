@@ -15,6 +15,7 @@ import {
 import { ensureManagerAlertsReady } from "./manager-alerts";
 import { ensureMapReady } from "./map-store";
 import { ensureQuotationDocumentsReady } from "./quotation-documents";
+import { ensureAuthoredQuotationsReady } from "./authored-quotations";
 import { ensureRecordsReady } from "./records-store";
 import { ensureOrganizationSchedulesReady } from "./organization-schedules";
 import { ensureSchoolDirectoryReady } from "./school-directory";
@@ -170,6 +171,7 @@ async function ensureInstitutionMergeReady() {
     ensureCampaignsReady(),
     ensureAiRecommendationsReady(),
     ensureQuotationDocumentsReady(),
+    ensureAuthoredQuotationsReady(),
     ensureManagerAlertsReady(),
     ensureSchoolDirectoryReady(),
     ensureTrashReady(),
@@ -259,9 +261,11 @@ async function countsForOrganization(organization: string) {
       .first<{ count: number }>(),
     d1
       .prepare(
-        "SELECT COUNT(*) AS count FROM quotation_documents WHERE organization = ?",
+        `SELECT
+           (SELECT COUNT(*) FROM quotation_documents WHERE organization = ?) +
+           (SELECT COUNT(*) FROM authored_quotations WHERE organization = ?) AS count`,
       )
-      .bind(organization)
+      .bind(organization, organization)
       .first<{ count: number }>(),
     d1
       .prepare(
@@ -1038,6 +1042,13 @@ export async function mergeInstitutionRecords(
     d1
       .prepare(
         "UPDATE quotation_documents SET organization = ? WHERE organization = ?",
+      )
+      .bind(canonical, alias),
+    d1
+      .prepare(
+        `UPDATE authored_quotations
+         SET organization = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE organization = ?`,
       )
       .bind(canonical, alias),
     d1

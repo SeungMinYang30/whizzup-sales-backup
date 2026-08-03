@@ -21,9 +21,12 @@ export type ScheduleReminder = {
   scheduledDate: string;
   visibility: ScheduleReminderVisibility;
   assigneeName: string;
+  updatedAt: string;
+  updatedByName: string;
+  conflict: boolean;
 };
 
-function scheduleReminderFromRow(row: ReminderRow): ScheduleReminder {
+function scheduleReminderFromRow(row: ReminderRow, conflict = false): ScheduleReminder {
   return {
     id: Number(row.id),
     organization: String(row.organization),
@@ -39,6 +42,9 @@ function scheduleReminderFromRow(row: ReminderRow): ScheduleReminder {
     assigneeName: hasAssignedManager(row.progress_manager)
       ? clean(row.progress_manager)
       : "",
+    updatedAt: String(row.updated_at ?? ""),
+    updatedByName: String(row.updated_by_name ?? ""),
+    conflict,
   };
 }
 
@@ -54,6 +60,8 @@ type ReminderRow = {
   source_author_name: string;
   award_status: string;
   progress_manager: string;
+  updated_at: string;
+  updated_by_name: string;
 };
 
 function hasAssignedManager(value: unknown) {
@@ -91,6 +99,8 @@ SELECT
   s.scheduled_date,
   s.created_by,
   s.created_by_name,
+  s.updated_at,
+  s.updated_by_name,
   source_author.member_id AS source_author_id,
   COALESCE(source_author.created_by_name, '') AS source_author_name,
   COALESCE(latest.award_status, '미정') AS award_status,
@@ -119,8 +129,8 @@ export async function listScheduleRemindersForMember(
     .bind(endDate)
     .all<ReminderRow>();
 
-  return result.results
-    .filter((row) =>
+  const visible = result.results
+    .filter((row: ReminderRow) =>
       canMemberSeeScheduleReminder(
         {
           awardStatus: row.award_status,
@@ -132,8 +142,25 @@ export async function listScheduleRemindersForMember(
         member,
       ),
     )
-    .slice(0, 100)
-    .map(scheduleReminderFromRow);
+    .slice(0, 100);
+  const counts = new Map<string, number>();
+  visible.forEach((row: ReminderRow) => {
+    const assignee = hasAssignedManager(row.progress_manager)
+      ? clean(row.progress_manager)
+      : "";
+    if (!assignee) return;
+    const key = `${row.scheduled_date}\u001f${assignee}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  });
+  return visible.map((row: ReminderRow) => {
+    const assignee = hasAssignedManager(row.progress_manager)
+      ? clean(row.progress_manager)
+      : "";
+    return scheduleReminderFromRow(
+      row,
+      Boolean(assignee) && (counts.get(`${row.scheduled_date}\u001f${assignee}`) ?? 0) > 1,
+    );
+  });
 }
 
 export async function listScheduleCalendarForMember(
@@ -154,7 +181,7 @@ export async function listScheduleCalendarForMember(
     .all<ReminderRow>();
 
   return result.results
-    .filter((row) =>
+    .filter((row: ReminderRow) =>
       canMemberSeeScheduleReminder(
         {
           awardStatus: row.award_status,
@@ -167,7 +194,7 @@ export async function listScheduleCalendarForMember(
       ),
     )
     .slice(0, 500)
-    .map(scheduleReminderFromRow);
+    .map((row: ReminderRow) => scheduleReminderFromRow(row));
 }
 
 export async function completeScheduleReminderForMember(

@@ -126,6 +126,8 @@ const AccountingPage = lazy(() => import("./accounting-page"));
 const AnalyticsPage = lazy(() => import("./analytics-page"));
 const OwnerPerformancePage = lazy(() => import("./owner-performance-page"));
 const InventoryPage = lazy(() => import("./inventory-page"));
+const ConstructionSchedulePage = lazy(() => import("./construction-schedule-page"));
+const QuotationManagementPage = lazy(() => import("./quotation-management-page"));
 const QuotationDocuments = lazy(() => import("./quotation-documents"));
 const SalesMapPage = lazy(() => import("./sales-map"));
 const HomeCalendar = lazy(() => import("./home-calendar"));
@@ -1022,6 +1024,8 @@ type View =
   | "analytics"
   | "owner-performance"
   | "inventory"
+  | "installation-schedule"
+  | "quotations"
   | "integration";
 
 type AccountingActivityStatus = {
@@ -1581,6 +1585,8 @@ const navItems: { id: View; label: string; mark: string }[] = [
   { id: "awards", label: "기관별 관리(수주 후)", mark: "W" },
   { id: "vendors", label: "협력사 관리", mark: "V" },
   { id: "products", label: "제품·견적 관리", mark: "P" },
+  { id: "quotations", label: "견적서 관리", mark: "Q" },
+  { id: "installation-schedule", label: "시공·납품 일정", mark: "D" },
   { id: "map", label: "영업·수주 지도", mark: "M" },
 ];
 
@@ -1603,6 +1609,8 @@ const presenceViewLabels: Record<View, string> = {
   analytics: "수주·제품 통계",
   "owner-performance": "대시보드",
   inventory: "물류·재고 관리",
+  "installation-schedule": "시공·납품 일정",
+  quotations: "견적서 관리",
   integration: "API 등록·관리",
 };
 
@@ -1662,6 +1670,8 @@ const availableViews = new Set<View>([
   "analytics",
   "owner-performance",
   "inventory",
+  "installation-schedule",
+  "quotations",
   "integration",
 ]);
 const presentationHiddenViews = new Set<View>([
@@ -2888,6 +2898,9 @@ type ScheduleReminderRecord = {
   scheduledDate: string;
   visibility: "private" | "shared-post-award";
   assigneeName: string;
+  updatedAt: string;
+  updatedByName: string;
+  conflict: boolean;
 };
 
 function scheduleReminderTiming(dateValue: string, todayValue: string) {
@@ -2901,6 +2914,17 @@ function scheduleReminderTiming(dateValue: string, todayValue: string) {
   const today = Date.parse(`${todayValue}T00:00:00Z`);
   const days = Math.max(1, Math.round((due - today) / 86_400_000));
   return { label: `D-${days}`, tone: "soon" } as const;
+}
+
+function scheduleReminderWasRecentlyUpdated(
+  updatedAt: string,
+  todayValue: string,
+) {
+  const updatedDate = timestampDateValue(updatedAt);
+  if (!updatedDate || updatedDate > todayValue) {
+    return false;
+  }
+  return daysSinceDate(updatedDate, todayValue) <= 2;
 }
 
 function parseProgressSchedule(value: string): ProgressScheduleItem[] {
@@ -14757,6 +14781,10 @@ export default function CrmApp({
                 ? "협력사 관리"
               : view === "products"
                 ? "제품·견적 관리"
+              : view === "quotations"
+                ? "견적서 관리"
+              : view === "installation-schedule"
+                ? "시공·납품 일정표"
               : view === "map"
                 ? "영업·수주 지도"
               : view === "lounge"
@@ -15820,6 +15848,10 @@ export default function CrmApp({
                         reminder.scheduledDate,
                         todayValue,
                       );
+                      const recentlyUpdated = scheduleReminderWasRecentlyUpdated(
+                        reminder.updatedAt,
+                        todayValue,
+                      );
                       return (
                         <div className="my-schedule-row" key={reminder.id}>
                           <button
@@ -15837,6 +15869,14 @@ export default function CrmApp({
                             <span className="my-schedule-copy">
                               <strong>{reminder.organization}</strong>
                               <small>{reminder.label}</small>
+                              {reminder.conflict && (
+                                <em className="my-schedule-conflict">같은 날 일정 겹침</em>
+                              )}
+                              {recentlyUpdated && reminder.updatedByName ? (
+                                <em className="my-schedule-recent">
+                                  최근 수정 · {reminder.updatedByName}
+                                </em>
+                              ) : null}
                             </span>
                             <span className="my-schedule-meta">
                               <b>{formatScheduleDate(reminder.scheduledDate)}</b>
@@ -16022,6 +16062,37 @@ export default function CrmApp({
                   setDetailBusinessRound(businessRound);
                   setDetailOrganization(organization);
                 }}
+              />
+            </Suspense>
+          ) : view === "installation-schedule" ? (
+            <Suspense fallback={<DeferredPageFallback />}>
+              <ConstructionSchedulePage
+                records={records}
+                onOpenOrganization={(organization, businessRound) => {
+                  setDetailBusinessRound(businessRound);
+                  setDetailOrganization(organization);
+                }}
+              />
+            </Suspense>
+          ) : view === "quotations" ? (
+            <Suspense fallback={<DeferredPageFallback />}>
+              <QuotationManagementPage
+                institutions={[
+                  ...new Map(
+                    records
+                      .filter((record) => record.organization.trim())
+                      .map((record) => [
+                        `${record.organization}\u001f${record.businessRound}`,
+                        {
+                          organization: record.organization,
+                          businessRound: record.businessRound,
+                          budgetType: record.budgetType,
+                        },
+                      ]),
+                  ).values(),
+                ].sort((left, right) =>
+                  left.organization.localeCompare(right.organization, "ko-KR"),
+                )}
               />
             </Suspense>
           ) : view === "inventory" ? (
