@@ -16,6 +16,7 @@ import { ensureManagerAlertsReady } from "./manager-alerts";
 import { ensureMapReady } from "./map-store";
 import { ensureQuotationDocumentsReady } from "./quotation-documents";
 import { ensureRecordsReady } from "./records-store";
+import { ensureOrganizationSchedulesReady } from "./organization-schedules";
 import { ensureSchoolDirectoryReady } from "./school-directory";
 import { replaceOrganizationReferences } from "./share-text";
 import { ensureTrashReady } from "./trash-store";
@@ -173,6 +174,7 @@ async function ensureInstitutionMergeReady() {
     ensureSchoolDirectoryReady(),
     ensureTrashReady(),
     ensureJointProjectsReady(),
+    ensureOrganizationSchedulesReady(),
     ensureInstitutionDecisionsReady(d1),
   ]);
   return d1;
@@ -695,6 +697,13 @@ export async function mergeInstitutionRecords(
   );
 
   const statements = [
+    d1
+      .prepare(
+        `UPDATE organization_schedules
+         SET organization = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE organization = ?`,
+      )
+      .bind(canonical, alias),
     d1
       .prepare(
         `UPDATE joint_project_members

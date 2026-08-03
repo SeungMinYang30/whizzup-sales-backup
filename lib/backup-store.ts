@@ -23,11 +23,13 @@ import { ensureQuotationDocumentsReady } from "./quotation-documents";
 import { ensureSchoolDirectoryReady } from "./school-directory";
 import { ensureJointProjectsReady } from "./joint-projects";
 import { ensureInventoryReady } from "./inventory-store";
+import { ensureOrganizationSchedulesReady } from "./organization-schedules";
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-08-03-inventory-ledger";
+export const BACKUP_SCHEMA_VERSION = "2026-08-03-organization-schedules";
 const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
+  "2026-08-03-inventory-ledger",
   "2026-08-02-joint-budget-period",
   "2026-08-02-complete-business-backup",
   "2026-07-31-activity-details",
@@ -93,6 +95,9 @@ const INVENTORY_BACKUP_TABLES = new Set([
   "inventory_products",
   "inventory_transactions",
 ]);
+const ORGANIZATION_SCHEDULE_BACKUP_TABLES = new Set([
+  "organization_schedules",
+]);
 
 function legacyBackupMayOmitTable(
   schemaVersion: string,
@@ -104,7 +109,8 @@ function legacyBackupMayOmitTable(
     (schemaVersion !== BACKUP_SCHEMA_VERSION &&
       (COMPLETE_BUSINESS_BACKUP_TABLES.has(tableName) ||
         JOINT_PROJECT_BACKUP_TABLES.has(tableName) ||
-        INVENTORY_BACKUP_TABLES.has(tableName)))
+        INVENTORY_BACKUP_TABLES.has(tableName) ||
+        ORGANIZATION_SCHEDULE_BACKUP_TABLES.has(tableName)))
   );
 }
 
@@ -645,6 +651,25 @@ export const BACKUP_TABLES = [
     orderBy: "id",
   },
   {
+    name: "organization_schedules",
+    columns: [
+      "id",
+      "organization",
+      "business_round",
+      "label",
+      "scheduled_date",
+      "completed",
+      "source_activity_id",
+      "created_by",
+      "created_by_name",
+      "updated_by",
+      "updated_by_name",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "id",
+  },
+  {
     name: "inventory_transactions",
     columns: [
       "id",
@@ -954,6 +979,7 @@ async function ensureBackupReady() {
   await ensureSchoolDirectoryReady();
   await ensureJointProjectsReady();
   await ensureInventoryReady();
+  await ensureOrganizationSchedulesReady();
   const d1 = getD1();
   await ensureInstitutionDecisionsReady(d1);
   await d1.prepare(`CREATE TABLE IF NOT EXISTS holdem_weekly_scores (
@@ -2898,6 +2924,7 @@ async function replaceDatabaseFromBackup(
     d1.prepare("DELETE FROM sales_campaigns"),
     d1.prepare("DELETE FROM app_settings"),
     d1.prepare("DELETE FROM institution_name_decisions"),
+    d1.prepare("DELETE FROM organization_schedules"),
     d1.prepare("DELETE FROM activities"),
     d1.prepare("DELETE FROM members"),
   ];
@@ -2915,6 +2942,7 @@ async function replaceDatabaseFromBackup(
     "budget_name_requests",
     "manager_alert_acknowledgements",
     "activities",
+    "organization_schedules",
     "activity_change_batches",
     "activity_change_items",
     "data_control_events",

@@ -108,6 +108,36 @@ export const activities = sqliteTable(
   ],
 );
 
+export const organizationSchedules = sqliteTable(
+  "organization_schedules",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organization: text("organization").notNull(),
+    businessRound: integer("business_round").notNull().default(1),
+    label: text("label").notNull(),
+    scheduledDate: text("scheduled_date").notNull(),
+    completed: integer("completed", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    sourceActivityId: integer("source_activity_id"),
+    createdBy: integer("created_by"),
+    createdByName: text("created_by_name").notNull().default(""),
+    updatedBy: integer("updated_by"),
+    updatedByName: text("updated_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("organization_schedules_scope_date_idx").on(
+      table.organization,
+      table.businessRound,
+      table.completed,
+      table.scheduledDate,
+      table.id,
+    ),
+  ],
+);
+
 export const members = sqliteTable("members", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   email: text("email").notNull().unique(),

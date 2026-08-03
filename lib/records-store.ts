@@ -32,7 +32,6 @@ import {
 } from "./institution-state-carryover";
 import { serializeInstitutionContacts } from "./institution-contacts";
 import {
-  COMPLETED_AWARD_STAGE,
   isCompletedAwardStage,
   normalizeActivityType,
   normalizeAwardStage,
@@ -1068,7 +1067,6 @@ export function mergeProgressSchedules(previous: unknown, incoming: unknown) {
 
 export function resolveProgressScheduleManagement(
   payload: Record<string, unknown>,
-  todayValue = koreaTodayValue(),
 ) {
   const progressSchedule = serializeProgressSchedule(payload.progressSchedule);
   const requestedStatus = normalizeSalesProgress(clean(payload.status));
@@ -1077,66 +1075,11 @@ export function resolveProgressScheduleManagement(
     payload.awardStage,
     requestedAwardStatus,
   );
-  const statusManual = payload.statusManual === true;
-  const awardStageManual = payload.awardStageManual === true;
-  if (!progressSchedule) {
-    const status = normalizeSalesProgress(requestedStatus, requestedAwardStatus);
-    return {
-      progressSchedule,
-      status,
-      awardStatus: requestedAwardStatus,
-      awardStage: requestedAwardStage,
-    };
-  }
-
-  const entries = parseProgressScheduleEntries(progressSchedule);
-  const dueEntries = entries.filter((entry) => entry.date < todayValue);
-  const hasCurrentOrFutureSchedule = entries.some(
-    (entry) => entry.date >= todayValue,
-  );
-  const constructionCompleted = dueEntries.some((entry) =>
-    /완공|준공|설치\s*완료|시공\s*완료|공사\s*완료|납품\s*완료/.test(
-      entry.label,
-    ),
-  );
-  const inspectionCompleted = dueEntries.some((entry) =>
-    /검수(?:\s*완료)?/.test(entry.label),
-  );
-  const trainingCompleted = dueEntries.some((entry) =>
-    /교육(?:\s*완료)?/.test(entry.label),
-  );
-  const inspectionOrTrainingScheduled = entries.some((entry) =>
-    /검수|교육/.test(entry.label),
-  );
-  const explicitlyDelivered = dueEntries.some((entry) =>
-    /납품\s*완료|최종\s*완료|사업\s*종료|검수.*교육.*완료|교육.*검수.*완료/.test(
-      entry.label,
-    ),
-  );
-
-  let status = normalizeSalesProgress(requestedStatus, requestedAwardStatus);
-  let awardStage = hasCurrentOrFutureSchedule
-    ? "일정 조율"
-    : "설치·공사 진행";
-  if (
-    explicitlyDelivered ||
-    (constructionCompleted && inspectionCompleted && trainingCompleted)
-  ) {
-    status = "수주 전환";
-    awardStage = COMPLETED_AWARD_STAGE;
-  } else if (constructionCompleted || inspectionOrTrainingScheduled) {
-    status = "수주 전환";
-    awardStage = "검수·교육 진행";
-  } else if (entries.length > 0 && !hasCurrentOrFutureSchedule) {
-    status = "수주 전환";
-  }
-
   return {
     progressSchedule,
-    status:
-      statusManual || awardStageManual ? requestedStatus : status,
+    status: requestedStatus,
     awardStatus: requestedAwardStatus,
-    awardStage: awardStageManual ? requestedAwardStage : awardStage,
+    awardStage: requestedAwardStage,
   };
 }
 

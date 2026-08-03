@@ -3109,9 +3109,22 @@ tr:hover .row-actions { opacity: 1; }
 .organization-current-schedule-list time { color: #365fc8; font-size: 11px; font-weight: 850; }
 .organization-current-schedule-list strong { min-width: 0; color: #263858; font-size: 12px; line-height: 1.45; }
 .organization-current-schedule-list small { padding: 5px 8px; border-radius: 999px; background: #e9f6f0; color: #197554; font-size: 9px; font-weight: 850; white-space: nowrap; }
+.organization-current-schedule-list > div.completed { opacity: .72; background: #f7f9fc; }
+.organization-current-schedule-list > div.completed strong { text-decoration: line-through; color: #718097; }
+.organization-current-schedule-list > div.completed small { background: #e7ebf2; color: #5d697c; }
 .organization-current-schedule-empty { margin: 14px 18px 8px; padding: 18px; border: 1px dashed #d8e0ed; border-radius: 9px; background: rgba(255,255,255,.68); color: #7e8ba0; font-size: 11px; line-height: 1.6; text-align: center; }
 .organization-current-schedule > button { min-height: 36px; margin: 8px 18px 16px; padding: 0 12px; border: 1px solid #cbd7ed; border-radius: 7px; background: white; color: #3f5f9d; font-size: 10px; font-weight: 850; cursor: pointer; }
 .organization-current-schedule > button:hover { border-color: #879bea; background: #f7f8ff; }
+.organization-schedule-editor { display: grid; gap: 9px; padding: 14px 18px 17px; }
+.organization-schedule-editor-row { display: grid; grid-template-columns: auto minmax(150px,1fr) 150px auto; gap: 8px; align-items: center; }
+.organization-schedule-editor-row > input { min-height: 40px; padding: 0 11px; border: 1px solid #ccd8eb; border-radius: 8px; background: #fff; color: #203352; font-size: 12px; }
+.organization-schedule-complete { min-height: 40px; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid #dbe3ef; border-radius: 8px; background: #fff; color: #53657e; font-size: 10px; font-weight: 800; }
+.organization-schedule-editor-row > button, .organization-schedule-editor-actions button { min-height: 38px; padding: 0 11px; border: 1px solid #cad6e8; border-radius: 8px; background: #fff; color: #3f5f9d; font-size: 10px; font-weight: 850; cursor: pointer; }
+.organization-schedule-editor-row > button.danger { border-color: #efc9c3; color: #b54d43; }
+.organization-schedule-editor-actions { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; align-items: center; margin-top: 3px; }
+.organization-schedule-editor-actions button.primary { border-color: #4658db; background: #4658db; color: #fff; }
+.organization-schedule-editor-actions button:disabled { opacity: .55; cursor: wait; }
+.organization-schedule-editor > p { margin: 0; color: #75849c; font-size: 10px; line-height: 1.55; }
 .history-latest, .history-timeline-section { margin-bottom: 14px; border: 1px solid #e1e6ef; background: white; }
 .history-section-heading { min-height: 72px; padding: 17px 19px 14px; border-bottom: 1px solid #edf0f5; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .history-section-heading h3 { margin: 6px 0 0; font-size: 16px; }
@@ -4234,6 +4247,9 @@ tr:hover .row-actions { opacity: 1; }
   .history-summary-grid > .history-summary-budget.editing { grid-column: 1 / -1; }
   .organization-current-schedule-list > div { grid-template-columns: 1fr auto; gap: 7px 10px; }
   .organization-current-schedule-list time { grid-column: 1 / -1; }
+  .organization-schedule-editor-row { grid-template-columns: auto 1fr auto; }
+  .organization-schedule-editor-row > input[type="text"] { grid-column: 2 / -1; }
+  .organization-schedule-editor-row > input[type="date"] { grid-column: 2; }
   .equipment-project-card > header { flex-direction: column; }
   .equipment-finance-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .equipment-construction-form { grid-template-columns: 1fr 1fr; }

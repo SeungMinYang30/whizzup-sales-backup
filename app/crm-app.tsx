@@ -102,11 +102,8 @@ import {
   sortScheduleRowsByEarliestDate,
 } from "../lib/schedule-presentation";
 import {
-  ACTIVITY_TYPE_OPTIONS,
   AWARD_STAGE_OPTIONS,
   COMPLETED_AWARD_STAGE,
-  SALES_PROGRESS_OPTIONS,
-  isActivePreAwardProgress,
   isCompletedAwardStage,
   normalizeActivityType,
   normalizeAwardStage,
@@ -1190,10 +1187,8 @@ type ActivityReviewDraft = Partial<
 >;
 
 type DetailInlineField =
-  | "activityType"
   | "budget"
   | "contact"
-  | "status"
   | "awardStage"
   | "execution"
   | "progressManager";
@@ -1614,8 +1609,6 @@ function completeWorkspaceMenuOrder(order: View[]) {
   return completed;
 }
 
-const statusOptions = [...SALES_PROGRESS_OPTIONS];
-
 const awardStageOptions = [...AWARD_STAGE_OPTIONS];
 
 const completedAwardStages = new Set([COMPLETED_AWARD_STAGE, "완공"]);
@@ -1645,8 +1638,6 @@ const presentationHiddenViews = new Set<View>([
 ]);
 const presentationModeStorageKey = "whizzup-presentation-mode";
 
-const typeOptions = [...ACTIVITY_TYPE_OPTIONS];
-
 function simplifiedActivityType(value: string) {
   return normalizeActivityType(value);
 }
@@ -1659,34 +1650,16 @@ function contactMethodForActivityType(value: string) {
   return "유선";
 }
 
-function automaticSalesStatus(
-  record: Pick<
-    FormState,
-    "status" | "statusManual" | "awardStatus"
-  >,
-) {
-  if (record.awardStatus === "타업체 수주") return "영업 종료";
-  if (
-    !record.statusManual &&
-    ["위즈업 수주", "협력사 수주"].includes(record.awardStatus)
-  ) {
-    return "수주 전환";
-  }
-  return normalizeSalesProgress(record.status, record.awardStatus);
-}
-
 const gptInstructions = `당신은 위즈업의 TM·미팅 기록 정리 도우미입니다.
 상담 분류는 사용하지 않습니다. 호환성 필드인 topic은 항상 빈 문자열로 두고, 실제 상담 내용은 summary에만 정리하세요.
-사용자가 입력한 내용을 기관명, 날짜, 지역, 예산, 예산금액, 활동유형, 핵심요약, 다음행동, 재연락일, 수주 결과로 구조화하세요.
+사용자가 입력한 내용을 기관명, 날짜, 지역, 예산, 예산금액, 핵심요약, 다음행동, 재연락일, 수주 결과로 구조화하세요.
 기관명이 정정되거나 기존 기관명으로 확정되면 제목뿐 아니라 핵심요약, 다음행동, AI 미팅 요약 등 모든 문장에 최종 기관명을 동일하게 사용하고 이전 오타는 남기지 마세요.
 기관명에 지역명이 이미 포함되어 있으면 지역명을 앞에 다시 붙이지 마세요. 예를 들어 “서울천동초등학교”를 “서울서울천동초등학교”로 쓰면 안 됩니다.
 요약에는 확인된 일정·결정·후속 행동만 간결하게 적으세요. “일정 확인이 핵심”, “별도 장비나 수주 정보 없음”, “추가 정보 없음” 같은 해설이나 없는 정보에 대한 문장은 만들지 마세요. 단, 기관이 장비가 필요 없다고 말했거나 미수주로 결정된 것처럼 실제 전달·결정된 부정 사실은 보존하세요.
-활동유형은 “TM·통화”, “미팅·방문”, “문자·메일”, “기타” 중 하나만 사용하세요.
-사용자가 “통화했어”, “전화했어”, “TM 진행”처럼 실제 활동을 직접 표현하면 다른 문맥보다 우선하여 활동유형을 “TM·통화”로 정리하세요. 다음 미팅 예정이라는 문구가 함께 있어도 이번 활동이 통화라면 미팅으로 바꾸지 마세요.
 예산은 budgetType에, 금액은 사용자가 말한 단위까지 포함해 budgetAmount에 저장하세요. 모르면 빈 값으로 두세요.
 수주 후 진행 중인 학교·기관에서 “목공 6/17, 시스템 6/19”처럼 여러 일정을 말하면 progressSchedule 배열에 빠짐없이 나누어 저장하세요. label은 목공·시스템처럼 짧게 쓰고 date는 현재 연도를 기준으로 YYYY-MM-DD 형식으로 정리하세요.
 수주 결과는 미정, 위즈업 수주, 협력사 수주, 타업체 수주 중 하나입니다. 수주업체명을 awardCompany에 적고, 업체명이 없으면 미정으로 두세요. 타업체 수주라면 실제 수주업체명을 반드시 확인하세요.
-영업 상태 status는 신규 접촉, 상담 진행, 제안·견적, 결과 대기, 재영업 상담, 사후관리, 수주 전환, 영업 종료 중 하나만 사용하세요. 애매하면 상담 진행으로 두세요. “선정”, “확정”, “대상 기관으로 확인”도 영업 완료로 해석하지 마세요.
+호환성 필드인 activityType은 기타, contactMethod는 기타, status는 상담 진행으로 고정하세요. 활동 유형과 영업 진행상황을 추측하거나 분류하지 마세요.
 타업체 수주라면 사업방식은 해당 없음, 수주 진행 단계는 해당 없음으로 정리하세요.
 그 외 수주 건의 사업방식은 컨소와 업체명을 명시한 경우만 컨소로 정리하고, 나머지는 직영으로 정리하세요.
 수주 건의 진행 단계는 미정, 협상, 계약, 일정 조율, 설치·공사 진행, 검수·교육 진행, 납품 완료 중 하나로 정리하세요.
@@ -2858,6 +2831,23 @@ type ProgressScheduleItem = {
   date: string;
 };
 
+type OrganizationScheduleRecord = {
+  id: number;
+  organization: string;
+  businessRound: number;
+  label: string;
+  scheduledDate: string;
+  completed: boolean;
+  updatedByName: string;
+};
+
+type OrganizationScheduleDraft = {
+  key: string;
+  label: string;
+  scheduledDate: string;
+  completed: boolean;
+};
+
 function parseProgressSchedule(value: string): ProgressScheduleItem[] {
   const currentYear = new Date().getFullYear();
   const datePattern =
@@ -2969,55 +2959,6 @@ function awardImportSignature(
     Math.max(1, Number(value.businessRound) || 1),
     awardCompanyKey(value.awardCompany),
   ].join("|");
-}
-
-function automaticProgressManagement(value: string) {
-  if (!value.trim()) return null;
-  const todayValue = toLocalDateValue(new Date());
-  const items = parseProgressSchedule(value).sort(
-    (left, right) =>
-      left.date.localeCompare(right.date) ||
-      left.label.localeCompare(right.label, "ko-KR"),
-  );
-  const dueItems = items.filter((item) => item.date < todayValue);
-  const constructionCompleted = dueItems.some((item) =>
-    /완공|준공|설치\s*완료|시공\s*완료|공사\s*완료|납품\s*완료/.test(
-      item.label,
-    ),
-  );
-  const inspectionCompleted = dueItems.some((item) =>
-    /검수(?:\s*완료)?/.test(item.label),
-  );
-  const trainingCompleted = dueItems.some((item) =>
-    /교육(?:\s*완료)?/.test(item.label),
-  );
-  const inspectionOrTrainingScheduled = items.some((item) =>
-    /검수|교육/.test(item.label),
-  );
-  const explicitlyDelivered = dueItems.some((item) =>
-    /납품\s*완료|최종\s*완료|사업\s*종료|검수.*교육.*완료|교육.*검수.*완료/.test(
-      item.label,
-    ),
-  );
-  if (
-    explicitlyDelivered ||
-    (constructionCompleted && inspectionCompleted && trainingCompleted)
-  ) {
-    return { status: "수주 전환", awardStage: COMPLETED_AWARD_STAGE };
-  }
-  if (constructionCompleted || inspectionOrTrainingScheduled) {
-    return { status: "수주 전환", awardStage: "검수·교육 진행" };
-  }
-  const hasCurrentOrFutureSchedule = items.some(
-    (item) => item.date >= todayValue,
-  );
-  if (items.length > 0 && !hasCurrentOrFutureSchedule) {
-    return {
-      status: "수주 전환",
-      awardStage: "설치·공사 진행",
-    };
-  }
-  return { status: "수주 전환", awardStage: "일정 조율" };
 }
 
 function mergeEquipmentDrafts(
@@ -6037,10 +5978,6 @@ export default function CrmApp({
     useState(false);
   const [institutionBulkNextAction, setInstitutionBulkNextAction] =
     useState("");
-  const [institutionBulkStatusEnabled, setInstitutionBulkStatusEnabled] =
-    useState(false);
-  const [institutionBulkStatus, setInstitutionBulkStatus] =
-    useState("상담 진행");
   const [institutionBulkAwardEnabled, setInstitutionBulkAwardEnabled] =
     useState(false);
   const [institutionBulkAwardStatus, setInstitutionBulkAwardStatus] =
@@ -6290,6 +6227,15 @@ export default function CrmApp({
   const [detailInlineDraft, setDetailInlineDraft] =
     useState<FormState | null>(null);
   const [detailInlineSaving, setDetailInlineSaving] = useState(false);
+  const [detailSchedules, setDetailSchedules] = useState<
+    OrganizationScheduleRecord[]
+  >([]);
+  const [detailSchedulesLoading, setDetailSchedulesLoading] = useState(false);
+  const [detailScheduleEditing, setDetailScheduleEditing] = useState(false);
+  const [detailScheduleDrafts, setDetailScheduleDrafts] = useState<
+    OrganizationScheduleDraft[]
+  >([]);
+  const [detailScheduleSaving, setDetailScheduleSaving] = useState(false);
   const [selectedOrganizations, setSelectedOrganizations] = useState<string[]>(
     [],
   );
@@ -7447,18 +7393,9 @@ export default function CrmApp({
         return false;
       }
       if (
-        view !== "awards" &&
-        typeFilter !== "전체 유형" &&
-        normalizeActivityType(record.activityType) !== typeFilter
-      ) {
-        return false;
-      }
-      if (
+        view === "awards" &&
         statusFilter !== "전체 상태" &&
-        (view === "awards"
-          ? normalizeAwardStage(record.awardStage, record.awardStatus)
-          : normalizeSalesProgress(record.status, record.awardStatus)) !==
-          statusFilter
+        normalizeAwardStage(record.awardStage, record.awardStatus) !== statusFilter
       ) {
         return false;
       }
@@ -7826,18 +7763,6 @@ export default function CrmApp({
       ).length === 0 ||
       isActivityReviewProcessed(record),
   ).length;
-  const automaticFormProgressManagement = automaticProgressManagement(
-    form.progressSchedule,
-  );
-  const formProgressManagement = automaticFormProgressManagement
-    ? {
-        ...automaticFormProgressManagement,
-        status:
-          form.awardStatus === "타업체 수주"
-            ? "영업 종료"
-            : automaticFormProgressManagement.status,
-      }
-    : null;
   const followupAlertEnd = new Date(today);
   followupAlertEnd.setDate(today.getDate() + 2);
   const followupAlertEndValue = toLocalDateValue(followupAlertEnd);
@@ -7896,10 +7821,7 @@ export default function CrmApp({
       ) {
         return [];
       }
-      const salesProgress = effectiveSalesProgress(record, history);
-      return isActivePreAwardProgress(salesProgress)
-        ? [{ record, salesProgress }]
-        : [];
+      return [{ record, salesProgress: "" }];
     });
   }, [latestInstitutionRows, recordsByInstitutionKey]);
   const followupRows = useMemo(() => {
@@ -7911,16 +7833,6 @@ export default function CrmApp({
             record.followUpDate &&
               record.followUpDate <= followupAlertEndValue,
           ),
-      )
-      .filter(
-        ({ record }) =>
-          typeFilter === "전체 유형" ||
-          normalizeActivityType(record.activityType) === typeFilter,
-      )
-      .filter(
-        ({ salesProgress }) =>
-          statusFilter === "전체 상태" ||
-          salesProgress === statusFilter,
       )
       .filter(
         ({ record }) =>
@@ -8016,7 +7928,6 @@ export default function CrmApp({
         return {
           record,
           priorAward: priorAwardReference(record, history),
-          salesProgress: effectiveSalesProgress(record, history),
           budgetAmountDisplay: group.projectId
             ? {
                 label: `${group.members
@@ -8159,6 +8070,130 @@ export default function CrmApp({
     [records, detailOrganization],
   );
   const detailDisplayRecord = detailLatest ?? detailCampaignRegistration;
+  useEffect(() => {
+    if (!detailOrganization) {
+      return;
+    }
+    const controller = new AbortController();
+    setDetailSchedulesLoading(true);
+    void fetch(
+      `/api/schedules?organization=${encodeURIComponent(detailOrganization)}&businessRound=${selectedDetailBusinessRound}`,
+      { cache: "no-store", signal: controller.signal },
+    )
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          schedules?: OrganizationScheduleRecord[];
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(payload.error || "일정을 불러오지 못했습니다.");
+        }
+        const schedules = Array.isArray(payload.schedules)
+          ? payload.schedules
+          : [];
+        setDetailSchedules(schedules);
+        setDetailScheduleDrafts(
+          schedules.map((schedule) => ({
+            key: `saved-${schedule.id}`,
+            label: schedule.label,
+            scheduledDate: schedule.scheduledDate,
+            completed: schedule.completed,
+          })),
+        );
+      })
+      .catch((caught: unknown) => {
+        if (controller.signal.aborted) return;
+        setToast(
+          caught instanceof Error
+            ? caught.message
+            : "일정을 불러오지 못했습니다.",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setDetailSchedulesLoading(false);
+      });
+    return () => controller.abort();
+  }, [detailOrganization, selectedDetailBusinessRound]);
+
+  const beginDetailScheduleEdit = () => {
+    setDetailScheduleDrafts(
+      detailSchedules.map((schedule) => ({
+        key: `saved-${schedule.id}`,
+        label: schedule.label,
+        scheduledDate: schedule.scheduledDate,
+        completed: schedule.completed,
+      })),
+    );
+    setDetailScheduleEditing(true);
+  };
+
+  const cancelDetailScheduleEdit = () => {
+    setDetailScheduleDrafts(
+      detailSchedules.map((schedule) => ({
+        key: `saved-${schedule.id}`,
+        label: schedule.label,
+        scheduledDate: schedule.scheduledDate,
+        completed: schedule.completed,
+      })),
+    );
+    setDetailScheduleEditing(false);
+  };
+
+  const saveDetailSchedules = async () => {
+    if (!detailOrganization || detailScheduleSaving) return;
+    if (
+      detailScheduleDrafts.some(
+        (schedule) => !schedule.label.trim() || !schedule.scheduledDate,
+      )
+    ) {
+      setToast("일정 이름과 날짜를 모두 입력해 주세요.");
+      return;
+    }
+    try {
+      setDetailScheduleSaving(true);
+      const response = await fetch("/api/schedules", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organization: detailOrganization,
+          businessRound: selectedDetailBusinessRound,
+          schedules: detailScheduleDrafts.map((schedule) => ({
+            label: schedule.label.trim(),
+            scheduledDate: schedule.scheduledDate,
+            completed: schedule.completed,
+          })),
+        }),
+      });
+      const payload = (await response.json()) as {
+        schedules?: OrganizationScheduleRecord[];
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || "일정을 저장하지 못했습니다.");
+      }
+      const schedules = Array.isArray(payload.schedules)
+        ? payload.schedules
+        : [];
+      setDetailSchedules(schedules);
+      setDetailScheduleDrafts(
+        schedules.map((schedule) => ({
+          key: `saved-${schedule.id}`,
+          label: schedule.label,
+          scheduledDate: schedule.scheduledDate,
+          completed: schedule.completed,
+        })),
+      );
+      setDetailScheduleEditing(false);
+      setToast("일정만 저장했습니다. 영업·수주 상태는 변경하지 않았습니다.");
+      void refreshRecordsInBackground();
+    } catch (caught) {
+      setToast(
+        caught instanceof Error ? caught.message : "일정을 저장하지 못했습니다.",
+      );
+    } finally {
+      setDetailScheduleSaving(false);
+    }
+  };
   const detailJointProjectSponsorContact = useMemo(() => {
     if (
       !detailDisplayRecord?.jointProjectId ||
@@ -8206,15 +8241,12 @@ export default function CrmApp({
   const detailBudgetAmountDisplay = detailDisplayRecord
     ? budgetAmountDisplayForRecord(detailDisplayRecord)
     : null;
-  const detailCurrentSchedules = detailDisplayRecord
-    ? parseProgressSchedule(detailDisplayRecord.progressSchedule)
-        .filter((item) => item.date >= todayValue)
-        .sort(
-          (left, right) =>
-            left.date.localeCompare(right.date) ||
-            left.label.localeCompare(right.label, "ko-KR"),
-        )
-    : [];
+  const detailCurrentSchedules = [...detailSchedules].sort(
+    (left, right) =>
+      Number(left.completed) - Number(right.completed) ||
+      left.scheduledDate.localeCompare(right.scheduledDate) ||
+      left.label.localeCompare(right.label, "ko-KR"),
+  );
   const { actionableFollowups, dueSoonFollowups } = useMemo(() => {
     const latestRecords = new Map<string, Activity>();
     records.forEach((record) => {
@@ -9565,8 +9597,7 @@ export default function CrmApp({
           contacts: nextContacts,
           activityType: simplifiedActivityType(draft.activityType),
           contactMethod: contactMethodForActivityType(draft.activityType),
-          statusManual:
-            field === "status" ? true : draft.statusManual,
+          statusManual: draft.statusManual,
           budgetInstitutionAmount:
             field === "budget" &&
             normalizeBudgetAmountMode(draft.budgetAmountMode) !== "quote_auto"
@@ -12543,16 +12574,9 @@ export default function CrmApp({
           : { ...normalizedHiddenFields, awardCompletedDate: "" };
       const normalizedForm: FormState = {
         ...normalizedCompletion,
-        status: automaticSalesStatus(normalizedCompletion),
+        status: normalizedCompletion.status || "상담 진행",
       };
-      const automaticAwardStage = automaticProgressManagement(
-        normalizedForm.progressSchedule,
-      )?.awardStage;
-      const awardStageManual = Boolean(
-        automaticAwardStage &&
-          normalizedForm.awardStatus !== "타업체 수주" &&
-          normalizedForm.awardStage !== automaticAwardStage,
-      );
+      const awardStageManual = true;
       const baselineOrganization = institutionNameChanged
         ? sourceOrganization
         : normalizedForm.organization;
@@ -12845,7 +12869,6 @@ export default function CrmApp({
       institutionBulkContactNameEnabled && "contactName",
       institutionBulkFollowUpEnabled && "followUpDate",
       institutionBulkNextActionEnabled && "nextAction",
-      institutionBulkStatusEnabled && "status",
       institutionBulkAwardEnabled && "awardStatus",
     ].filter((field): field is string => Boolean(field));
     if (!applyFields.length) {
@@ -12890,7 +12913,6 @@ export default function CrmApp({
       institutionBulkContactNameEnabled && "사업 담당자",
       institutionBulkFollowUpEnabled && "재연락 예정일",
       institutionBulkNextActionEnabled && "다음 행동",
-      institutionBulkStatusEnabled && "영업 진행 상태",
       institutionBulkAwardEnabled && "수주 구분",
     ].filter((label): label is string => Boolean(label));
     if (
@@ -12923,7 +12945,7 @@ export default function CrmApp({
           contactName: institutionBulkContactName.trim(),
           followUpDate: institutionBulkFollowUpDate,
           nextAction: institutionBulkNextAction.trim(),
-          status: institutionBulkStatus,
+          status: "상담 진행",
           awardStatus: institutionBulkAwardStatus,
           awardCompany: institutionBulkAwardCompany.trim(),
           applyFields,
@@ -12975,19 +12997,7 @@ export default function CrmApp({
               institutionBulkNextActionEnabled
                 ? institutionBulkNextAction.trim()
                 : record.nextAction,
-            status: institutionBulkAwardEnabled
-              ? ["위즈업 수주", "협력사 수주"].includes(institutionBulkAwardStatus)
-                ? "수주 전환"
-                : institutionBulkAwardStatus === "타업체 수주"
-                  ? "영업 종료"
-                  : record.status === "수주 후 진행" ||
-                      record.status === "수주 전환" ||
-                      record.status === "영업 종료"
-                    ? "상담 진행"
-                    : record.status
-              : institutionBulkStatusEnabled
-                ? institutionBulkStatus
-                : record.status,
+            status: record.status,
             awardStatus: institutionBulkAwardEnabled
               ? institutionBulkAwardStatus
               : record.awardStatus,
@@ -13012,7 +13022,6 @@ export default function CrmApp({
       setInstitutionBulkContactNameEnabled(false);
       setInstitutionBulkFollowUpEnabled(false);
       setInstitutionBulkNextActionEnabled(false);
-      setInstitutionBulkStatusEnabled(false);
       setInstitutionBulkAwardEnabled(false);
       setInstitutionBulkAwardStatus("미정");
       setInstitutionBulkAwardCompany("");
@@ -14470,13 +14479,10 @@ export default function CrmApp({
       "기관 메일",
       "예산",
       "예산금액",
-      "활동 유형",
-      "컨택 방식",
       "주제",
       "내용",
       "다음 행동",
       "재연락 예정일",
-      "상태",
       "수주 결과",
       "수주업체",
       "사업 방식",
@@ -14497,13 +14503,10 @@ export default function CrmApp({
         record.contactEmail,
         budgetNamesForRecord(record),
         budgetAmountDisplayForRecord(record).label,
-        record.activityType,
-        displayContactMethod(record),
         record.topic,
         record.summary,
         record.nextAction,
         record.followUpDate,
-        record.status,
         record.awardStatus,
         record.awardCompany,
         record.executionType,
@@ -15413,7 +15416,6 @@ export default function CrmApp({
                               <span>저장 전 확인</span>
                               <h3>{aiPreview.organization}</h3>
                             </div>
-                            <em>{aiPreview.activityType || "활동 유형 미정"}</em>
                           </div>
                           <div className="ai-preview-grid">
                             <div><span>날짜</span><strong>{formatDate(aiPreview.activityDate)}</strong></div>
@@ -17509,14 +17511,8 @@ export default function CrmApp({
                       <label className="institution-bulk-toggle"><input type="checkbox" checked={institutionBulkNextActionEnabled} onChange={(event) => setInstitutionBulkNextActionEnabled(event.target.checked)} /><strong>다음 행동</strong></label>
                       <input disabled={!institutionBulkNextActionEnabled} value={institutionBulkNextAction} onChange={(event) => setInstitutionBulkNextAction(event.target.value)} placeholder="예: 담당자 확인 후 제안서 발송" />
                     </section>
-                    <section className={institutionBulkStatusEnabled ? "enabled" : ""}>
-                      <label className="institution-bulk-toggle"><input type="checkbox" checked={institutionBulkStatusEnabled} onChange={(event) => setInstitutionBulkStatusEnabled(event.target.checked)} /><strong>영업 진행 상태</strong><small>선택 기관 모두 변경</small></label>
-                      <select disabled={!institutionBulkStatusEnabled} value={institutionBulkStatus} onChange={(event) => setInstitutionBulkStatus(event.target.value)}>
-                        {statusOptions.map((status) => <option key={status}>{status}</option>)}
-                      </select>
-                    </section>
                     <section className={institutionBulkAwardEnabled ? "enabled" : ""}>
-                      <label className="institution-bulk-toggle"><input type="checkbox" checked={institutionBulkAwardEnabled} onChange={(event) => setInstitutionBulkAwardEnabled(event.target.checked)} /><strong>수주 구분</strong><small>영업 상태 자동 연동</small></label>
+                      <label className="institution-bulk-toggle"><input type="checkbox" checked={institutionBulkAwardEnabled} onChange={(event) => setInstitutionBulkAwardEnabled(event.target.checked)} /><strong>수주 구분</strong><small>선택 기관 모두 변경</small></label>
                       <div className="institution-bulk-pair">
                         <select disabled={!institutionBulkAwardEnabled} value={institutionBulkAwardStatus} onChange={(event) => { const awardStatus = event.target.value; setInstitutionBulkAwardStatus(awardStatus); if (!["협력사 수주", "타업체 수주"].includes(awardStatus)) setInstitutionBulkAwardCompany(""); }}>
                           <option>미정</option>
@@ -17530,7 +17526,7 @@ export default function CrmApp({
                   </div>
                   <div className="institution-budget-bulk-fields institution-bulk-footer">
                     <p className="institution-bulk-save-note">
-                      체크하지 않은 항목은 그대로 유지됩니다. 수주 구분은 영업 진행 상태와 자동 연동됩니다.
+                      체크하지 않은 항목은 그대로 유지됩니다.
                     </p>
                     <button
                       type="button"
@@ -17543,8 +17539,7 @@ export default function CrmApp({
                           institutionBulkContactNameEnabled ||
                           institutionBulkFollowUpEnabled ||
                           institutionBulkNextActionEnabled ||
-                          institutionBulkStatusEnabled
-                          || institutionBulkAwardEnabled
+                          institutionBulkAwardEnabled
                         )
                       }
                       onClick={() => void saveSelectedInstitutionBudgets()}
@@ -17580,22 +17575,6 @@ export default function CrmApp({
                   <option value="unclassified">미분류 예산</option>
                 </select>
                 <select
-                  value={typeFilter}
-                  onChange={(event) => setTypeFilter(event.target.value)}
-                  aria-label="활동 유형 필터"
-                >
-                  <option value="전체 유형">전체 활동 유형</option>
-                  {typeOptions.map((type) => <option key={type}>{type}</option>)}
-                </select>
-                <select
-                  value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value)}
-                  aria-label="영업 진행상황 필터"
-                >
-                  <option value="전체 상태">전체 영업 진행상황</option>
-                  {statusOptions.map((status) => <option key={status}>{status}</option>)}
-                </select>
-                <select
                   value={awardFilter}
                   onChange={(event) => setAwardFilter(event.target.value)}
                   aria-label="수주 결과 필터"
@@ -17621,8 +17600,6 @@ export default function CrmApp({
                 </select>
                 {(search ||
                   budgetGroupFilter !== "all" ||
-                  typeFilter !== "전체 유형" ||
-                  statusFilter !== "전체 상태" ||
                   awardFilter !== "전체 수주" ||
                   followupSort !== "activity-desc" ||
                   followupDueSoonOnly) && (
@@ -17631,8 +17608,6 @@ export default function CrmApp({
                     onClick={() => {
                       setSearch("");
                       setBudgetGroupFilter("all");
-                      setTypeFilter("전체 유형");
-                      setStatusFilter("전체 상태");
                       setAwardFilter("전체 수주");
                       setFollowupSort("activity-desc");
                       setFollowupDueSoonOnly(false);
@@ -17687,7 +17662,6 @@ export default function CrmApp({
                       <th>예산 · 금액</th>
                       <th>내용 요약</th>
                       <th>사업방식</th>
-                      <th>영업 진행상황</th>
                       <th>진행 담당자</th>
                     </tr>
                   </thead>
@@ -17697,7 +17671,6 @@ export default function CrmApp({
                         {
                           record,
                           priorAward,
-                          salesProgress,
                           group,
                         },
                         index,
@@ -17849,15 +17822,6 @@ export default function CrmApp({
                           {record.executionType === "컨소" && (
                             <small>{record.consortiumCompany || "업체명 미입력"}</small>
                           )}
-                        </td>
-                        <td>
-                          <span
-                            className={`status-pill ${statusClass(
-                              salesProgress,
-                            )}`}
-                          >
-                            {salesProgress}
-                          </span>
                         </td>
                         <td>
                           {renderInlineAssigneePicker(record)}
@@ -18460,16 +18424,12 @@ export default function CrmApp({
                       <option value="unclassified">미분류 예산</option>
                     </select>
                   )}
-                  {view !== "awards" && (
-                    <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} aria-label="활동 유형 필터">
-                      <option value="전체 유형">전체 활동 유형</option>
-                      {typeOptions.map((type) => <option key={type}>{type}</option>)}
+                  {view === "awards" && (
+                    <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="현재 상태 필터">
+                      <option value="전체 상태">전체 수주 진행상태</option>
+                      {awardStageOptions.map((status) => <option key={status}>{status}</option>)}
                     </select>
                   )}
-                  <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label={view === "awards" ? "현재 상태 필터" : "상태 필터"}>
-                    <option value="전체 상태">{view === "awards" ? "전체 수주 진행상태" : "전체 영업 진행상황"}</option>
-                    {(view === "awards" ? awardStageOptions : statusOptions).map((status) => <option key={status}>{status}</option>)}
-                  </select>
                   <select value={awardFilter} onChange={(event) => setAwardFilter(event.target.value)} aria-label="수주 결과 필터">
                     <option>전체 수주</option>
                     <option>위즈업 수주</option>
@@ -18505,7 +18465,7 @@ export default function CrmApp({
                       </select>
                     </>
                   )}
-                  {(search || (view !== "awards" && typeFilter !== "전체 유형") || statusFilter !== "전체 상태" || awardFilter !== "전체 수주" || (view === "awards" && (budgetGroupFilter !== "all" || awardExecutionFilter !== "전체 사업방식" || awardManagerFilter !== "전체 담당자" || awardSort !== "date-desc" || activeAwardsOnly)) || (view === "records" && (teamPeriodDays !== 30 || selectedTeamMember !== "전체" || teamMetricFocus !== "all" || teamDetailMode !== "activity"))) && (
+                  {(search || (view === "awards" && statusFilter !== "전체 상태") || awardFilter !== "전체 수주" || (view === "awards" && (budgetGroupFilter !== "all" || awardExecutionFilter !== "전체 사업방식" || awardManagerFilter !== "전체 담당자" || awardSort !== "date-desc" || activeAwardsOnly)) || (view === "records" && (teamPeriodDays !== 30 || selectedTeamMember !== "전체" || teamMetricFocus !== "all" || teamDetailMode !== "activity"))) && (
                     <button className="reset-filter" onClick={() => { setSearch(""); setTypeFilter("전체 유형"); setStatusFilter("전체 상태"); setAwardFilter("전체 수주"); setBudgetGroupFilter("all"); setAwardExecutionFilter("전체 사업방식"); setAwardManagerFilter("전체 담당자"); setAwardSort("date-desc"); setRecordDateScope("all"); setTeamPeriodDays(30); setTeamMetricFocus("all"); setSelectedTeamMember("전체"); setTeamDetailMode("activity"); setActiveAwardsOnly(false); }}>초기화</button>
                   )}
                 </div>
@@ -19136,49 +19096,6 @@ export default function CrmApp({
                   <strong>{formatDate(detailDisplayRecord.activityDate)}</strong>
                 </div>
                 <div
-                  className={`history-summary-editable ${detailInlineField === "activityType" ? "editing" : ""}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() =>
-                    beginDetailInlineEdit("activityType", detailDisplayRecord)
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      beginDetailInlineEdit("activityType", detailDisplayRecord);
-                    }
-                  }}
-                >
-                  <span>활동 유형</span>
-                  {detailInlineField === "activityType" && detailInlineDraft ? (
-                    <div
-                      className="history-inline-editor"
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <select
-                        value={detailInlineDraft.activityType}
-                        onChange={(event) =>
-                          updateDetailInlineDraft({
-                            activityType: event.target.value,
-                            contactMethod: contactMethodForActivityType(
-                              event.target.value,
-                            ),
-                          })
-                        }
-                      >
-                        {typeOptions.map((type) => (
-                          <option key={type}>{type}</option>
-                        ))}
-                      </select>
-                      {renderDetailInlineActions(detailDisplayRecord)}
-                    </div>
-                  ) : (
-                    <>
-                      <strong>{simplifiedActivityType(detailDisplayRecord.activityType)}</strong>
-                      <small>카드를 눌러 수정</small>
-                    </>
-                  )}
-                </div>
-                <div
                   className={`${
                     detailDisplayRecord.jointProjectId
                       ? "history-summary-readonly history-summary-joint-budget"
@@ -19411,56 +19328,6 @@ export default function CrmApp({
                     <>
                       <strong>{detailDisplayRecord.contactName || "미등록"}</strong>
                       <small>{detailDisplayRecord.contactEmail || "기관 메일 미등록"}</small>
-                      <small>카드를 눌러 수정</small>
-                    </>
-                  )}
-                </div>
-                <div
-                  className={`history-summary-editable ${detailInlineField === "status" ? "editing" : ""}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() =>
-                    beginDetailInlineEdit("status", detailDisplayRecord)
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      beginDetailInlineEdit("status", detailDisplayRecord);
-                    }
-                  }}
-                >
-                  <span>영업 진행상황</span>
-                  {detailInlineField === "status" && detailInlineDraft ? (
-                    <div
-                      className="history-inline-editor"
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <select
-                        value={normalizeSalesProgress(
-                          detailInlineDraft.status,
-                          detailInlineDraft.awardStatus,
-                        )}
-                        onChange={(event) =>
-                          updateDetailInlineDraft({
-                            status: event.target.value,
-                            statusManual: true,
-                          })
-                        }
-                      >
-                        {statusOptions.map((status) => (
-                          <option key={status}>{status}</option>
-                        ))}
-                      </select>
-                      <small>직접 선택한 진행상황을 우선 저장합니다.</small>
-                      {renderDetailInlineActions(detailDisplayRecord)}
-                    </div>
-                  ) : (
-                    <>
-                      <strong>
-                        {effectiveSalesProgress(
-                          detailDisplayRecord,
-                          detailBusinessHistory,
-                        )}
-                      </strong>
                       <small>카드를 눌러 수정</small>
                     </>
                   )}
@@ -19724,38 +19591,149 @@ export default function CrmApp({
                 <div className="history-section-heading">
                   <div>
                     <span className="section-kicker">CURRENT SCHEDULE</span>
-                    <h3>현재 진행 일정</h3>
+                    <h3>일정 관리</h3>
                   </div>
-                  <span>{detailCurrentSchedules.length}건</span>
+                  <span>
+                    {detailCurrentSchedules.filter((item) => !item.completed).length}건 진행
+                    {detailCurrentSchedules.some((item) => item.completed)
+                      ? ` · ${detailCurrentSchedules.filter((item) => item.completed).length}건 완료`
+                      : ""}
+                  </span>
                 </div>
-                {detailCurrentSchedules.length > 0 ? (
+                {detailScheduleEditing ? (
+                  <div className="organization-schedule-editor">
+                    {detailScheduleDrafts.map((item, index) => (
+                      <div className="organization-schedule-editor-row" key={item.key}>
+                        <label className="organization-schedule-complete">
+                          <input
+                            type="checkbox"
+                            checked={item.completed}
+                            onChange={(event) =>
+                              setDetailScheduleDrafts((current) =>
+                                current.map((schedule, itemIndex) =>
+                                  itemIndex === index
+                                    ? { ...schedule, completed: event.target.checked }
+                                    : schedule,
+                                ),
+                              )
+                            }
+                          />
+                          <span>완료</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={item.label}
+                          placeholder="예: 설치, 교육, 검수"
+                          aria-label={`${index + 1}번째 일정 이름`}
+                          onChange={(event) =>
+                            setDetailScheduleDrafts((current) =>
+                              current.map((schedule, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...schedule, label: event.target.value }
+                                  : schedule,
+                              ),
+                            )
+                          }
+                        />
+                        <input
+                          type="date"
+                          value={item.scheduledDate}
+                          aria-label={`${index + 1}번째 일정 날짜`}
+                          onChange={(event) =>
+                            setDetailScheduleDrafts((current) =>
+                              current.map((schedule, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...schedule, scheduledDate: event.target.value }
+                                  : schedule,
+                              ),
+                            )
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() =>
+                            setDetailScheduleDrafts((current) =>
+                              current.filter((_, itemIndex) => itemIndex !== index),
+                            )
+                          }
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    ))}
+                    <div className="organization-schedule-editor-actions">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDetailScheduleDrafts((current) => [
+                            ...current,
+                            {
+                              key: `new-${Date.now()}-${current.length}`,
+                              label: "",
+                              scheduledDate: todayValue,
+                              completed: false,
+                            },
+                          ])
+                        }
+                      >
+                        + 일정 추가
+                      </button>
+                      <span />
+                      <button type="button" onClick={cancelDetailScheduleEdit}>
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={detailScheduleSaving}
+                        onClick={() => void saveDetailSchedules()}
+                      >
+                        {detailScheduleSaving ? "저장 중" : "일정 저장"}
+                      </button>
+                    </div>
+                    <p>
+                      일정 완료 여부와 날짜만 저장됩니다. 영업 진행상황이나 수주 진행단계는 자동으로 바뀌지 않습니다.
+                    </p>
+                  </div>
+                ) : detailSchedulesLoading ? (
+                  <p className="organization-current-schedule-empty">
+                    일정을 불러오는 중입니다.
+                  </p>
+                ) : detailCurrentSchedules.length > 0 ? (
                   <div className="organization-current-schedule-list">
                     {detailCurrentSchedules.map((item) => (
-                      <div key={`${item.label}-${item.date}`}>
-                        <time dateTime={item.date}>
-                          {formatDate(item.date)}
+                      <div
+                        key={item.id}
+                        className={item.completed ? "completed" : ""}
+                      >
+                        <time dateTime={item.scheduledDate}>
+                          {formatDate(item.scheduledDate)}
                         </time>
                         <strong>{item.label}</strong>
                         <small>
-                          {item.date === todayValue ? "오늘 일정" : "예정"}
+                          {item.completed
+                            ? "완료"
+                            : item.scheduledDate < todayValue
+                              ? "지남"
+                              : item.scheduledDate === todayValue
+                                ? "오늘"
+                                : "예정"}
                         </small>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <p className="organization-current-schedule-empty">
-                    오늘 이후 등록된 진행 일정이 없습니다.
+                    등록된 일정이 없습니다.
                   </p>
                 )}
-                {detailLatest && (
+                {!detailScheduleEditing && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setDetailOrganization(null);
-                      openEdit(detailLatest, true);
-                    }}
+                    onClick={beginDetailScheduleEdit}
                   >
-                    일정 직접 수정
+                    일정 관리
                   </button>
                 )}
               </section>
@@ -21397,7 +21375,6 @@ export default function CrmApp({
                                 </>
                               ) : (
                                 <>
-                                  <th>활동 유형</th>
                                   <th>상담 내용</th>
                                 </>
                               )}
@@ -21529,7 +21506,6 @@ export default function CrmApp({
                                   </>
                                 ) : (
                                   <>
-                                    <td>{row.values.activityType || "—"}</td>
                                     <td><span>{row.values.summary || "—"}</span></td>
                                   </>
                                 )}
@@ -21634,8 +21610,6 @@ export default function CrmApp({
                   )}
                 </label>
                 <label><span>활동 날짜</span><input type="date" value={form.activityDate.length === 10 ? form.activityDate : ""} onChange={(event) => setForm({ ...form, activityDate: event.target.value })} /></label>
-                <label><span>활동 유형 *</span><select required value={form.activityType} onChange={(event) => setForm({ ...form, activityType: event.target.value, contactMethod: contactMethodForActivityType(event.target.value) })}>{typeOptions.map((type) => <option key={type}>{type}</option>)}</select></label>
-                <label><span>영업 진행상황</span><select value={normalizeSalesProgress(form.status, form.awardStatus)} onChange={(event) => setForm({ ...form, status: event.target.value, statusManual: true })}>{statusOptions.map((status) => <option key={status}>{status}</option>)}</select></label>
                 <label><span>지역</span><BufferedInput value={form.region} onCommit={(region) => {
                   setForm((current) => ({ ...current, region }));
                   inheritLatestInstitutionDetails(form.organization, region);
@@ -21770,35 +21744,6 @@ export default function CrmApp({
                 <label className="toggle-label span-2"><input type="checkbox" checked={form.followUpRequired} onChange={(event) => setForm({ ...form, followUpRequired: event.target.checked })} /><span className="toggle" /><span>재연락이 필요한 기록으로 표시</span></label>
                 <label><span>재연락 예정일</span><input type="date" disabled={!form.followUpRequired} value={form.followUpDate} onChange={(event) => setForm({ ...form, followUpDate: event.target.value })} /></label>
                 <label><span>다음 행동</span><BufferedInput value={form.nextAction} onCommit={(nextAction) => setForm((current) => ({ ...current, nextAction }))} placeholder="예: 견적서 발송 후 전화" /></label>
-                <label className="span-2">
-                  <span>수주 후 진행 일정</span>
-                  <BufferedTextarea
-                    rows={3}
-                    value={form.progressSchedule}
-                    onCommit={(progressSchedule) => {
-                      setForm((current) => {
-                        const management =
-                          automaticProgressManagement(progressSchedule);
-                        return {
-                          ...current,
-                          progressSchedule,
-                          status:
-                            current.statusManual
-                              ? current.status
-                              : current.awardStatus === "타업체 수주"
-                                ? "영업 종료"
-                                : management?.status ?? current.status,
-                          awardStage:
-                            management?.awardStage ?? current.awardStage,
-                        };
-                      });
-                    }}
-                    placeholder={"목공 2026-06-17\n시스템 2026-06-19"}
-                  />
-                  <small className="automatic-field-note">
-                    일정 날짜가 지나면 기관 상태와 연결된 품목 상태가 자동으로 바뀝니다.
-                  </small>
-                </label>
                 <section className="institution-contact-editor span-2">
                   <header>
                     <div>
@@ -22320,10 +22265,6 @@ export default function CrmApp({
                   ) : isCompletedAwardStage(form.awardStage) ? (
                     <small className="automatic-field-note">
                       납품 완료 처리되어 재연락 표시와 예정일이 자동으로 해제됩니다.
-                    </small>
-                  ) : formProgressManagement ? (
-                    <small className="automatic-field-note">
-                      진행 일정에 따라 자동 설정되며 직접 변경할 수 있습니다.
                     </small>
                   ) : null}
                 </label>

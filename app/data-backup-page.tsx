@@ -31,6 +31,7 @@ const tableLabels: Record<string, string> = {
   activity_authors: "기록 입력자",
   app_settings: "사이트 설정",
   organization_locations: "지도 주소·좌표",
+  organization_schedules: "기관 일정",
   sales_campaigns: "영업 묶음",
   sales_campaign_targets: "묶음 영업 대상",
   joint_projects: "공동사업",

@@ -19,12 +19,8 @@ import {
   collapseRepeatedOrganizationRegionPrefix,
   compactShareSummary,
 } from "../../../../lib/share-text";
+import { normalizeAiSuggestedStatus } from "../../../../lib/ai-status";
 import {
-  AI_SUGGESTED_STATUS_VALUES,
-  normalizeAiSuggestedStatus,
-} from "../../../../lib/ai-status";
-import {
-  ACTIVITY_TYPE_OPTIONS,
   AWARD_STAGE_OPTIONS,
 } from "../../../../lib/sales-taxonomy";
 import { findOfficialSchoolCandidates } from "../../../../lib/school-directory";
@@ -65,10 +61,8 @@ const dateConfidenceValues = [
   "월만 확인",
   "날짜 미상",
 ];
-const activityTypeValues = [...ACTIVITY_TYPE_OPTIONS];
 const categoryValues = ["학교", "기관", "협력사", "내부", "기타"];
 const contactMethodValues = ["유선", "방문", "온라인", "진행 공유", "기타"];
-const statusValues = [...AI_SUGGESTED_STATUS_VALUES];
 const temperatureValues = ["높음", "중간", "낮음"];
 const awardStatusValues = ["미정", "위즈업 수주", "협력사 수주", "타업체 수주"];
 const executionTypeValues = ["직영", "컨소", "해당 없음"];
@@ -157,7 +151,7 @@ const recordDraftSchema = {
         "실제 통화·미팅·활동 날짜를 YYYY-MM-DD로 작성. 입력 제목이나 본문에 날짜가 있으면 그 날짜를 사용하고, 공사·재연락·후속 일정 날짜와 혼동하지 않음",
     },
     dateConfidence: { type: "string", enum: dateConfidenceValues },
-    activityType: { type: "string", enum: activityTypeValues },
+    activityType: { type: "string", enum: ["기타"] },
     category: { type: "string", enum: categoryValues },
     contactMethod: { type: "string", enum: contactMethodValues },
     region: { type: "string" },
@@ -217,7 +211,7 @@ const recordDraftSchema = {
         additionalProperties: false,
       },
     },
-    status: { type: "string", enum: statusValues },
+    status: { type: "string", enum: ["상담 진행"] },
     temperature: { type: "string", enum: temperatureValues },
     awardStatus: { type: "string", enum: awardStatusValues },
     awardCompany: { type: "string" },
@@ -491,32 +485,6 @@ function normalizeDraft(
       ? (value as Record<string, unknown>)
       : {};
   const progressSchedule = serializeProgressSchedule(draft.progressSchedule);
-  const explicitCall =
-    /(?:통화했|통화함|통화하여|통화했고|전화했|전화함|전화하여|전화로|TM\s*(?:진행|통화|했))/i.test(
-      userText,
-    );
-  const explicitMeeting =
-    /(?:방문했|방문하여|대면\s*(?:미팅|상담)|미팅했|미팅을\s*(?:진행|했))/i.test(
-      userText,
-    );
-  const draftActivityType = String(draft.activityType ?? "");
-  const activityType = explicitCall
-    ? "TM·통화"
-    : explicitMeeting
-      ? "미팅·방문"
-      : /문자|메일|이메일|자료\s*발송|발송/i.test(draftActivityType)
-          ? "문자·메일"
-          : /미팅|방문|대면/i.test(draftActivityType)
-            ? "미팅·방문"
-            : /TM|통화|전화|유선/i.test(draftActivityType)
-              ? "TM·통화"
-              : "기타";
-  const contactMethod =
-    activityType === "미팅·방문"
-      ? "방문"
-      : activityType === "문자·메일"
-        ? "온라인"
-        : "유선";
   const recommendation =
     draft.recommendation && typeof draft.recommendation === "object"
       ? (draft.recommendation as Record<string, unknown>)
@@ -553,8 +521,9 @@ function normalizeDraft(
         region,
       ),
     },
-    activityType,
-    contactMethod,
+    activityType: "기타",
+    contactMethod: "기타",
+    status: "상담 진행",
     temperature: "중간",
     followUpRequired: false,
     followUpDate: "",
@@ -887,10 +856,7 @@ export async function POST(request: Request) {
 각 일정은 해당 기관에만 넣고, 같은 기관·일정명·날짜 조합은 한 번만 넣으세요.
 기관명이 없거나 어느 기관인지 판단할 수 없을 때만 needsClarification을 true로 하고 한 가지 짧은 질문을 하며 drafts는 빈 배열로 두세요.
 그 외에는 needsClarification을 false로 하고 assistantMessage에 "N개 기관으로 정리했습니다. 내용을 확인해 주세요."처럼 기관 수를 포함해 짧게 답하세요.
-활동유형은 TM·통화, 미팅·방문, 문자·메일, 기타 중 하나만 사용하세요.
-사용자가 “통화했어”, “전화했어”, “TM 진행”처럼 이번에 실제로 한 활동을 직접 표현하면 그 표현을 가장 우선하세요. 다음 미팅 예정이나 미팅 제안이 함께 있어도 이번 활동이 통화라면 activityType은 반드시 TM·통화로 정리하세요.
-영업 상태 status는 신규 접촉, 상담 진행, 제안·견적, 결과 대기, 재영업 상담, 사후관리, 수주 전환, 영업 종료 중 하나만 사용하세요. 애매하면 상담 진행으로 두세요.
-“선정”, “확정”, “대상 기관으로 확인”은 영업 완료를 뜻하지 않습니다.
+호환성 필드인 activityType은 기타, contactMethod는 기타, status는 상담 진행으로 고정하세요. 활동 유형과 영업 진행상황을 추측하거나 분류하지 마세요.
 수주 후 "목공 6/17, 시스템 6/19" 같은 일정은 progressSchedule에 각각 나누어 넣으세요.
 progressSchedule에 일정이 있다는 이유만으로 수주 주체를 위즈업으로 추정하지 마세요. 위즈업 수주가 명시된 경우에만 awardStatus를 위즈업 수주로, 협력사 수주가 명시된 경우에만 협력사 수주로 정리하고, 수주 주체가 명확하지 않으면 미정으로 두세요.
 현재 연도가 생략된 월/일은 ${todayInSeoul().slice(0, 4)}년으로 정리하세요.

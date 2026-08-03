@@ -97,6 +97,7 @@ import {
 } from "../../../lib/activity-change-ledger";
 import { chunkValues } from "../../../lib/d1-bulk";
 import { serializeActivityBudgets } from "../../../lib/activity-budgets";
+import { mergeActivityProgressSchedule } from "../../../lib/organization-schedules";
 
 export const dynamic = "force-dynamic";
 
@@ -662,6 +663,14 @@ export async function createActivityRecord(
       budgetType: clean(record.budget_type),
       activityText: equipmentProposalText(record),
     }),
+    mergeActivityProgressSchedule({
+      activityId: Number(record.id),
+      organization: record.organization,
+      businessRound: record.business_round,
+      progressSchedule: record.progress_schedule,
+      memberId: member.id,
+      memberName: member.displayName,
+    }),
   ]);
   return record;
 }
@@ -1088,6 +1097,14 @@ export async function PUT(request: Request) {
           businessRound: Math.max(1, Number(result.business_round) || 1),
           budgetType: clean(result.budget_type),
           activityText: equipmentProposalText(result),
+        }),
+        mergeActivityProgressSchedule({
+          activityId: Number(result.id),
+          organization: result.organization,
+          businessRound: result.business_round,
+          progressSchedule: result.progress_schedule,
+          memberId: member.id,
+          memberName: member.displayName,
         }),
       ]);
       await syncBusinessProgressManagerFromLatestAuthor(
@@ -2004,6 +2021,7 @@ export async function DELETE(request: Request) {
       ),
       loadBusinessRows("sales_campaign_targets"),
       loadBusinessRows("quotation_documents"),
+      loadBusinessRows("organization_schedules"),
     ]);
     const projectRows = await loadBusinessRows("equipment_projects");
     await loadRows(
@@ -2123,6 +2141,11 @@ export async function DELETE(request: Request) {
         selectedActivityIds,
       ),
       ...deleteRowsByIds("activities", "id", selectedActivityIds),
+      ...deleteRowsByIds(
+        "organization_schedules",
+        "id",
+        rowIds("organization_schedules"),
+      ),
       ...deleteRowsByIds("equipment_items", "project_id", projectIds),
       ...deleteRowsByIds("equipment_projects", "id", projectIds),
       ...deleteRowsByIds(
