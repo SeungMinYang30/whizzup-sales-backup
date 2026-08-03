@@ -63,6 +63,7 @@ import {
   resolveUniqueExistingInstitutionName,
 } from "../lib/institution-names";
 import { analyticsBusinessRoundKey } from "../lib/analytics-business-rounds";
+import GlobalInstitutionSearch from "./global-institution-search";
 import {
   DEFAULT_PROCUREMENT_FEE_RATE,
   hasProcurementSignal,
@@ -15249,7 +15250,12 @@ export default function CrmApp({
           <button className="menu-button" onClick={() => setMobileNav(true)} aria-label="메뉴 열기">
             ☰
           </button>
-          {view !== "dashboard" && view !== "map" && view !== "budget-institutions" && view !== "trash" && view !== "accounting" && view !== "analytics" && view !== "owner-performance" && view !== "inventory" && (
+          {view === "dashboard" ? (
+            <GlobalInstitutionSearch onOpen={(organization, businessRound) => {
+              setDetailBusinessRound(businessRound);
+              setDetailOrganization(organization);
+            }} />
+          ) : view !== "map" && view !== "budget-institutions" && view !== "trash" && view !== "accounting" && view !== "analytics" && view !== "owner-performance" && view !== "inventory" && (
             <div className="global-search">
               <span>⌕</span>
               <BufferedInput
@@ -15761,6 +15767,7 @@ export default function CrmApp({
                     setDetailBusinessRound(businessRound);
                     setDetailOrganization(organization);
                   }}
+                  onOpenConstructionSchedule={() => navigate("construction-schedule")}
                 />
               </Suspense>
 

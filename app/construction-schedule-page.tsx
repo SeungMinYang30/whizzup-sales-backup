@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { downloadRowsXlsx } from "./activity-xlsx";
+import { downloadConstructionTimelineXlsx } from "./activity-xlsx";
 
 type ScheduleRecord = {
   id: number;
@@ -392,12 +392,15 @@ export default function ConstructionSchedulePage({
         .map((item) => `${item.stage || item.label}${item.vendorName ? ` (${item.vendorName})` : ""}`)
         .join(" / ")),
     ]);
-    downloadRowsXlsx({
+    downloadConstructionTimelineXlsx({
       filename: `위즈업_시공납품일정_${start}.xlsx`,
-      sheetName: "시공 납품 일정",
+      startDate: start,
+      endDate: days.at(-1) ?? start,
       headers: ["지역", "기관명", "사업", "공사·품목", "진행 담당자", ...days.map((day) => dayLabel.format(new Date(`${day}T00:00:00Z`)))],
       rows: exportRows,
       widths: [14, 28, 12, 30, 16, ...days.map(() => 15)],
+      fixedColumnCount: 5,
+      todayColumnIndex: days.indexOf(today) >= 0 ? days.indexOf(today) + 5 : -1,
     });
   }
 

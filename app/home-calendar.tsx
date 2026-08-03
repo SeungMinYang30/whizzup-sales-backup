@@ -2,400 +2,328 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+type ScheduleCategory = "sales" | "construction" | "showroom" | "personal" | "google";
 type HomeCalendarSchedule = {
-  id: number;
+  id: number | string;
   organization: string;
   businessRound: number;
   label: string;
-  category: "sales" | "construction" | "showroom" | "personal";
+  category: ScheduleCategory;
   scheduledDate: string;
   endDate: string;
-  visibility: "private" | "shared-post-award";
   assigneeName: string;
+  assigneeMemberId: number | null;
+  editable: boolean;
 };
-
-type CalendarFilter = "all" | "sales" | "construction" | "showroom" | "personal";
-type CalendarInstitution = {
+type Institution = {
   organization: string;
   businessRound: number;
-  region?: string;
+  region: string;
+  progressManager: string;
 };
+type Member = { id: number; display_name: string; role: string; status: string };
+type CalendarFilter = "all" | ScheduleCategory;
 
 function dateValue(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
-
-function dateFromValue(value: string) {
-  return new Date(`${value}T00:00:00`);
-}
-
-function addDays(value: Date, days: number) {
-  const next = new Date(value);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-function initialMonthValue() {
-  return dateValue(new Date()).slice(0, 7);
-}
-
-function monthGrid(monthValue: string) {
-  const [year, month] = monthValue.split("-").map(Number);
+function dateFromValue(value: string) { return new Date(`${value}T00:00:00`); }
+function addDays(value: Date, days: number) { const next = new Date(value); next.setDate(next.getDate() + days); return next; }
+function monthGrid(value: string) {
+  const [year, month] = value.split("-").map(Number);
   const first = new Date(year, month - 1, 1);
   const start = addDays(first, -first.getDay());
   return Array.from({ length: 42 }, (_, index) => addDays(start, index));
 }
-
-function moveMonth(monthValue: string, offset: number) {
-  const [year, month] = monthValue.split("-").map(Number);
+function moveMonth(value: string, offset: number) {
+  const [year, month] = value.split("-").map(Number);
   return dateValue(new Date(year, month - 1 + offset, 1)).slice(0, 7);
 }
-
-function monthTitle(monthValue: string) {
-  const [year, month] = monthValue.split("-").map(Number);
-  return `${year}년 ${month}월`;
-}
-
+function monthTitle(value: string) { const [year, month] = value.split("-").map(Number); return `${year}년 ${month}월`; }
 function selectedDateTitle(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    month: "long",
-    day: "numeric",
-    weekday: "short",
-  }).format(dateFromValue(value));
+  return new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" }).format(dateFromValue(value));
 }
+function cleanScheduleTitle(label: string) { return label.replace(/^(영업|회의|쇼룸|기타)\s*·\s*/, ""); }
+function kindFromSchedule(schedule: HomeCalendarSchedule) {
+  if (schedule.category === "showroom") return "쇼룸";
+  const matched = schedule.label.match(/^(영업|회의|쇼룸|기타)\s*·/);
+  return matched?.[1] || "영업";
+}
+
+const emptyEditor = (date: string) => ({
+  scheduleId: null as number | null,
+  organization: "",
+  businessRound: 0,
+  organizationQuery: "",
+  linked: false,
+  kind: "영업",
+  title: "",
+  scheduledDate: date,
+  assigneeMemberId: 0,
+  assigneeName: "",
+  completed: false,
+});
 
 export default function HomeCalendar({
   refreshVersion,
   onOpenOrganization,
-  records,
+  onOpenConstructionSchedule,
 }: {
   refreshVersion: number;
   onOpenOrganization: (organization: string, businessRound: number) => void;
-  records: CalendarInstitution[];
+  onOpenConstructionSchedule: () => void;
+  records: Array<{ organization: string; businessRound: number; region?: string }>;
 }) {
-  const todayValue = dateValue(new Date());
-  const [monthValue, setMonthValue] = useState(initialMonthValue);
-  const [selectedDate, setSelectedDate] = useState(todayValue);
+  const today = dateValue(new Date());
+  const [monthValue, setMonthValue] = useState(today.slice(0, 7));
+  const [selectedDate, setSelectedDate] = useState(today);
   const [filter, setFilter] = useState<CalendarFilter>("all");
   const [schedules, setSchedules] = useState<HomeCalendarSchedule[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [currentMember, setCurrentMember] = useState({ id: 0, displayName: "" });
+  const [googleState, setGoogleState] = useState({ configured: false, connected: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadVersion, setReloadVersion] = useState(0);
   const [editorOpen, setEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [scheduleForm, setScheduleForm] = useState({
-    organizationKey: "",
-    organizationQuery: "",
-    kind: "영업",
-    title: "",
-    scheduledDate: todayValue,
-  });
-  const gridDates = useMemo(() => monthGrid(monthValue), [monthValue]);
-  const rangeStart = dateValue(gridDates[0]);
-  const rangeEnd = dateValue(gridDates[gridDates.length - 1]);
+  const [editor, setEditor] = useState(() => emptyEditor(today));
+  const [institutions, setInstitutions] = useState<Institution[]>([]);
+  const [institutionLoading, setInstitutionLoading] = useState(false);
+  const dates = useMemo(() => monthGrid(monthValue), [monthValue]);
+  const rangeStart = dateValue(dates[0]);
+  const rangeEnd = dateValue(dates[dates.length - 1]);
+
+  useEffect(() => {
+    void fetch("/api/members?scope=assignees", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload: { members?: Member[] }) => setMembers(Array.isArray(payload.members) ? payload.members : []))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     let active = true;
-    void fetch(
-      `/api/schedules?scope=calendar&start=${encodeURIComponent(rangeStart)}&end=${encodeURIComponent(rangeEnd)}`,
-      { cache: "no-store" },
-    )
+    setLoading(true);
+    void fetch(`/api/schedules?scope=calendar&start=${rangeStart}&end=${rangeEnd}`, { cache: "no-store" })
       .then(async (response) => {
-        const payload = (await response.json()) as {
+        const payload = await response.json() as {
           schedules?: HomeCalendarSchedule[];
+          currentMember?: { id: number; displayName: string };
+          googleCalendarConfigured?: boolean;
+          googleCalendarConnected?: boolean;
           error?: string;
         };
         if (!response.ok) throw new Error(payload.error || "일정을 불러오지 못했습니다.");
-        return Array.isArray(payload.schedules) ? payload.schedules : [];
+        return payload;
       })
-      .then((next) => {
-        if (active) {
-          setSchedules(next);
-          setError("");
-        }
+      .then((payload) => {
+        if (!active) return;
+        setSchedules(Array.isArray(payload.schedules) ? payload.schedules : []);
+        if (payload.currentMember) setCurrentMember(payload.currentMember);
+        setGoogleState({ configured: Boolean(payload.googleCalendarConfigured), connected: Boolean(payload.googleCalendarConnected) });
+        setError("");
       })
-      .catch((caught: unknown) => {
-        if (active) {
-          setError(caught instanceof Error ? caught.message : "일정을 불러오지 못했습니다.");
-        }
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
+      .catch((caught: unknown) => { if (active) setError(caught instanceof Error ? caught.message : "일정을 불러오지 못했습니다."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [rangeEnd, rangeStart, refreshVersion, reloadVersion]);
 
-  const institutionOptions = useMemo(() => {
-    const unique = new Map<string, CalendarInstitution>();
-    records.forEach((record) => {
-      const organization = String(record.organization ?? "").trim();
-      const businessRound = Math.max(1, Number(record.businessRound) || 1);
-      if (!organization) return;
-      const key = `${organization}\u001f${businessRound}`;
-      if (!unique.has(key)) unique.set(key, { ...record, organization, businessRound });
-    });
-    return [...unique.entries()].sort((left, right) =>
-      left[1].organization.localeCompare(right[1].organization, "ko-KR"),
-    );
-  }, [records]);
+  useEffect(() => {
+    const query = editor.organizationQuery.trim();
+    if (!editorOpen || query.length < 2 || editor.linked) { setInstitutions([]); return; }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setInstitutionLoading(true);
+      void fetch(`/api/institutions/search?q=${encodeURIComponent(query)}`, { cache: "no-store", signal: controller.signal })
+        .then((response) => response.json())
+        .then((payload: { institutions?: Institution[] }) => setInstitutions(Array.isArray(payload.institutions) ? payload.institutions.slice(0, 10) : []))
+        .catch(() => undefined)
+        .finally(() => setInstitutionLoading(false));
+    }, 220);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [editor.organizationQuery, editor.linked, editorOpen]);
 
-  const matchedInstitutions = useMemo(() => {
-    const keyword = scheduleForm.organizationQuery.trim().toLocaleLowerCase("ko-KR");
-    if (keyword.length < 2) return [];
-    return institutionOptions
-      .filter(([, option]) =>
-        `${option.organization} ${option.region ?? ""}`.toLocaleLowerCase("ko-KR").includes(keyword),
-      )
-      .slice(0, 8);
-  }, [institutionOptions, scheduleForm.organizationQuery]);
-
-  function selectInstitution(key: string, option: CalendarInstitution) {
-    setScheduleForm((current) => ({
-      ...current,
-      organizationKey: key,
-      organizationQuery: option.organization,
-    }));
+  function openNew(date = selectedDate) {
+    setEditor({ ...emptyEditor(date), assigneeMemberId: currentMember.id, assigneeName: currentMember.displayName });
+    setEditorOpen(true);
   }
-
-  async function saveSchedule() {
-    const exactInstitutions = institutionOptions.filter(([, option]) =>
-      option.organization.trim().toLocaleLowerCase("ko-KR") ===
-      scheduleForm.organizationQuery.trim().toLocaleLowerCase("ko-KR"),
-    );
-    const selected = institutionOptions.find(([key]) => key === scheduleForm.organizationKey)?.[1]
-      ?? (exactInstitutions.length === 1 ? exactInstitutions[0][1] : undefined);
-    const organizationQuery = scheduleForm.organizationQuery.trim();
-    if (!organizationQuery || !scheduleForm.title.trim() || saving) return;
+  function openEdit(schedule: HomeCalendarSchedule) {
+    if (schedule.category === "construction") { onOpenConstructionSchedule(); return; }
+    if (!schedule.editable || typeof schedule.id !== "number") return;
+    setEditor({
+      scheduleId: schedule.id,
+      organization: schedule.organization,
+      businessRound: schedule.businessRound,
+      organizationQuery: schedule.organization,
+      linked: schedule.businessRound > 0,
+      kind: kindFromSchedule(schedule),
+      title: cleanScheduleTitle(schedule.label),
+      scheduledDate: schedule.scheduledDate,
+      assigneeMemberId: schedule.assigneeMemberId || 0,
+      assigneeName: schedule.assigneeName,
+      completed: false,
+    });
+    setEditorOpen(true);
+  }
+  function selectInstitution(item: Institution) {
+    const member = members.find((candidate) => candidate.display_name === item.progressManager);
+    setEditor((current) => ({
+      ...current,
+      organization: item.organization,
+      businessRound: item.businessRound,
+      organizationQuery: item.organization,
+      linked: true,
+      assigneeMemberId: member?.id || currentMember.id,
+      assigneeName: member?.display_name || item.progressManager || currentMember.displayName,
+    }));
+    setInstitutions([]);
+  }
+  function changeAssignee(value: string) {
+    const id = Number(value) || 0;
+    const member = members.find((candidate) => candidate.id === id);
+    setEditor((current) => ({ ...current, assigneeMemberId: id, assigneeName: member?.display_name || "" }));
+  }
+  async function createInstitution() {
+    if (editor.organizationQuery.trim().length < 2) return;
     setSaving(true);
     try {
-      let linked = Boolean(selected);
-      let organization = selected?.organization ?? organizationQuery;
-      let businessRound = selected?.businessRound ?? 0;
-      if (scheduleForm.kind === "영업" && !selected) {
-        const recordResponse = await fetch("/api/records", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            organization: organizationQuery,
-            activityDate: todayValue,
-            activityType: "기타",
-            region: "",
-            summary: "HOME 영업 일정 기관 등록",
-            businessRound: 1,
-            awardStatus: "미정",
-            awardStage: "미정",
-            skipInstitutionStateLookup: true,
-          }),
-        });
-        const recordPayload = (await recordResponse.json()) as { error?: string };
-        if (!recordResponse.ok) throw new Error(recordPayload.error || "기관을 등록하지 못했습니다.");
-        linked = true;
-        organization = organizationQuery;
-        businessRound = 1;
-      }
-      const response = await fetch("/api/schedules", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch("/api/records", {
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "add-general-schedule",
-          organization,
-          businessRound,
-          label: `${scheduleForm.kind} · ${scheduleForm.title.trim()}`,
-          scheduledDate: scheduleForm.scheduledDate,
-          category: scheduleForm.kind === "쇼룸" ? "showroom" : "general",
-          linked,
+          organization: editor.organizationQuery.trim(), activityDate: today, activityType: "기타", region: "",
+          summary: "HOME 일정에서 신규 기관 등록", businessRound: 1, awardStatus: "미정", awardStage: "미정",
+          skipInstitutionStateLookup: true,
         }),
       });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(payload.error || "일정을 등록하지 못했습니다.");
-      setEditorOpen(false);
-      setScheduleForm({ organizationKey: "", organizationQuery: "", kind: "영업", title: "", scheduledDate: scheduleForm.scheduledDate });
-      setReloadVersion((current) => current + 1);
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "기관을 등록하지 못했습니다.");
+      setEditor((current) => ({ ...current, organization: current.organizationQuery.trim(), businessRound: 1, linked: true }));
       setError("");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "일정을 등록하지 못했습니다.");
-    } finally {
-      setSaving(false);
-    }
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "기관을 등록하지 못했습니다."); }
+    finally { setSaving(false); }
+  }
+  async function saveSchedule() {
+    const organization = (editor.linked ? editor.organization : editor.organizationQuery).trim();
+    if (!organization || !editor.title.trim() || saving || (editor.kind === "영업" && !editor.linked)) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/schedules", {
+        method: editor.scheduleId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: editor.scheduleId ? "update-general-schedule" : "add-general-schedule",
+          scheduleId: editor.scheduleId,
+          organization,
+          businessRound: editor.linked ? editor.businessRound : 0,
+          label: `${editor.kind} · ${editor.title.trim()}`,
+          scheduledDate: editor.scheduledDate,
+          category: editor.kind === "쇼룸" ? "showroom" : "general",
+          linked: editor.linked,
+          assigneeMemberId: editor.assigneeMemberId,
+          assigneeName: editor.assigneeName,
+          completed: editor.completed,
+        }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "일정을 저장하지 못했습니다.");
+      setEditorOpen(false); setReloadVersion((value) => value + 1); setError("");
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "일정을 저장하지 못했습니다."); }
+    finally { setSaving(false); }
+  }
+  async function deleteSchedule() {
+    if (!editor.scheduleId || saving || !window.confirm("이 일정을 삭제할까요?")) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/schedules", {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete-general-schedule", scheduleId: editor.scheduleId }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "일정을 삭제하지 못했습니다.");
+      setEditorOpen(false); setReloadVersion((value) => value + 1);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "일정을 삭제하지 못했습니다."); }
+    finally { setSaving(false); }
   }
 
-  const usefulSchedules = schedules;
-  const filteredSchedules = useMemo(
-    () => usefulSchedules.filter((schedule) => filter === "all" || schedule.category === filter),
-    [filter, usefulSchedules],
-  );
-  const schedulesByDate = useMemo(() => {
-    const grouped = new Map<string, HomeCalendarSchedule[]>();
-    filteredSchedules.forEach((schedule) => {
-      let currentDate = schedule.scheduledDate;
-      const lastDate = schedule.endDate || schedule.scheduledDate;
-      while (currentDate <= lastDate) {
-        const current = grouped.get(currentDate) ?? [];
-        current.push(schedule);
-        grouped.set(currentDate, current);
-        currentDate = dateValue(addDays(dateFromValue(currentDate), 1));
+  const filtered = useMemo(() => schedules.filter((item) => filter === "all" || item.category === filter), [filter, schedules]);
+  const grouped = useMemo(() => {
+    const map = new Map<string, HomeCalendarSchedule[]>();
+    filtered.forEach((item) => {
+      let day = item.scheduledDate;
+      while (day <= (item.endDate || item.scheduledDate)) {
+        map.set(day, [...(map.get(day) || []), item]);
+        day = dateValue(addDays(dateFromValue(day), 1));
       }
     });
-    return grouped;
-  }, [filteredSchedules]);
-  const selectedSchedules = schedulesByDate.get(selectedDate) ?? [];
+    return map;
+  }, [filtered]);
   const monthPrefix = `${monthValue}-`;
-  const monthCounts = useMemo(
-    () => ({
-      all: usefulSchedules.filter((item) => item.scheduledDate.startsWith(monthPrefix)).length,
-      sales: usefulSchedules.filter((item) => item.scheduledDate.startsWith(monthPrefix) && item.category === "sales").length,
-      construction: usefulSchedules.filter((item) => item.scheduledDate.startsWith(monthPrefix) && item.category === "construction").length,
-      showroom: usefulSchedules.filter((item) => item.scheduledDate.startsWith(monthPrefix) && item.category === "showroom").length,
-      personal: usefulSchedules.filter((item) => item.scheduledDate.startsWith(monthPrefix) && item.category === "personal").length,
-    }),
-    [monthPrefix, usefulSchedules],
-  );
-
-  const changeMonth = (next: string) => {
-    setLoading(true);
-    setError("");
-    setMonthValue(next);
-    setSelectedDate(`${next}-01`);
-  };
+  const counts = useMemo(() => {
+    const inMonth = schedules.filter((item) => item.scheduledDate.startsWith(monthPrefix));
+    return Object.fromEntries(["all", "sales", "construction", "showroom", "personal", "google"].map((key) => [key, key === "all" ? inMonth.length : inMonth.filter((item) => item.category === key).length])) as Record<CalendarFilter, number>;
+  }, [monthPrefix, schedules]);
+  const selectedSchedules = grouped.get(selectedDate) || [];
+  const changeMonth = (value: string) => { setMonthValue(value); setSelectedDate(`${value}-01`); };
 
   return (
     <section className="home-calendar-panel" aria-labelledby="home-calendar-title">
       <header className="home-calendar-header">
-        <div>
-          <span className="section-kicker">WORK CALENDAR</span>
-          <h2 id="home-calendar-title">통합 일정</h2>
-          <p>영업·시공·쇼룸 일정과 내 재연락 일정을 월간으로 확인합니다.</p>
-        </div>
-        <div className="home-calendar-month-controls" aria-label="달력 월 이동">
-          <button type="button" className="home-calendar-add" onClick={() => setEditorOpen(true)}>+ 일정 등록</button>
+        <div><span className="section-kicker">WORK CALENDAR</span><h2 id="home-calendar-title">통합 일정</h2><p>영업·시공·쇼룸·개인 일정과 위즈업 공유일정을 월간으로 확인합니다.</p></div>
+        <div className="home-calendar-month-controls">
+          <button type="button" className="home-calendar-add" onClick={() => openNew()}>+ 일정 등록</button>
           <button type="button" onClick={() => changeMonth(moveMonth(monthValue, -1))}>이전</button>
-          <button
-            type="button"
-            className="home-calendar-today"
-            onClick={() => {
-              setLoading(true);
-              setError("");
-              setMonthValue(todayValue.slice(0, 7));
-              setSelectedDate(todayValue);
-            }}
-          >
-            오늘
-          </button>
+          <button type="button" onClick={() => { setMonthValue(today.slice(0, 7)); setSelectedDate(today); }}>오늘</button>
           <button type="button" onClick={() => changeMonth(moveMonth(monthValue, 1))}>다음</button>
           <strong>{monthTitle(monthValue)}</strong>
         </div>
       </header>
-
-      <div className="home-calendar-filters" aria-label="일정 종류">
-        <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>전체 <b>{monthCounts.all}</b></button>
-        <button type="button" className={filter === "sales" ? "active" : ""} onClick={() => setFilter("sales")}>영업 <b>{monthCounts.sales}</b></button>
-        <button type="button" className={filter === "construction" ? "active" : ""} onClick={() => setFilter("construction")}>시공 <b>{monthCounts.construction}</b></button>
-        <button type="button" className={filter === "showroom" ? "active" : ""} onClick={() => setFilter("showroom")}>쇼룸 <b>{monthCounts.showroom}</b></button>
-        <button type="button" className={filter === "personal" ? "active" : ""} onClick={() => setFilter("personal")}>내 일정 <b>{monthCounts.personal}</b></button>
+      <div className="home-calendar-filters">
+        {([['all','전체'],['sales','영업'],['construction','시공'],['showroom','쇼룸'],['personal','내 일정'],['google','위즈업 일정']] as Array<[CalendarFilter,string]>).map(([key, label]) => (
+          <button type="button" key={key} className={filter === key ? "active" : ""} disabled={key === "google" && !googleState.configured} title={key === "google" && !googleState.configured ? "구글 공유 캘린더 주소 등록 후 사용할 수 있습니다." : ""} onClick={() => setFilter(key)}>{label} <b>{counts[key]}</b></button>
+        ))}
+        {googleState.configured && !googleState.connected ? <small className="google-calendar-state">구글 공유일정 연결을 확인해 주세요.</small> : null}
       </div>
-
-      {editorOpen ? (
-        <div className="schedule-editor-shell" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setEditorOpen(false); }}>
-          <div className="home-schedule-editor" role="dialog" aria-modal="true" aria-label="일정 등록">
-            <header>
-              <div><span className="section-kicker">NEW SCHEDULE</span><h3>일정 등록</h3><p>시공 일정은 시공·납품 일정표에서 등록하면 자동으로 연동됩니다.</p></div>
-              <button type="button" onClick={() => setEditorOpen(false)}>×</button>
-            </header>
-            <div className="home-schedule-kind">
-              {["영업", "회의", "쇼룸", "기타"].map((kind) => (
-                <button type="button" className={scheduleForm.kind === kind ? "active" : ""} key={kind} onClick={() => setScheduleForm({ ...scheduleForm, kind })}>{kind}</button>
-              ))}
-            </div>
-            <label className="home-schedule-institution">기관 또는 일정 장소 <b>*</b>
-              <input
-                value={scheduleForm.organizationQuery}
-                onChange={(event) => setScheduleForm({ ...scheduleForm, organizationQuery: event.target.value, organizationKey: "" })}
-                placeholder="기관명 2글자 이상 검색 또는 직접 입력"
-              />
-              {!scheduleForm.organizationKey && matchedInstitutions.length ? (
-                <div className="home-schedule-institution-results">
-                  {matchedInstitutions.map(([key, option]) => (
-                    <button type="button" key={key} onClick={() => selectInstitution(key, option)}>
-                      <strong>{option.organization}</strong>
-                      <small>{option.region || "지역 미등록"} · {option.businessRound}차 사업</small>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <small className="home-schedule-link-note">
-                {scheduleForm.organizationKey
-                  ? "기존 기관과 연결되어 상세 이력에도 표시됩니다."
-                  : scheduleForm.kind === "영업"
-                    ? "검색 결과가 없으면 새 기관으로 등록한 뒤 영업 일정에 연결합니다."
-                    : "기존 기관을 선택하면 상세 이력에 연결되고, 선택하지 않으면 자유 일정으로만 저장됩니다."}
-              </small>
-            </label>
-            <label>일정 제목 <b>*</b><input value={scheduleForm.title} onChange={(event) => setScheduleForm({ ...scheduleForm, title: event.target.value })} placeholder="예: 담당자 방문 미팅" /></label>
-            <label>날짜 <b>*</b><input type="date" value={scheduleForm.scheduledDate} onChange={(event) => setScheduleForm({ ...scheduleForm, scheduledDate: event.target.value })} /></label>
-            <footer><button type="button" onClick={() => setEditorOpen(false)}>취소</button><button type="button" className="primary-button" disabled={saving || !scheduleForm.organizationQuery.trim() || !scheduleForm.title.trim()} onClick={() => void saveSchedule()}>{saving ? "등록 중…" : "등록"}</button></footer>
-          </div>
-        </div>
-      ) : null}
-
       {error ? <div className="home-calendar-error">{error}</div> : null}
       <div className="home-calendar-layout">
         <div className="home-calendar-grid" aria-busy={loading}>
           {['일','월','화','수','목','금','토'].map((day) => <div className="home-calendar-weekday" key={day}>{day}</div>)}
-          {gridDates.map((date) => {
-            const value = dateValue(date);
-            const items = schedulesByDate.get(value) ?? [];
-            const inMonth = value.startsWith(monthPrefix);
-            return (
-              <button
-                type="button"
-                className={`home-calendar-day${inMonth ? "" : " outside"}${value === todayValue ? " today" : ""}${value === selectedDate ? " selected" : ""}`}
-                key={value}
-                onClick={() => setSelectedDate(value)}
-                aria-label={`${selectedDateTitle(value)} 일정 ${items.length}건`}
-              >
-                <span className="home-calendar-day-number">{date.getDate()}</span>
-                <span className="home-calendar-day-items">
-                  {items.slice(0, 3).map((item) => (
-                    <span className={item.category} key={item.id} title={`${item.organization} · ${item.label}`}>
-                      <b>{item.organization}</b><small>{item.label}</small>
-                    </span>
-                  ))}
-                  {items.length > 3 ? <em>+{items.length - 3}건 더보기</em> : null}
-                </span>
-              </button>
-            );
+          {dates.map((date) => {
+            const value = dateValue(date); const items = grouped.get(value) || [];
+            return <button type="button" className={`home-calendar-day${value.startsWith(monthPrefix) ? "" : " outside"}${value === today ? " today" : ""}${value === selectedDate ? " selected" : ""}`} key={value} onClick={() => setSelectedDate(value)}>
+              <span className="home-calendar-day-number">{date.getDate()}</span>
+              <span className="home-calendar-day-items">{items.slice(0, 3).map((item) => <span className={item.category} key={item.id} title={`${item.organization} · ${item.label} · ${item.assigneeName || "담당자 미정"}`}><b>{item.organization}</b><small>{item.label}</small></span>)}{items.length > 3 ? <em>+{items.length - 3}건 더보기</em> : null}</span>
+            </button>;
           })}
         </div>
-
-        <aside className="home-calendar-agenda" aria-label="선택 날짜 일정">
-          <div className="home-calendar-agenda-heading">
-            <span>{selectedDate === todayValue ? "오늘" : "선택 날짜"}</span>
-            <h3>{selectedDateTitle(selectedDate)}</h3>
-            <b>{selectedSchedules.length}건</b>
-          </div>
-          {loading ? (
-            <p className="home-calendar-agenda-empty">일정을 확인하는 중입니다.</p>
-          ) : selectedSchedules.length > 0 ? (
-            <div className="home-calendar-agenda-list">
-              {selectedSchedules.map((item) => (
-                <button type="button" key={item.id} onClick={() => { if (item.businessRound > 0) onOpenOrganization(item.organization, item.businessRound); }}>
-                  <i className={item.category} />
-                  <span><strong>{item.organization}</strong><small>{item.label}</small></span>
-                  <em>{item.category === "personal" ? "개인" : item.category === "construction" ? "시공" : item.category === "showroom" ? "쇼룸" : "영업"}</em>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="home-calendar-agenda-empty">이 날짜에 등록된 일정이 없습니다.</p>
-          )}
-          <small className="home-calendar-privacy">내 일정에는 본인 재연락 일정만 표시되고, 시공 일정은 시공·납품 일정표와 자동 연동됩니다.</small>
+        <aside className="home-calendar-agenda">
+          <div className="home-calendar-agenda-heading"><span>{selectedDate === today ? "오늘" : "선택 날짜"}</span><h3>{selectedDateTitle(selectedDate)}</h3><b>{selectedSchedules.length}건</b></div>
+          {loading ? <p className="home-calendar-agenda-empty">일정을 확인하는 중입니다.</p> : selectedSchedules.length ? (
+            <div className="home-calendar-agenda-list">{selectedSchedules.map((item) => (
+              <button type="button" key={item.id} onClick={() => item.category === "construction" ? onOpenConstructionSchedule() : item.editable ? openEdit(item) : item.businessRound > 0 ? onOpenOrganization(item.organization, item.businessRound) : undefined}>
+                <i className={item.category} /><span><strong>{item.organization}</strong><small>{item.label}</small><small className="schedule-assignee">담당 {item.assigneeName || "미정"}</small></span><em>{item.category === "google" ? "구글" : item.category === "personal" ? "개인" : item.category === "construction" ? "시공" : item.category === "showroom" ? "쇼룸" : "영업"}</em>
+              </button>
+            ))}</div>
+          ) : <p className="home-calendar-agenda-empty">이 날짜에 등록된 일정이 없습니다.</p>}
         </aside>
       </div>
+
+      {editorOpen ? <div className="schedule-editor-shell" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setEditorOpen(false); }}>
+        <div className="home-schedule-editor" role="dialog" aria-modal="true">
+          <header><div><span className="section-kicker">{editor.scheduleId ? "EDIT SCHEDULE" : "NEW SCHEDULE"}</span><h3>{editor.scheduleId ? "일정 수정" : "일정 등록"}</h3><p>시공 일정은 시공·납품 일정표에서 관리합니다.</p></div><button type="button" onClick={() => setEditorOpen(false)}>×</button></header>
+          <div className="home-schedule-kind">{["영업","회의","쇼룸","기타"].map((kind) => <button type="button" key={kind} className={editor.kind === kind ? "active" : ""} onClick={() => setEditor((current) => ({ ...current, kind }))}>{kind}</button>)}</div>
+          <label className="home-schedule-institution">기관 또는 일정 장소 <b>*</b>
+            <input value={editor.organizationQuery} onChange={(event) => setEditor((current) => ({ ...current, organizationQuery: event.target.value, organization: "", businessRound: 0, linked: false }))} placeholder="기관명 2글자 이상 검색 또는 직접 입력" />
+            {!editor.linked && editor.organizationQuery.trim().length >= 2 ? <div className="home-schedule-institution-results">{institutions.map((item) => <button type="button" key={`${item.organization}-${item.businessRound}`} onClick={() => selectInstitution(item)}><strong>{item.organization}</strong><small>{item.region || "지역 미등록"} · {item.businessRound}차 사업 · {item.progressManager || "담당자 미정"}</small></button>)}{!institutionLoading && !institutions.length ? <p>등록된 기관이 없습니다.</p> : null}</div> : null}
+            <small className="home-schedule-link-note">{editor.linked ? "기관 상세 이력에 연결됩니다." : editor.kind === "영업" ? "영업 일정은 기존 기관을 선택하거나 새 기관을 등록해야 합니다." : "회의·쇼룸·기타는 기관과 연결하거나 자유 장소로 저장할 수 있습니다."}</small>
+            {!editor.linked && editor.organizationQuery.trim().length >= 2 ? <button type="button" className="schedule-create-institution" onClick={() => void createInstitution()}>+ 새 기관 등록 후 연결</button> : null}
+          </label>
+          <label>일정 제목 <b>*</b><input value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))} placeholder="예: 담당자 방문 미팅" /></label>
+          <label>일정 담당자 <b>*</b><select value={editor.assigneeMemberId || ""} onChange={(event) => changeAssignee(event.target.value)}><option value="">담당자 선택</option>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}</option>)}</select></label>
+          <label>날짜 <b>*</b><input type="date" value={editor.scheduledDate} onChange={(event) => setEditor((current) => ({ ...current, scheduledDate: event.target.value }))} /></label>
+          {editor.scheduleId ? <label className="schedule-completed"><input type="checkbox" checked={editor.completed} onChange={(event) => setEditor((current) => ({ ...current, completed: event.target.checked }))} /> 이 일정을 완료 상태로 지정</label> : null}
+          <footer>{editor.scheduleId ? <button type="button" className="danger-button" onClick={() => void deleteSchedule()}>삭제</button> : null}<span /><button type="button" onClick={() => setEditorOpen(false)}>취소</button><button type="button" className="primary-button" disabled={saving || !editor.title.trim() || !editor.organizationQuery.trim() || !editor.assigneeMemberId || (editor.kind === "영업" && !editor.linked)} onClick={() => void saveSchedule()}>{saving ? "저장 중…" : "저장"}</button></footer>
+        </div>
+      </div> : null}
     </section>
   );
 }

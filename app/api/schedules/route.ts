@@ -5,17 +5,20 @@ import {
 import {
   addOrganizationSchedule,
   addConstructionScheduleProject,
+  deleteOrganizationSchedule,
   listConstructionScheduleBoard,
   listOrganizationSchedules,
   removeConstructionScheduleProject,
   replaceOrganizationSchedules,
   saveConstructionSchedules,
+  updateOrganizationSchedule,
 } from "../../../lib/organization-schedules";
 import {
   completeScheduleReminderForMember,
   listScheduleCalendarForMember,
   listScheduleRemindersForMember,
 } from "../../../lib/schedule-reminders";
+import { listGoogleCalendarSchedules } from "../../../lib/google-calendar-feed";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +47,15 @@ export async function GET(request: Request) {
           86_400_000,
       );
       if (span > 62) throw new Error("달력은 한 번에 두 달까지만 조회할 수 있습니다.");
+      const [siteSchedules, google] = await Promise.all([
+        listScheduleCalendarForMember(member, start, end),
+        listGoogleCalendarSchedules(start, end),
+      ]);
       return Response.json({
-        schedules: await listScheduleCalendarForMember(member, start, end),
+        schedules: [...siteSchedules, ...google.events],
+        currentMember: { id: member.id, displayName: member.displayName, role: member.role },
+        googleCalendarConfigured: google.configured,
+        googleCalendarConnected: google.connected,
       });
     }
     if (url.searchParams.get("scope") === "reminders") {
@@ -79,6 +89,18 @@ export async function PUT(request: Request) {
         memberName: member.displayName,
       }));
     }
+    if (payload.action === "update-general-schedule") {
+      return Response.json({ schedule: await updateOrganizationSchedule({
+        id: payload.scheduleId,
+        label: payload.label,
+        scheduledDate: payload.scheduledDate,
+        category: payload.category,
+        assigneeMemberId: payload.assigneeMemberId,
+        assigneeName: payload.assigneeName,
+        completed: payload.completed,
+        member,
+      }) });
+    }
     const schedules = await replaceOrganizationSchedules({
       organization: payload.organization,
       businessRound: payload.businessRound,
@@ -104,6 +126,8 @@ export async function POST(request: Request) {
         scheduledDate: payload.scheduledDate,
         category: payload.category,
         linked: payload.linked,
+        assigneeMemberId: payload.assigneeMemberId,
+        assigneeName: payload.assigneeName,
         memberId: member.id,
         memberName: member.displayName,
       }) });
@@ -125,8 +149,11 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    await requireApprovedMember();
+    const member = await requireApprovedMember();
     const payload = (await request.json()) as Record<string, unknown>;
+    if (payload.action === "delete-general-schedule") {
+      return Response.json(await deleteOrganizationSchedule({ id: payload.scheduleId, member }));
+    }
     if (payload.action !== "remove-construction-project") {
       throw new Error("삭제할 일정표 기관을 확인해 주세요.");
     }

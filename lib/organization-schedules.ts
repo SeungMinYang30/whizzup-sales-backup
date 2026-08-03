@@ -20,6 +20,8 @@ export type OrganizationSchedule = {
   details: string;
   completed: boolean;
   sourceActivityId: number | null;
+  assigneeMemberId: number | null;
+  assigneeName: string;
   createdByName: string;
   updatedByName: string;
   createdAt: string;
@@ -70,6 +72,8 @@ const schemaStatements = [
     created_by_name TEXT NOT NULL DEFAULT '',
     updated_by INTEGER,
     updated_by_name TEXT NOT NULL DEFAULT '',
+    assignee_member_id INTEGER,
+    assignee_name TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
@@ -109,6 +113,8 @@ async function initializeOrganizationSchedules() {
     ["end_date", "TEXT NOT NULL DEFAULT ''"],
     ["vendor_name", "TEXT NOT NULL DEFAULT ''"],
     ["details", "TEXT NOT NULL DEFAULT ''"],
+    ["assignee_member_id", "INTEGER"],
+    ["assignee_name", "TEXT NOT NULL DEFAULT ''"],
   ] as const;
   for (const [name, definition] of additions) {
     if (!names.has(name)) {
@@ -181,6 +187,11 @@ function scheduleJson(row: Record<string, unknown>): OrganizationSchedule {
       Number(row.source_activity_id) > 0
         ? Number(row.source_activity_id)
         : null,
+    assigneeMemberId:
+      Number.isSafeInteger(Number(row.assignee_member_id)) && Number(row.assignee_member_id) > 0
+        ? Number(row.assignee_member_id)
+        : null,
+    assigneeName: String(row.assignee_name ?? ""),
     createdByName: String(row.created_by_name ?? ""),
     updatedByName: String(row.updated_by_name ?? ""),
     createdAt: String(row.created_at ?? ""),
@@ -419,6 +430,8 @@ export async function addOrganizationSchedule(input: {
   scheduledDate: unknown;
   category?: unknown;
   linked?: unknown;
+  assigneeMemberId?: unknown;
+  assigneeName?: unknown;
   memberId: number;
   memberName: string;
 }) {
@@ -428,6 +441,8 @@ export async function addOrganizationSchedule(input: {
   const label = clean(input.label).slice(0, 120);
   const scheduledDate = validDate(input.scheduledDate);
   const category = clean(input.category) === "showroom" ? "showroom" : "general";
+  const assigneeMemberId = Number(input.assigneeMemberId);
+  const assigneeName = clean(input.assigneeName).slice(0, 120) || input.memberName;
   if (!organization || !label || !scheduledDate) {
     throw new Error("기관, 일정 제목, 날짜를 확인해 주세요.");
   }
@@ -442,8 +457,9 @@ export async function addOrganizationSchedule(input: {
     await d1.prepare(
       `INSERT INTO organization_schedules (
          organization, business_round, label, scheduled_date, category, completed,
-         created_by, created_by_name, updated_by, updated_by_name
-       ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+         created_by, created_by_name, updated_by, updated_by_name,
+         assignee_member_id, assignee_name
+       ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       organization,
       businessRound,
@@ -454,6 +470,8 @@ export async function addOrganizationSchedule(input: {
       input.memberName,
       input.memberId,
       input.memberName,
+      Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0 ? assigneeMemberId : null,
+      assigneeName,
     ).run();
   }
   if (!linked) return [];
@@ -723,6 +741,97 @@ export async function markOrganizationScheduleCompleted(input: {
     schedules,
   );
   return schedules.find((schedule) => schedule.id === input.id) ?? null;
+}
+
+type ScheduleActor = {
+  id: number;
+  displayName: string;
+  role: "admin" | "assistant" | "member";
+};
+
+async function requireEditableSchedule(idValue: unknown, member: ScheduleActor) {
+  const id = Number(idValue);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error("수정할 일정을 선택해 주세요.");
+  const d1 = await ensureOrganizationSchedulesReady();
+  const row = await d1.prepare(
+    `SELECT * FROM organization_schedules WHERE id = ? LIMIT 1`,
+  ).bind(id).first<Record<string, unknown>>();
+  if (!row) throw new Error("일정을 찾을 수 없습니다.");
+  if (String(row.category ?? "general") === "construction") {
+    throw new Error("시공 일정은 시공·납품 일정표에서 수정해 주세요.");
+  }
+  const permitted = member.role === "admin"
+    || Number(row.created_by) === member.id
+    || Number(row.assignee_member_id) === member.id;
+  if (!permitted) throw new Error("작성자, 담당자 또는 관리자만 이 일정을 수정할 수 있습니다.");
+  return { d1, row, id };
+}
+
+export async function updateOrganizationSchedule(input: {
+  id: unknown;
+  label: unknown;
+  scheduledDate: unknown;
+  category?: unknown;
+  assigneeMemberId?: unknown;
+  assigneeName?: unknown;
+  completed?: unknown;
+  member: ScheduleActor;
+}) {
+  const { d1, row, id } = await requireEditableSchedule(input.id, input.member);
+  const label = clean(input.label).slice(0, 120);
+  const scheduledDate = validDate(input.scheduledDate);
+  if (!label || !scheduledDate) throw new Error("일정 제목과 날짜를 확인해 주세요.");
+  const category = clean(input.category) === "showroom" ? "showroom" : "general";
+  const assigneeMemberId = Number(input.assigneeMemberId);
+  const assigneeName = clean(input.assigneeName).slice(0, 120) || input.member.displayName;
+  await d1.prepare(
+    `UPDATE organization_schedules
+     SET label = ?, scheduled_date = ?, end_date = ?, category = ?, completed = ?,
+         assignee_member_id = ?, assignee_name = ?,
+         updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+  ).bind(
+    label,
+    scheduledDate,
+    scheduledDate,
+    category,
+    input.completed === true ? 1 : 0,
+    Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0 ? assigneeMemberId : null,
+    assigneeName,
+    input.member.id,
+    input.member.displayName,
+    id,
+  ).run();
+  const organization = String(row.organization ?? "");
+  const businessRound = Math.max(0, Number(row.business_round) || 0);
+  if (businessRound > 0) {
+    await mirrorOpenSchedulesToLatestActivity(
+      d1,
+      organization,
+      businessRound,
+      await listOrganizationSchedules(organization, businessRound),
+    );
+  }
+  return scheduleJson({ ...row, id, label, scheduled_date: scheduledDate, end_date: scheduledDate,
+    category, completed: input.completed === true ? 1 : 0,
+    assignee_member_id: Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0 ? assigneeMemberId : null,
+    assignee_name: assigneeName, updated_by_name: input.member.displayName });
+}
+
+export async function deleteOrganizationSchedule(input: { id: unknown; member: ScheduleActor }) {
+  const { d1, row, id } = await requireEditableSchedule(input.id, input.member);
+  await d1.prepare(`DELETE FROM organization_schedules WHERE id = ?`).bind(id).run();
+  const organization = String(row.organization ?? "");
+  const businessRound = Math.max(0, Number(row.business_round) || 0);
+  if (businessRound > 0) {
+    await mirrorOpenSchedulesToLatestActivity(
+      d1,
+      organization,
+      businessRound,
+      await listOrganizationSchedules(organization, businessRound),
+    );
+  }
+  return { id };
 }
 
 export async function mergeActivityProgressSchedule(input: {

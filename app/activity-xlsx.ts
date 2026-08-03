@@ -610,6 +610,162 @@ export function downloadRowsXlsx(options: WorkbookExportOptions) {
   );
 }
 
+export type ConstructionTimelineExportOptions = {
+  filename: string;
+  startDate: string;
+  endDate: string;
+  headers: string[];
+  rows: string[][];
+  widths: number[];
+  fixedColumnCount: number;
+  todayColumnIndex: number;
+};
+
+function constructionStageStyle(value: string, fallback: number) {
+  const normalized = value.replaceAll(" ", "");
+  if (!normalized) return fallback;
+  if (normalized.includes("출고")) return 8;
+  if (normalized.includes("검수") || normalized.includes("납품")) return 11;
+  if (normalized.includes("목공") || normalized.includes("통신")) return 10;
+  if (
+    normalized.includes("철거") ||
+    normalized.includes("도장") ||
+    normalized.includes("바닥") ||
+    normalized.includes("시스템") ||
+    normalized.includes("사인")
+  ) return 9;
+  return 12;
+}
+
+export function downloadConstructionTimelineXlsx(
+  options: ConstructionTimelineExportOptions,
+) {
+  const lastColumnIndex = Math.max(0, options.headers.length - 1);
+  const lastColumn = columnName(lastColumnIndex);
+  const title = `시공·납품 일정표  ${options.startDate} ~ ${options.endDate}`;
+  const todayColumn = options.todayColumnIndex;
+  const headerCells = options.headers
+    .map((value, columnIndex) => {
+      const style =
+        columnIndex === todayColumn
+          ? 5
+          : columnIndex >= options.fixedColumnCount && /\([토일]\)/.test(value)
+            ? 4
+            : columnIndex >= options.fixedColumnCount
+              ? 3
+              : 2;
+      return inlineCell(`${columnName(columnIndex)}2`, value, style);
+    })
+    .join("");
+  const dataRows = options.rows
+    .map((row, rowIndex) => {
+      const fallback = rowIndex % 2 === 0 ? 6 : 7;
+      const cells = options.headers
+        .map((_, columnIndex) => {
+          const value = String(row[columnIndex] ?? "");
+          const style =
+            columnIndex === todayColumn
+              ? value
+                ? constructionStageStyle(value, 14)
+                : 14
+              : columnIndex >= options.fixedColumnCount
+                ? constructionStageStyle(value, fallback)
+                : fallback;
+          return inlineCell(
+            `${columnName(columnIndex)}${rowIndex + 3}`,
+            value,
+            style,
+          );
+        })
+        .join("");
+      return `<row r="${rowIndex + 3}" ht="34" customHeight="1">${cells}</row>`;
+    })
+    .join("");
+  const columns = options.widths
+    .map(
+      (width, index) =>
+        `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`,
+    )
+    .join("");
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
+  <sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane xSplit="${options.fixedColumnCount}" ySplit="2" topLeftCell="${columnName(options.fixedColumnCount)}3" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>
+  <cols>${columns}</cols>
+  <sheetData>
+    <row r="1" ht="34" customHeight="1">${inlineCell("A1", title, 1)}</row>
+    <row r="2" ht="28" customHeight="1">${headerCells}</row>
+    ${dataRows}
+  </sheetData>
+  <mergeCells count="1"><mergeCell ref="A1:${lastColumn}1"/></mergeCells>
+  <autoFilter ref="A2:${lastColumn}${Math.max(2, options.rows.length + 2)}"/>
+  <printOptions horizontalCentered="1"/>
+  <pageMargins left="0.2" right="0.2" top="0.35" bottom="0.35" header="0.15" footer="0.15"/>
+  <pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>
+</worksheet>`;
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>`;
+  const rootRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`;
+  const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="시공 납품 일정" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+  const workbookRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="4"><font><sz val="10"/><name val="맑은 고딕"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="15"/><name val="맑은 고딕"/></font><font><b/><color rgb="FF26354D"/><sz val="10"/><name val="맑은 고딕"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="10"/><name val="맑은 고딕"/></font></fonts>
+  <fills count="12"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F2D43"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEAF0F8"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF2F2"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFE7E7"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFFFFF"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F6FC"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDFF4B8"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFD995"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9E8FF"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD8F3E5"/></patternFill></fill></fills>
+  <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFD9E2EF"/></left><right style="thin"><color rgb="FFD9E2EF"/></right><top style="thin"><color rgb="FFD9E2EF"/></top><bottom style="thin"><color rgb="FFD9E2EF"/></bottom><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="15">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="6" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="5" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="7" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="8" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="9" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="10" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="11" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="9" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+  </cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+  const now = new Date().toISOString();
+  const core = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>시공·납품 일정표</dc:title><dc:creator>WHIZZUP</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created></cp:coreProperties>`;
+  const app = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>WHIZZUP Sales Hub</Application></Properties>`;
+  downloadWorkbookBlob(
+    {
+      "[Content_Types].xml": strToU8(contentTypes),
+      "_rels/.rels": strToU8(rootRels),
+      "docProps/core.xml": strToU8(core),
+      "docProps/app.xml": strToU8(app),
+      "xl/workbook.xml": strToU8(workbook),
+      "xl/_rels/workbook.xml.rels": strToU8(workbookRels),
+      "xl/styles.xml": strToU8(styles),
+      "xl/worksheets/sheet1.xml": strToU8(sheet),
+    },
+    options.filename,
+  );
+}
+
 function parseCsv(text: string) {
   const rows: string[][] = [];
   let row: string[] = [];

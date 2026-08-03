@@ -23,12 +23,18 @@ export type ScheduleReminder = {
   endDate: string;
   visibility: ScheduleReminderVisibility;
   assigneeName: string;
+  assigneeMemberId: number | null;
+  editable: boolean;
   updatedAt: string;
   updatedByName: string;
   conflict: boolean;
 };
 
-function scheduleReminderFromRow(row: ReminderRow, conflict = false): ScheduleReminder {
+function scheduleReminderFromRow(
+  row: ReminderRow,
+  member?: Pick<Member, "id" | "role">,
+  conflict = false,
+): ScheduleReminder {
   const label = String(row.label);
   const storedCategory = clean(row.category);
   const category: ScheduleReminder["category"] =
@@ -53,9 +59,16 @@ function scheduleReminderFromRow(row: ReminderRow, conflict = false): ScheduleRe
     })
       ? "shared-post-award"
       : "private",
-    assigneeName: hasAssignedManager(row.progress_manager)
-      ? clean(row.progress_manager)
+    assigneeName: hasAssignedManager(row.assignee_name)
+      ? clean(row.assignee_name)
+      : hasAssignedManager(row.progress_manager)
+        ? clean(row.progress_manager)
       : "",
+    assigneeMemberId: Number(row.assignee_member_id) > 0 ? Number(row.assignee_member_id) : null,
+    editable: Boolean(member) && (
+      member?.role === "admin" || Number(row.created_by) === member?.id
+      || Number(row.assignee_member_id) === member?.id
+    ),
     updatedAt: String(row.updated_at ?? ""),
     updatedByName: String(row.updated_by_name ?? ""),
     conflict,
@@ -72,6 +85,8 @@ type ReminderRow = {
   end_date: string;
   created_by: number | null;
   created_by_name: string;
+  assignee_member_id: number | null;
+  assignee_name: string;
   source_author_id: number | null;
   source_author_name: string;
   award_status: string;
@@ -117,6 +132,8 @@ SELECT
   COALESCE(NULLIF(s.end_date, ''), s.scheduled_date) AS end_date,
   s.created_by,
   s.created_by_name,
+  s.assignee_member_id,
+  COALESCE(s.assignee_name, '') AS assignee_name,
   s.updated_at,
   s.updated_by_name,
   source_author.member_id AS source_author_id,
@@ -156,7 +173,7 @@ export async function listScheduleRemindersForMember(
         {
           awardStatus: row.award_status,
           label: row.label,
-          progressManager: row.progress_manager,
+          progressManager: row.assignee_name || row.progress_manager,
           creatorMemberId: row.created_by ?? row.source_author_id,
           creatorName: row.created_by_name || row.source_author_name,
         },
@@ -166,19 +183,20 @@ export async function listScheduleRemindersForMember(
     .slice(0, 100);
   const counts = new Map<string, number>();
   visible.forEach((row: ReminderRow) => {
-    const assignee = hasAssignedManager(row.progress_manager)
-      ? clean(row.progress_manager)
+    const assignee = hasAssignedManager(row.assignee_name || row.progress_manager)
+      ? clean(row.assignee_name || row.progress_manager)
       : "";
     if (!assignee) return;
     const key = `${row.scheduled_date}\u001f${assignee}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   });
   return visible.map((row: ReminderRow) => {
-    const assignee = hasAssignedManager(row.progress_manager)
-      ? clean(row.progress_manager)
+    const assignee = hasAssignedManager(row.assignee_name || row.progress_manager)
+      ? clean(row.assignee_name || row.progress_manager)
       : "";
     return scheduleReminderFromRow(
       row,
+      member,
       Boolean(assignee) && (counts.get(`${row.scheduled_date}\u001f${assignee}`) ?? 0) > 1,
     );
   });
@@ -208,7 +226,7 @@ export async function listScheduleCalendarForMember(
         {
           awardStatus: row.award_status,
           label: row.label,
-          progressManager: row.progress_manager,
+          progressManager: row.assignee_name || row.progress_manager,
           creatorMemberId: row.created_by ?? row.source_author_id,
           creatorName: row.created_by_name || row.source_author_name,
         },
@@ -216,7 +234,7 @@ export async function listScheduleCalendarForMember(
       ),
     )
     .slice(0, 500)
-    .map((row: ReminderRow) => scheduleReminderFromRow(row));
+    .map((row: ReminderRow) => scheduleReminderFromRow(row, member));
 }
 
 export async function completeScheduleReminderForMember(
