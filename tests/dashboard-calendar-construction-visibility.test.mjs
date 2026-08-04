@@ -35,22 +35,23 @@ test("통합 일정 필터와 상세 표시는 같은 카테고리 색상을 공
   }
 });
 
-test("시공 일정 제외는 원본 삭제 대신 숨김과 복구를 사용한다", () => {
+test("시공 일정표 목록 삭제는 원본을 보존하고 기관 추가로 재등록한다", () => {
   assert.match(schedules, /hidden_at TEXT NOT NULL DEFAULT ''/);
   assert.match(schedules, /setConstructionScheduleProjectHidden/);
   assert.match(scheduleRoute, /hide-construction-project/);
-  assert.match(scheduleRoute, /restore-construction-project/);
-  assert.match(constructionPage, /기관·수주 기록은 삭제되지 않습니다/);
-  assert.match(constructionPage, /제외 목록에서 삭제/);
+  assert.match(constructionPage, /기관·수주·품목·기존 일정 기록은 유지되며/);
+  assert.match(constructionPage, /‘기관 추가’로 다시 등록할 수 있습니다/);
   assert.match(constructionPage, /className="construction-row-remove"/);
-  assert.match(constructionPage, /onClick=\{\(\) => void setProjectHidden\(project, true\)\}>−<\/button>/);
-  assert.match(constructionPage, /제외된 기관 목록에서 삭제하시겠습니까/);
-  assert.match(constructionPage, /setProjectHidden\(project, false\)\}>삭제<\/button>/);
-  assert.match(constructionPage, /원본 기록은 유지되며 일정표에 다시 추가할 수 있습니다/);
+  assert.match(constructionPage, /onClick=\{\(\) => void removeProjectFromBoard\(project\)\}>−<\/button>/);
+  assert.match(constructionPage, /\.filter\(\(project\) => !project\.hidden\)[\s\S]*?\.map\(\(project\) => scopeKey/);
+  assert.doesNotMatch(constructionPage, /제외된 기관 보기|제외된 기관 목록|construction-excluded-panel/);
+  assert.match(schedules, /ON CONFLICT\(organization, business_round\) DO UPDATE SET[\s\S]*?hidden_at = ''/);
+  assert.match(constructionPage, /candidate\.endDate \|\| candidate\.scheduledDate\) >= start/);
+  assert.match(constructionPage, /left\.localeCompare\(right\) \|\| a\.project\.organization\.localeCompare/);
   assert.doesNotMatch(constructionPage, /rowMenuKey/);
   assert.doesNotMatch(constructionPage, /construction-row-menu-popover/);
   assert.match(styles, /\.construction-fixed-cells > span \{ overflow: hidden/);
   assert.match(styles, /\.construction-row-remove \{/);
-  assert.doesNotMatch(constructionPage, /일정표에서 빼기/);
+  assert.doesNotMatch(constructionPage, /일정표에서 빼기|일정표에서 제외/);
   assert.match(backupStore, /name: "construction_schedule_projects",[\s\S]*?"hidden_at"/);
 });

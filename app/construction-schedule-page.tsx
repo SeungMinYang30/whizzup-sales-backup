@@ -108,7 +108,6 @@ export default function ConstructionSchedulePage({
   const [message, setMessage] = useState("");
   const [hideCompleted, setHideCompleted] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [showExcluded, setShowExcluded] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -201,22 +200,24 @@ export default function ConstructionSchedulePage({
           .includes(keyword),
       )
       .sort((a, b) => {
-        const left = a.items[0]?.scheduledDate ?? "9999-12-31";
-        const right = b.items[0]?.scheduledDate ?? "9999-12-31";
+        const firstRelevantDate = (items: ConstructionSchedule[]) => {
+          const item = items.find((candidate) => (candidate.endDate || candidate.scheduledDate) >= start);
+          if (!item) return "9999-12-31";
+          return item.scheduledDate < start ? start : item.scheduledDate;
+        };
+        const left = firstRelevantDate(a.items);
+        const right = firstRelevantDate(b.items);
         return left.localeCompare(right) || a.project.organization.localeCompare(b.project.organization, "ko-KR");
       });
-  }, [hideCompleted, latestByScope, projects, query, schedulesByScope]);
-
-  const excludedProjects = useMemo(
-    () => projects
-      .filter((project) => project.hidden)
-      .sort((a, b) => a.organization.localeCompare(b.organization, "ko-KR")),
-    [projects],
-  );
+  }, [hideCompleted, latestByScope, projects, query, schedulesByScope, start]);
 
   const addOptions = useMemo(() => {
     const keyword = addQuery.trim().toLocaleLowerCase("ko-KR");
-    const registered = new Set(projects.map((project) => scopeKey(project.organization, project.businessRound)));
+    const registered = new Set(
+      projects
+        .filter((project) => !project.hidden)
+        .map((project) => scopeKey(project.organization, project.businessRound)),
+    );
     return institutionOptions
       .filter((option) => !registered.has(scopeKey(option.organization, option.businessRound)))
       .filter((option) =>
@@ -388,17 +389,16 @@ export default function ConstructionSchedulePage({
     }
   }
 
-  async function setProjectHidden(project: ConstructionProject, hidden: boolean) {
+  async function removeProjectFromBoard(project: ConstructionProject) {
     if (saving) return;
-    if (hidden && !window.confirm("이 기관을 시공·납품 일정표에서 제외하시겠습니까? 기관·수주 기록은 삭제되지 않습니다.")) return;
-    if (!hidden && !window.confirm("이 기관을 제외된 기관 목록에서 삭제하시겠습니까? 기관·수주·품목·기존 일정 기록은 삭제되지 않으며, 일정표 기관 추가에서 다시 등록할 수 있습니다.")) return;
+    if (!window.confirm("이 기관을 시공·납품 일정표 목록에서 삭제하시겠습니까? 기관·수주·품목·기존 일정 기록은 유지되며, 필요하면 ‘기관 추가’로 다시 등록할 수 있습니다.")) return;
     setSaving(true);
     try {
       const response = await fetch("/api/schedules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: hidden ? "hide-construction-project" : "restore-construction-project",
+          action: "hide-construction-project",
           organization: project.organization,
           businessRound: project.businessRound,
         }),
@@ -408,12 +408,12 @@ export default function ConstructionSchedulePage({
         schedules?: ConstructionSchedule[];
         error?: string;
       };
-      if (!response.ok) throw new Error(payload.error || (hidden ? "일정표에서 기관을 제외하지 못했습니다." : "기관을 다시 표시하지 못했습니다."));
+      if (!response.ok) throw new Error(payload.error || "일정표 목록에서 기관을 삭제하지 못했습니다.");
       setProjects(payload.projects ?? []);
       setSchedules(payload.schedules ?? []);
-      setMessage(hidden ? "일정표에서만 제외했습니다. 기관·수주·품목·일정 기록은 그대로 유지됩니다." : "제외 목록에서 삭제했습니다. 원본 기록은 유지되며 일정표에 다시 추가할 수 있습니다.");
+      setMessage("일정표 목록에서 삭제했습니다. 기관·수주·품목·기존 일정 기록은 유지되며 ‘기관 추가’에서 다시 등록할 수 있습니다.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : (hidden ? "일정표에서 기관을 제외하지 못했습니다." : "기관을 다시 표시하지 못했습니다."));
+      setMessage(error instanceof Error ? error.message : "일정표 목록에서 기관을 삭제하지 못했습니다.");
     } finally {
       setSaving(false);
     }
@@ -470,23 +470,10 @@ export default function ConstructionSchedulePage({
                 <input type="checkbox" checked={hideCompleted} onChange={(event) => setHideCompleted(event.target.checked)} />
                 완료 기관 제외
               </label>
-              <button type="button" className={showExcluded ? "active" : ""} onClick={() => setShowExcluded((current) => !current)}>
-                제외된 기관 보기 <b>{excludedProjects.length}</b>
-              </button>
             </div> : null}
           </div>
         </div>
       </header>
-
-      {showExcluded ? <section className="construction-excluded-panel" aria-label="일정표에서 제외된 기관">
-        <header><div><strong>제외된 기관</strong><small>삭제해도 기관·수주·품목·기존 일정 기록은 유지되며, 일정표에 다시 추가할 수 있습니다.</small></div><button type="button" onClick={() => setShowExcluded(false)}>닫기</button></header>
-        {excludedProjects.length ? <div className="construction-excluded-list">
-          {excludedProjects.map((project) => <div key={scopeKey(project.organization, project.businessRound)}>
-            <span><strong>{project.organization}</strong><small>{project.businessRound}차 사업</small></span>
-            <button type="button" disabled={saving} onClick={() => void setProjectHidden(project, false)}>삭제</button>
-          </div>)}
-        </div> : <p>제외된 기관이 없습니다.</p>}
-      </section> : null}
 
       <div className="construction-schedule-toolbar">
         <div className="construction-schedule-controls">
@@ -523,7 +510,7 @@ export default function ConstructionSchedulePage({
               <span>{record?.region || "지역 미등록"}</span>
               <span className="construction-institution-cell">
                 <button type="button" className="construction-institution-main" onClick={() => onOpenOrganization(project.organization, project.businessRound)}><strong>{project.organization}</strong><small>{project.businessRound}차 사업</small></button>
-                <button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표에서 제외`} title="일정표에서 제외" disabled={saving} onClick={() => void setProjectHidden(project, true)}>−</button>
+                <button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표 목록에서 삭제`} title="일정표 목록에서 삭제" disabled={saving} onClick={() => void removeProjectFromBoard(project)}>−</button>
               </span>
               <button
                 type="button"
@@ -566,7 +553,7 @@ export default function ConstructionSchedulePage({
       <div className="construction-mobile-list">
         {rows.map(({ project, record, items }) => (
           <article key={scopeKey(project.organization, project.businessRound)}>
-            <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{record?.progressManager || "미정"}</span><button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표에서 제외`} title="일정표에서 제외" disabled={saving} onClick={() => void setProjectHidden(project, true)}>−</button></header>
+            <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{record?.progressManager || "미정"}</span><button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표 목록에서 삭제`} title="일정표 목록에서 삭제" disabled={saving} onClick={() => void removeProjectFromBoard(project)}>−</button></header>
             <p>{record?.region || "지역 미등록"} · {displayWorkSummary(project) || "공사·품목 미등록"}</p>
             <div>{items.map((item) => {
               const day = dayMetaByDate.get(item.scheduledDate);
