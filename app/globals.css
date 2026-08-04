@@ -10883,11 +10883,15 @@ tr:hover .row-actions { opacity: 1; }
 .home-schedule-editor > label textarea { min-height: 92px; padding: 11px 12px; line-height: 1.55; resize: vertical; }
 .home-schedule-editor > label > small { color: #77849a; font-size: 11px; font-weight: 650; }
 .home-schedule-institution { position: relative; }
-.home-schedule-institution-results { display: grid; max-height: 220px; overflow-y: auto; border: 1px solid #ccd6e8; border-radius: 9px; background: #fff; box-shadow: 0 12px 28px rgba(29, 46, 78, .12); }
+.home-schedule-institution-search { position: relative; display: block; }
+.home-schedule-institution-search > input { margin-top: 0 !important; }
+.home-schedule-institution-results { position: absolute; z-index: 110; top: calc(100% + 6px); right: 0; left: 0; display: grid; max-height: 220px; overflow-y: auto; border: 1px solid #ccd6e8; border-radius: 9px; background: #fff; box-shadow: 0 12px 28px rgba(29, 46, 78, .16); }
 .home-schedule-institution-results > button { display: grid; gap: 4px; padding: 10px 12px; border: 0; border-bottom: 1px solid #edf0f5; background: #fff; color: #24344e; text-align: left; }
 .home-schedule-institution-results > button:hover { background: #f4f6ff; }
 .home-schedule-institution-results strong { font-size: 14px; }
 .home-schedule-institution-results small { color: #7d899c; font-size: 12px; }
+.home-schedule-institution-results p.searching { color: #52627a; }
+.home-schedule-institution-results p.search-error { color: #b4473f; }
 .home-schedule-link-note { color: #77849a; font-size: 11px; font-weight: 650; line-height: 1.5; }
 .home-schedule-kind { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 16px; }
 .home-schedule-kind button { min-height: 40px; border: 1px solid #d4dceb; border-radius: 9px; background: #fff; color: #53627a; font-size: 13px; font-weight: 850; }

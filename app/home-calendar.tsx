@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   constructionStageIndex,
   isConstructionStage,
@@ -34,6 +34,7 @@ type SyncIssue = { id: number; label: string; organization: string; operation: "
 type Institution = { organization: string; businessRound: number; region: string; progressManager: string };
 type Member = { id: number; display_name: string; role: string; status: string };
 type EditorKind = "영업" | "회의" | "시공" | "쇼룸" | "기타" | "내 일정";
+type InstitutionSearchState = "idle" | "debouncing" | "loading" | "success" | "empty" | "error";
 
 const FILTERS: Array<[CalendarFilter, string]> = [
   ["all", "전체"], ["sales", "영업"], ["meeting", "회의"], ["construction", "시공"],
@@ -132,7 +133,9 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   const [saving, setSaving] = useState(false);
   const [editor, setEditor] = useState(() => emptyEditor(today));
   const [institutions, setInstitutions] = useState<Institution[]>([]);
-  const [institutionLoading, setInstitutionLoading] = useState(false);
+  const [institutionSearchState, setInstitutionSearchState] = useState<InstitutionSearchState>("idle");
+  const [institutionComposing, setInstitutionComposing] = useState(false);
+  const institutionRequestSequence = useRef(0);
   const [readOnlySchedule, setReadOnlySchedule] = useState<HomeCalendarSchedule | null>(null);
   const dates = useMemo(() => monthGrid(monthValue), [monthValue]);
   const rangeStart = dateValue(dates[0]);
@@ -178,26 +181,44 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
 
   useEffect(() => {
     const query = editor.organizationQuery.trim();
-    if (!editorOpen || query.length < 2 || editor.linked) { setInstitutions([]); return; }
+    const requestId = ++institutionRequestSequence.current;
+    if (!editorOpen || query.length < 2 || editor.linked || institutionComposing) {
+      setInstitutions([]);
+      setInstitutionSearchState("idle");
+      return;
+    }
     const controller = new AbortController();
+    setInstitutions([]);
+    setInstitutionSearchState("debouncing");
     const timer = window.setTimeout(() => {
-      setInstitutionLoading(true);
+      if (requestId !== institutionRequestSequence.current) return;
+      setInstitutionSearchState("loading");
       void fetch(`/api/institutions/search?q=${encodeURIComponent(query)}`, { cache: "no-store", signal: controller.signal })
-        .then((response) => response.json())
+        .then(async (response) => {
+          const payload = await response.json() as { institutions?: Institution[]; error?: string };
+          if (!response.ok) throw new Error(payload.error || "기관 검색을 완료하지 못했습니다.");
+          return payload;
+        })
         .then((payload: { institutions?: Institution[] }) => {
+          if (requestId !== institutionRequestSequence.current) return;
           const candidates = Array.isArray(payload.institutions) ? payload.institutions.slice(0, 10) : [];
           setInstitutions(candidates);
+          setInstitutionSearchState(candidates.length ? "success" : "empty");
           if (editor.googleEventId) {
             const normalizedQuery = normalizedInstitution(query);
             const exact = candidates.find((item) => normalizedInstitution(item.organization) === normalizedQuery);
             if (exact) selectInstitution(exact);
           }
         })
-        .catch(() => undefined)
-        .finally(() => setInstitutionLoading(false));
+        .catch((caught: unknown) => {
+          if (controller.signal.aborted || requestId !== institutionRequestSequence.current) return;
+          setInstitutions([]);
+          setInstitutionSearchState("error");
+          console.warn("Institution search failed", caught);
+        });
     }, 220);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [editor.googleEventId, editor.organizationQuery, editor.linked, editorOpen]);
+  }, [editor.googleEventId, editor.organizationQuery, editor.linked, editorOpen, institutionComposing]);
 
   function openNew(date = selectedDate) {
     setReadOnlySchedule(null);
@@ -459,11 +480,22 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
           <header><div><span className="section-kicker">{editor.googleEventId ? "CONNECT GOOGLE SCHEDULE" : editor.scheduleId ? "EDIT SCHEDULE" : "NEW SCHEDULE"}</span><h3>{editor.googleEventId ? "Google 일정 연결" : editor.scheduleId ? "일정 수정" : "일정 등록"}</h3><p>{editor.googleEventId ? "추천 내용을 확인하고 기관·분류·담당자를 연결해 주세요." : "시공 일정은 시공·납품 일정표에서 관리하고 이 화면에는 자동 연동됩니다."}</p></div><button type="button" aria-label="닫기" onClick={() => setEditorOpen(false)}>×</button></header>
           <div className="home-schedule-kind">{((editor.googleEventId ? ["영업", "회의", "시공", "쇼룸", "기타"] : ["영업", "회의", "쇼룸", "기타", "내 일정"]) as EditorKind[]).map((kind) => <button type="button" key={kind} className={editor.kind === kind ? "active" : ""} onClick={() => setEditor((current) => ({ ...current, kind, title: kind === "시공" && !["철거", "목공", "도장", "바닥", "시스템", "검수", "교육"].includes(current.title) ? "" : current.title }))}>{kind}</button>)}</div>
           <label className="home-schedule-institution">{editor.googleEventId ? "연결할 기관" : "기관 또는 일정 장소"} <b>*</b>
-            <input value={editor.organizationQuery} onChange={(event) => setEditor((current) => ({ ...current, organizationQuery: event.target.value, organization: "", businessRound: 0, linked: false }))} placeholder="기관명 2글자 이상 검색 또는 직접 입력" />
-            {!editor.linked && editor.organizationQuery.trim().length >= 2 ? <div className="home-schedule-institution-results">
-              {institutions.map((item) => <button type="button" key={`${item.organization}-${item.businessRound}`} onClick={() => selectInstitution(item)}><strong>{item.organization}</strong><small>{item.region || "지역 미등록"} · {item.businessRound}차 사업 · {item.progressManager || "담당자 미정"}</small></button>)}
-              {!institutionLoading && !institutions.length ? <p>등록된 기관이 없습니다.</p> : null}
-            </div> : null}
+            <span className="home-schedule-institution-search">
+              <input value={editor.organizationQuery}
+                onCompositionStart={() => setInstitutionComposing(true)}
+                onCompositionEnd={(event) => {
+                  setInstitutionComposing(false);
+                  setEditor((current) => ({ ...current, organizationQuery: event.currentTarget.value, organization: "", businessRound: 0, linked: false }));
+                }}
+                onChange={(event) => setEditor((current) => ({ ...current, organizationQuery: event.target.value, organization: "", businessRound: 0, linked: false }))}
+                placeholder="기관명 2글자 이상 검색 또는 직접 입력" />
+              {!editor.linked && editor.organizationQuery.trim().length >= 2 && !institutionComposing ? <div className="home-schedule-institution-results">
+                {institutions.map((item) => <button type="button" key={`${item.organization}-${item.businessRound}`} onClick={() => selectInstitution(item)}><strong>{item.organization}</strong><small>{item.region || "지역 미등록"} · {item.businessRound}차 사업 · {item.progressManager || "담당자 미정"}</small></button>)}
+                {institutionSearchState === "debouncing" || institutionSearchState === "loading" ? <p className="searching">기관을 검색하는 중입니다.</p> : null}
+                {institutionSearchState === "empty" ? <p>검색 결과가 없습니다.</p> : null}
+                {institutionSearchState === "error" ? <p className="search-error">검색이 지연되고 있습니다. 잠시 후 다시 입력해 주세요.</p> : null}
+              </div> : null}
+            </span>
             <small className="home-schedule-link-note">{editor.linked ? "기관 상세의 예정 일정에 연결됩니다." : editor.googleEventId ? "추천 기관을 선택한 뒤 연결할 수 있습니다." : editor.kind === "영업" ? "영업 일정은 기존 기관을 선택하거나 새 기관으로 등록해야 합니다." : "회의·쇼룸·기타·내 일정은 기관 연결 또는 자유 장소 입력이 모두 가능합니다."}</small>
             {!editor.linked && editor.organizationQuery.trim().length >= 2 ? <button type="button" className="schedule-create-institution" onClick={() => void createInstitution()}>+ 새 기관 등록 후 연결</button> : null}
           </label>
