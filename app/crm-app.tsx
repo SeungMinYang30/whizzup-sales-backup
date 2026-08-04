@@ -15383,6 +15383,7 @@ export default function CrmApp({
                 onClick={() => void selectView("followup")}
               >
                 <span>영업 현황</span>
+                <small>전체 기관의 최신 영업 기록</small>
                 <dl>
                   <div><dt>전체</dt><dd>{dashboardSalesCounts.total}</dd></div>
                   <div><dt>진행</dt><dd>{dashboardSalesCounts.active}</dd></div>
@@ -15395,6 +15396,7 @@ export default function CrmApp({
                 onClick={() => void selectView("awards")}
               >
                 <span>수주·계약 현황</span>
+                <small>위즈업·협력사·타업체 포함</small>
                 <dl>
                   <div><dt>전체</dt><dd>{dashboardAwardCounts.total}</dd></div>
                   <div><dt>진행</dt><dd>{dashboardAwardCounts.active}</dd></div>
@@ -15407,6 +15409,7 @@ export default function CrmApp({
                 onClick={() => void selectView("installation-schedule")}
               >
                 <span>시공·납품 현황</span>
+                <small>일정표에 등록된 위즈업 수주</small>
                 <dl>
                   <div><dt>예정</dt><dd>{constructionDashboardCounts.planned}</dd></div>
                   <div><dt>진행</dt><dd>{constructionDashboardCounts.active}</dd></div>

@@ -93,7 +93,7 @@ test("예산별 기관과 기관별 관리 담당자를 같은 사업 차수 안
        FROM activities WHERE id = 1`,
     )
     .get();
-  assert.equal(olderLinkedActivity.progress_manager, "");
+  assert.equal(olderLinkedActivity.progress_manager, "김동훈 과장");
 });
 
 test("담당자 단건 변경도 두 화면의 데이터를 함께 새로고침한다", async () => {
@@ -110,6 +110,10 @@ test("기관별 관리 담당자 변경은 예산별 기관 연결에도 반영�
     source("../app/api/records/route.ts"),
   ]);
   assert.match(assignment, /syncCampaignTargetsFromActivity\(d1, activityId\)/);
+  assert.match(
+    assignment,
+    /WHERE organization = \? AND business_round = \?[\s\S]*changedRows\.map/,
+  );
   assert.match(
     recordsRoute,
     /progressManagerChanged[\s\S]*syncCampaignTargetsFromActivity/,

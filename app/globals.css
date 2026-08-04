@@ -10725,14 +10725,14 @@ tr:hover .row-actions { opacity: 1; }
 .construction-fixed-cells { min-height: 72px; }
 .construction-fixed-cells strong { color: #172943; font-size: 14px; }
 .construction-fixed-cells small { margin-top: 4px; font-size: 12px; }
-.construction-fixed-cells span { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.construction-fixed-cells > span { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .construction-institution-cell { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 4px; overflow: visible !important; white-space: normal !important; }
 .construction-institution-main { display: flex; width: 100%; min-width: 0; padding: 0; flex-direction: column; align-items: flex-start; gap: 4px; border: 0; background: transparent; color: inherit; text-align: left; }
-.construction-row-menu { position: relative; display: inline-flex; flex: 0 0 auto; }
+.construction-row-menu { position: relative; display: inline-flex; flex: 0 0 auto; overflow: visible !important; white-space: normal !important; }
 .construction-row-menu-trigger { width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #75839a; font-size: 19px; font-weight: 900; line-height: 1; cursor: pointer; }
 .construction-row-menu-trigger:hover,
 .construction-row-menu-trigger[aria-expanded="true"] { border-color: #cbd6e8; background: #f4f7fb; color: #334866; }
-.construction-row-menu-popover { position: absolute; z-index: 35; top: calc(100% + 4px); right: 0; width: max-content; min-width: 138px; padding: 5px; border: 1px solid #d7dfeb; border-radius: 9px; background: #fff; box-shadow: 0 12px 28px rgba(27, 43, 73, .16); }
+.construction-row-menu-popover { position: absolute; z-index: 35; top: calc(100% + 4px); right: 0; width: max-content; min-width: 138px; padding: 5px; overflow: visible !important; border: 1px solid #d7dfeb; border-radius: 9px; background: #fff; box-shadow: 0 12px 28px rgba(27, 43, 73, .16); white-space: normal !important; }
 .construction-row-menu-popover > button { width: 100%; min-height: 34px; padding: 0 10px; border: 0; border-radius: 6px; background: #fff; color: #465773; font-size: 12px; font-weight: 800; text-align: left; cursor: pointer; }
 .construction-row-menu-popover > button:hover { background: #f3f6fb; color: #263a58; }
 .construction-settings-wrap { position: relative; display: inline-flex; }
@@ -10934,6 +10934,7 @@ tr:hover .row-actions { opacity: 1; }
 .dashboard-status-card.awards { border-left-color: #7c3aed; background: #fbf9ff; }
 .dashboard-status-card.construction { border-left-color: #d97706; background: #fffaf2; }
 .dashboard-status-card > span { font-size: 11px; font-weight: 900; white-space: nowrap; }
+.dashboard-status-card > small { color: #7d899b; font-size: 9px; font-weight: 750; white-space: nowrap; }
 .dashboard-status-card dl { margin: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
 .dashboard-status-card dl > div { min-width: 0; display: flex; align-items: baseline; gap: 3px; }
 .dashboard-status-card dt { color: #7d899b; font-size: 9px; font-weight: 750; }

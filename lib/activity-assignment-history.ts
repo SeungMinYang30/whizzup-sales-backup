@@ -164,7 +164,21 @@ export async function transferActivityAssignment(
   if (!target) {
     throw new AccessError("등록된 영업 담당자를 찾을 수 없습니다.", 400);
   }
-  if (target.display_name.trim() === current.progress_manager.trim()) {
+  const relatedActivities = await d1
+    .prepare(
+      `SELECT id, progress_manager
+       FROM activities
+       WHERE organization = ? AND business_round = ?
+       ORDER BY activity_date ASC, id ASC`,
+    )
+    .bind(current.organization, current.business_round)
+    .all<{ id: number; progress_manager: string }>();
+  const relatedRows = relatedActivities.results ?? [];
+  const changedRows = relatedRows.filter(
+    (row) => row.progress_manager.trim() !== target.display_name.trim(),
+  );
+
+  if (!changedRows.length) {
     await ensureCampaignsReady();
     await syncCampaignTargetsFromActivity(d1, activityId);
     const record = await d1
@@ -182,14 +196,7 @@ export async function transferActivityAssignment(
     return { record };
   }
 
-  await d1.batch([
-    d1
-      .prepare(
-        `UPDATE activities
-         SET progress_manager_locked = 0
-         WHERE organization = ? AND business_round = ?`,
-      )
-      .bind(current.organization, current.business_round),
+  const statements = changedRows.flatMap((row) => [
     d1
       .prepare(
         `UPDATE activities
@@ -199,7 +206,7 @@ export async function transferActivityAssignment(
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
       )
-      .bind(target.display_name, actor.id, actor.displayName, activityId),
+      .bind(target.display_name, actor.id, actor.displayName, row.id),
     d1
       .prepare(
         `INSERT INTO activity_assignment_history (
@@ -208,16 +215,19 @@ export async function transferActivityAssignment(
          ) VALUES (?, ?, ?, ?, ?, ?)`,
       )
       .bind(
-        activityId,
-        current.progress_manager,
+        row.id,
+        row.progress_manager,
         target.id,
         target.display_name,
         actor.id,
         actor.displayName,
       ),
   ]);
+  for (let start = 0; start < statements.length; start += 50) {
+    await d1.batch(statements.slice(start, start + 50));
+  }
   await reassignOpenCorrectionRequests(
-    [activityId],
+    changedRows.map((row) => row.id),
     target.display_name,
     actor.id,
   );

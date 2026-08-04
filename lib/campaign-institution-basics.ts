@@ -324,15 +324,7 @@ export function buildCampaignAssignmentBackfillStatements() {
       SET progress_manager = ${targetMemberName},
           progress_manager_locked = 0,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = (
-          SELECT latest.id
-          FROM activities latest
-          WHERE latest.organization = activities.organization
-            AND latest.business_round = activities.business_round
-          ORDER BY latest.activity_date DESC, latest.id DESC
-          LIMIT 1
-        )
-        AND ${preferredTargetId} IS NOT NULL
+      WHERE ${preferredTargetId} IS NOT NULL
         AND TRIM(COALESCE(progress_manager, '')) <> ${targetMemberName}
         AND (
           TRIM(COALESCE(progress_manager, '')) IN ('', '해당 없음')

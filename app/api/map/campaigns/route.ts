@@ -2280,9 +2280,14 @@ export async function PUT(request: Request) {
                 progress_manager_locked = 0,
                 updated_by_member_id = ?, updated_by_name = ?,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE organization = ? AND business_round = ?
           `)
-          .bind(actor.id, actor.displayName, latest.id),
+          .bind(
+            actor.id,
+            actor.displayName,
+            target.organization,
+            target.business_round,
+          ),
       );
     }
     await d1.batch(statements);
