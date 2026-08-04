@@ -231,7 +231,7 @@ function scheduleJson(row: Record<string, unknown>): OrganizationSchedule {
   };
 }
 
-async function requireWhizzupAwardScope(
+async function isWhizzupAwardScope(
   d1: Awaited<ReturnType<typeof ensureOrganizationSchedulesReady>>,
   organization: string,
   businessRound: number,
@@ -243,7 +243,15 @@ async function requireWhizzupAwardScope(
      ORDER BY activity_date DESC, id DESC
      LIMIT 1`,
   ).bind(organization, businessRound).first<{ award_status: string }>();
-  if (clean(latest?.award_status) !== "위즈업 수주") {
+  return clean(latest?.award_status) === "위즈업 수주";
+}
+
+async function requireWhizzupAwardScope(
+  d1: Awaited<ReturnType<typeof ensureOrganizationSchedulesReady>>,
+  organization: string,
+  businessRound: number,
+) {
+  if (!(await isWhizzupAwardScope(d1, organization, businessRound))) {
     throw new Error("시공 일정표에는 위즈업 수주 기관만 추가할 수 있습니다.");
   }
 }
@@ -328,7 +336,7 @@ function normalizeConstructionScheduleInputs(value: unknown) {
     const stage = clean(input.stage ?? input.label).slice(0, 40);
     const scheduledDate = validDate(input.scheduledDate ?? input.startDate);
     const endDate = validDate(input.endDate) || scheduledDate;
-    if (!stage || !scheduledDate || endDate < scheduledDate) return [];
+    if (!isConstructionStage(stage) || !scheduledDate || endDate < scheduledDate) return [];
     return [{
       stage,
       scheduledDate,
@@ -597,9 +605,7 @@ export async function saveConstructionSchedules(input: {
     )),
   ]);
   const hasInspection = schedules.some((schedule) => schedule.stage === "검수");
-  const hasConstructionWork = schedules.some(
-    (schedule) => isConstructionStage(schedule.stage) || schedule.stage === "출고",
-  );
+  const hasConstructionWork = schedules.some((schedule) => isConstructionStage(schedule.stage));
   if (hasInspection && projectCompleted) {
     await d1.prepare(
       `UPDATE activities
@@ -931,9 +937,17 @@ export async function mergeActivityProgressSchedule(input: {
   const businessRound = Math.max(1, Number(input.businessRound) || 1);
   const incoming = parseProgressScheduleEntries(clean(input.progressSchedule));
   if (!organization || !incoming.length) return;
+  const d1 = await ensureOrganizationSchedulesReady();
+  const whizzupScope = await isWhizzupAwardScope(d1, organization, businessRound);
+  const constructionIncoming = whizzupScope
+    ? incoming.filter((schedule) => isConstructionStage(schedule.label))
+    : [];
+  const generalIncoming = incoming.filter(
+    (schedule) => !whizzupScope || !isConstructionStage(schedule.label),
+  );
   const current = await listOrganizationSchedules(organization, businessRound);
   const merged = new Map(
-    current.map((schedule: OrganizationSchedule) => [
+    current.filter((schedule) => schedule.category !== "construction").map((schedule: OrganizationSchedule) => [
       `${schedule.scheduledDate}\u001f${schedule.label.toLocaleLowerCase("ko-KR")}`,
       {
         label: schedule.label,
@@ -942,7 +956,7 @@ export async function mergeActivityProgressSchedule(input: {
       },
     ]),
   );
-  incoming.forEach((schedule) => {
+  generalIncoming.forEach((schedule) => {
     const key = `${schedule.date}\u001f${schedule.label.toLocaleLowerCase("ko-KR")}`;
     if (!merged.has(key)) {
       merged.set(key, {
@@ -952,11 +966,86 @@ export async function mergeActivityProgressSchedule(input: {
       });
     }
   });
-  await replaceOrganizationSchedules({
-    organization,
-    businessRound,
-    schedules: [...merged.values()],
-    memberId: input.memberId,
-    memberName: input.memberName,
-  });
+  if (generalIncoming.length) {
+    await replaceOrganizationSchedules({
+      organization,
+      businessRound,
+      schedules: [...merged.values()],
+      memberId: input.memberId,
+      memberName: input.memberName,
+    });
+  }
+
+  if (constructionIncoming.length) {
+    await d1.prepare(
+      `INSERT INTO construction_schedule_projects (
+         organization, business_round, work_summary, work_summary_mode, completed,
+         created_by, created_by_name, updated_by, updated_by_name
+       ) VALUES (?, ?, '', 'auto', 0, ?, ?, ?, ?)
+       ON CONFLICT(organization, business_round) DO UPDATE SET
+         hidden_at = '', completed = 0,
+         updated_by = excluded.updated_by,
+         updated_by_name = excluded.updated_by_name,
+         updated_at = CURRENT_TIMESTAMP`,
+    ).bind(
+      organization,
+      businessRound,
+      input.memberId,
+      input.memberName,
+      input.memberId,
+      input.memberName,
+    ).run();
+
+    await d1.batch(constructionIncoming.map((schedule) => d1.prepare(
+      `INSERT INTO organization_schedules (
+         organization, business_round, label, scheduled_date, category, stage,
+         end_date, completed, source_activity_id,
+         created_by, created_by_name, updated_by, updated_by_name
+       )
+       SELECT ?, ?, ?, ?, 'construction', ?, ?, 0, ?, ?, ?, ?, ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM organization_schedules
+         WHERE organization = ? AND business_round = ? AND category = 'construction'
+           AND stage = ? AND scheduled_date = ?
+           AND COALESCE(NULLIF(end_date, ''), scheduled_date) = ?
+       )`,
+    ).bind(
+      organization,
+      businessRound,
+      schedule.label,
+      schedule.date,
+      schedule.label,
+      schedule.date,
+      input.activityId,
+      input.memberId,
+      input.memberName,
+      input.memberId,
+      input.memberName,
+      organization,
+      businessRound,
+      schedule.label,
+      schedule.date,
+      schedule.date,
+    )));
+
+    await d1.prepare(
+      `UPDATE activities
+       SET award_stage = CASE
+         WHEN award_stage = '납품 완료' THEN award_stage
+         ELSE '설치·공사 진행'
+       END, updated_at = CURRENT_TIMESTAMP
+       WHERE id = (
+         SELECT id FROM activities
+         WHERE organization = ? AND business_round = ? AND award_status = '위즈업 수주'
+         ORDER BY activity_date DESC, id DESC LIMIT 1
+       )`,
+    ).bind(organization, businessRound).run();
+
+    await mirrorOpenSchedulesToLatestActivity(
+      d1,
+      organization,
+      businessRound,
+      await listOrganizationSchedules(organization, businessRound),
+    );
+  }
 }

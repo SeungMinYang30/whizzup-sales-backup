@@ -857,7 +857,7 @@ export async function POST(request: Request) {
 기관명이 없거나 어느 기관인지 판단할 수 없을 때만 needsClarification을 true로 하고 한 가지 짧은 질문을 하며 drafts는 빈 배열로 두세요.
 그 외에는 needsClarification을 false로 하고 assistantMessage에 "N개 기관으로 정리했습니다. 내용을 확인해 주세요."처럼 기관 수를 포함해 짧게 답하세요.
 호환성 필드인 activityType은 기타, contactMethod는 기타, status는 상담 진행으로 고정하세요. 활동 유형과 영업 진행상황을 추측하거나 분류하지 마세요.
-수주 후 "목공 6/17, 시스템 6/19" 같은 일정은 progressSchedule에 각각 나누어 넣으세요.
+위즈업 수주 후 일정에서 철거·목공·도장·바닥·시스템·검수·교육 중 정확한 단계와 날짜가 함께 확인될 때만 progressSchedule에 각각 나누어 넣으세요. "시스템 문의"처럼 날짜 없는 단순 언급은 일정으로 만들지 마세요.
 progressSchedule에 일정이 있다는 이유만으로 수주 주체를 위즈업으로 추정하지 마세요. 위즈업 수주가 명시된 경우에만 awardStatus를 위즈업 수주로, 협력사 수주가 명시된 경우에만 협력사 수주로 정리하고, 수주 주체가 명확하지 않으면 미정으로 두세요.
 현재 연도가 생략된 월/일은 ${todayInSeoul().slice(0, 4)}년으로 정리하세요.
 모르는 값은 추측하지 말고 빈 문자열로 두세요.
