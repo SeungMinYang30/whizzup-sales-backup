@@ -151,7 +151,6 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [createdInstitutions, setCreatedInstitutions] = useState<Institution[]>([]);
   const [institutionSearchState, setInstitutionSearchState] = useState<InstitutionSearchState>("idle");
-  const [institutionComposing, setInstitutionComposing] = useState(false);
   const institutionRequestSequence = useRef(0);
   const [readOnlySchedule, setReadOnlySchedule] = useState<HomeCalendarSchedule | null>(null);
   const dates = useMemo(() => monthGrid(monthValue), [monthValue]);
@@ -223,7 +222,6 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       setInstitutionSearchState("idle");
       return;
     }
-    if (institutionComposing) return;
     const normalizedQuery = normalizedInstitution(query);
     if (institutionIndex.length) {
       const candidates = institutionIndex
@@ -278,7 +276,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
         });
     }, 120);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [editor.googleEventId, editor.organizationQuery, editor.linked, editorOpen, institutionComposing, institutionIndex]);
+  }, [editor.googleEventId, editor.organizationQuery, editor.linked, editorOpen, institutionIndex]);
 
   function openNew(date = selectedDate) {
     setReadOnlySchedule(null);
@@ -554,18 +552,14 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
           <label className="home-schedule-institution">{editor.googleEventId ? "연결할 기관" : "기관 또는 일정 장소"} <b>*</b>
             <span className="home-schedule-institution-search">
               <input value={editor.organizationQuery}
-                onCompositionStart={() => setInstitutionComposing(true)}
-                onCompositionEnd={(event) => {
-                  const value = event.currentTarget.value;
-                  setInstitutionComposing(false);
-                  updateInstitutionQuery(value);
-                }}
+                onInput={(event) => updateInstitutionQuery(event.currentTarget.value)}
+                onCompositionEnd={(event) => updateInstitutionQuery(event.currentTarget.value)}
                 onChange={(event) => {
                   const value = event.currentTarget.value;
                   updateInstitutionQuery(value);
                 }}
                 placeholder="기관명 2글자 이상 검색 또는 직접 입력" />
-              {!editor.linked && editor.organizationQuery.trim().length >= 2 && !institutionComposing ? <div className="home-schedule-institution-results">
+              {!editor.linked && editor.organizationQuery.trim().length >= 2 ? <div className="home-schedule-institution-results">
                 {institutions.map((item) => <button type="button" key={`${item.organization}-${item.businessRound}`} onClick={() => selectInstitution(item)}><strong>{item.organization}</strong><small>{item.region || "지역 미등록"} · {item.businessRound}차 사업 · {item.progressManager || "담당자 미정"}</small></button>)}
                 {institutionSearchState === "debouncing" || institutionSearchState === "loading" ? <p className="searching">기관을 검색하는 중입니다.</p> : null}
                 {institutionSearchState === "empty" ? <p>검색 결과가 없습니다.</p> : null}

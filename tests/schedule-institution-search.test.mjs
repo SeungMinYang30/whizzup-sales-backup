@@ -15,17 +15,15 @@ test("일정 기관 검색은 최신 요청만 화면에 반영한다", () => {
   assert.doesNotMatch(calendar, /\.finally\(\(\) => setInstitutionLoading\(false\)\)/);
 });
 
-test("한글 조합 입력 중에는 검색하지 않고 완료 후 한 번 검색한다", () => {
-  assert.match(calendar, /institutionComposing/);
-  assert.match(calendar, /onCompositionStart=\{\(\) => setInstitutionComposing\(true\)\}/);
-  assert.match(calendar, /onCompositionEnd=/);
-  assert.match(calendar, /if \(institutionComposing\) return/);
-  assert.doesNotMatch(calendar, /editor\.linked \|\| institutionComposing/);
+test("한글 조합 입력 중에도 실제 입력값으로 검색 결과를 즉시 갱신한다", () => {
+  assert.match(calendar, /onInput=\{\(event\) => updateInstitutionQuery\(event\.currentTarget\.value\)\}/);
+  assert.match(calendar, /onCompositionEnd=\{\(event\) => updateInstitutionQuery\(event\.currentTarget\.value\)\}/);
+  assert.doesNotMatch(calendar, /institutionComposing/);
 });
 
-test("한글 조합 완료 값은 이벤트가 사라지기 전에 안전하게 복사한다", () => {
-  assert.match(calendar, /const value = event\.currentTarget\.value;\s+setInstitutionComposing\(false\);\s+updateInstitutionQuery\(value\)/);
+test("한글 조합 완료 값과 일반 입력 값은 동일한 갱신 함수를 사용한다", () => {
   assert.match(calendar, /function updateInstitutionQuery\(value: string\)/);
+  assert.match(calendar, /onChange=\{\(event\) => \{\s+const value = event\.currentTarget\.value;\s+updateInstitutionQuery\(value\)/);
   assert.doesNotMatch(calendar, /organizationQuery: event\.currentTarget\.value/);
 });
 
