@@ -19,7 +19,14 @@ test("한글 조합 입력 중에는 검색하지 않고 완료 후 한 번 검�
   assert.match(calendar, /institutionComposing/);
   assert.match(calendar, /onCompositionStart=\{\(\) => setInstitutionComposing\(true\)\}/);
   assert.match(calendar, /onCompositionEnd=/);
-  assert.match(calendar, /editor\.linked \|\| institutionComposing/);
+  assert.match(calendar, /if \(institutionComposing\) return/);
+  assert.doesNotMatch(calendar, /editor\.linked \|\| institutionComposing/);
+});
+
+test("한글 조합 완료 값은 이벤트가 사라지기 전에 안전하게 복사한다", () => {
+  assert.match(calendar, /const value = event\.currentTarget\.value;\s+setInstitutionComposing\(false\);\s+updateInstitutionQuery\(value\)/);
+  assert.match(calendar, /function updateInstitutionQuery\(value: string\)/);
+  assert.doesNotMatch(calendar, /organizationQuery: event\.currentTarget\.value/);
 });
 
 test("검색 완료 전에는 기관 없음 문구를 표시하지 않는다", () => {

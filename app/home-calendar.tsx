@@ -182,11 +182,12 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   useEffect(() => {
     const query = editor.organizationQuery.trim();
     const requestId = ++institutionRequestSequence.current;
-    if (!editorOpen || query.length < 2 || editor.linked || institutionComposing) {
+    if (!editorOpen || query.length < 2 || editor.linked) {
       setInstitutions([]);
       setInstitutionSearchState("idle");
       return;
     }
+    if (institutionComposing) return;
     const controller = new AbortController();
     setInstitutions([]);
     setInstitutionSearchState("debouncing");
@@ -224,6 +225,15 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
     setReadOnlySchedule(null);
     setEditor({ ...emptyEditor(date), assigneeMemberId: currentMember.id, assigneeName: currentMember.displayName });
     setEditorOpen(true);
+  }
+  function updateInstitutionQuery(value: string) {
+    setEditor((current) => ({
+      ...current,
+      organizationQuery: value,
+      organization: "",
+      businessRound: 0,
+      linked: false,
+    }));
   }
   function openEdit(schedule: HomeCalendarSchedule) {
     if (schedule.category === "construction") { onOpenConstructionSchedule(); return; }
@@ -484,10 +494,14 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
               <input value={editor.organizationQuery}
                 onCompositionStart={() => setInstitutionComposing(true)}
                 onCompositionEnd={(event) => {
+                  const value = event.currentTarget.value;
                   setInstitutionComposing(false);
-                  setEditor((current) => ({ ...current, organizationQuery: event.currentTarget.value, organization: "", businessRound: 0, linked: false }));
+                  updateInstitutionQuery(value);
                 }}
-                onChange={(event) => setEditor((current) => ({ ...current, organizationQuery: event.target.value, organization: "", businessRound: 0, linked: false }))}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  updateInstitutionQuery(value);
+                }}
                 placeholder="기관명 2글자 이상 검색 또는 직접 입력" />
               {!editor.linked && editor.organizationQuery.trim().length >= 2 && !institutionComposing ? <div className="home-schedule-institution-results">
                 {institutions.map((item) => <button type="button" key={`${item.organization}-${item.businessRound}`} onClick={() => selectInstitution(item)}><strong>{item.organization}</strong><small>{item.region || "지역 미등록"} · {item.businessRound}차 사업 · {item.progressManager || "담당자 미정"}</small></button>)}
