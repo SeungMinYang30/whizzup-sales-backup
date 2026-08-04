@@ -28,10 +28,11 @@ export type ScheduleReminder = {
   assigneeName: string;
   assigneeMemberId: number | null;
   editable: boolean;
+  googleOrigin: boolean;
   updatedAt: string;
   updatedByName: string;
   conflict: boolean;
-  syncStatus: "pending" | "synced" | "failed";
+  syncStatus: "pending" | "synced" | "failed" | "local_only";
   syncError: string;
   syncAttempts: number;
 };
@@ -91,11 +92,12 @@ function scheduleReminderFromRow(
       member?.role === "admin" || Number(row.created_by) === member?.id
       || Number(row.assignee_member_id) === member?.id
     ),
+    googleOrigin: Number(row.google_origin) === 1,
     updatedAt: String(row.updated_at ?? ""),
     updatedByName: String(row.updated_by_name ?? ""),
     conflict,
-    syncStatus: ["synced", "failed"].includes(String(row.sync_status))
-      ? String(row.sync_status) as "synced" | "failed"
+    syncStatus: ["synced", "failed", "local_only"].includes(String(row.sync_status))
+      ? String(row.sync_status) as "synced" | "failed" | "local_only"
       : "pending",
     syncError: String(row.sync_error || ""),
     syncAttempts: Math.max(0, Number(row.sync_attempts) || 0),
@@ -123,6 +125,7 @@ type ReminderRow = {
   updated_at: string;
   updated_by_name: string;
   sync_status: string;
+  google_origin: number;
   sync_error: string;
   sync_attempts: number;
 };
@@ -171,6 +174,7 @@ SELECT
   s.updated_at,
   s.updated_by_name,
   COALESCE(s.sync_status, 'pending') AS sync_status,
+  COALESCE(s.google_origin, 0) AS google_origin,
   COALESCE(s.sync_error, '') AS sync_error,
   COALESCE(s.sync_attempts, 0) AS sync_attempts,
   source_author.member_id AS source_author_id,

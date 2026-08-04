@@ -131,6 +131,7 @@ export const organizationSchedules = sqliteTable(
     assigneeName: text("assignee_name").notNull().default(""),
     googleEventId: text("google_event_id").notNull().default(""),
     googleEventEtag: text("google_event_etag").notNull().default(""),
+    googleOrigin: integer("google_origin", { mode: "boolean" }).notNull().default(false),
     syncStatus: text("sync_status").notNull().default("pending"),
     syncOperation: text("sync_operation").notNull().default("upsert"),
     syncError: text("sync_error").notNull().default(""),

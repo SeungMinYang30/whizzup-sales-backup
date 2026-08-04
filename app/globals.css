@@ -3090,6 +3090,7 @@ tr:hover .row-actions { opacity: 1; }
 .home-calendar-agenda-list .schedule-sync { margin-top: 3px; font-weight: 800; }
 .home-calendar-agenda-list .schedule-sync.failed { color: #b4473f; }
 .home-calendar-agenda-list .schedule-sync.pending { color: #8a6a1f; }
+.home-calendar-agenda-list .schedule-sync.local-only { color: #047857; }
 .home-schedule-editor label select { width: 100%; min-height: 44px; margin-top: 8px; padding: 0 12px; border: 1px solid #d8e0ef; border-radius: 9px; background: #fff; color: #1f2d45; font-size: 14px; }
 .home-schedule-institution-results p { margin: 0; padding: 15px; color: #8793a7; text-align: center; }
 .schedule-create-institution { width: 100%; margin-top: 8px; padding: 10px; border: 1px dashed #8795ff; border-radius: 9px; background: #f7f8ff; color: #3f51e8; font-weight: 800; cursor: pointer; }

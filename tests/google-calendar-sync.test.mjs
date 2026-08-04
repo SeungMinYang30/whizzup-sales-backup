@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [api, sync, store, route, calendar, crm, migration, schema] = await Promise.all([
+const [api, sync, store, route, calendar, crm, migration, connectionMigration, schema] = await Promise.all([
   readFile(new URL("../lib/google-calendar-api.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/google-calendar-sync.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/organization-schedules.ts", import.meta.url), "utf8"),
@@ -10,6 +10,7 @@ const [api, sync, store, route, calendar, crm, migration, schema] = await Promis
   readFile(new URL("../app/home-calendar.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),
   readFile(new URL("../drizzle/0069_google_calendar_sync.sql", import.meta.url), "utf8"),
+  readFile(new URL("../drizzle/0070_google_calendar_connection_workflow.sql", import.meta.url), "utf8"),
   readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
 ]);
 
@@ -44,15 +45,34 @@ test("Google API 등록·수정·삭제는 사이트 일정 ID로 중복을 방�
   assert.match(sync, /findGoogleCalendarEventByScheduleId/);
   assert.match(route, /scheduleDedupeKey/);
   assert.match(route, /if \(!merged\.has\(key\)\)/);
+  assert.match(api, /summary,/);
 });
 
-test("Google에서 가져온 위즈업 일정은 읽기 전용이고 실패 상태는 화면에서 재시도한다", () => {
+test("Google에서 가져온 일정은 팀 연결함에서 기관에 연결하고 관리자는 원본 삭제가 가능하다", () => {
   assert.match(sync, /editable: false/);
   assert.match(sync, /syncStatus: "readonly"/);
+  assert.match(sync, /linkGoogleCalendarSchedule/);
+  assert.match(sync, /deleteUnlinkedGoogleCalendarSchedule/);
+  assert.match(route, /link-google-schedule/);
+  assert.match(route, /delete-google-calendar-event/);
   assert.match(calendar, /Google Calendar 동기화 실패/);
   assert.match(calendar, /retrySync/);
   assert.match(calendar, /schedule\.category === "google"/);
-  assert.match(calendar, /Google 캘린더에서 열기/);
+  assert.match(calendar, /Google 일정 연결 필요/);
+  assert.match(calendar, /기관과 연결/);
+  assert.match(calendar, /Google에서도 삭제/);
+});
+
+test("공유 업무만 Google로 보내고 기존 일정 제목과 개인 일정은 소급 정리한다", () => {
+  assert.match(api, /`\[\$\{categoryLabel\[category\] \|\| "기타"\}\] \$\{schedule\.organization\} · \$\{cleanLabel\}`/);
+  assert.match(api, /colorId: colorId\[category\]/);
+  assert.match(sync, /applyGoogleSharingPolicy/);
+  assert.match(sync, /sync_operation === "unlink"/);
+  assert.match(sync, /sync_status = 'local_only'/);
+  assert.match(connectionMigration, /기존 공유 업무 일정/);
+  assert.match(connectionMigration, /THEN 'unlink'/);
+  assert.match(connectionMigration, /google_origin/);
+  assert.match(calendar, /개인 일정 · Google 공유 안 함/);
 });
 
 test("시공 일정은 시공·납품 일정표 행을 유지하고 기관 상세와 대시보드가 같은 API 원본을 쓴다", () => {

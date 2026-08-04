@@ -22,6 +22,8 @@ import {
 import { listGoogleCalendarSchedules } from "../../../lib/google-calendar-feed";
 import {
   flushGoogleCalendarSync,
+  deleteUnlinkedGoogleCalendarSchedule,
+  linkGoogleCalendarSchedule,
   listCalendarSyncIssues,
   reconcileGoogleCalendarRange,
   retryGoogleCalendarSync,
@@ -175,6 +177,19 @@ export async function POST(request: Request) {
       await retryGoogleCalendarSync(payload.scheduleId);
       return Response.json({ syncIssues: await listCalendarSyncIssues() });
     }
+    if (payload.action === "link-google-schedule") {
+      const linked = await linkGoogleCalendarSchedule({
+        googleEventId: payload.googleEventId,
+        organization: payload.organization,
+        businessRound: payload.businessRound,
+        title: payload.title,
+        category: payload.category,
+        assigneeMemberId: payload.assigneeMemberId,
+        assigneeName: payload.assigneeName,
+        member,
+      });
+      return Response.json({ schedule: linked });
+    }
     if (payload.action === "add-general-schedule") {
       await addOrganizationSchedule({
         organization: payload.organization,
@@ -229,6 +244,9 @@ export async function DELETE(request: Request) {
       const deleted = await deleteOrganizationSchedule({ id: payload.scheduleId, member });
       await flushGoogleCalendarSync({ ids: [Number(payload.scheduleId)] });
       return Response.json(deleted);
+    }
+    if (payload.action === "delete-google-calendar-event") {
+      return Response.json(await deleteUnlinkedGoogleCalendarSchedule(payload.googleEventId, member));
     }
     if (payload.action !== "remove-construction-project") {
       throw new Error("삭제할 일정표 기관을 확인해 주세요.");

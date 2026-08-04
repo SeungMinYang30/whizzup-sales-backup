@@ -28,8 +28,9 @@ export type OrganizationSchedule = {
   createdAt: string;
   updatedAt: string;
   googleEventId: string;
-  syncStatus: "pending" | "synced" | "failed";
-  syncOperation: "upsert" | "delete";
+  googleOrigin: boolean;
+  syncStatus: "pending" | "synced" | "failed" | "local_only";
+  syncOperation: "upsert" | "delete" | "unlink";
   syncError: string;
   syncAttempts: number;
   lastSyncedAt: string;
@@ -87,6 +88,7 @@ const schemaStatements = [
     assignee_name TEXT NOT NULL DEFAULT '',
     google_event_id TEXT NOT NULL DEFAULT '',
     google_event_etag TEXT NOT NULL DEFAULT '',
+    google_origin INTEGER NOT NULL DEFAULT 0,
     sync_status TEXT NOT NULL DEFAULT 'pending',
     sync_operation TEXT NOT NULL DEFAULT 'upsert',
     sync_error TEXT NOT NULL DEFAULT '',
@@ -142,6 +144,7 @@ async function initializeOrganizationSchedules() {
     ["assignee_name", "TEXT NOT NULL DEFAULT ''"],
     ["google_event_id", "TEXT NOT NULL DEFAULT ''"],
     ["google_event_etag", "TEXT NOT NULL DEFAULT ''"],
+    ["google_origin", "INTEGER NOT NULL DEFAULT 0"],
     ["sync_status", "TEXT NOT NULL DEFAULT 'pending'"],
     ["sync_operation", "TEXT NOT NULL DEFAULT 'upsert'"],
     ["sync_error", "TEXT NOT NULL DEFAULT ''"],
@@ -265,10 +268,13 @@ function scheduleJson(row: Record<string, unknown>): OrganizationSchedule {
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
     googleEventId: String(row.google_event_id ?? ""),
-    syncStatus: ["synced", "failed"].includes(String(row.sync_status))
-      ? String(row.sync_status) as "synced" | "failed"
+    googleOrigin: Number(row.google_origin) === 1,
+    syncStatus: ["synced", "failed", "local_only"].includes(String(row.sync_status))
+      ? String(row.sync_status) as "synced" | "failed" | "local_only"
       : "pending",
-    syncOperation: String(row.sync_operation) === "delete" ? "delete" : "upsert",
+    syncOperation: ["delete", "unlink"].includes(String(row.sync_operation))
+      ? String(row.sync_operation) as "delete" | "unlink"
+      : "upsert",
     syncError: String(row.sync_error ?? ""),
     syncAttempts: Math.max(0, Number(row.sync_attempts) || 0),
     lastSyncedAt: String(row.last_synced_at ?? ""),
@@ -557,8 +563,8 @@ export async function addOrganizationSchedule(input: {
       `INSERT INTO organization_schedules (
          organization, business_round, label, scheduled_date, start_time, end_time, category, completed,
          created_by, created_by_name, updated_by, updated_by_name,
-         assignee_member_id, assignee_name
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+         assignee_member_id, assignee_name, sync_status
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       organization,
       businessRound,
@@ -573,6 +579,7 @@ export async function addOrganizationSchedule(input: {
       input.memberName,
       Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0 ? assigneeMemberId : null,
       assigneeName,
+      category === "personal" ? "local_only" : "pending",
     ).run();
   }
   if (!linked) return [];
@@ -832,6 +839,28 @@ async function mirrorOpenSchedulesToLatestActivity(
     .run();
 }
 
+export async function refreshOrganizationScheduleMirror(
+  organizationValue: unknown,
+  businessRoundValue: unknown,
+) {
+  const organization = clean(organizationValue).slice(0, 120);
+  const businessRound = Math.max(1, Number(businessRoundValue) || 1);
+  if (!organization) return;
+  const d1 = await ensureOrganizationSchedulesReady();
+  const result = await d1.prepare(
+    `SELECT * FROM organization_schedules
+     WHERE organization = ? AND business_round = ?
+       AND TRIM(COALESCE(deleted_at, '')) = ''
+     ORDER BY scheduled_date ASC, id ASC`,
+  ).bind(organization, businessRound).all<Record<string, unknown>>();
+  await mirrorOpenSchedulesToLatestActivity(
+    d1,
+    organization,
+    businessRound,
+    result.results.map(scheduleJson),
+  );
+}
+
 export async function replaceOrganizationSchedules(input: {
   organization: unknown;
   businessRound: unknown;
@@ -1020,7 +1049,16 @@ export async function updateOrganizationSchedule(input: {
     `UPDATE organization_schedules
      SET label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, category = ?, completed = ?,
          assignee_member_id = ?, assignee_name = ?,
-         sync_status = 'pending', sync_operation = 'upsert', sync_error = '',
+         sync_status = CASE
+           WHEN ? = 'personal' AND TRIM(COALESCE(google_event_id, '')) <> '' THEN 'pending'
+           WHEN ? = 'personal' THEN 'local_only'
+           ELSE 'pending'
+         END,
+         sync_operation = CASE
+           WHEN ? = 'personal' AND TRIM(COALESCE(google_event_id, '')) <> '' THEN 'unlink'
+           ELSE 'upsert'
+         END,
+         sync_error = '',
          updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
   ).bind(
@@ -1033,6 +1071,9 @@ export async function updateOrganizationSchedule(input: {
     input.completed === true ? 1 : 0,
     Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0 ? assigneeMemberId : null,
     assigneeName,
+    category,
+    category,
+    category,
     input.member.id,
     input.member.displayName,
     id,

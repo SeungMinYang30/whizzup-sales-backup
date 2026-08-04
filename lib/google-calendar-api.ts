@@ -184,14 +184,36 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
   const end = allDay
     ? { date: addDays(endDate, 1) }
     : { dateTime: `${fallbackEnd.date}T${fallbackEnd.time}:00+09:00`, timeZone: "Asia/Seoul" };
+  const category = schedule.category === "general" && /^영업\s*[·•-]\s*/.test(schedule.label)
+    ? "sales"
+    : schedule.category;
+  const categoryLabel: Record<string, string> = {
+    sales: "영업",
+    meeting: "회의",
+    construction: "시공",
+    showroom: "쇼룸",
+    other: "기타",
+  };
+  const colorId: Record<string, string> = {
+    sales: "9",
+    meeting: "3",
+    construction: "6",
+    showroom: "4",
+    other: "8",
+  };
+  const cleanLabel = schedule.label
+    .replace(/^(영업|회의|시공|쇼룸|기타)\s*[·•-]\s*/, "")
+    .trim() || "일정";
+  const summary = `[${categoryLabel[category] || "기타"}] ${schedule.organization} · ${cleanLabel}`;
   return {
-    summary: schedule.label,
+    summary,
     location: schedule.organization,
     description: [schedule.details, schedule.assigneeName ? `담당: ${schedule.assigneeName}` : ""]
       .filter(Boolean)
       .join("\n"),
     start,
     end,
+    colorId: colorId[category] || colorId.other,
     extendedProperties: {
       private: {
         whizzupSource: "site",
@@ -228,6 +250,11 @@ export async function findGoogleCalendarEventByScheduleId(scheduleId: number) {
   });
   const result = await googleRequest(`/events?${params}`) as { items?: GoogleCalendarApiEvent[] };
   return (result.items || []).find((event) => event.status !== "cancelled") || null;
+}
+
+export async function getGoogleCalendarEvent(googleEventId: string) {
+  if (!googleEventId) throw new Error("Google 일정을 선택해 주세요.");
+  return await googleRequest(`/events/${encodeURIComponent(googleEventId)}`) as unknown as GoogleCalendarApiEvent;
 }
 
 export async function deleteGoogleCalendarEvent(googleEventId: string) {
