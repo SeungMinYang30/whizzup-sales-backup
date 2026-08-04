@@ -31,7 +31,16 @@ type HomeCalendarSchedule = {
   suggestedCategory?: "sales" | "meeting" | "construction" | "showroom" | "other";
 };
 type SyncIssue = { id: number; label: string; organization: string; operation: "upsert" | "delete" | "unlink"; error: string; attempts: number };
-type Institution = { organization: string; businessRound: number; region: string; progressManager: string };
+type Institution = {
+  organization: string;
+  businessRound: number;
+  region: string;
+  progressManager: string;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+};
+type InstitutionRecord = Institution & { activityDate?: string; id?: number };
 type Member = { id: number; display_name: string; role: string; status: string };
 type EditorKind = "영업" | "회의" | "시공" | "쇼룸" | "기타" | "내 일정";
 type InstitutionSearchState = "idle" | "debouncing" | "loading" | "success" | "empty" | "error";
@@ -93,6 +102,13 @@ function structuredGoogleDescription(value: string) {
   return { ...result, memo: result.memo.slice(0, 500) };
 }
 function normalizedInstitution(value: string) { return value.replace(/[\s·•._()\-]/g, "").toLocaleLowerCase("ko-KR"); }
+function institutionSearchRank(item: Institution, normalizedQuery: string) {
+  const organization = normalizedInstitution(item.organization);
+  if (organization === normalizedQuery) return 0;
+  if (organization.startsWith(normalizedQuery)) return 1;
+  if (organization.includes(normalizedQuery)) return 2;
+  return 3;
+}
 function kindFromSchedule(schedule: HomeCalendarSchedule): EditorKind {
   if (schedule.category === "meeting") return "회의";
   if (schedule.category === "showroom") return "쇼룸";
@@ -110,11 +126,11 @@ function emptyEditor(date: string) {
   };
 }
 
-export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpenConstructionSchedule }: {
+export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpenConstructionSchedule, records }: {
   refreshVersion: number;
   onOpenOrganization: (organization: string, businessRound: number) => void;
   onOpenConstructionSchedule: () => void;
-  records: Array<{ organization: string; businessRound: number; region?: string }>;
+  records: InstitutionRecord[];
 }) {
   const today = dateValue(new Date());
   const [monthValue, setMonthValue] = useState(today.slice(0, 7));
@@ -133,6 +149,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   const [saving, setSaving] = useState(false);
   const [editor, setEditor] = useState(() => emptyEditor(today));
   const [institutions, setInstitutions] = useState<Institution[]>([]);
+  const [createdInstitutions, setCreatedInstitutions] = useState<Institution[]>([]);
   const [institutionSearchState, setInstitutionSearchState] = useState<InstitutionSearchState>("idle");
   const [institutionComposing, setInstitutionComposing] = useState(false);
   const institutionRequestSequence = useRef(0);
@@ -140,6 +157,25 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   const dates = useMemo(() => monthGrid(monthValue), [monthValue]);
   const rangeStart = dateValue(dates[0]);
   const rangeEnd = dateValue(dates[dates.length - 1]);
+  const institutionIndex = useMemo(() => {
+    const latest = new Map<string, InstitutionRecord>();
+    const ordered = [...records].sort((left, right) => {
+      const byDate = String(right.activityDate || "").localeCompare(String(left.activityDate || ""));
+      return byDate || (Number(right.id) || 0) - (Number(left.id) || 0);
+    });
+    for (const record of ordered) {
+      const organization = record.organization.trim();
+      if (!organization) continue;
+      const businessRound = Math.max(1, Number(record.businessRound) || 1);
+      const key = `${normalizedInstitution(organization)}::${businessRound}`;
+      if (!latest.has(key)) latest.set(key, { ...record, organization, businessRound });
+    }
+    for (const institution of createdInstitutions) {
+      const key = `${normalizedInstitution(institution.organization)}::${institution.businessRound}`;
+      latest.set(key, institution);
+    }
+    return [...latest.values()];
+  }, [createdInstitutions, records]);
 
   useEffect(() => {
     void fetch("/api/members?scope=assignees", { cache: "no-store" })
@@ -188,6 +224,29 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       return;
     }
     if (institutionComposing) return;
+    const normalizedQuery = normalizedInstitution(query);
+    if (institutionIndex.length) {
+      const candidates = institutionIndex
+        .filter((item) => normalizedInstitution([
+          item.organization,
+          item.region,
+          item.progressManager,
+          item.contactName,
+          item.contactPhone,
+          item.contactEmail,
+        ].filter(Boolean).join(" ")).includes(normalizedQuery))
+        .sort((left, right) => institutionSearchRank(left, normalizedQuery) - institutionSearchRank(right, normalizedQuery)
+          || left.organization.localeCompare(right.organization, "ko-KR")
+          || right.businessRound - left.businessRound)
+        .slice(0, 10);
+      setInstitutions(candidates);
+      setInstitutionSearchState(candidates.length ? "success" : "empty");
+      if (editor.googleEventId) {
+        const exact = candidates.find((item) => normalizedInstitution(item.organization) === normalizedQuery);
+        if (exact) selectInstitution(exact);
+      }
+      return;
+    }
     const controller = new AbortController();
     setInstitutions([]);
     setInstitutionSearchState("debouncing");
@@ -217,9 +276,9 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
           setInstitutionSearchState("error");
           console.warn("Institution search failed", caught);
         });
-    }, 220);
+    }, 120);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [editor.googleEventId, editor.organizationQuery, editor.linked, editorOpen, institutionComposing]);
+  }, [editor.googleEventId, editor.organizationQuery, editor.linked, editorOpen, institutionComposing, institutionIndex]);
 
   function openNew(date = selectedDate) {
     setReadOnlySchedule(null);
@@ -300,6 +359,9 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error || "기관을 등록하지 못했습니다.");
+      setCreatedInstitutions((current) => [...current, {
+        organization: editor.organizationQuery.trim(), businessRound: 1, region: "", progressManager: currentMember.displayName,
+      }]);
       setEditor((current) => ({ ...current, organization: current.organizationQuery.trim(), businessRound: 1, linked: true }));
       setError("");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "기관을 등록하지 못했습니다."); }

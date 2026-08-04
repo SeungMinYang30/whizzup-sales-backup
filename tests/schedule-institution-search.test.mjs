@@ -41,3 +41,19 @@ test("검색 결과는 모달 레이아웃을 밀지 않는 드롭다운으로 �
   assert.match(styles, /\.home-schedule-institution-search \{ position: relative; display: block; \}/);
   assert.match(styles, /\.home-schedule-institution-results \{ position: absolute; z-index: 110;/);
 });
+
+test("일정 기관 검색은 이미 불러온 기록을 즉시 색인하고 서버 조회는 보조로만 사용한다", () => {
+  assert.match(calendar, /const institutionIndex = useMemo\(\(\) =>/);
+  assert.match(calendar, /if \(institutionIndex\.length\) \{/);
+  assert.match(calendar, /institutionSearchRank/);
+  assert.match(calendar, /\.slice\(0, 10\)/);
+  assert.match(calendar, /fetch\(`\/api\/institutions\/search\?q=/);
+  assert.match(calendar, /\}, 120\)/);
+});
+
+test("일정 등록과 Google 일정 연결은 같은 기관 검색 색인을 공유한다", () => {
+  assert.match(calendar, /editor\.googleEventId/);
+  assert.match(calendar, /normalizedInstitution\(item\.organization\) === normalizedQuery/);
+  assert.match(calendar, /setCreatedInstitutions/);
+  assert.match(calendar, /organization: editor\.organizationQuery\.trim\(\), businessRound: 1/);
+});
