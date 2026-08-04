@@ -40,9 +40,12 @@ test("시공 일정 제외는 원본 삭제 대신 숨김과 복구를 사용한
   assert.match(scheduleRoute, /restore-construction-project/);
   assert.match(constructionPage, /기관·수주 기록은 삭제되지 않습니다/);
   assert.match(constructionPage, /일정표에 다시 표시/);
-  assert.match(constructionPage, /aria-expanded=\{rowMenuKey === scopeKey/);
+  assert.match(constructionPage, /className="construction-row-remove"/);
+  assert.match(constructionPage, /onClick=\{\(\) => void setProjectHidden\(project, true\)\}>−<\/button>/);
+  assert.doesNotMatch(constructionPage, /rowMenuKey/);
+  assert.doesNotMatch(constructionPage, /construction-row-menu-popover/);
   assert.match(styles, /\.construction-fixed-cells > span \{ overflow: hidden/);
-  assert.match(styles, /\.construction-row-menu \{[^}]*overflow: visible !important/);
+  assert.match(styles, /\.construction-row-remove \{/);
   assert.doesNotMatch(constructionPage, /일정표에서 빼기/);
   assert.match(backupStore, /name: "construction_schedule_projects",[\s\S]*?"hidden_at"/);
 });

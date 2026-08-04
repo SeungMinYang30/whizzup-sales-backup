@@ -109,7 +109,6 @@ export default function ConstructionSchedulePage({
   const [hideCompleted, setHideCompleted] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showExcluded, setShowExcluded] = useState(false);
-  const [rowMenuKey, setRowMenuKey] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -411,7 +410,6 @@ export default function ConstructionSchedulePage({
       if (!response.ok) throw new Error(payload.error || (hidden ? "일정표에서 기관을 제외하지 못했습니다." : "기관을 다시 표시하지 못했습니다."));
       setProjects(payload.projects ?? []);
       setSchedules(payload.schedules ?? []);
-      setRowMenuKey("");
       setMessage(hidden ? "일정표에서만 제외했습니다. 기관·수주·품목·일정 기록은 그대로 유지됩니다." : "기관을 일정표에 다시 표시했습니다.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : (hidden ? "일정표에서 기관을 제외하지 못했습니다." : "기관을 다시 표시하지 못했습니다."));
@@ -524,10 +522,7 @@ export default function ConstructionSchedulePage({
               <span>{record?.region || "지역 미등록"}</span>
               <span className="construction-institution-cell">
                 <button type="button" className="construction-institution-main" onClick={() => onOpenOrganization(project.organization, project.businessRound)}><strong>{project.organization}</strong><small>{project.businessRound}차 사업</small></button>
-                <span className="construction-row-menu">
-                  <button type="button" className="construction-row-menu-trigger" aria-label={`${project.organization} 일정표 메뉴`} aria-expanded={rowMenuKey === scopeKey(project.organization, project.businessRound)} onClick={() => setRowMenuKey((current) => current === scopeKey(project.organization, project.businessRound) ? "" : scopeKey(project.organization, project.businessRound))}>⋯</button>
-                  {rowMenuKey === scopeKey(project.organization, project.businessRound) ? <span className="construction-row-menu-popover"><button type="button" onClick={() => void setProjectHidden(project, true)}>일정표에서 제외</button></span> : null}
-                </span>
+                <button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표에서 제외`} title="일정표에서 제외" disabled={saving} onClick={() => void setProjectHidden(project, true)}>−</button>
               </span>
               <button
                 type="button"
@@ -570,7 +565,7 @@ export default function ConstructionSchedulePage({
       <div className="construction-mobile-list">
         {rows.map(({ project, record, items }) => (
           <article key={scopeKey(project.organization, project.businessRound)}>
-            <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{record?.progressManager || "미정"}</span><span className="construction-row-menu"><button type="button" className="construction-row-menu-trigger" aria-label={`${project.organization} 일정표 메뉴`} aria-expanded={rowMenuKey === scopeKey(project.organization, project.businessRound)} onClick={() => setRowMenuKey((current) => current === scopeKey(project.organization, project.businessRound) ? "" : scopeKey(project.organization, project.businessRound))}>⋯</button>{rowMenuKey === scopeKey(project.organization, project.businessRound) ? <span className="construction-row-menu-popover"><button type="button" onClick={() => void setProjectHidden(project, true)}>일정표에서 제외</button></span> : null}</span></header>
+            <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{record?.progressManager || "미정"}</span><button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표에서 제외`} title="일정표에서 제외" disabled={saving} onClick={() => void setProjectHidden(project, true)}>−</button></header>
             <p>{record?.region || "지역 미등록"} · {displayWorkSummary(project) || "공사·품목 미등록"}</p>
             <div>{items.map((item) => {
               const day = dayMetaByDate.get(item.scheduledDate);
