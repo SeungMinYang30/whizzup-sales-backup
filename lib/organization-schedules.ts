@@ -722,7 +722,7 @@ export async function saveConstructionSchedules(input: {
          SELECT id FROM activities
          WHERE organization = ? AND business_round = ? AND award_status = '위즈업 수주'
          ORDER BY activity_date DESC, id DESC LIMIT 1
-       )`,
+       ) AND COALESCE(award_stage_manual, 0) = 0`,
     ).bind(organization, businessRound).run();
   } else if (hasConstructionWork) {
     await d1.prepare(
@@ -733,7 +733,7 @@ export async function saveConstructionSchedules(input: {
          SELECT id FROM activities
          WHERE organization = ? AND business_round = ? AND award_status = '위즈업 수주'
          ORDER BY activity_date DESC, id DESC LIMIT 1
-       )`,
+       ) AND COALESCE(award_stage_manual, 0) = 0`,
     ).bind(organization, businessRound).run();
   }
   const general = await listOrganizationSchedules(organization, businessRound);
@@ -1239,7 +1239,7 @@ export async function mergeActivityProgressSchedule(input: {
          SELECT id FROM activities
          WHERE organization = ? AND business_round = ? AND award_status = '위즈업 수주'
          ORDER BY activity_date DESC, id DESC LIMIT 1
-       )`,
+       ) AND COALESCE(award_stage_manual, 0) = 0`,
     ).bind(organization, businessRound).run();
 
     await mirrorOpenSchedulesToLatestActivity(

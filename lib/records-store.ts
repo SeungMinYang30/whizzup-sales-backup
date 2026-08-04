@@ -98,6 +98,7 @@ const createTableSql = `
     execution_type TEXT NOT NULL DEFAULT '직영',
     consortium_company TEXT NOT NULL DEFAULT '',
     award_stage TEXT NOT NULL DEFAULT '미정',
+    award_stage_manual INTEGER NOT NULL DEFAULT 0,
     award_completed_date TEXT NOT NULL DEFAULT '',
     progress_manager TEXT NOT NULL DEFAULT '',
     progress_manager_locked INTEGER NOT NULL DEFAULT 0,
@@ -1178,6 +1179,13 @@ async function initializeRecords() {
       ),
     );
   }
+  if (!existingColumns.has("award_stage_manual")) {
+    upgrades.push(
+      d1.prepare(
+        "ALTER TABLE activities ADD COLUMN award_stage_manual INTEGER NOT NULL DEFAULT 0",
+      ),
+    );
+  }
   if (!existingColumns.has("award_completed_date")) {
     upgrades.push(
       d1.prepare(
@@ -1701,6 +1709,7 @@ export async function syncProgressScheduleStatuses() {
     .prepare(
       `SELECT
         id, status, status_manual, award_status, award_company, award_stage,
+        award_stage_manual,
         award_completed_date, progress_schedule
        FROM activities
        WHERE progress_schedule <> ''`,
@@ -1712,6 +1721,7 @@ export async function syncProgressScheduleStatuses() {
       award_status: string;
       award_company: string;
       award_stage: string;
+      award_stage_manual: number;
       award_completed_date: string;
       progress_schedule: string;
     }>();
@@ -1731,15 +1741,18 @@ export async function syncProgressScheduleStatuses() {
       parseProgressScheduleEntries(record.progress_schedule)
         .filter((entry) => entry.date < koreaTodayValue())
         .at(-1)?.date || koreaTodayValue();
+    const managedAwardStage = record.award_stage_manual === 1
+      ? record.award_stage
+      : managed.awardStage;
     const awardCompletedDate = resolveAwardCompletedDate({
-      awardStage: managed.awardStage,
+      awardStage: managedAwardStage,
       previousDate: record.award_completed_date,
       fallbackDate: latestDueScheduleDate,
     });
     if (
       managed.status === record.status &&
       managed.awardStatus === record.award_status &&
-      managed.awardStage === record.award_stage &&
+      managedAwardStage === record.award_stage &&
       awardCompletedDate === record.award_completed_date &&
       awardCompany === record.award_company
     ) {
@@ -1757,7 +1770,7 @@ export async function syncProgressScheduleStatuses() {
           managed.status,
           managed.awardStatus,
           awardCompany,
-          managed.awardStage,
+          managedAwardStage,
           awardCompletedDate,
           record.id,
         ),

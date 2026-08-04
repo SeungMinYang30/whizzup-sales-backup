@@ -756,6 +756,7 @@ export async function PUT(request: Request) {
     const previous = await d1
       .prepare(
         `SELECT organization, business_round, award_completed_date,
+                award_stage_manual,
                 progress_manager, progress_manager_locked,
                 budget_type, budget_amount, budget_original_name,
                 budget_group_id, budget_match_status, budget_match_method,
@@ -919,7 +920,7 @@ export async function PUT(request: Request) {
            detail_key_facts_json = ?, detail_sections_json = ?, raw_input = ?,
            status = ?, status_manual = ?, temperature = ?,
           award_status = ?, award_company = ?, execution_type = ?,
-          consortium_company = ?, award_stage = ?, award_completed_date = ?,
+          consortium_company = ?, award_stage = ?, award_stage_manual = ?, award_completed_date = ?,
           progress_manager = ?, progress_manager_locked = ?,
           follow_up_required = ?,
           follow_up_date = ?, next_action = ?, progress_schedule = ?, contact_role = ?,
@@ -965,6 +966,11 @@ export async function PUT(request: Request) {
         awardManagement.executionType,
         awardManagement.consortiumCompany,
         awardManagement.awardStage,
+        payload.awardStageManual === true
+          ? 1
+          : Number(previous?.award_stage_manual ?? 0) === 1
+            ? 1
+            : 0,
         awardCompletedDate,
         requestedProgressManager,
         progressManagerLocked,
@@ -1439,6 +1445,9 @@ export async function PATCH(request: Request) {
             award_stage = CASE
               WHEN ? = 0 THEN award_stage
               ELSE ? END,
+            award_stage_manual = CASE
+              WHEN ? = 0 THEN award_stage_manual
+              ELSE 1 END,
             award_completed_date = CASE
               WHEN ? = 0 THEN award_completed_date
               ELSE ? END,
@@ -1507,6 +1516,7 @@ export async function PATCH(request: Request) {
             requestedConsortiumCompany,
             applyFields.has("awardStage") ? 1 : 0,
             requestedAwardStage,
+            applyFields.has("awardStage") ? 1 : 0,
             applyFields.has("awardStage") ? 1 : 0,
             requestedAwardCompletedDate,
             member.id,

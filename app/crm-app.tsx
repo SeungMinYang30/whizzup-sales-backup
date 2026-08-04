@@ -9938,6 +9938,7 @@ export default function CrmApp({
           body: JSON.stringify({
             id: record.id,
             ...synchronizedNextForm,
+            awardStageManual: field === "awardStage" ? true : undefined,
             syncBusinessRoundBudgets: field === "budget",
           }),
         });
