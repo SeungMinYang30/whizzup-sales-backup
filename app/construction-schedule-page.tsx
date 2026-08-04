@@ -633,12 +633,13 @@ export default function ConstructionSchedulePage({
               <p className="construction-products-empty">상세페이지에 등록된 품목이 없어 공사·품목을 직접 입력해 주세요.</p>
             )}
             <div className="construction-stage-table">
-              <div className="construction-stage-head"><span>사용</span><span>단계</span><span>시공 업체</span><span>시작일</span><span>종료일</span><span>추가</span></div>
+              <div className="construction-stage-head"><span>사용</span><span>단계</span><span>시공 업체</span><span>메모</span><span>시작일</span><span>종료일</span><span>추가</span></div>
               {editor.items.map((item, index) => (
                 <div className={`construction-stage-row${item.active ? " active" : ""}`} key={item.key}>
                   <input aria-label={`${item.stage} 사용`} type="checkbox" checked={item.active} onChange={(event) => updateEditorItem(item.key, { active: event.target.checked })} />
                   <strong>{item.stage}{editor.items.slice(0, index).some((previous) => previous.stage === item.stage) ? " · 추가" : ""}</strong>
                   <input value={item.vendorName} disabled={!item.active} onChange={(event) => updateEditorItem(item.key, { vendorName: event.target.value })} placeholder="업체명" />
+                  <input value={item.details} maxLength={500} disabled={!item.active} onChange={(event) => updateEditorItem(item.key, { details: event.target.value })} placeholder="선택 입력" />
                   <input type="date" value={item.scheduledDate} disabled={!item.active} onChange={(event) => updateEditorItem(item.key, { scheduledDate: event.target.value, endDate: item.endDate < event.target.value ? event.target.value : item.endDate })} />
                   <input type="date" value={item.endDate} disabled={!item.active} onChange={(event) => updateEditorItem(item.key, { endDate: event.target.value })} />
                   <button type="button" aria-label={`${item.stage} 기간 추가`} onClick={() => addStageRange(item.stage, item.endDate || item.scheduledDate)}>+</button>

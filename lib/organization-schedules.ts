@@ -527,6 +527,7 @@ export async function addOrganizationSchedule(input: {
   linked?: unknown;
   assigneeMemberId?: unknown;
   assigneeName?: unknown;
+  details?: unknown;
   memberId: number;
   memberName: string;
 }) {
@@ -542,6 +543,7 @@ export async function addOrganizationSchedule(input: {
   const endTime = validTime(rawEndTime);
   const assigneeMemberId = Number(input.assigneeMemberId);
   const assigneeName = clean(input.assigneeName).slice(0, 120) || input.memberName;
+  const details = clean(input.details).slice(0, 500);
   if (!organization || !label || !scheduledDate) {
     throw new Error("기관, 일정 제목, 날짜를 확인해 주세요.");
   }
@@ -561,10 +563,10 @@ export async function addOrganizationSchedule(input: {
   if (!existing) {
     await d1.prepare(
       `INSERT INTO organization_schedules (
-         organization, business_round, label, scheduled_date, start_time, end_time, category, completed,
+         organization, business_round, label, scheduled_date, start_time, end_time, category, details, completed,
          created_by, created_by_name, updated_by, updated_by_name,
          assignee_member_id, assignee_name, sync_status
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       organization,
       businessRound,
@@ -573,6 +575,7 @@ export async function addOrganizationSchedule(input: {
       startTime,
       endTime,
       category,
+      details,
       input.memberId,
       input.memberName,
       input.memberId,
@@ -1026,6 +1029,7 @@ export async function updateOrganizationSchedule(input: {
   category?: unknown;
   assigneeMemberId?: unknown;
   assigneeName?: unknown;
+  details?: unknown;
   completed?: unknown;
   member: ScheduleActor;
 }) {
@@ -1045,9 +1049,10 @@ export async function updateOrganizationSchedule(input: {
   if (startTime && endTime && endTime < startTime) throw new Error("종료 시간은 시작 시간 이후여야 합니다.");
   const assigneeMemberId = Number(input.assigneeMemberId);
   const assigneeName = clean(input.assigneeName).slice(0, 120) || input.member.displayName;
+  const details = clean(input.details).slice(0, 500);
   await d1.prepare(
     `UPDATE organization_schedules
-     SET label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, category = ?, completed = ?,
+     SET label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, category = ?, details = ?, completed = ?,
          assignee_member_id = ?, assignee_name = ?,
          sync_status = CASE
            WHEN ? = 'personal' AND TRIM(COALESCE(google_event_id, '')) <> '' THEN 'pending'
@@ -1068,6 +1073,7 @@ export async function updateOrganizationSchedule(input: {
     endTime,
     scheduledDate,
     category,
+    details,
     input.completed === true ? 1 : 0,
     Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0 ? assigneeMemberId : null,
     assigneeName,

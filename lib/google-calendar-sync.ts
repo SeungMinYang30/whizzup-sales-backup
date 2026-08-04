@@ -148,6 +148,15 @@ function eventValues(event: GoogleCalendarApiEvent) {
   };
 }
 
+function memoFromGoogleDescription(value: string) {
+  return value.split(/\r?\n/)
+    .filter((line) => !/^(담당자|일정 내용|시공업체|공사·품목):\s*/.test(line.trim()))
+    .map((line) => line.replace(/^메모:\s*/, ""))
+    .join("\n")
+    .trim()
+    .slice(0, 500);
+}
+
 async function pendingRows(ids: number[] | undefined, limit: number) {
   const d1 = getD1();
   const selection = `SELECT
@@ -225,17 +234,14 @@ async function applyGoogleSharingPolicy() {
 }
 
 function writeSchedule(row: SyncRow) {
+  const memo = row.details.trim() ? `메모: ${row.details.trim()}` : "";
   const constructionDetails = row.category === "construction"
     ? [
-        row.vendor_name ? `시공업체: ${row.vendor_name}` : "",
-        row.product_names
-          ? `공사·품목: ${row.product_names}`
-          : row.project_work_summary
-            ? `공사·품목: ${row.project_work_summary}`
-            : "",
-        row.details ? `상세 메모: ${row.details}` : "",
+        `시공업체: ${row.vendor_name.trim() || "미정"}`,
+        `공사·품목: ${row.product_names.trim() || row.project_work_summary.trim() || "미입력"}`,
+        memo,
       ].filter(Boolean).join("\n")
-    : row.details || "";
+    : memo;
   return {
     id: Number(row.id),
     organization: row.organization,
@@ -334,6 +340,7 @@ export async function linkGoogleCalendarSchedule(input: {
   category: unknown;
   assigneeMemberId: unknown;
   assigneeName: unknown;
+  details?: unknown;
   member: { id: number; displayName: string };
 }) {
   await ensureOrganizationSchedulesReady();
@@ -370,14 +377,17 @@ export async function linkGoogleCalendarSchedule(input: {
   if (categoryLabel) title = `${categoryLabel} · ${title.replace(/^(영업|회의|쇼룸|기타)\s*[·•-]\s*/, "")}`;
   const assigneeMemberId = Number(input.assigneeMemberId);
   const assigneeName = text(input.assigneeName).slice(0, 120) || input.member.displayName;
+  const details = typeof input.details === "string"
+    ? input.details.trim().slice(0, 500)
+    : memoFromGoogleDescription(event.description || "");
   try {
     const inserted = await d1.prepare(
       `INSERT INTO organization_schedules (
          organization, business_round, label, scheduled_date, start_time, end_time, end_date,
-         category, stage, completed, created_by, created_by_name, updated_by, updated_by_name,
+         category, stage, details, completed, created_by, created_by_name, updated_by, updated_by_name,
          assignee_member_id, assignee_name, google_event_id, google_event_etag, google_updated_at,
          google_origin, sync_status, sync_operation
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending', 'upsert')
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending', 'upsert')
        RETURNING id`,
     ).bind(
       organization,
@@ -389,6 +399,7 @@ export async function linkGoogleCalendarSchedule(input: {
       values.endDate || values.scheduledDate,
       storedCategory,
       category === "construction" ? title : "",
+      details,
       input.member.id,
       input.member.displayName,
       input.member.id,
@@ -464,7 +475,7 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
   const siteIds = await localSiteScheduleIds();
   const readonly: ReadOnlyGoogleSchedule[] = [];
   const seenReadonly = new Set<string>();
-  const matchedLegacyConstructionIds: number[] = [];
+  const forcedRefreshIds = new Set<number>();
   for (const event of result.events) {
     const properties = event.extendedProperties?.private || {};
     const siteId = Number(properties.whizzupScheduleId);
@@ -477,6 +488,17 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
         organization: string; label: string; category: string; sync_status: string;
         sync_operation: string; google_updated_at: string;
       }>();
+      const description = event.description || "";
+      const missingManagedDescription = !description.includes("담당자:") || !description.includes("일정 내용:");
+      if (row && event.status !== "cancelled" && missingManagedDescription) {
+        await d1.prepare(
+          `UPDATE organization_schedules
+           SET sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
+           WHERE id = ?`,
+        ).bind(siteId).run();
+        forcedRefreshIds.add(siteId);
+        continue;
+      }
       if (event.status === "cancelled") {
         if (row?.category === "construction") {
           await d1.prepare(
@@ -510,7 +532,7 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
         const label = row.category === "construction" || !prefix ? title : `${prefix} · ${title}`;
         await d1.prepare(
           `UPDATE organization_schedules
-           SET organization = ?, label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?,
+           SET organization = ?, label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, details = ?,
                google_event_id = ?, google_event_etag = ?, google_updated_at = ?, sync_error = '',
                last_synced_at = CURRENT_TIMESTAMP, updated_by_name = 'Google Calendar', updated_at = CURRENT_TIMESTAMP
            WHERE id = ? AND category <> 'construction'`,
@@ -521,6 +543,7 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
           values.startTime,
           values.endTime,
           values.endDate,
+          memoFromGoogleDescription(event.description || ""),
           event.id,
           event.etag || "",
           event.updated || "",
@@ -549,8 +572,8 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
         event.id,
         event.id,
       ).all<{ id: number; google_event_id: string }>();
-      const exact = candidates.results.filter((row) => row.google_event_id === event.id);
-      const unlinked = candidates.results.filter((row) => !row.google_event_id?.trim());
+      const exact = candidates.results.filter((candidate: { id: number; google_event_id: string }) => candidate.google_event_id === event.id);
+      const unlinked = candidates.results.filter((candidate: { id: number; google_event_id: string }) => !candidate.google_event_id?.trim());
       const matched = exact.length === 1 ? exact[0] : exact.length === 0 && unlinked.length === 1 ? unlinked[0] : null;
       if (matched) {
         await d1.prepare(
@@ -559,7 +582,7 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
                sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
            WHERE id = ?`,
         ).bind(event.id, event.etag || "", event.updated || "", matched.id).run();
-        matchedLegacyConstructionIds.push(Number(matched.id));
+        forcedRefreshIds.add(Number(matched.id));
         continue;
       }
     }
@@ -592,8 +615,8 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
       suggestedCategory: suggestedCategory(event.summary || ""),
     });
   }
-  if (matchedLegacyConstructionIds.length) {
-    await flushGoogleCalendarSync({ ids: matchedLegacyConstructionIds });
+  if (forcedRefreshIds.size) {
+    await flushGoogleCalendarSync({ ids: [...forcedRefreshIds] });
   }
   return { ...result, readOnlyEvents: readonly };
 }

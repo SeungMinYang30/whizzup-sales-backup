@@ -205,12 +205,15 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
     .replace(/^(영업|회의|시공|쇼룸|기타)\s*[·•-]\s*/, "")
     .trim() || "일정";
   const summary = `[${categoryLabel[category] || "기타"}] ${schedule.organization} · ${cleanLabel}`;
+  const description = [
+    `담당자: ${schedule.assigneeName.trim() || "미정"}`,
+    `일정 내용: ${cleanLabel}`,
+    schedule.details.trim(),
+  ].filter(Boolean).join("\n");
   return {
     summary,
     location: schedule.organization,
-    description: [schedule.assigneeName ? `담당자: ${schedule.assigneeName}` : "", schedule.details]
-      .filter(Boolean)
-      .join("\n"),
+    description,
     start,
     end,
     colorId: colorId[category] || colorId.other,

@@ -72,6 +72,14 @@ function selectedDateTitle(value: string) {
   return new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" }).format(dateFromValue(value));
 }
 function cleanScheduleTitle(label: string) { return label.replace(/^(영업|회의|시공|쇼룸|기타|내 일정)\s*·\s*/, ""); }
+function memoFromGoogleDescription(value: string) {
+  return value.split(/\r?\n/)
+    .filter((line) => !/^(담당자|일정 내용|시공업체|공사·품목):\s*/.test(line.trim()))
+    .map((line) => line.replace(/^메모:\s*/, ""))
+    .join("\n")
+    .trim()
+    .slice(0, 500);
+}
 function normalizedInstitution(value: string) { return value.replace(/[\s·•._()\-]/g, "").toLocaleLowerCase("ko-KR"); }
 function kindFromSchedule(schedule: HomeCalendarSchedule): EditorKind {
   if (schedule.category === "meeting") return "회의";
@@ -86,7 +94,7 @@ function emptyEditor(date: string) {
   return {
     scheduleId: null as number | null, googleEventId: "", organization: "", businessRound: 0, organizationQuery: "", linked: false,
     kind: "영업" as EditorKind, title: "", scheduledDate: date, allDay: true, startTime: "", endTime: "",
-    assigneeMemberId: 0, assigneeName: "", completed: false,
+    assigneeMemberId: 0, assigneeName: "", details: "", completed: false,
   };
 }
 
@@ -194,7 +202,8 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       organizationQuery: schedule.organization, linked: schedule.businessRound > 0, kind: kindFromSchedule(schedule),
       title: cleanScheduleTitle(schedule.label), scheduledDate: schedule.scheduledDate,
       allDay: !schedule.startTime, startTime: schedule.startTime || "", endTime: schedule.endTime || "",
-      assigneeMemberId: schedule.assigneeMemberId || 0, assigneeName: schedule.assigneeName, completed: false,
+      assigneeMemberId: schedule.assigneeMemberId || 0, assigneeName: schedule.assigneeName,
+      details: schedule.details || "", completed: false,
     });
     setEditorOpen(true);
   }
@@ -219,6 +228,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       endTime: schedule.endTime || "",
       assigneeMemberId: currentMember.id,
       assigneeName: currentMember.displayName,
+      details: memoFromGoogleDescription(schedule.details || ""),
     });
     setEditorOpen(true);
   }
@@ -271,7 +281,8 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
           label: `${editor.kind} · ${editor.title.trim()}`, scheduledDate: editor.scheduledDate,
           startTime: editor.allDay ? "" : editor.startTime, endTime: editor.allDay ? "" : editor.endTime,
           category: KIND_CATEGORY[editor.kind], linked: editor.linked,
-          assigneeMemberId: editor.assigneeMemberId, assigneeName: editor.assigneeName, completed: editor.completed,
+          assigneeMemberId: editor.assigneeMemberId, assigneeName: editor.assigneeName,
+          details: editor.details.trim(), completed: editor.completed,
         }),
       });
       const payload = await response.json() as { error?: string };
@@ -453,6 +464,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
             <label className="schedule-all-day"><input type="checkbox" checked={editor.allDay} onChange={(event) => setEditor((current) => ({ ...current, allDay: event.target.checked, startTime: event.target.checked ? "" : current.startTime, endTime: event.target.checked ? "" : current.endTime }))} /> 종일 일정</label>
           </div>
           {!editor.allDay ? <div className="home-schedule-time-grid"><label>시작 시간 <b>*</b><select value={editor.startTime} onChange={(event) => setEditor((current) => ({ ...current, startTime: event.target.value }))}><option value="">선택</option>{TIME_OPTIONS.map((time) => <option key={time} value={time}>{time}</option>)}</select></label><label>종료 시간<select value={editor.endTime} onChange={(event) => setEditor((current) => ({ ...current, endTime: event.target.value }))}><option value="">선택 안 함</option>{TIME_OPTIONS.map((time) => <option key={time} value={time}>{time}</option>)}</select></label></div> : null}
+          <label>메모 <small>선택 입력 · 새 일정부터 저장됩니다.</small><textarea value={editor.details} maxLength={500} rows={4} onChange={(event) => setEditor((current) => ({ ...current, details: event.target.value }))} placeholder="방문 목적, 준비사항 등 필요한 내용을 입력하세요. Google 일정 설명에도 표시됩니다." /></label>
           {editor.scheduleId ? <label className="schedule-completed"><input type="checkbox" checked={editor.completed} onChange={(event) => setEditor((current) => ({ ...current, completed: event.target.checked }))} /> 이 일정을 완료 상태로 지정</label> : null}
           <footer>{editor.scheduleId ? <button type="button" className="danger-button" onClick={() => void deleteSchedule()}>삭제</button> : null}{linkedDetailAvailable ? <button type="button" onClick={() => { setEditorOpen(false); onOpenOrganization(editor.organization, editor.businessRound); }}>기관 상세 보기</button> : null}<span /><button type="button" onClick={() => setEditorOpen(false)}>취소</button><button type="button" className="primary-button" disabled={saving || !editor.title.trim() || !editor.organizationQuery.trim() || !editor.assigneeMemberId || ((editor.kind === "영업" || Boolean(editor.googleEventId)) && !editor.linked)} onClick={() => void saveSchedule()}>{saving ? "저장 중" : editor.googleEventId ? "이대로 연결" : "저장"}</button></footer>
         </div>

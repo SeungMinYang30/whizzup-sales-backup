@@ -147,6 +147,7 @@ export async function PUT(request: Request) {
         category: payload.category,
         assigneeMemberId: payload.assigneeMemberId,
         assigneeName: payload.assigneeName,
+        details: payload.details,
         completed: payload.completed,
         member,
       });
@@ -186,6 +187,7 @@ export async function POST(request: Request) {
         category: payload.category,
         assigneeMemberId: payload.assigneeMemberId,
         assigneeName: payload.assigneeName,
+        details: payload.details,
         member,
       });
       return Response.json({ schedule: linked });
@@ -202,6 +204,7 @@ export async function POST(request: Request) {
         linked: payload.linked,
         assigneeMemberId: payload.assigneeMemberId,
         assigneeName: payload.assigneeName,
+        details: payload.details,
         memberId: member.id,
         memberName: member.displayName,
       });
