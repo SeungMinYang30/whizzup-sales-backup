@@ -72,13 +72,24 @@ function selectedDateTitle(value: string) {
   return new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" }).format(dateFromValue(value));
 }
 function cleanScheduleTitle(label: string) { return label.replace(/^(영업|회의|시공|쇼룸|기타|내 일정)\s*·\s*/, ""); }
-function memoFromGoogleDescription(value: string) {
-  return value.split(/\r?\n/)
-    .filter((line) => !/^(담당자|일정 내용|시공업체|공사·품목):\s*/.test(line.trim()))
-    .map((line) => line.replace(/^메모:\s*/, ""))
-    .join("\n")
-    .trim()
-    .slice(0, 500);
+function structuredGoogleDescription(value: string) {
+  const result = { content: "", constructionStage: "", memo: "" };
+  let memoStarted = false;
+  for (const rawLine of value.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const matched = line.match(/^(담당자|일정 내용|시공 단계|시공업체|공사·품목|메모):\s*(.*)$/);
+    if (matched) {
+      memoStarted = matched[1] === "메모";
+      if (matched[1] === "일정 내용") result.content = matched[2].trim();
+      if (matched[1] === "시공 단계") result.constructionStage = matched[2].trim();
+      if (matched[1] === "메모") result.memo = matched[2].trim();
+    } else if (memoStarted && line) {
+      result.memo = `${result.memo}${result.memo ? "\n" : ""}${line}`;
+    }
+  }
+  if (result.content === "[입력 필요]") result.content = "";
+  if (result.constructionStage === "[입력 필요]") result.constructionStage = "";
+  return { ...result, memo: result.memo.slice(0, 500) };
 }
 function normalizedInstitution(value: string) { return value.replace(/[\s·•._()\-]/g, "").toLocaleLowerCase("ko-KR"); }
 function kindFromSchedule(schedule: HomeCalendarSchedule): EditorKind {
@@ -212,10 +223,8 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       sales: "영업", meeting: "회의", construction: "시공", showroom: "쇼룸", other: "기타",
     };
     const organization = schedule.organization === "Google Calendar" ? "" : schedule.organization;
-    let title = cleanScheduleTitle(schedule.label)
-      .replace(/^\[(영업|회의|시공|쇼룸|기타)\]\s*/, "")
-      .trim();
-    if (organization && title.startsWith(`${organization} · `)) title = title.slice(organization.length + 3);
+    const structured = structuredGoogleDescription(schedule.details || "");
+    const title = structured.constructionStage || structured.content;
     setReadOnlySchedule(null);
     setEditor({
       ...emptyEditor(schedule.scheduledDate),
@@ -228,7 +237,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       endTime: schedule.endTime || "",
       assigneeMemberId: currentMember.id,
       assigneeName: currentMember.displayName,
-      details: memoFromGoogleDescription(schedule.details || ""),
+      details: structured.memo,
     });
     setEditorOpen(true);
   }
@@ -448,7 +457,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       {editorOpen ? <div className="schedule-editor-shell" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setEditorOpen(false); }}>
         <div className="home-schedule-editor" role="dialog" aria-modal="true">
           <header><div><span className="section-kicker">{editor.googleEventId ? "CONNECT GOOGLE SCHEDULE" : editor.scheduleId ? "EDIT SCHEDULE" : "NEW SCHEDULE"}</span><h3>{editor.googleEventId ? "Google 일정 연결" : editor.scheduleId ? "일정 수정" : "일정 등록"}</h3><p>{editor.googleEventId ? "추천 내용을 확인하고 기관·분류·담당자를 연결해 주세요." : "시공 일정은 시공·납품 일정표에서 관리하고 이 화면에는 자동 연동됩니다."}</p></div><button type="button" aria-label="닫기" onClick={() => setEditorOpen(false)}>×</button></header>
-          <div className="home-schedule-kind">{((editor.googleEventId ? ["영업", "회의", "시공", "쇼룸", "기타"] : ["영업", "회의", "쇼룸", "기타", "내 일정"]) as EditorKind[]).map((kind) => <button type="button" key={kind} className={editor.kind === kind ? "active" : ""} onClick={() => setEditor((current) => ({ ...current, kind, title: kind === "시공" && !["철거", "목공", "도장", "바닥", "시스템", "검수", "교육"].includes(current.title) ? "목공" : current.title }))}>{kind}</button>)}</div>
+          <div className="home-schedule-kind">{((editor.googleEventId ? ["영업", "회의", "시공", "쇼룸", "기타"] : ["영업", "회의", "쇼룸", "기타", "내 일정"]) as EditorKind[]).map((kind) => <button type="button" key={kind} className={editor.kind === kind ? "active" : ""} onClick={() => setEditor((current) => ({ ...current, kind, title: kind === "시공" && !["철거", "목공", "도장", "바닥", "시스템", "검수", "교육"].includes(current.title) ? "" : current.title }))}>{kind}</button>)}</div>
           <label className="home-schedule-institution">{editor.googleEventId ? "연결할 기관" : "기관 또는 일정 장소"} <b>*</b>
             <input value={editor.organizationQuery} onChange={(event) => setEditor((current) => ({ ...current, organizationQuery: event.target.value, organization: "", businessRound: 0, linked: false }))} placeholder="기관명 2글자 이상 검색 또는 직접 입력" />
             {!editor.linked && editor.organizationQuery.trim().length >= 2 ? <div className="home-schedule-institution-results">
@@ -458,7 +467,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
             <small className="home-schedule-link-note">{editor.linked ? "기관 상세의 예정 일정에 연결됩니다." : editor.googleEventId ? "추천 기관을 선택한 뒤 연결할 수 있습니다." : editor.kind === "영업" ? "영업 일정은 기존 기관을 선택하거나 새 기관으로 등록해야 합니다." : "회의·쇼룸·기타·내 일정은 기관 연결 또는 자유 장소 입력이 모두 가능합니다."}</small>
             {!editor.linked && editor.organizationQuery.trim().length >= 2 ? <button type="button" className="schedule-create-institution" onClick={() => void createInstitution()}>+ 새 기관 등록 후 연결</button> : null}
           </label>
-          {editor.googleEventId && editor.kind === "시공" ? <label>시공 단계 <b>*</b><select value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))}>{["철거", "목공", "도장", "바닥", "시스템", "검수", "교육"].map((stage) => <option key={stage}>{stage}</option>)}</select></label> : <label>일정 제목 <b>*</b><input value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))} placeholder="예: 담당자 방문 미팅" /></label>}
+          {editor.googleEventId && editor.kind === "시공" ? <label>시공 단계 <b>*</b><select value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))}><option value="">단계 선택</option>{["철거", "목공", "도장", "바닥", "시스템", "검수", "교육"].map((stage) => <option key={stage}>{stage}</option>)}</select></label> : <label>일정 제목 <b>*</b><input value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))} placeholder="예: 담당자 방문 미팅" /></label>}
           <label>일정 담당자 <b>*</b><select value={editor.assigneeMemberId || ""} onChange={(event) => changeAssignee(event.target.value)}><option value="">담당자 선택</option>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}</option>)}</select></label>
           <div className="home-schedule-date-grid"><label>날짜 <b>*</b><input type="date" value={editor.scheduledDate} onChange={(event) => setEditor((current) => ({ ...current, scheduledDate: event.target.value }))} /></label>
             <label className="schedule-all-day"><input type="checkbox" checked={editor.allDay} onChange={(event) => setEditor((current) => ({ ...current, allDay: event.target.checked, startTime: event.target.checked ? "" : current.startTime, endTime: event.target.checked ? "" : current.endTime }))} /> 종일 일정</label>

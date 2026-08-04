@@ -85,30 +85,46 @@ function isGoogleSharedSchedule(row: Pick<SyncRow, "category" | "label">) {
   return row.category === "general" && /^영업\s*[·•-]\s*/.test(row.label);
 }
 
-function suggestedCategory(summary: string): ReadOnlyGoogleSchedule["suggestedCategory"] {
-  if (/목공|도장|바닥|시스템|검수|철거|교육|설치|납품|시공|공사/.test(summary)) return "construction";
-  if (/쇼룸|전시/.test(summary)) return "showroom";
-  if (/회의|미팅/.test(summary)) return "meeting";
-  if (/영업|방문|재연락|상담|제안|견적/.test(summary)) return "sales";
-  return "other";
-}
-
 function suggestedOrganization(event: GoogleCalendarApiEvent) {
-  if (event.location?.trim()) return event.location.trim().slice(0, 120);
-  return (event.summary || "")
-    .replace(/^\[(영업|회의|시공|쇼룸|기타)\]\s*/, "")
-    .replace(/\s*[·|]\s*.+$/, "")
-    .replace(/\s+(방문|재연락|상담|미팅|회의|설치|납품|시공|목공|도장|바닥|시스템|검수|쇼룸)\s*$/, "")
-    .trim()
-    .slice(0, 120);
+  return event.location?.trim().slice(0, 120) || "";
 }
 
-function linkedTitle(summary: string, organization: string) {
-  const withoutCategory = summary.replace(/^\[(영업|회의|시공|쇼룸|기타)\]\s*/, "").trim();
-  const prefix = `${organization} · `;
-  return (withoutCategory.startsWith(prefix) ? withoutCategory.slice(prefix.length) : withoutCategory)
-    .trim()
-    .slice(0, 120) || "일정";
+type GoogleStructuredDescription = {
+  assignee: string;
+  content: string;
+  constructionStage: string;
+  vendor: string;
+  products: string;
+  memo: string;
+};
+
+function googleStructuredDescription(value: string): GoogleStructuredDescription {
+  const result: GoogleStructuredDescription = {
+    assignee: "", content: "", constructionStage: "", vendor: "", products: "", memo: "",
+  };
+  let memoStarted = false;
+  for (const rawLine of value.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const matched = line.match(/^(담당자|일정 내용|시공 단계|시공업체|공사·품목|메모):\s*(.*)$/);
+    if (matched) {
+      const field = matched[1];
+      const content = matched[2].trim();
+      memoStarted = field === "메모";
+      if (field === "담당자") result.assignee = content;
+      else if (field === "일정 내용") result.content = content;
+      else if (field === "시공 단계") result.constructionStage = content;
+      else if (field === "시공업체") result.vendor = content;
+      else if (field === "공사·품목") result.products = content;
+      else result.memo = content;
+    } else if (memoStarted && line) {
+      result.memo = `${result.memo}${result.memo ? "\n" : ""}${line}`;
+    }
+  }
+  for (const key of Object.keys(result) as Array<keyof GoogleStructuredDescription>) {
+    if (["[입력 필요]", "미정", "미입력"].includes(result[key])) result[key] = "";
+    result[key] = result[key].slice(0, 500);
+  }
+  return result;
 }
 
 function dateInSeoul(value: string) {
@@ -149,12 +165,7 @@ function eventValues(event: GoogleCalendarApiEvent) {
 }
 
 function memoFromGoogleDescription(value: string) {
-  return value.split(/\r?\n/)
-    .filter((line) => !/^(담당자|일정 내용|시공업체|공사·품목):\s*/.test(line.trim()))
-    .map((line) => line.replace(/^메모:\s*/, ""))
-    .join("\n")
-    .trim()
-    .slice(0, 500);
+  return googleStructuredDescription(value).memo;
 }
 
 async function pendingRows(ids: number[] | undefined, limit: number) {
@@ -234,14 +245,6 @@ async function applyGoogleSharingPolicy() {
 }
 
 function writeSchedule(row: SyncRow) {
-  const memo = row.details.trim() ? `메모: ${row.details.trim()}` : "";
-  const constructionDetails = row.category === "construction"
-    ? [
-        `시공업체: ${row.vendor_name.trim() || "미정"}`,
-        `공사·품목: ${row.product_names.trim() || row.project_work_summary.trim() || "미입력"}`,
-        memo,
-      ].filter(Boolean).join("\n")
-    : memo;
   return {
     id: Number(row.id),
     organization: row.organization,
@@ -252,19 +255,20 @@ function writeSchedule(row: SyncRow) {
     endTime: row.end_time || "",
     endDate: row.end_date || row.scheduled_date,
     category: row.category || "general",
-    details: constructionDetails,
+    details: row.details.trim(),
+    constructionStage: row.category === "construction" ? row.label.trim() : "",
+    vendorName: row.category === "construction" ? row.vendor_name.trim() : "",
+    productSummary: row.category === "construction"
+      ? row.project_work_summary.trim() || row.product_names.trim()
+      : "",
     assigneeMemberId: Number(row.assignee_member_id) > 0 ? Number(row.assignee_member_id) : null,
     assigneeName: row.assignee_name || "",
   };
 }
 
-function legacyConstructionStage(summary: string) {
-  const normalized = summary
-    .replace(/^\[시공\]\s*/, "")
-    .trim();
-  return CONSTRUCTION_STAGES.find((stage) =>
-    normalized === stage || normalized.endsWith(` · ${stage}`) || normalized.endsWith(` - ${stage}`),
-  ) || "";
+function legacyConstructionStage(description: string) {
+  const stage = googleStructuredDescription(description).constructionStage;
+  return (CONSTRUCTION_STAGES as readonly string[]).includes(stage) ? stage : "";
 }
 
 export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?: number }) {
@@ -360,17 +364,21 @@ export async function linkGoogleCalendarSchedule(input: {
   const event = await getGoogleCalendarEvent(googleEventId);
   if (event.status === "cancelled") throw new Error("이미 삭제된 Google 일정입니다.");
   const values = eventValues(event);
-  let title = text(input.title).slice(0, 120) || linkedTitle(event.summary || "", organization);
+  const structured = googleStructuredDescription(event.description || "");
+  let title = text(input.title).slice(0, 120)
+    || (category === "construction" ? structured.constructionStage : structured.content).slice(0, 120);
+  if (!title) throw new Error("일정 내용을 직접 입력해 주세요.");
   const storedCategory = category === "sales" ? "general" : category;
+  let constructionProject: { id: number; work_summary: string } | null = null;
   if (category === "construction") {
     if (!(CONSTRUCTION_STAGES as readonly string[]).includes(title)) {
       throw new Error("시공 일정은 철거·목공·도장·바닥·시스템·검수·교육 단계 중 하나를 선택해 주세요.");
     }
-    const project = await d1.prepare(
-      `SELECT id FROM construction_schedule_projects
+    constructionProject = await d1.prepare(
+      `SELECT id, work_summary FROM construction_schedule_projects
        WHERE organization = ? AND business_round = ? AND TRIM(COALESCE(hidden_at, '')) = '' LIMIT 1`,
-    ).bind(organization, businessRound).first<{ id: number }>();
-    if (!project) throw new Error("시공·납품 일정표에 해당 기관을 먼저 추가해 주세요.");
+    ).bind(organization, businessRound).first<{ id: number; work_summary: string }>();
+    if (!constructionProject) throw new Error("시공·납품 일정표에 해당 기관을 먼저 추가해 주세요.");
   }
   const categoryLabel = category === "sales" ? "영업" : category === "meeting" ? "회의"
     : category === "showroom" ? "쇼룸" : category === "other" ? "기타" : "";
@@ -384,10 +392,10 @@ export async function linkGoogleCalendarSchedule(input: {
     const inserted = await d1.prepare(
       `INSERT INTO organization_schedules (
          organization, business_round, label, scheduled_date, start_time, end_time, end_date,
-         category, stage, details, completed, created_by, created_by_name, updated_by, updated_by_name,
+         category, stage, details, vendor_name, completed, created_by, created_by_name, updated_by, updated_by_name,
          assignee_member_id, assignee_name, google_event_id, google_event_etag, google_updated_at,
          google_origin, sync_status, sync_operation
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending', 'upsert')
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending', 'upsert')
        RETURNING id`,
     ).bind(
       organization,
@@ -400,6 +408,7 @@ export async function linkGoogleCalendarSchedule(input: {
       storedCategory,
       category === "construction" ? title : "",
       details,
+      category === "construction" ? structured.vendor : "",
       input.member.id,
       input.member.displayName,
       input.member.id,
@@ -411,6 +420,13 @@ export async function linkGoogleCalendarSchedule(input: {
       event.updated || "",
     ).first<{ id: number }>();
     if (!inserted?.id) throw new Error("Google 일정을 연결하지 못했습니다.");
+    if (constructionProject && !constructionProject.work_summary?.trim() && structured.products) {
+      await d1.prepare(
+        `UPDATE construction_schedule_projects
+         SET work_summary = ?, work_summary_mode = 'manual', updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND TRIM(COALESCE(work_summary, '')) = ''`,
+      ).bind(structured.products, constructionProject.id).run();
+    }
     await flushGoogleCalendarSync({ ids: [Number(inserted.id)] });
     await refreshOrganizationScheduleMirror(organization, businessRound);
     return { id: Number(inserted.id) };
@@ -482,14 +498,59 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
     const siteOwned = properties.whizzupSource === "site" && Number.isSafeInteger(siteId) && siteId > 0;
     if (siteOwned && siteIds.has(siteId)) {
       const row = await d1.prepare(
-        `SELECT organization, label, category, sync_status, sync_operation, google_updated_at
+        `SELECT organization, business_round, label, category, sync_status, sync_operation, google_updated_at
          FROM organization_schedules WHERE id = ?`,
       ).bind(siteId).first<{
-        organization: string; label: string; category: string; sync_status: string;
+        organization: string; business_round: number; label: string; category: string; sync_status: string;
         sync_operation: string; google_updated_at: string;
       }>();
       const description = event.description || "";
-      const missingManagedDescription = !description.includes("담당자:") || !description.includes("일정 내용:");
+      const existingStructured = googleStructuredDescription(description);
+      if (row?.category === "construction") {
+        await d1.prepare(
+          `UPDATE organization_schedules
+           SET assignee_name = CASE
+                 WHEN TRIM(COALESCE(assignee_name, '')) = '' AND ? <> ''
+                  AND NOT EXISTS (
+                    SELECT 1 FROM activities a
+                    WHERE a.organization = organization_schedules.organization
+                      AND a.business_round = organization_schedules.business_round
+                      AND TRIM(COALESCE(a.progress_manager, '')) <> ''
+                  ) THEN ? ELSE assignee_name END,
+               vendor_name = CASE
+                 WHEN TRIM(COALESCE(vendor_name, '')) = '' AND ? <> '' THEN ? ELSE vendor_name END,
+               details = CASE
+                 WHEN TRIM(COALESCE(details, '')) = '' AND ? <> '' THEN ? ELSE details END
+           WHERE id = ?`,
+        ).bind(
+          existingStructured.assignee,
+          existingStructured.assignee,
+          existingStructured.vendor,
+          existingStructured.vendor,
+          existingStructured.memo,
+          existingStructured.memo,
+          siteId,
+        ).run();
+        if (existingStructured.products) {
+          await d1.prepare(
+            `UPDATE construction_schedule_projects
+             SET work_summary = ?, work_summary_mode = 'manual', updated_at = CURRENT_TIMESTAMP
+             WHERE organization = ? AND business_round = ?
+               AND TRIM(COALESCE(work_summary, '')) = ''
+               AND NOT EXISTS (
+                 SELECT 1 FROM equipment_projects ep
+                 JOIN equipment_items ei ON ei.project_id = ep.id
+                 WHERE ep.organization = construction_schedule_projects.organization
+                   AND ep.business_round = construction_schedule_projects.business_round
+                   AND TRIM(COALESCE(ei.product_name, '')) <> ''
+               )`,
+          ).bind(existingStructured.products, row.organization, row.business_round).run();
+        }
+      }
+      const requiredDescriptionFields = row?.category === "construction"
+        ? ["담당자:", "시공 단계:", "시공업체:", "공사·품목:", "메모:"]
+        : ["담당자:", "일정 내용:", "메모:"];
+      const missingManagedDescription = requiredDescriptionFields.some((field) => !description.includes(field));
       if (row && event.status !== "cancelled" && missingManagedDescription) {
         await d1.prepare(
           `UPDATE organization_schedules
@@ -522,17 +583,20 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
       }
       if (row?.sync_status === "synced" && event.updated && event.updated > (row.google_updated_at || "")) {
         const values = eventValues(event);
-        const organization = (properties.whizzupOrganization || row.organization || event.location || "Google Calendar").slice(0, 120);
-        const title = linkedTitle(event.summary || row.label || "일정", organization);
+        const organization = (properties.whizzupOrganization || row.organization).slice(0, 120);
+        const structured = googleStructuredDescription(event.description || "");
         const prefix = row.category === "general" ? "영업"
           : row.category === "meeting" ? "회의"
           : row.category === "showroom" ? "쇼룸"
           : row.category === "other" ? "기타"
           : "";
-        const label = row.category === "construction" || !prefix ? title : `${prefix} · ${title}`;
+        const trustedContent = structured.content.slice(0, 120);
+        const label = trustedContent ? (!prefix ? trustedContent : `${prefix} · ${trustedContent}`) : row.label;
+        const trustedAssignee = structured.assignee.slice(0, 120);
         await d1.prepare(
           `UPDATE organization_schedules
            SET organization = ?, label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, details = ?,
+               assignee_name = CASE WHEN ? <> '' THEN ? ELSE assignee_name END,
                google_event_id = ?, google_event_etag = ?, google_updated_at = ?, sync_error = '',
                last_synced_at = CURRENT_TIMESTAMP, updated_by_name = 'Google Calendar', updated_at = CURRENT_TIMESTAMP
            WHERE id = ? AND category <> 'construction'`,
@@ -544,6 +608,8 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
           values.endTime,
           values.endDate,
           memoFromGoogleDescription(event.description || ""),
+          trustedAssignee,
+          trustedAssignee,
           event.id,
           event.etag || "",
           event.updated || "",
@@ -554,7 +620,7 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
     }
     if (event.status === "cancelled" || !event.start) continue;
     const values = eventValues(event);
-    const legacyStage = legacyConstructionStage(event.summary || "");
+    const legacyStage = legacyConstructionStage(event.description || "");
     if (legacyStage && values.scheduledDate) {
       const candidates = await d1.prepare(
         `SELECT id, google_event_id
@@ -612,7 +678,7 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
       syncError: "",
       syncAttempts: 0,
       googleEventId: event.id,
-      suggestedCategory: suggestedCategory(event.summary || ""),
+      suggestedCategory: googleStructuredDescription(event.description || "").constructionStage ? "construction" : "other",
     });
   }
   if (forcedRefreshIds.size) {

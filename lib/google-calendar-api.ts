@@ -25,6 +25,9 @@ export type GoogleCalendarWriteSchedule = {
   endDate: string;
   category: string;
   details: string;
+  constructionStage?: string;
+  vendorName?: string;
+  productSummary?: string;
   assigneeMemberId: number | null;
   assigneeName: string;
 };
@@ -203,13 +206,22 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
   };
   const cleanLabel = schedule.label
     .replace(/^(영업|회의|시공|쇼룸|기타)\s*[·•-]\s*/, "")
-    .trim() || "일정";
+    .trim();
+  const required = (value: string | undefined) => value?.trim() || "[입력 필요]";
   const summary = `[${categoryLabel[category] || "기타"}] ${schedule.organization} · ${cleanLabel}`;
-  const description = [
-    `담당자: ${schedule.assigneeName.trim() || "미정"}`,
-    `일정 내용: ${cleanLabel}`,
-    schedule.details.trim(),
-  ].filter(Boolean).join("\n");
+  const description = category === "construction"
+    ? [
+        `담당자: ${required(schedule.assigneeName)}`,
+        `시공 단계: ${required(schedule.constructionStage || cleanLabel)}`,
+        `시공업체: ${required(schedule.vendorName)}`,
+        `공사·품목: ${required(schedule.productSummary)}`,
+        `메모: ${schedule.details.trim()}`,
+      ].join("\n")
+    : [
+        `담당자: ${required(schedule.assigneeName)}`,
+        `일정 내용: ${required(cleanLabel)}`,
+        `메모: ${schedule.details.trim()}`,
+      ].join("\n");
   return {
     summary,
     location: schedule.organization,

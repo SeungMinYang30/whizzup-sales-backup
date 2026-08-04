@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [api, sync, store, route, calendar, crm, migration, connectionMigration, contentRefreshMigration, descriptionRefreshMigration, schema] = await Promise.all([
+const [api, sync, store, route, calendar, crm, migration, connectionMigration, contentRefreshMigration, descriptionRefreshMigration, structuredRefreshMigration, schema] = await Promise.all([
   readFile(new URL("../lib/google-calendar-api.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/google-calendar-sync.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/organization-schedules.ts", import.meta.url), "utf8"),
@@ -13,6 +13,7 @@ const [api, sync, store, route, calendar, crm, migration, connectionMigration, c
   readFile(new URL("../drizzle/0070_google_calendar_connection_workflow.sql", import.meta.url), "utf8"),
   readFile(new URL("../drizzle/0071_google_calendar_content_refresh.sql", import.meta.url), "utf8"),
   readFile(new URL("../drizzle/0072_google_calendar_description_refresh.sql", import.meta.url), "utf8"),
+  readFile(new URL("../drizzle/0073_google_calendar_structured_description.sql", import.meta.url), "utf8"),
   readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
 ]);
 
@@ -38,21 +39,25 @@ test("사이트 일정은 Google 이벤트 식별자와 재시도 가능한 동�
   assert.match(route, /retry-google-sync/);
 });
 
-test("기존 시공 Google 일정은 안전하게 다시 연결하고 담당자·내용·색상을 소급 갱신한다", () => {
+test("기존 시공 Google 일정은 안전하게 다시 연결하고 신뢰 가능한 정형 항목·색상을 소급 갱신한다", () => {
   assert.match(sync, /legacyConstructionStage/);
   assert.match(sync, /exact\.length === 1/);
   assert.match(sync, /unlinked\.length === 1/);
   assert.match(sync, /forcedRefreshIds/);
-  assert.match(sync, /시공업체: \$\{row\.vendor_name\.trim\(\) \|\| "미정"\}/);
-  assert.match(sync, /공사·품목: \$\{row\.product_names\.trim\(\)/);
-  assert.match(api, /담당자: \$\{schedule\.assigneeName\.trim\(\) \|\| "미정"\}/);
-  assert.match(api, /일정 내용: \$\{cleanLabel\}/);
+  assert.match(api, /담당자: \$\{required\(schedule\.assigneeName\)\}/);
+  assert.match(api, /시공 단계: \$\{required\(schedule\.constructionStage \|\| cleanLabel\)\}/);
+  assert.match(api, /시공업체: \$\{required\(schedule\.vendorName\)\}/);
+  assert.match(api, /공사·품목: \$\{required\(schedule\.productSummary\)\}/);
+  assert.match(api, /일정 내용: \$\{required\(cleanLabel\)\}/);
+  assert.match(api, /"\[입력 필요\]"/);
   assert.match(sync, /missingManagedDescription/);
   assert.match(api, /colorId: colorId\[category\]/);
   assert.match(contentRefreshMigration, /기존 사이트 연결 일정/);
   assert.match(contentRefreshMigration, /sync_status = 'pending'/);
   assert.match(descriptionRefreshMigration, /담당자·일정 내용/);
   assert.match(descriptionRefreshMigration, /sync_status = 'pending'/);
+  assert.match(structuredRefreshMigration, /신뢰 가능한 사이트·시공 일정 원본/);
+  assert.match(structuredRefreshMigration, /sync_status = 'pending'/);
 });
 
 test("새 메모만 저장·양방향 동기화하고 과거 메모는 임의 생성하지 않는다", () => {
@@ -60,9 +65,28 @@ test("새 메모만 저장·양방향 동기화하고 과거 메모는 임의 �
   assert.match(calendar, /details: editor\.details\.trim\(\)/);
   assert.match(route, /details: payload\.details/);
   assert.match(store, /const details = clean\(input\.details\)\.slice\(0, 500\)/);
-  assert.match(sync, /메모: \$\{row\.details\.trim\(\)\}/);
+  assert.match(api, /메모: \$\{schedule\.details\.trim\(\)\}/);
   assert.match(sync, /memoFromGoogleDescription\(event\.description \|\| ""\)/);
+  assert.match(sync, /googleStructuredDescription/);
+  assert.match(sync, /\["\[입력 필요\]", "미정", "미입력"\]/);
   assert.doesNotMatch(descriptionRefreshMigration, /메모:/);
+});
+
+test("원본 우선순위와 제목 비추론 원칙을 지킨다", () => {
+  assert.match(sync, /row\.project_work_summary\.trim\(\) \|\| row\.product_names\.trim\(\)/);
+  assert.match(sync, /typeof input\.details === "string"/);
+  assert.match(sync, /structured\.constructionStage : structured\.content/);
+  assert.match(sync, /structured\.vendor/);
+  assert.match(sync, /structured\.products/);
+  assert.match(sync, /NOT EXISTS \(\s*SELECT 1 FROM activities/);
+  assert.match(sync, /NOT EXISTS \(\s*SELECT 1 FROM equipment_projects/);
+  assert.match(sync, /existingStructured\.memo/);
+  assert.doesNotMatch(sync, /function linkedTitle/);
+  assert.doesNotMatch(sync, /function suggestedCategory/);
+  assert.doesNotMatch(sync, /event\.summary \|\| "", organization/);
+  assert.match(calendar, /const title = structured\.constructionStage \|\| structured\.content/);
+  assert.match(calendar, /<option value="">단계 선택<\/option>/);
+  assert.doesNotMatch(calendar, /\? "목공" : current\.title/);
 });
 
 test("Google API 등록·수정·삭제는 사이트 일정 ID로 중복을 방지한다", () => {
