@@ -23,7 +23,11 @@ type HomeCalendarSchedule = {
   editable: boolean;
   externalUrl?: string;
   details?: string;
+  syncStatus?: "pending" | "synced" | "failed" | "readonly";
+  syncError?: string;
+  syncAttempts?: number;
 };
+type SyncIssue = { id: number; label: string; organization: string; operation: "upsert" | "delete"; error: string; attempts: number };
 type Institution = { organization: string; businessRound: number; region: string; progressManager: string };
 type Member = { id: number; display_name: string; role: string; status: string };
 type EditorKind = "영업" | "회의" | "쇼룸" | "기타" | "내 일정";
@@ -95,7 +99,9 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   const [schedules, setSchedules] = useState<HomeCalendarSchedule[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [currentMember, setCurrentMember] = useState({ id: 0, displayName: "" });
-  const [googleState, setGoogleState] = useState({ configured: false, connected: false });
+  const [googleState, setGoogleState] = useState({ configured: false, connected: false, writable: false, error: "" });
+  const [syncIssues, setSyncIssues] = useState<SyncIssue[]>([]);
+  const [retryingId, setRetryingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadVersion, setReloadVersion] = useState(0);
@@ -123,7 +129,8 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       .then(async (response) => {
         const payload = await response.json() as {
           schedules?: HomeCalendarSchedule[]; currentMember?: { id: number; displayName: string };
-          googleCalendarConfigured?: boolean; googleCalendarConnected?: boolean; error?: string;
+          googleCalendarConfigured?: boolean; googleCalendarConnected?: boolean; googleCalendarWritable?: boolean;
+          googleCalendarError?: string; syncIssues?: SyncIssue[]; error?: string;
         };
         if (!response.ok) throw new Error(payload.error || "일정을 불러오지 못했습니다.");
         return payload;
@@ -132,7 +139,13 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
         if (!active) return;
         setSchedules(Array.isArray(payload.schedules) ? payload.schedules : []);
         if (payload.currentMember) setCurrentMember(payload.currentMember);
-        setGoogleState({ configured: Boolean(payload.googleCalendarConfigured), connected: Boolean(payload.googleCalendarConnected) });
+        setGoogleState({
+          configured: Boolean(payload.googleCalendarConfigured),
+          connected: Boolean(payload.googleCalendarConnected),
+          writable: Boolean(payload.googleCalendarWritable),
+          error: payload.googleCalendarError || "",
+        });
+        setSyncIssues(Array.isArray(payload.syncIssues) ? payload.syncIssues : []);
         setError("");
       })
       .catch((caught: unknown) => { if (active) setError(caught instanceof Error ? caught.message : "일정을 불러오지 못했습니다."); })
@@ -245,6 +258,27 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
     finally { setSaving(false); }
   }
 
+  async function retrySync(scheduleId: number) {
+    if (retryingId) return;
+    setRetryingId(scheduleId);
+    try {
+      const response = await fetch("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "retry-google-sync", scheduleId }),
+      });
+      const payload = await response.json() as { syncIssues?: SyncIssue[]; error?: string };
+      if (!response.ok) throw new Error(payload.error || "동기화를 재시도하지 못했습니다.");
+      setSyncIssues(Array.isArray(payload.syncIssues) ? payload.syncIssues : []);
+      setReloadVersion((value) => value + 1);
+      setError("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "동기화를 재시도하지 못했습니다.");
+    } finally {
+      setRetryingId(null);
+    }
+  }
+
   const visibleSchedules = useMemo(
     () => schedules.filter((item) => item.category !== "construction" || isConstructionStage(item.label)),
     [schedules],
@@ -304,7 +338,15 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
             onClick={() => setFilter(key)}>{label} <b>{counts[key]}</b></button>
         ))}
         {googleState.configured && !googleState.connected ? <small className="google-calendar-state">위즈업 공유일정 연결을 확인해 주세요.</small> : null}
+        {googleState.connected && !googleState.writable ? <small className="google-calendar-state">Google 일정은 읽기 전용으로 연결되었습니다.</small> : null}
       </div>
+      {syncIssues.length ? <div className="calendar-sync-issues" role="status">
+        <strong>Google Calendar 동기화 실패 {syncIssues.length}건</strong>
+        {syncIssues.slice(0, 3).map((issue) => <div key={issue.id}>
+          <span>{issue.organization} · {issue.label}<small>{issue.operation === "delete" ? "삭제" : "등록·수정"} · {issue.error}</small></span>
+          <button type="button" disabled={retryingId === issue.id} onClick={() => void retrySync(issue.id)}>{retryingId === issue.id ? "재시도 중" : "재시도"}</button>
+        </div>)}
+      </div> : null}
       {error ? <div className="home-calendar-error">{error}</div> : null}
       <div className="home-calendar-layout">
         <div className="home-calendar-grid" aria-busy={loading}>
@@ -327,7 +369,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
           {loading ? <p className="home-calendar-agenda-empty">일정을 확인하는 중입니다.</p> : selectedSchedules.length ? (
             <div className="home-calendar-agenda-list">{selectedSchedules.map((item) => (
               <button type="button" key={item.id} onClick={() => openEdit(item)}>
-                <i className={item.category} /><span><strong>{item.startTime ? `${item.startTime} ` : ""}{item.organization}</strong><small>{cleanScheduleTitle(item.label)}</small><small className="schedule-assignee">담당 {item.assigneeName || "미정"}</small></span><em className={item.category}>{CATEGORY_LABEL[item.category]}</em>
+                <i className={item.category} /><span><strong>{item.startTime ? `${item.startTime} ` : ""}{item.organization}</strong><small>{cleanScheduleTitle(item.label)}</small><small className="schedule-assignee">담당 {item.assigneeName || "미정"}</small>{item.syncStatus === "failed" ? <small className="schedule-sync failed">Google 동기화 실패 · 재시도 필요</small> : item.syncStatus === "pending" ? <small className="schedule-sync pending">Google 동기화 대기</small> : null}</span><em className={item.category}>{CATEGORY_LABEL[item.category]}</em>
               </button>
             ))}</div>
           ) : <p className="home-calendar-agenda-empty">이 날짜에 등록된 일정이 없습니다.</p>}

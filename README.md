@@ -53,3 +53,24 @@ pnpm run build
 - 모든 업무 요청은 로그인과 구성원 권한을 확인하는 Next.js API를 통합니다.
 - Supabase의 `anon`, `authenticated` 역할에는 업무 테이블 권한을 주지 않습니다.
 - 데이터베이스 연결 문자열은 Vercel 서버 환경변수에만 저장합니다.
+
+## 데이터와 배포
+
+- Vercel 프로젝트와 Supabase PostgreSQL을 사용합니다.
+- 공통 스키마는 `db/schema.ts`, Vercel 스키마는 `db/vercel-schema.ts`,
+  기능 마이그레이션은 `drizzle/`에 있습니다.
+- 앱 코드에서도 필요한 테이블을 `CREATE TABLE IF NOT EXISTS`로 확인해 기존
+  배포 데이터와 호환됩니다.
+- 기존 GPT Sites 구성원 데이터가 동기화되면 동일한 Google 이메일의 승인·역할·권한을 이어서 사용합니다.
+
+## Google Calendar 연동
+
+- `WHIZZUP_GOOGLE_CALENDAR_ICS_URL`은 Google에서 가져오는 위즈업 공유일정을
+  읽기 전용으로 표시합니다.
+- 사이트 일정의 등록·수정·삭제를 Google과 양방향으로 동기화하려면
+  `WHIZZUP_GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON`을 Vercel 비밀 환경 변수로
+  등록하고, 해당 서비스 계정 이메일에 대상 캘린더의 일정 변경 권한을 줍니다.
+- `WHIZZUP_GOOGLE_CALENDAR_ID`를 등록하지 않으면 ICS 주소에서 캘린더 ID를
+  자동으로 확인합니다.
+- 시공 일정은 시공·납품 일정표를 원본으로 유지하며 Google에서 변경해도
+  원본 일정표 값으로 다시 동기화됩니다.

@@ -31,6 +31,9 @@ export type ScheduleReminder = {
   updatedAt: string;
   updatedByName: string;
   conflict: boolean;
+  syncStatus: "pending" | "synced" | "failed";
+  syncError: string;
+  syncAttempts: number;
 };
 
 function scheduleReminderFromRow(
@@ -91,6 +94,11 @@ function scheduleReminderFromRow(
     updatedAt: String(row.updated_at ?? ""),
     updatedByName: String(row.updated_by_name ?? ""),
     conflict,
+    syncStatus: ["synced", "failed"].includes(String(row.sync_status))
+      ? String(row.sync_status) as "synced" | "failed"
+      : "pending",
+    syncError: String(row.sync_error || ""),
+    syncAttempts: Math.max(0, Number(row.sync_attempts) || 0),
   };
 }
 
@@ -114,6 +122,9 @@ type ReminderRow = {
   progress_manager: string;
   updated_at: string;
   updated_by_name: string;
+  sync_status: string;
+  sync_error: string;
+  sync_attempts: number;
 };
 
 function hasAssignedManager(value: unknown) {
@@ -159,6 +170,9 @@ SELECT
   COALESCE(s.assignee_name, '') AS assignee_name,
   s.updated_at,
   s.updated_by_name,
+  COALESCE(s.sync_status, 'pending') AS sync_status,
+  COALESCE(s.sync_error, '') AS sync_error,
+  COALESCE(s.sync_attempts, 0) AS sync_attempts,
   source_author.member_id AS source_author_id,
   COALESCE(source_author.created_by_name, '') AS source_author_name,
   COALESCE(latest.award_status, '미정') AS award_status,
@@ -181,6 +195,7 @@ export async function listScheduleRemindersForMember(
     .prepare(
       `${reminderSelect}
        WHERE s.completed = 0
+         AND TRIM(COALESCE(s.deleted_at, '')) = ''
          AND s.scheduled_date <= ?
        ORDER BY s.scheduled_date ASC, COALESCE(s.start_time, '') ASC, s.id ASC`,
     )
@@ -237,6 +252,7 @@ export async function listScheduleCalendarForMember(
     .prepare(
       `${reminderSelect}
        WHERE s.completed = 0
+         AND TRIM(COALESCE(s.deleted_at, '')) = ''
          AND s.scheduled_date <= ?
          AND COALESCE(NULLIF(s.end_date, ''), s.scheduled_date) >= ?
        ORDER BY s.scheduled_date ASC, COALESCE(s.start_time, '') ASC, s.id ASC`,

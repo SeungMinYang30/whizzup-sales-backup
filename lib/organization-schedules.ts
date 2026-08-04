@@ -27,9 +27,16 @@ export type OrganizationSchedule = {
   updatedByName: string;
   createdAt: string;
   updatedAt: string;
+  googleEventId: string;
+  syncStatus: "pending" | "synced" | "failed";
+  syncOperation: "upsert" | "delete";
+  syncError: string;
+  syncAttempts: number;
+  lastSyncedAt: string;
 };
 
 export type OrganizationScheduleInput = {
+  id?: number;
   label: string;
   scheduledDate: string;
   completed?: boolean;
@@ -78,6 +85,15 @@ const schemaStatements = [
     updated_by_name TEXT NOT NULL DEFAULT '',
     assignee_member_id INTEGER,
     assignee_name TEXT NOT NULL DEFAULT '',
+    google_event_id TEXT NOT NULL DEFAULT '',
+    google_event_etag TEXT NOT NULL DEFAULT '',
+    sync_status TEXT NOT NULL DEFAULT 'pending',
+    sync_operation TEXT NOT NULL DEFAULT 'upsert',
+    sync_error TEXT NOT NULL DEFAULT '',
+    sync_attempts INTEGER NOT NULL DEFAULT 0,
+    last_synced_at TEXT NOT NULL DEFAULT '',
+    google_updated_at TEXT NOT NULL DEFAULT '',
+    deleted_at TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
@@ -124,12 +140,31 @@ async function initializeOrganizationSchedules() {
     ["details", "TEXT NOT NULL DEFAULT ''"],
     ["assignee_member_id", "INTEGER"],
     ["assignee_name", "TEXT NOT NULL DEFAULT ''"],
+    ["google_event_id", "TEXT NOT NULL DEFAULT ''"],
+    ["google_event_etag", "TEXT NOT NULL DEFAULT ''"],
+    ["sync_status", "TEXT NOT NULL DEFAULT 'pending'"],
+    ["sync_operation", "TEXT NOT NULL DEFAULT 'upsert'"],
+    ["sync_error", "TEXT NOT NULL DEFAULT ''"],
+    ["sync_attempts", "INTEGER NOT NULL DEFAULT 0"],
+    ["last_synced_at", "TEXT NOT NULL DEFAULT ''"],
+    ["google_updated_at", "TEXT NOT NULL DEFAULT ''"],
+    ["deleted_at", "TEXT NOT NULL DEFAULT ''"],
   ] as const;
   for (const [name, definition] of additions) {
     if (!names.has(name)) {
       await d1.prepare(`ALTER TABLE organization_schedules ADD COLUMN ${name} ${definition}`).run();
     }
   }
+  await d1.batch([
+    d1.prepare(
+      `CREATE INDEX IF NOT EXISTS organization_schedules_sync_idx
+       ON organization_schedules (sync_status, sync_operation, updated_at, id)`,
+    ),
+    d1.prepare(
+      `CREATE UNIQUE INDEX IF NOT EXISTS organization_schedules_google_event_idx
+       ON organization_schedules (google_event_id) WHERE google_event_id <> ''`,
+    ),
+  ]);
   const projectColumns = await d1.prepare("PRAGMA table_info(construction_schedule_projects)").all<{ name: string }>();
   if (!projectColumns.results.some((column) => column.name === "work_summary_mode")) {
     await d1.prepare("ALTER TABLE construction_schedule_projects ADD COLUMN work_summary_mode TEXT NOT NULL DEFAULT 'auto'").run();
@@ -187,6 +222,7 @@ export function normalizeOrganizationScheduleInputs(value: unknown) {
     const scheduledDate = validDate(input.scheduledDate ?? input.date);
     if (!label || !scheduledDate) return;
     unique.set(`${scheduledDate}\u001f${label.toLocaleLowerCase("ko-KR")}`, {
+      id: Number.isSafeInteger(Number(input.id)) && Number(input.id) > 0 ? Number(input.id) : undefined,
       label,
       scheduledDate,
       completed: input.completed === true,
@@ -228,6 +264,14 @@ function scheduleJson(row: Record<string, unknown>): OrganizationSchedule {
     updatedByName: String(row.updated_by_name ?? ""),
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
+    googleEventId: String(row.google_event_id ?? ""),
+    syncStatus: ["synced", "failed"].includes(String(row.sync_status))
+      ? String(row.sync_status) as "synced" | "failed"
+      : "pending",
+    syncOperation: String(row.sync_operation) === "delete" ? "delete" : "upsert",
+    syncError: String(row.sync_error ?? ""),
+    syncAttempts: Math.max(0, Number(row.sync_attempts) || 0),
+    lastSyncedAt: String(row.last_synced_at ?? ""),
   };
 }
 
@@ -266,6 +310,7 @@ async function importLegacyScheduleIfNeeded(
       `SELECT COUNT(*) AS count
        FROM organization_schedules
        WHERE organization = ? AND business_round = ?
+         AND TRIM(COALESCE(deleted_at, '')) = ''
          AND COALESCE(category, 'general') <> 'construction'`,
     )
     .bind(organization, businessRound)
@@ -320,6 +365,7 @@ export async function listOrganizationSchedules(
       `SELECT *
        FROM organization_schedules
        WHERE organization = ? AND business_round = ?
+         AND TRIM(COALESCE(deleted_at, '')) = ''
          AND COALESCE(category, 'general') <> 'construction'
        ORDER BY completed ASC, scheduled_date ASC, id ASC`,
     )
@@ -330,22 +376,25 @@ export async function listOrganizationSchedules(
 
 function normalizeConstructionScheduleInputs(value: unknown) {
   if (!Array.isArray(value)) return [];
-  return value.slice(0, 200).flatMap((entry) => {
-    if (!entry || typeof entry !== "object") return [];
+  const unique = new Map<string, ConstructionScheduleInput>();
+  value.slice(0, 200).forEach((entry) => {
+    if (!entry || typeof entry !== "object") return;
     const input = entry as Record<string, unknown>;
     const stage = clean(input.stage ?? input.label).slice(0, 40);
     const scheduledDate = validDate(input.scheduledDate ?? input.startDate);
     const endDate = validDate(input.endDate) || scheduledDate;
-    if (!isConstructionStage(stage) || !scheduledDate || endDate < scheduledDate) return [];
-    return [{
+    if (!isConstructionStage(stage) || !scheduledDate || endDate < scheduledDate) return;
+    const normalized = {
       stage,
       scheduledDate,
       endDate,
       vendorName: clean(input.vendorName).slice(0, 120),
       details: clean(input.details).slice(0, 500),
       completed: input.completed === true,
-    } satisfies ConstructionScheduleInput];
+    } satisfies ConstructionScheduleInput;
+    unique.set(`${stage}\u001f${scheduledDate}\u001f${endDate}`, normalized);
   });
+  return [...unique.values()];
 }
 
 export async function listConstructionScheduleBoard() {
@@ -359,8 +408,9 @@ export async function listConstructionScheduleBoard() {
        ORDER BY completed ASC, updated_at DESC, organization COLLATE NOCASE ASC`,
     ).all<Record<string, unknown>>(),
     d1.prepare(
-      `SELECT * FROM organization_schedules
+       `SELECT * FROM organization_schedules
        WHERE COALESCE(category, 'general') = 'construction'
+         AND TRIM(COALESCE(deleted_at, '')) = ''
        ORDER BY scheduled_date ASC, id ASC`,
     ).all<Record<string, unknown>>(),
     d1.prepare(
@@ -499,6 +549,7 @@ export async function addOrganizationSchedule(input: {
     `SELECT id FROM organization_schedules
      WHERE organization = ? AND business_round = ? AND label = ?
        AND scheduled_date = ? AND start_time = ? AND completed = 0
+       AND TRIM(COALESCE(deleted_at, '')) = ''
      LIMIT 1`,
   ).bind(organization, businessRound, label, scheduledDate, startTime).first<{ id: number }>();
   if (!existing) {
@@ -528,7 +579,8 @@ export async function addOrganizationSchedule(input: {
   const general = await listOrganizationSchedules(organization, businessRound);
   const construction = await d1.prepare(
     `SELECT * FROM organization_schedules
-     WHERE organization = ? AND business_round = ? AND category = 'construction'`,
+     WHERE organization = ? AND business_round = ? AND category = 'construction'
+       AND TRIM(COALESCE(deleted_at, '')) = ''`,
   ).bind(organization, businessRound).all<Record<string, unknown>>();
   await mirrorOpenSchedulesToLatestActivity(d1, organization, businessRound, [
     ...general,
@@ -554,6 +606,75 @@ export async function saveConstructionSchedules(input: {
   const d1 = await ensureOrganizationSchedulesReady();
   await requireWhizzupAwardScope(d1, organization, businessRound);
   const projectCompleted = input.completed === true;
+  const existingSchedules = await d1.prepare(
+    `SELECT * FROM organization_schedules
+     WHERE organization = ? AND business_round = ? AND category = 'construction'
+       AND TRIM(COALESCE(deleted_at, '')) = ''
+     ORDER BY id ASC`,
+  ).bind(organization, businessRound).all<Record<string, unknown>>();
+  const existingByKey = new Map<string, Record<string, unknown>[]>();
+  existingSchedules.results.forEach((row) => {
+    const key = `${String(row.stage || row.label)}\u001f${String(row.scheduled_date)}\u001f${String(row.end_date || row.scheduled_date)}`;
+    existingByKey.set(key, [...(existingByKey.get(key) || []), row]);
+  });
+  const retainedIds = new Set<number>();
+  const scheduleStatements = schedules.map((schedule) => {
+    const key = `${schedule.stage}\u001f${schedule.scheduledDate}\u001f${schedule.endDate || schedule.scheduledDate}`;
+    const existing = existingByKey.get(key)?.shift();
+    if (existing) {
+      const id = Number(existing.id);
+      retainedIds.add(id);
+      return d1.prepare(
+        `UPDATE organization_schedules
+         SET label = ?, scheduled_date = ?, stage = ?, end_date = ?, vendor_name = ?, details = ?, completed = ?,
+             sync_status = 'pending', sync_operation = 'upsert', sync_error = '', deleted_at = '',
+             updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+      ).bind(
+        schedule.stage,
+        schedule.scheduledDate,
+        schedule.stage,
+        schedule.endDate || schedule.scheduledDate,
+        schedule.vendorName || "",
+        schedule.details || "",
+        schedule.completed || projectCompleted ? 1 : 0,
+        input.memberId,
+        input.memberName,
+        id,
+      );
+    }
+    return d1.prepare(
+      `INSERT INTO organization_schedules (
+         organization, business_round, label, scheduled_date, category, stage,
+         end_date, vendor_name, details, completed,
+         created_by, created_by_name, updated_by, updated_by_name
+       ) VALUES (?, ?, ?, ?, 'construction', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      organization,
+      businessRound,
+      schedule.stage,
+      schedule.scheduledDate,
+      schedule.stage,
+      schedule.endDate || schedule.scheduledDate,
+      schedule.vendorName || "",
+      schedule.details || "",
+      schedule.completed || projectCompleted ? 1 : 0,
+      input.memberId,
+      input.memberName,
+      input.memberId,
+      input.memberName,
+    );
+  });
+  const removedStatements = existingSchedules.results
+    .filter((row) => !retainedIds.has(Number(row.id)))
+    .map((row) => clean(row.google_event_id)
+      ? d1.prepare(
+          `UPDATE organization_schedules
+           SET deleted_at = CURRENT_TIMESTAMP, sync_status = 'pending', sync_operation = 'delete',
+               sync_error = '', updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+        ).bind(input.memberId, input.memberName, Number(row.id))
+      : d1.prepare("DELETE FROM organization_schedules WHERE id = ?").bind(Number(row.id)));
   await d1.batch([
     d1.prepare(
       `INSERT INTO construction_schedule_projects (
@@ -578,31 +699,8 @@ export async function saveConstructionSchedules(input: {
       input.memberId,
       input.memberName,
     ),
-    d1.prepare(
-      `DELETE FROM organization_schedules
-       WHERE organization = ? AND business_round = ? AND category = 'construction'`,
-    ).bind(organization, businessRound),
-    ...schedules.map((schedule) => d1.prepare(
-      `INSERT INTO organization_schedules (
-         organization, business_round, label, scheduled_date, category, stage,
-         end_date, vendor_name, details, completed,
-         created_by, created_by_name, updated_by, updated_by_name
-       ) VALUES (?, ?, ?, ?, 'construction', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      organization,
-      businessRound,
-      schedule.stage,
-      schedule.scheduledDate,
-      schedule.stage,
-      schedule.endDate || schedule.scheduledDate,
-      schedule.vendorName || "",
-      schedule.details || "",
-      schedule.completed || projectCompleted ? 1 : 0,
-      input.memberId,
-      input.memberName,
-      input.memberId,
-      input.memberName,
-    )),
+    ...scheduleStatements,
+    ...removedStatements,
   ]);
   const hasInspection = schedules.some((schedule) => schedule.stage === "검수");
   const hasConstructionWork = schedules.some((schedule) => isConstructionStage(schedule.stage));
@@ -652,12 +750,21 @@ export async function removeConstructionScheduleProject(input: {
     `SELECT * FROM organization_schedules
      WHERE organization = ? AND business_round = ?
        AND COALESCE(category, 'general') <> 'construction'
+       AND TRIM(COALESCE(deleted_at, '')) = ''
      ORDER BY completed ASC, scheduled_date ASC, id ASC`,
   ).bind(organization, businessRound).all<Record<string, unknown>>();
   await d1.batch([
     d1.prepare(
+      `UPDATE organization_schedules
+       SET deleted_at = CURRENT_TIMESTAMP, sync_status = 'pending', sync_operation = 'delete',
+           sync_error = '', updated_at = CURRENT_TIMESTAMP
+       WHERE organization = ? AND business_round = ? AND category = 'construction'
+         AND TRIM(COALESCE(google_event_id, '')) <> ''`,
+    ).bind(organization, businessRound),
+    d1.prepare(
       `DELETE FROM organization_schedules
-       WHERE organization = ? AND business_round = ? AND category = 'construction'`,
+       WHERE organization = ? AND business_round = ? AND category = 'construction'
+         AND TRIM(COALESCE(google_event_id, '')) = ''`,
     ).bind(organization, businessRound),
     d1.prepare(
       `DELETE FROM construction_schedule_projects
@@ -737,35 +844,68 @@ export async function replaceOrganizationSchedules(input: {
   if (!organization) throw new Error("기관을 확인해 주세요.");
   const schedules = normalizeOrganizationScheduleInputs(input.schedules);
   const d1 = await ensureOrganizationSchedulesReady();
-  const statements = [
-    d1
-      .prepare(
-        `DELETE FROM organization_schedules
-         WHERE organization = ? AND business_round = ?
-           AND COALESCE(category, 'general') <> 'construction'`,
-      )
-      .bind(organization, businessRound),
-    ...schedules.map((schedule) =>
-      d1
-        .prepare(
-          `INSERT INTO organization_schedules (
-             organization, business_round, label, scheduled_date, category, completed,
-             created_by, created_by_name, updated_by, updated_by_name
-           ) VALUES (?, ?, ?, ?, 'general', ?, ?, ?, ?, ?)`,
-        )
-        .bind(
-          organization,
-          businessRound,
-          schedule.label,
-          schedule.scheduledDate,
-          schedule.completed ? 1 : 0,
-          input.memberId,
-          input.memberName,
-          input.memberId,
-          input.memberName,
-        ),
-    ),
-  ];
+  const existingResult = await d1.prepare(
+    `SELECT * FROM organization_schedules
+     WHERE organization = ? AND business_round = ?
+       AND COALESCE(category, 'general') <> 'construction'
+       AND TRIM(COALESCE(deleted_at, '')) = ''
+     ORDER BY id ASC`,
+  ).bind(organization, businessRound).all<Record<string, unknown>>();
+  const byId = new Map(existingResult.results.map((row) => [Number(row.id), row]));
+  const byNaturalKey = new Map(existingResult.results.map((row) => [
+    `${String(row.scheduled_date)}\u001f${String(row.label).toLocaleLowerCase("ko-KR")}`,
+    row,
+  ]));
+  const retained = new Set<number>();
+  const statements = schedules.map((schedule) => {
+    const existing = (schedule.id ? byId.get(schedule.id) : undefined)
+      || byNaturalKey.get(`${schedule.scheduledDate}\u001f${schedule.label.toLocaleLowerCase("ko-KR")}`);
+    if (existing) {
+      const id = Number(existing.id);
+      retained.add(id);
+      return d1.prepare(
+        `UPDATE organization_schedules
+         SET label = ?, scheduled_date = ?, end_date = ?, completed = ?,
+             sync_status = 'pending', sync_operation = 'upsert', sync_error = '',
+             updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+      ).bind(
+        schedule.label,
+        schedule.scheduledDate,
+        schedule.scheduledDate,
+        schedule.completed ? 1 : 0,
+        input.memberId,
+        input.memberName,
+        id,
+      );
+    }
+    return d1.prepare(
+      `INSERT INTO organization_schedules (
+         organization, business_round, label, scheduled_date, category, completed,
+         created_by, created_by_name, updated_by, updated_by_name
+       ) VALUES (?, ?, ?, ?, 'general', ?, ?, ?, ?, ?)`,
+    ).bind(
+      organization,
+      businessRound,
+      schedule.label,
+      schedule.scheduledDate,
+      schedule.completed ? 1 : 0,
+      input.memberId,
+      input.memberName,
+      input.memberId,
+      input.memberName,
+    );
+  });
+  existingResult.results.filter((row) => !retained.has(Number(row.id))).forEach((row) => {
+    statements.push(clean(row.google_event_id)
+      ? d1.prepare(
+          `UPDATE organization_schedules
+           SET deleted_at = CURRENT_TIMESTAMP, sync_status = 'pending', sync_operation = 'delete',
+               sync_error = '', updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+        ).bind(input.memberId, input.memberName, Number(row.id))
+      : d1.prepare("DELETE FROM organization_schedules WHERE id = ?").bind(Number(row.id)));
+  });
   await d1.batch(statements);
   await mirrorOpenSchedulesToLatestActivity(
     d1,
@@ -788,6 +928,9 @@ export async function markOrganizationScheduleCompleted(input: {
     .prepare(
       `UPDATE organization_schedules
        SET completed = 1,
+           sync_status = 'pending',
+           sync_operation = 'upsert',
+           sync_error = '',
            updated_by = ?,
            updated_by_name = ?,
            updated_at = CURRENT_TIMESTAMP
@@ -831,7 +974,8 @@ async function requireEditableSchedule(idValue: unknown, member: ScheduleActor) 
   if (!Number.isSafeInteger(id) || id <= 0) throw new Error("수정할 일정을 선택해 주세요.");
   const d1 = await ensureOrganizationSchedulesReady();
   const row = await d1.prepare(
-    `SELECT * FROM organization_schedules WHERE id = ? LIMIT 1`,
+    `SELECT * FROM organization_schedules
+     WHERE id = ? AND TRIM(COALESCE(deleted_at, '')) = '' LIMIT 1`,
   ).bind(id).first<Record<string, unknown>>();
   if (!row) throw new Error("일정을 찾을 수 없습니다.");
   if (String(row.category ?? "general") === "construction") {
@@ -876,6 +1020,7 @@ export async function updateOrganizationSchedule(input: {
     `UPDATE organization_schedules
      SET label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, category = ?, completed = ?,
          assignee_member_id = ?, assignee_name = ?,
+         sync_status = 'pending', sync_operation = 'upsert', sync_error = '',
          updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
   ).bind(
@@ -911,7 +1056,16 @@ export async function updateOrganizationSchedule(input: {
 
 export async function deleteOrganizationSchedule(input: { id: unknown; member: ScheduleActor }) {
   const { d1, row, id } = await requireEditableSchedule(input.id, input.member);
-  await d1.prepare(`DELETE FROM organization_schedules WHERE id = ?`).bind(id).run();
+  if (clean(row.google_event_id)) {
+    await d1.prepare(
+      `UPDATE organization_schedules
+       SET deleted_at = CURRENT_TIMESTAMP, sync_status = 'pending', sync_operation = 'delete',
+           sync_error = '', updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+    ).bind(input.member.id, input.member.displayName, id).run();
+  } else {
+    await d1.prepare(`DELETE FROM organization_schedules WHERE id = ?`).bind(id).run();
+  }
   const organization = String(row.organization ?? "");
   const businessRound = Math.max(0, Number(row.business_round) || 0);
   if (businessRound > 0) {

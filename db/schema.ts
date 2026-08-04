@@ -129,6 +129,15 @@ export const organizationSchedules = sqliteTable(
     sourceActivityId: integer("source_activity_id"),
     assigneeMemberId: integer("assignee_member_id"),
     assigneeName: text("assignee_name").notNull().default(""),
+    googleEventId: text("google_event_id").notNull().default(""),
+    googleEventEtag: text("google_event_etag").notNull().default(""),
+    syncStatus: text("sync_status").notNull().default("pending"),
+    syncOperation: text("sync_operation").notNull().default("upsert"),
+    syncError: text("sync_error").notNull().default(""),
+    syncAttempts: integer("sync_attempts").notNull().default(0),
+    lastSyncedAt: text("last_synced_at").notNull().default(""),
+    googleUpdatedAt: text("google_updated_at").notNull().default(""),
+    deletedAt: text("deleted_at").notNull().default(""),
     createdBy: integer("created_by"),
     createdByName: text("created_by_name").notNull().default(""),
     updatedBy: integer("updated_by"),
@@ -144,6 +153,15 @@ export const organizationSchedules = sqliteTable(
       table.scheduledDate,
       table.id,
     ),
+    index("organization_schedules_sync_idx").on(
+      table.syncStatus,
+      table.syncOperation,
+      table.updatedAt,
+      table.id,
+    ),
+    uniqueIndex("organization_schedules_google_event_idx").on(
+      table.googleEventId,
+    ).where(sql`${table.googleEventId} <> ''`),
   ],
 );
 

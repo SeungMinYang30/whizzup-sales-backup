@@ -2885,9 +2885,13 @@ type OrganizationScheduleRecord = {
   scheduledDate: string;
   completed: boolean;
   updatedByName: string;
+  syncStatus: "pending" | "synced" | "failed";
+  syncError: string;
+  syncAttempts: number;
 };
 
 type OrganizationScheduleDraft = {
+  id?: number;
   key: string;
   label: string;
   scheduledDate: string;
@@ -8337,6 +8341,7 @@ export default function CrmApp({
         setDetailSchedules(schedules);
         setDetailScheduleDrafts(
           schedules.map((schedule) => ({
+            id: schedule.id,
             key: `saved-${schedule.id}`,
             label: schedule.label,
             scheduledDate: schedule.scheduledDate,
@@ -8361,6 +8366,7 @@ export default function CrmApp({
   const beginDetailScheduleEdit = () => {
     setDetailScheduleDrafts(
       detailSchedules.map((schedule) => ({
+        id: schedule.id,
         key: `saved-${schedule.id}`,
         label: schedule.label,
         scheduledDate: schedule.scheduledDate,
@@ -8373,6 +8379,7 @@ export default function CrmApp({
   const cancelDetailScheduleEdit = () => {
     setDetailScheduleDrafts(
       detailSchedules.map((schedule) => ({
+        id: schedule.id,
         key: `saved-${schedule.id}`,
         label: schedule.label,
         scheduledDate: schedule.scheduledDate,
@@ -8401,6 +8408,7 @@ export default function CrmApp({
           organization: detailOrganization,
           businessRound: selectedDetailBusinessRound,
           schedules: detailScheduleDrafts.map((schedule) => ({
+            id: schedule.id,
             label: schedule.label.trim(),
             scheduledDate: schedule.scheduledDate,
             completed: schedule.completed,
@@ -8420,6 +8428,7 @@ export default function CrmApp({
       setDetailSchedules(schedules);
       setDetailScheduleDrafts(
         schedules.map((schedule) => ({
+          id: schedule.id,
           key: `saved-${schedule.id}`,
           label: schedule.label,
           scheduledDate: schedule.scheduledDate,
@@ -8436,6 +8445,28 @@ export default function CrmApp({
       );
     } finally {
       setDetailScheduleSaving(false);
+    }
+  };
+  const retryDetailScheduleSync = async (scheduleId: number) => {
+    try {
+      const response = await fetch("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "retry-google-sync", scheduleId }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "동기화를 재시도하지 못했습니다.");
+      const refreshed = await fetch(
+        `/api/schedules?organization=${encodeURIComponent(detailOrganization || "")}&businessRound=${selectedDetailBusinessRound}`,
+        { cache: "no-store" },
+      );
+      const refreshedPayload = (await refreshed.json()) as { schedules?: OrganizationScheduleRecord[]; error?: string };
+      if (!refreshed.ok) throw new Error(refreshedPayload.error || "일정을 다시 불러오지 못했습니다.");
+      setDetailSchedules(Array.isArray(refreshedPayload.schedules) ? refreshedPayload.schedules : []);
+      setToast("Google Calendar 동기화를 다시 시도했습니다.");
+      setScheduleReminderRefreshVersion((current) => current + 1);
+    } catch (caught) {
+      setToast(caught instanceof Error ? caught.message : "동기화를 재시도하지 못했습니다.");
     }
   };
   const detailJointProjectSponsorContact = useMemo(() => {
@@ -20264,6 +20295,18 @@ export default function CrmApp({
                                 ? "오늘"
                                 : "예정"}
                         </small>
+                        {item.syncStatus === "failed" ? (
+                          <button
+                            type="button"
+                            className="schedule-sync-retry"
+                            title={item.syncError}
+                            onClick={() => void retryDetailScheduleSync(item.id)}
+                          >
+                            Google 동기화 실패 · 재시도
+                          </button>
+                        ) : item.syncStatus === "pending" ? (
+                          <small className="schedule-sync-pending">Google 동기화 대기</small>
+                        ) : null}
                       </div>
                     ))}
                   </div>

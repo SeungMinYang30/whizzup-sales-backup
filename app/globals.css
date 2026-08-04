@@ -3078,9 +3078,18 @@ tr:hover .row-actions { opacity: 1; }
 .global-institution-results p { margin: 0; padding: 22px; color: #8a97aa; text-align: center; }
 
 .home-calendar-filters .google-calendar-state { align-self: center; margin-left: auto; color: #c15454; font-size: 11px; }
+.calendar-sync-issues { padding: 12px 22px; border-bottom: 1px solid #f3d7d4; background: #fff8f3; color: #8b3f37; display: grid; gap: 8px; font-size: 12px; }
+.calendar-sync-issues > div { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid #f0d7cf; border-radius: 9px; background: #fff; }
+.calendar-sync-issues > div span { min-width: 0; flex: 1; font-weight: 800; }
+.calendar-sync-issues > div small { display: block; margin-top: 2px; color: #9b615c; font-weight: 600; overflow-wrap: anywhere; }
+.calendar-sync-issues button { min-height: 30px; padding: 0 10px; border: 1px solid #d98c7c; border-radius: 7px; background: #fff; color: #9b4338; font-weight: 850; cursor: pointer; }
+.calendar-sync-issues button:disabled { cursor: wait; opacity: .6; }
 .home-calendar-day-items .google { border-left-color: #64748b; background: #f1f5f9; }
 .home-calendar-agenda-list i.google { background: #64748b; }
 .home-calendar-agenda-list .schedule-assignee { margin-top: 3px; color: #64748b; font-weight: 600; }
+.home-calendar-agenda-list .schedule-sync { margin-top: 3px; font-weight: 800; }
+.home-calendar-agenda-list .schedule-sync.failed { color: #b4473f; }
+.home-calendar-agenda-list .schedule-sync.pending { color: #8a6a1f; }
 .home-schedule-editor label select { width: 100%; min-height: 44px; margin-top: 8px; padding: 0 12px; border: 1px solid #d8e0ef; border-radius: 9px; background: #fff; color: #1f2d45; font-size: 14px; }
 .home-schedule-institution-results p { margin: 0; padding: 15px; color: #8793a7; text-align: center; }
 .schedule-create-institution { width: 100%; margin-top: 8px; padding: 10px; border: 1px dashed #8795ff; border-radius: 9px; background: #f7f8ff; color: #3f51e8; font-weight: 800; cursor: pointer; }
@@ -3256,13 +3265,15 @@ tr:hover .row-actions { opacity: 1; }
 .organization-current-schedule { position: relative; margin-bottom: 14px; border: 1px solid #d8e2f3; background: linear-gradient(135deg, #fbfcff, #f2f6ff); }
 .organization-current-schedule .history-section-heading { background: rgba(255,255,255,.72); }
 .organization-current-schedule-list { display: grid; gap: 8px; padding: 14px 18px 8px; }
-.organization-current-schedule-list > div { display: grid; grid-template-columns: 108px minmax(0,1fr) auto; align-items: center; gap: 12px; min-height: 46px; padding: 9px 11px; border: 1px solid #dfe6f2; border-radius: 9px; background: white; }
+.organization-current-schedule-list > div { display: grid; grid-template-columns: 108px minmax(0,1fr) auto auto; align-items: center; gap: 12px; min-height: 46px; padding: 9px 11px; border: 1px solid #dfe6f2; border-radius: 9px; background: white; }
 .organization-current-schedule-list time { color: #365fc8; font-size: 11px; font-weight: 850; }
 .organization-current-schedule-list strong { min-width: 0; color: #263858; font-size: 12px; line-height: 1.45; }
 .organization-current-schedule-list small { padding: 5px 8px; border-radius: 999px; background: #e9f6f0; color: #197554; font-size: 9px; font-weight: 850; white-space: nowrap; }
 .organization-current-schedule-list > div.completed { opacity: .72; background: #f7f9fc; }
 .organization-current-schedule-list > div.completed strong { text-decoration: line-through; color: #718097; }
 .organization-current-schedule-list > div.completed small { background: #e7ebf2; color: #5d697c; }
+.organization-current-schedule-list .schedule-sync-pending { background: #fff3d6; color: #8a641b; }
+.organization-current-schedule-list .schedule-sync-retry { min-height: 30px; padding: 0 9px; border: 1px solid #e3a198; border-radius: 7px; background: #fff6f4; color: #a33d34; font-size: 10px; font-weight: 850; cursor: pointer; }
 .organization-current-schedule-empty { margin: 14px 18px 8px; padding: 18px; border: 1px dashed #d8e0ed; border-radius: 9px; background: rgba(255,255,255,.68); color: #7e8ba0; font-size: 11px; line-height: 1.6; text-align: center; }
 .organization-current-schedule > button { min-height: 36px; margin: 8px 18px 16px; padding: 0 12px; border: 1px solid #cbd7ed; border-radius: 7px; background: white; color: #3f5f9d; font-size: 10px; font-weight: 850; cursor: pointer; }
 .organization-current-schedule > button:hover { border-color: #879bea; background: #f7f8ff; }
