@@ -103,6 +103,12 @@ const schemaStatements = [
    ON organization_schedules (
      organization, business_round, completed, scheduled_date, id
    )`,
+  `CREATE TABLE IF NOT EXISTS organization_schedule_import_state (
+    organization TEXT NOT NULL,
+    business_round INTEGER NOT NULL DEFAULT 1,
+    imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (organization, business_round)
+  )`,
   `CREATE TABLE IF NOT EXISTS construction_schedule_projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     organization TEXT NOT NULL,
@@ -321,7 +327,25 @@ async function importLegacyScheduleIfNeeded(
     )
     .bind(organization, businessRound)
     .first<{ count: number }>();
-  if (Number(existing?.count) > 0) return;
+  if (Number(existing?.count) > 0) {
+    // Existing rows may have been imported before import-state tracking was
+    // introduced. Record that fact now so deleting the final row cannot make
+    // an older activities.progress_schedule look like new data again.
+    await d1.prepare(
+      `INSERT OR IGNORE INTO organization_schedule_import_state (
+         organization, business_round
+       ) VALUES (?, ?)`,
+    ).bind(organization, businessRound).run();
+    return;
+  }
+
+  const imported = await d1.prepare(
+    `SELECT 1 AS imported
+     FROM organization_schedule_import_state
+     WHERE organization = ? AND business_round = ?
+     LIMIT 1`,
+  ).bind(organization, businessRound).first<{ imported: number }>();
+  if (imported) return;
 
   const latest = await d1
     .prepare(
@@ -334,11 +358,10 @@ async function importLegacyScheduleIfNeeded(
     )
     .bind(organization, businessRound)
     .first<{ id: number; progress_schedule: string }>();
-  if (!latest) return;
-  const entries = parseProgressScheduleEntries(latest.progress_schedule);
-  if (!entries.length) return;
-  await d1.batch(
-    entries.map((entry) =>
+  const entries = latest ? parseProgressScheduleEntries(latest.progress_schedule) : [];
+  const sourceActivityId = latest ? Number(latest.id) : null;
+  await d1.batch([
+    ...entries.map((entry) =>
       d1
         .prepare(
           `INSERT INTO organization_schedules (
@@ -351,10 +374,15 @@ async function importLegacyScheduleIfNeeded(
           businessRound,
           entry.label,
           entry.date,
-          Number(latest.id),
+          sourceActivityId,
         ),
     ),
-  );
+    d1.prepare(
+      `INSERT OR IGNORE INTO organization_schedule_import_state (
+         organization, business_round
+       ) VALUES (?, ?)`,
+    ).bind(organization, businessRound),
+  ]);
 }
 
 export async function listOrganizationSchedules(
