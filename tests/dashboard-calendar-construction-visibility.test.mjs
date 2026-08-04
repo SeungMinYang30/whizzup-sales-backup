@@ -20,7 +20,9 @@ test("대시보드 상단 현황 카드는 영업 수주 시공 화면으로 연
   assert.match(crmApp, /className="dashboard-status-card construction"/);
   assert.match(crmApp, /selectView\("installation-schedule"\)/);
   assert.match(crmApp, /전체 기관의 최신 영업 기록/);
-  assert.match(crmApp, /위즈업·협력사·타업체 포함/);
+  assert.match(crmApp, /위즈업 수주·계약만/);
+  assert.match(crmApp, /const whizzupAwards = latestAwardRecords\.filter/);
+  assert.match(crmApp, /record\.awardStatus === "위즈업 수주"/);
   assert.match(crmApp, /일정표에 등록된 위즈업 수주/);
 });
 

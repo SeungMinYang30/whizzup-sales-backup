@@ -27,6 +27,9 @@ type SyncRow = {
   end_date: string;
   category: string;
   details: string;
+  vendor_name: string;
+  project_work_summary: string;
+  product_names: string;
   assignee_member_id: number | null;
   assignee_name: string;
   google_event_id: string;
@@ -147,17 +150,53 @@ function eventValues(event: GoogleCalendarApiEvent) {
 
 async function pendingRows(ids: number[] | undefined, limit: number) {
   const d1 = getD1();
+  const selection = `SELECT
+       os.id, os.organization, os.business_round, os.label, os.scheduled_date,
+       os.start_time, os.end_time, os.end_date, os.category, os.details,
+       os.vendor_name, os.assignee_member_id,
+       COALESCE(
+         NULLIF(TRIM(os.assignee_name), ''),
+         CASE WHEN os.category = 'construction' THEN (
+           SELECT NULLIF(TRIM(a.progress_manager), '')
+           FROM activities a
+           WHERE a.organization = os.organization
+             AND a.business_round = os.business_round
+             AND a.award_status = '위즈업 수주'
+           ORDER BY a.activity_date DESC, a.id DESC
+           LIMIT 1
+         ) ELSE '' END,
+         ''
+       ) AS assignee_name,
+       COALESCE((
+         SELECT NULLIF(TRIM(csp.work_summary), '')
+         FROM construction_schedule_projects csp
+         WHERE csp.organization = os.organization
+           AND csp.business_round = os.business_round
+         LIMIT 1
+       ), '') AS project_work_summary,
+       COALESCE((
+         SELECT GROUP_CONCAT(TRIM(ei.product_name), ' · ')
+         FROM equipment_projects ep
+         JOIN equipment_items ei ON ei.project_id = ep.id
+         WHERE ep.organization = os.organization
+           AND ep.business_round = os.business_round
+           AND TRIM(COALESCE(ei.product_name, '')) <> ''
+       ), '') AS product_names,
+       os.google_event_id, os.google_event_etag, os.google_origin,
+       os.google_updated_at, os.sync_status, os.sync_operation, os.sync_error,
+       os.sync_attempts, os.deleted_at
+     FROM organization_schedules os`;
   if (ids?.length) {
     const valid = [...new Set(ids.filter((id) => Number.isSafeInteger(id) && id > 0))].slice(0, 50);
     if (!valid.length) return [];
     return (await d1.prepare(
-      `SELECT * FROM organization_schedules WHERE id IN (${valid.map(() => "?").join(",")})`,
+      `${selection} WHERE os.id IN (${valid.map(() => "?").join(",")})`,
     ).bind(...valid).all<SyncRow>()).results;
   }
   return (await d1.prepare(
-    `SELECT * FROM organization_schedules
-     WHERE sync_status IN ('pending', 'failed')
-     ORDER BY CASE sync_status WHEN 'pending' THEN 0 ELSE 1 END, updated_at ASC, id ASC
+    `${selection}
+     WHERE os.sync_status IN ('pending', 'failed')
+     ORDER BY CASE os.sync_status WHEN 'pending' THEN 0 ELSE 1 END, os.updated_at ASC, os.id ASC
      LIMIT ?`,
   ).bind(Math.max(1, Math.min(50, limit))).all<SyncRow>()).results;
 }
@@ -186,6 +225,17 @@ async function applyGoogleSharingPolicy() {
 }
 
 function writeSchedule(row: SyncRow) {
+  const constructionDetails = row.category === "construction"
+    ? [
+        row.vendor_name ? `시공업체: ${row.vendor_name}` : "",
+        row.product_names
+          ? `공사·품목: ${row.product_names}`
+          : row.project_work_summary
+            ? `공사·품목: ${row.project_work_summary}`
+            : "",
+        row.details ? `상세 메모: ${row.details}` : "",
+      ].filter(Boolean).join("\n")
+    : row.details || "";
   return {
     id: Number(row.id),
     organization: row.organization,
@@ -196,10 +246,19 @@ function writeSchedule(row: SyncRow) {
     endTime: row.end_time || "",
     endDate: row.end_date || row.scheduled_date,
     category: row.category || "general",
-    details: row.details || "",
+    details: constructionDetails,
     assigneeMemberId: Number(row.assignee_member_id) > 0 ? Number(row.assignee_member_id) : null,
     assigneeName: row.assignee_name || "",
   };
+}
+
+function legacyConstructionStage(summary: string) {
+  const normalized = summary
+    .replace(/^\[시공\]\s*/, "")
+    .trim();
+  return CONSTRUCTION_STAGES.find((stage) =>
+    normalized === stage || normalized.endsWith(` · ${stage}`) || normalized.endsWith(` - ${stage}`),
+  ) || "";
 }
 
 export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?: number }) {
@@ -405,6 +464,7 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
   const siteIds = await localSiteScheduleIds();
   const readonly: ReadOnlyGoogleSchedule[] = [];
   const seenReadonly = new Set<string>();
+  const matchedLegacyConstructionIds: number[] = [];
   for (const event of result.events) {
     const properties = event.extendedProperties?.private || {};
     const siteId = Number(properties.whizzupScheduleId);
@@ -471,6 +531,38 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
     }
     if (event.status === "cancelled" || !event.start) continue;
     const values = eventValues(event);
+    const legacyStage = legacyConstructionStage(event.summary || "");
+    if (legacyStage && values.scheduledDate) {
+      const candidates = await d1.prepare(
+        `SELECT id, google_event_id
+         FROM organization_schedules
+         WHERE category = 'construction'
+           AND TRIM(COALESCE(deleted_at, '')) = ''
+           AND label = ? AND scheduled_date = ?
+           AND COALESCE(NULLIF(end_date, ''), scheduled_date) = ?
+           AND (google_event_id = ? OR TRIM(COALESCE(google_event_id, '')) = '')
+         ORDER BY CASE WHEN google_event_id = ? THEN 0 ELSE 1 END, id ASC`,
+      ).bind(
+        legacyStage,
+        values.scheduledDate,
+        values.endDate || values.scheduledDate,
+        event.id,
+        event.id,
+      ).all<{ id: number; google_event_id: string }>();
+      const exact = candidates.results.filter((row) => row.google_event_id === event.id);
+      const unlinked = candidates.results.filter((row) => !row.google_event_id?.trim());
+      const matched = exact.length === 1 ? exact[0] : exact.length === 0 && unlinked.length === 1 ? unlinked[0] : null;
+      if (matched) {
+        await d1.prepare(
+          `UPDATE organization_schedules
+           SET google_event_id = ?, google_event_etag = ?, google_updated_at = ?, google_origin = 0,
+               sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
+           WHERE id = ?`,
+        ).bind(event.id, event.etag || "", event.updated || "", matched.id).run();
+        matchedLegacyConstructionIds.push(Number(matched.id));
+        continue;
+      }
+    }
     const dedupeKey = `${event.id}\u001f${values.scheduledDate}`;
     if (!values.scheduledDate || seenReadonly.has(dedupeKey)) continue;
     seenReadonly.add(dedupeKey);
@@ -499,6 +591,9 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
       googleEventId: event.id,
       suggestedCategory: suggestedCategory(event.summary || ""),
     });
+  }
+  if (matchedLegacyConstructionIds.length) {
+    await flushGoogleCalendarSync({ ids: matchedLegacyConstructionIds });
   }
   return { ...result, readOnlyEvents: readonly };
 }

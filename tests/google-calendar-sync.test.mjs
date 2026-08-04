@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [api, sync, store, route, calendar, crm, migration, connectionMigration, schema] = await Promise.all([
+const [api, sync, store, route, calendar, crm, migration, connectionMigration, contentRefreshMigration, schema] = await Promise.all([
   readFile(new URL("../lib/google-calendar-api.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/google-calendar-sync.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/organization-schedules.ts", import.meta.url), "utf8"),
@@ -11,6 +11,7 @@ const [api, sync, store, route, calendar, crm, migration, connectionMigration, s
   readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),
   readFile(new URL("../drizzle/0069_google_calendar_sync.sql", import.meta.url), "utf8"),
   readFile(new URL("../drizzle/0070_google_calendar_connection_workflow.sql", import.meta.url), "utf8"),
+  readFile(new URL("../drizzle/0071_google_calendar_content_refresh.sql", import.meta.url), "utf8"),
   readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
 ]);
 
@@ -34,6 +35,20 @@ test("사이트 일정은 Google 이벤트 식별자와 재시도 가능한 동�
   assert.match(sync, /retryGoogleCalendarSync/);
   assert.match(sync, /sync_status = 'failed'/);
   assert.match(route, /retry-google-sync/);
+});
+
+test("기존 시공 Google 일정은 안전하게 다시 연결하고 담당자·내용·색상을 소급 갱신한다", () => {
+  assert.match(sync, /legacyConstructionStage/);
+  assert.match(sync, /exact\.length === 1/);
+  assert.match(sync, /unlinked\.length === 1/);
+  assert.match(sync, /matchedLegacyConstructionIds/);
+  assert.match(sync, /시공업체: \$\{row\.vendor_name\}/);
+  assert.match(sync, /공사·품목: \$\{row\.product_names\}/);
+  assert.match(sync, /상세 메모: \$\{row\.details\}/);
+  assert.match(api, /담당자: \$\{schedule\.assigneeName\}/);
+  assert.match(api, /colorId: colorId\[category\]/);
+  assert.match(contentRefreshMigration, /기존 사이트 연결 일정/);
+  assert.match(contentRefreshMigration, /sync_status = 'pending'/);
 });
 
 test("Google API 등록·수정·삭제는 사이트 일정 ID로 중복을 방지한다", () => {

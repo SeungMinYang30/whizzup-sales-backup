@@ -208,7 +208,7 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
   return {
     summary,
     location: schedule.organization,
-    description: [schedule.details, schedule.assigneeName ? `담당: ${schedule.assigneeName}` : ""]
+    description: [schedule.assigneeName ? `담당자: ${schedule.assigneeName}` : "", schedule.details]
       .filter(Boolean)
       .join("\n"),
     start,

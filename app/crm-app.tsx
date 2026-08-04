@@ -8571,12 +8571,15 @@ export default function CrmApp({
     };
   }, [latestInstitutionRows]);
   const dashboardAwardCounts = useMemo(() => {
-    const completed = latestAwardRecords.filter((record) =>
+    const whizzupAwards = latestAwardRecords.filter(
+      (record) => record.awardStatus === "위즈업 수주",
+    );
+    const completed = whizzupAwards.filter((record) =>
       completedAwardStages.has(record.awardStage),
     ).length;
     return {
-      total: latestAwardRecords.length,
-      active: Math.max(0, latestAwardRecords.length - completed),
+      total: whizzupAwards.length,
+      active: Math.max(0, whizzupAwards.length - completed),
       completed,
     };
   }, [latestAwardRecords]);
@@ -15427,7 +15430,7 @@ export default function CrmApp({
                 onClick={() => void selectView("awards")}
               >
                 <span>수주·계약 현황</span>
-                <small>위즈업·협력사·타업체 포함</small>
+                <small>위즈업 수주·계약만</small>
                 <dl>
                   <div><dt>전체</dt><dd>{dashboardAwardCounts.total}</dd></div>
                   <div><dt>진행</dt><dd>{dashboardAwardCounts.active}</dd></div>
