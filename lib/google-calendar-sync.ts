@@ -569,8 +569,13 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
              WHERE id = ?`,
           ).bind(siteId).run();
         } else {
-          await d1.prepare("DELETE FROM organization_schedules WHERE id = ?").bind(siteId).run();
-          siteIds.delete(siteId);
+          await d1.prepare(
+            `UPDATE organization_schedules
+             SET google_event_id = '', google_event_etag = '', google_updated_at = '',
+                 sync_status = 'local_only', sync_operation = 'upsert',
+                 sync_error = 'google_event_deleted', last_synced_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+          ).bind(siteId).run();
         }
         continue;
       }

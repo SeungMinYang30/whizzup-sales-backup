@@ -125,7 +125,20 @@ test("공유 업무만 Google로 보내고 기존 일정 제목과 개인 일정
   assert.match(connectionMigration, /기존 공유 업무 일정/);
   assert.match(connectionMigration, /THEN 'unlink'/);
   assert.match(connectionMigration, /google_origin/);
-  assert.match(calendar, /개인 일정 · Google 공유 안 함/);
+  assert.match(calendar, /사이트 전용 일정 · Google 공유 안 함/);
+});
+
+test("Google에서 삭제된 사이트 일정은 보존하고 명시적으로 다시 연결하거나 삭제한다", () => {
+  assert.match(sync, /sync_error = 'google_event_deleted'/);
+  assert.doesNotMatch(sync, /DELETE FROM organization_schedules WHERE id = \?"\)\.bind\(siteId\)/);
+  assert.match(calendar, /Google에서 삭제됨 · 사이트 일정 유지 중/);
+  assert.match(calendar, /Google에 다시 연결/);
+  assert.match(calendar, /사이트에서 삭제/);
+});
+
+test("마지막 기관 일정을 삭제해도 과거 활동 문자열에서 다시 생성하지 않는다", () => {
+  assert.match(store, /function listStoredOrganizationSchedules/);
+  assert.match(store, /await listStoredOrganizationSchedules\(organization, businessRound\)/);
 });
 
 test("시공 일정은 시공·납품 일정표 행을 유지하고 기관 상세와 대시보드가 같은 API 원본을 쓴다", () => {

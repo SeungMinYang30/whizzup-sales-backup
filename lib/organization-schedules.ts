@@ -365,6 +365,13 @@ export async function listOrganizationSchedules(
   const businessRound = Math.max(1, Number(businessRoundValue) || 1);
   if (!organization) return [];
   await importLegacyScheduleIfNeeded(organization, businessRound);
+  return listStoredOrganizationSchedules(organization, businessRound);
+}
+
+async function listStoredOrganizationSchedules(
+  organization: string,
+  businessRound: number,
+) {
   const d1 = await ensureOrganizationSchedulesReady();
   const result = await d1
     .prepare(
@@ -1091,7 +1098,7 @@ export async function updateOrganizationSchedule(input: {
       d1,
       organization,
       businessRound,
-      await listOrganizationSchedules(organization, businessRound),
+      await listStoredOrganizationSchedules(organization, businessRound),
     );
   }
   return scheduleJson({ ...row, id, label, scheduled_date: scheduledDate, start_time: startTime,
@@ -1120,7 +1127,7 @@ export async function deleteOrganizationSchedule(input: { id: unknown; member: S
       d1,
       organization,
       businessRound,
-      await listOrganizationSchedules(organization, businessRound),
+      await listStoredOrganizationSchedules(organization, businessRound),
     );
   }
   return { id };

@@ -53,6 +53,7 @@ const CATEGORY_LABEL: Record<ScheduleCategory, string> = {
   sales: "영업", meeting: "회의", construction: "시공", showroom: "쇼룸",
   other: "기타", personal: "내 일정", google: "연결 필요",
 };
+const GOOGLE_EVENT_DELETED_SYNC_ERROR = "google_event_deleted";
 const KIND_CATEGORY: Record<EditorKind, Exclude<ScheduleCategory, "google">> = {
   영업: "sales", 회의: "meeting", 시공: "construction", 쇼룸: "showroom", 기타: "other", "내 일정": "personal",
 };
@@ -122,7 +123,7 @@ function emptyEditor(date: string) {
   return {
     scheduleId: null as number | null, googleEventId: "", organization: "", businessRound: 0, organizationQuery: "", linked: false,
     kind: "영업" as EditorKind, title: "", scheduledDate: date, allDay: true, startTime: "", endTime: "",
-    assigneeMemberId: 0, assigneeName: "", details: "", completed: false,
+    assigneeMemberId: 0, assigneeName: "", details: "", completed: false, syncError: "",
   };
 }
 
@@ -302,7 +303,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       title: cleanScheduleTitle(schedule.label), scheduledDate: schedule.scheduledDate,
       allDay: !schedule.startTime, startTime: schedule.startTime || "", endTime: schedule.endTime || "",
       assigneeMemberId: schedule.assigneeMemberId || 0, assigneeName: schedule.assigneeName,
-      details: schedule.details || "", completed: false,
+      details: schedule.details || "", completed: false, syncError: schedule.syncError || "",
     });
     setEditorOpen(true);
   }
@@ -538,7 +539,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
           {loading ? <p className="home-calendar-agenda-empty">일정을 확인하는 중입니다.</p> : selectedSchedules.length ? (
             <div className="home-calendar-agenda-list">{selectedSchedules.map((item) => (
               <button type="button" key={item.id} onClick={() => openEdit(item)}>
-                <i className={item.category} /><span><strong>{item.startTime ? `${item.startTime} ` : ""}{item.organization}</strong><small>{cleanScheduleTitle(item.label)}</small><small className="schedule-assignee">담당 {item.assigneeName || "미정"}{item.googleOrigin ? " · Google에서 연결" : ""}</small>{item.syncStatus === "failed" ? <small className="schedule-sync failed">Google 동기화 실패 · 재시도 필요</small> : item.syncStatus === "pending" ? <small className="schedule-sync pending">Google 동기화 대기</small> : item.syncStatus === "local_only" ? <small className="schedule-sync local-only">개인 일정 · Google 공유 안 함</small> : null}</span><em className={item.category}>{CATEGORY_LABEL[item.category]}</em>
+                <i className={item.category} /><span><strong>{item.startTime ? `${item.startTime} ` : ""}{item.organization}</strong><small>{cleanScheduleTitle(item.label)}</small><small className="schedule-assignee">담당 {item.assigneeName || "미정"}{item.googleOrigin ? " · Google에서 연결" : ""}</small>{item.syncError === GOOGLE_EVENT_DELETED_SYNC_ERROR ? <small className="schedule-sync failed">Google에서 삭제됨 · 사이트 일정 유지 중</small> : item.syncStatus === "failed" ? <small className="schedule-sync failed">Google 동기화 실패 · 재시도 필요</small> : item.syncStatus === "pending" ? <small className="schedule-sync pending">Google 동기화 대기</small> : item.syncStatus === "local_only" ? <small className="schedule-sync local-only">사이트 전용 일정 · Google 공유 안 함</small> : item.googleEventId ? <small className="schedule-sync synced">Google 연결됨</small> : null}</span><em className={item.category}>{CATEGORY_LABEL[item.category]}</em>
               </button>
             ))}</div>
           ) : <p className="home-calendar-agenda-empty">이 날짜에 등록된 일정이 없습니다.</p>}
@@ -577,7 +578,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
           {!editor.allDay ? <div className="home-schedule-time-grid"><label>시작 시간 <b>*</b><select value={editor.startTime} onChange={(event) => setEditor((current) => ({ ...current, startTime: event.target.value }))}><option value="">선택</option>{TIME_OPTIONS.map((time) => <option key={time} value={time}>{time}</option>)}</select></label><label>종료 시간<select value={editor.endTime} onChange={(event) => setEditor((current) => ({ ...current, endTime: event.target.value }))}><option value="">선택 안 함</option>{TIME_OPTIONS.map((time) => <option key={time} value={time}>{time}</option>)}</select></label></div> : null}
           <label>메모 <small>선택 입력 · 새 일정부터 저장됩니다.</small><textarea value={editor.details} maxLength={500} rows={4} onChange={(event) => setEditor((current) => ({ ...current, details: event.target.value }))} placeholder="방문 목적, 준비사항 등 필요한 내용을 입력하세요. Google 일정 설명에도 표시됩니다." /></label>
           {editor.scheduleId ? <label className="schedule-completed"><input type="checkbox" checked={editor.completed} onChange={(event) => setEditor((current) => ({ ...current, completed: event.target.checked }))} /> 이 일정을 완료 상태로 지정</label> : null}
-          <footer>{editor.scheduleId ? <button type="button" className="danger-button" onClick={() => void deleteSchedule()}>삭제</button> : null}{linkedDetailAvailable ? <button type="button" onClick={() => { setEditorOpen(false); onOpenOrganization(editor.organization, editor.businessRound); }}>기관 상세 보기</button> : null}<span /><button type="button" onClick={() => setEditorOpen(false)}>취소</button><button type="button" className="primary-button" disabled={saving || !editor.title.trim() || !editor.organizationQuery.trim() || !editor.assigneeMemberId || ((editor.kind === "영업" || Boolean(editor.googleEventId)) && !editor.linked)} onClick={() => void saveSchedule()}>{saving ? "저장 중" : editor.googleEventId ? "이대로 연결" : "저장"}</button></footer>
+          <footer>{editor.scheduleId ? <button type="button" className="danger-button" onClick={() => void deleteSchedule()}>사이트에서 삭제</button> : null}{linkedDetailAvailable ? <button type="button" onClick={() => { setEditorOpen(false); onOpenOrganization(editor.organization, editor.businessRound); }}>기관 상세 보기</button> : null}<span /><button type="button" onClick={() => setEditorOpen(false)}>취소</button><button type="button" className="primary-button" disabled={saving || !editor.title.trim() || !editor.organizationQuery.trim() || !editor.assigneeMemberId || ((editor.kind === "영업" || Boolean(editor.googleEventId)) && !editor.linked)} onClick={() => void saveSchedule()}>{saving ? "저장 중" : editor.syncError === GOOGLE_EVENT_DELETED_SYNC_ERROR ? "Google에 다시 연결" : editor.googleEventId ? "이대로 연결" : "저장"}</button></footer>
         </div>
       </div> : null}
 
