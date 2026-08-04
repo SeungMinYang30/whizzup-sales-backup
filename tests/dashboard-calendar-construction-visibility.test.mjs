@@ -41,9 +41,12 @@ test("시공 일정 제외는 원본 삭제 대신 숨김과 복구를 사용한
   assert.match(scheduleRoute, /hide-construction-project/);
   assert.match(scheduleRoute, /restore-construction-project/);
   assert.match(constructionPage, /기관·수주 기록은 삭제되지 않습니다/);
-  assert.match(constructionPage, /일정표에 다시 표시/);
+  assert.match(constructionPage, /제외 목록에서 삭제/);
   assert.match(constructionPage, /className="construction-row-remove"/);
   assert.match(constructionPage, /onClick=\{\(\) => void setProjectHidden\(project, true\)\}>−<\/button>/);
+  assert.match(constructionPage, /제외된 기관 목록에서 삭제하시겠습니까/);
+  assert.match(constructionPage, /setProjectHidden\(project, false\)\}>삭제<\/button>/);
+  assert.match(constructionPage, /원본 기록은 유지되며 일정표에 다시 추가할 수 있습니다/);
   assert.doesNotMatch(constructionPage, /rowMenuKey/);
   assert.doesNotMatch(constructionPage, /construction-row-menu-popover/);
   assert.match(styles, /\.construction-fixed-cells > span \{ overflow: hidden/);

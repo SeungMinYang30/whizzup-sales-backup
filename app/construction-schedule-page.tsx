@@ -391,6 +391,7 @@ export default function ConstructionSchedulePage({
   async function setProjectHidden(project: ConstructionProject, hidden: boolean) {
     if (saving) return;
     if (hidden && !window.confirm("이 기관을 시공·납품 일정표에서 제외하시겠습니까? 기관·수주 기록은 삭제되지 않습니다.")) return;
+    if (!hidden && !window.confirm("이 기관을 제외된 기관 목록에서 삭제하시겠습니까? 기관·수주·품목·기존 일정 기록은 삭제되지 않으며, 일정표 기관 추가에서 다시 등록할 수 있습니다.")) return;
     setSaving(true);
     try {
       const response = await fetch("/api/schedules", {
@@ -410,7 +411,7 @@ export default function ConstructionSchedulePage({
       if (!response.ok) throw new Error(payload.error || (hidden ? "일정표에서 기관을 제외하지 못했습니다." : "기관을 다시 표시하지 못했습니다."));
       setProjects(payload.projects ?? []);
       setSchedules(payload.schedules ?? []);
-      setMessage(hidden ? "일정표에서만 제외했습니다. 기관·수주·품목·일정 기록은 그대로 유지됩니다." : "기관을 일정표에 다시 표시했습니다.");
+      setMessage(hidden ? "일정표에서만 제외했습니다. 기관·수주·품목·일정 기록은 그대로 유지됩니다." : "제외 목록에서 삭제했습니다. 원본 기록은 유지되며 일정표에 다시 추가할 수 있습니다.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : (hidden ? "일정표에서 기관을 제외하지 못했습니다." : "기관을 다시 표시하지 못했습니다."));
     } finally {
@@ -478,11 +479,11 @@ export default function ConstructionSchedulePage({
       </header>
 
       {showExcluded ? <section className="construction-excluded-panel" aria-label="일정표에서 제외된 기관">
-        <header><div><strong>제외된 기관</strong><small>기관·수주·품목·일정 기록은 삭제되지 않았습니다.</small></div><button type="button" onClick={() => setShowExcluded(false)}>닫기</button></header>
+        <header><div><strong>제외된 기관</strong><small>삭제해도 기관·수주·품목·기존 일정 기록은 유지되며, 일정표에 다시 추가할 수 있습니다.</small></div><button type="button" onClick={() => setShowExcluded(false)}>닫기</button></header>
         {excludedProjects.length ? <div className="construction-excluded-list">
           {excludedProjects.map((project) => <div key={scopeKey(project.organization, project.businessRound)}>
             <span><strong>{project.organization}</strong><small>{project.businessRound}차 사업</small></span>
-            <button type="button" disabled={saving} onClick={() => void setProjectHidden(project, false)}>일정표에 다시 표시</button>
+            <button type="button" disabled={saving} onClick={() => void setProjectHidden(project, false)}>삭제</button>
           </div>)}
         </div> : <p>제외된 기관이 없습니다.</p>}
       </section> : null}
