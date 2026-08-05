@@ -144,6 +144,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   const [currentMember, setCurrentMember] = useState({ id: 0, displayName: "", role: "member" });
   const [googleState, setGoogleState] = useState({ configured: false, connected: false, writable: false, error: "" });
   const [syncIssues, setSyncIssues] = useState<SyncIssue[]>([]);
+  const [googleRefreshing, setGoogleRefreshing] = useState(false);
   const [retryingId, setRetryingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -189,33 +190,59 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     setLoading(true);
-    void fetch(`/api/schedules?scope=calendar&start=${rangeStart}&end=${rangeEnd}`, { cache: "no-store" })
-      .then(async (response) => {
+    const requestCalendar = async (refreshGoogle: boolean) => {
+      const response = await fetch(
+        `/api/schedules?scope=calendar&start=${rangeStart}&end=${rangeEnd}&refreshGoogle=${refreshGoogle ? "1" : "0"}`,
+        { cache: "no-store", signal: controller.signal },
+      );
         const payload = await response.json() as {
           schedules?: HomeCalendarSchedule[]; currentMember?: { id: number; displayName: string; role: string };
           googleCalendarConfigured?: boolean; googleCalendarConnected?: boolean; googleCalendarWritable?: boolean;
-          googleCalendarError?: string; syncIssues?: SyncIssue[]; error?: string;
+          googleCalendarError?: string; googleRefreshPending?: boolean; syncIssues?: SyncIssue[]; error?: string;
         };
         if (!response.ok) throw new Error(payload.error || "일정을 불러오지 못했습니다.");
         return payload;
-      })
-      .then((payload) => {
-        if (!active) return;
+    };
+    const applyPayload = (payload: Awaited<ReturnType<typeof requestCalendar>>) => {
+      if (!active) return;
         setSchedules(Array.isArray(payload.schedules) ? payload.schedules : []);
         if (payload.currentMember) setCurrentMember(payload.currentMember);
-        setGoogleState({
-          configured: Boolean(payload.googleCalendarConfigured),
-          connected: Boolean(payload.googleCalendarConnected),
-          writable: Boolean(payload.googleCalendarWritable),
-          error: payload.googleCalendarError || "",
-        });
+        if (typeof payload.googleCalendarConfigured === "boolean") {
+          setGoogleState({
+            configured: payload.googleCalendarConfigured,
+            connected: Boolean(payload.googleCalendarConnected),
+            writable: Boolean(payload.googleCalendarWritable),
+            error: payload.googleCalendarError || "",
+          });
+        }
         setSyncIssues(Array.isArray(payload.syncIssues) ? payload.syncIssues : []);
         setError("");
-      })
-      .catch((caught: unknown) => { if (active) setError(caught instanceof Error ? caught.message : "일정을 불러오지 못했습니다."); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+    };
+    void (async () => {
+      try {
+        applyPayload(await requestCalendar(false));
+        if (!active) return;
+        setLoading(false);
+        setGoogleRefreshing(true);
+        try {
+          applyPayload(await requestCalendar(true));
+        } catch (caught) {
+          if (active && !(caught instanceof DOMException && caught.name === "AbortError")) {
+            console.warn("Google calendar refresh failed", caught);
+          }
+        } finally {
+          if (active) setGoogleRefreshing(false);
+        }
+      } catch (caught) {
+        if (active && !(caught instanceof DOMException && caught.name === "AbortError")) {
+          setError(caught instanceof Error ? caught.message : "일정을 불러오지 못했습니다.");
+        }
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; controller.abort(); };
   }, [rangeEnd, rangeStart, refreshVersion, reloadVersion]);
 
   useEffect(() => {
@@ -530,6 +557,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
         ))}
         {googleState.configured && !googleState.connected ? <small className="google-calendar-state">위즈업 공유일정 연결을 확인해 주세요.</small> : null}
         {googleState.connected && !googleState.writable ? <small className="google-calendar-state">Google 일정은 읽기 전용으로 연결되었습니다.</small> : null}
+        {googleRefreshing ? <small className="google-calendar-state">Google 일정 확인 중…</small> : null}
         <label className="home-calendar-completed-filter"><input type="checkbox" checked={hideCompleted} onChange={(event) => setHideCompleted(event.target.checked)} /> 완료 일정 숨기기</label>
       </div>
       {syncIssues.length ? <div className="calendar-sync-issues" role="status">

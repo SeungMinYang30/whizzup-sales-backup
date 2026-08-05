@@ -6592,69 +6592,6 @@ export default function CrmApp({
   }, [session?.member.id]);
 
   useEffect(() => {
-    if (!session || view !== "dashboard") return;
-    let cancelled = false;
-    void fetch("/api/schedules?scope=construction-board", {
-      cache: "no-store",
-    })
-      .then(async (response) => {
-        const payload = (await response.json()) as {
-          projects?: Array<{
-            organization?: string;
-            businessRound?: number;
-            completed?: boolean;
-            hidden?: boolean;
-          }>;
-          schedules?: Array<{
-            organization?: string;
-            businessRound?: number;
-            scheduledDate?: string;
-            endDate?: string;
-            completed?: boolean;
-          }>;
-        };
-        if (!response.ok) throw new Error("시공 현황을 불러오지 못했습니다.");
-        const today = new Date().toLocaleDateString("sv-SE");
-        const schedulesByProject = new Map<string, typeof payload.schedules>();
-        (payload.schedules ?? []).forEach((schedule) => {
-          const key = `${String(schedule.organization ?? "").trim()}\u001f${Math.max(1, Number(schedule.businessRound) || 1)}`;
-          const current = schedulesByProject.get(key) ?? [];
-          current.push(schedule);
-          schedulesByProject.set(key, current);
-        });
-        const counts = (payload.projects ?? [])
-          .filter((project) => !project.hidden)
-          .reduce<ConstructionDashboardCounts>(
-            (result, project) => {
-              if (project.completed) {
-                result.completed += 1;
-                return result;
-              }
-              const key = `${String(project.organization ?? "").trim()}\u001f${Math.max(1, Number(project.businessRound) || 1)}`;
-              const hasStarted = (schedulesByProject.get(key) ?? []).some(
-                (schedule) =>
-                  !schedule.completed &&
-                  Boolean(schedule.scheduledDate) &&
-                  String(schedule.scheduledDate) <= today,
-              );
-              result[hasStarted ? "active" : "planned"] += 1;
-              return result;
-            },
-            { planned: 0, active: 0, completed: 0 },
-          );
-        if (!cancelled) setConstructionDashboardCounts(counts);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setConstructionDashboardCounts({ planned: 0, active: 0, completed: 0 });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [session, view]);
-
-  useEffect(() => {
     function releaseWhenHidden() {
       if (document.visibilityState === "hidden") {
         if (voiceRecorderRef.current?.state === "recording") {
@@ -15991,6 +15928,7 @@ export default function CrmApp({
                 <ConstructionSchedulePage
                   embedded
                   records={records}
+                  onDashboardCounts={setConstructionDashboardCounts}
                   onOpenOrganization={(organization, businessRound) => {
                     setDetailBusinessRound(businessRound);
                     setDetailOrganization(organization);

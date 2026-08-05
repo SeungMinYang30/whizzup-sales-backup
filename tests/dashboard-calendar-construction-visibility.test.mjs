@@ -35,6 +35,24 @@ test("통합 일정 필터와 상세 표시는 같은 카테고리 색상을 공
   }
 });
 
+test("대시보드는 저장된 일정을 먼저 표시하고 Google 확인은 뒤에서 갱신한다", () => {
+  assert.match(scheduleRoute, /refreshGoogle = url\.searchParams\.get\("refreshGoogle"\) !== "0"/);
+  assert.match(scheduleRoute, /if \(!refreshGoogle\)[\s\S]*?listScheduleCalendarForMember/);
+  assert.match(calendar, /requestCalendar\(false\)/);
+  assert.match(calendar, /requestCalendar\(true\)/);
+  assert.match(calendar, /Google 일정 확인 중/);
+});
+
+test("대시보드 시공 현황과 일정표는 같은 조회 결과를 공유한다", () => {
+  assert.doesNotMatch(crmApp, /fetch\("\/api\/schedules\?scope=construction-board"/);
+  assert.match(crmApp, /onDashboardCounts=\{setConstructionDashboardCounts\}/);
+  assert.equal(
+    (constructionPage.match(/fetch\("\/api\/schedules\?scope=construction-board"/g) ?? []).length,
+    1,
+  );
+  assert.match(constructionPage, /onDashboardCounts\(projects\.filter/);
+});
+
 test("시공 일정표 목록 삭제는 원본을 보존하고 기관 추가로 재등록한다", () => {
   assert.match(schedules, /hidden_at TEXT NOT NULL DEFAULT ''/);
   assert.match(schedules, /setConstructionScheduleProjectHidden/);

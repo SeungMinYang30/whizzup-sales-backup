@@ -93,10 +93,12 @@ export default function ConstructionSchedulePage({
   records,
   onOpenOrganization,
   embedded = false,
+  onDashboardCounts,
 }: {
   records: ScheduleRecord[];
   onOpenOrganization: (organization: string, businessRound: number) => void;
   embedded?: boolean;
+  onDashboardCounts?: (counts: { planned: number; active: number; completed: number }) => void;
 }) {
   const today = localDate();
   const [start, setStart] = useState(today);
@@ -165,6 +167,28 @@ export default function ConstructionSchedulePage({
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (!onDashboardCounts) return;
+    const todayValue = localDate();
+    const schedulesByProject = new Map<string, ConstructionSchedule[]>();
+    schedules.forEach((schedule) => {
+      const key = scopeKey(schedule.organization, schedule.businessRound);
+      schedulesByProject.set(key, [...(schedulesByProject.get(key) ?? []), schedule]);
+    });
+    onDashboardCounts(projects.filter((project) => !project.hidden).reduce(
+      (counts, project) => {
+        if (project.completed) counts.completed += 1;
+        else {
+          const hasStarted = (schedulesByProject.get(scopeKey(project.organization, project.businessRound)) ?? [])
+            .some((schedule) => !schedule.completed && Boolean(schedule.scheduledDate) && schedule.scheduledDate <= todayValue);
+          counts[hasStarted ? "active" : "planned"] += 1;
+        }
+        return counts;
+      },
+      { planned: 0, active: 0, completed: 0 },
+    ));
+  }, [onDashboardCounts, projects, schedules]);
 
   const schedulesByScope = useMemo(() => {
     const map = new Map<string, ConstructionSchedule[]>();

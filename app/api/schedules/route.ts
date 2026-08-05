@@ -72,6 +72,7 @@ export async function GET(request: Request) {
     if (url.searchParams.get("scope") === "calendar") {
       const start = url.searchParams.get("start") ?? "";
       const end = url.searchParams.get("end") ?? "";
+      const refreshGoogle = url.searchParams.get("refreshGoogle") !== "0";
       if (!validCalendarDate(start) || !validCalendarDate(end) || start > end) {
         throw new Error("달력 조회 기간을 확인해 주세요.");
       }
@@ -81,6 +82,18 @@ export async function GET(request: Request) {
           86_400_000,
       );
       if (span > 62) throw new Error("달력은 한 번에 두 달까지만 조회할 수 있습니다.");
+      if (!refreshGoogle) {
+        const [siteSchedules, syncIssues] = await Promise.all([
+          listScheduleCalendarForMember(member, start, end),
+          listCalendarSyncIssues(),
+        ]);
+        return Response.json({
+          schedules: siteSchedules,
+          currentMember: { id: member.id, displayName: member.displayName, role: member.role },
+          syncIssues,
+          googleRefreshPending: true,
+        });
+      }
       await flushGoogleCalendarSync({ limit: 50 });
       const apiGoogle = await reconcileGoogleCalendarRange(start, end);
       const feedGoogle = apiGoogle.configured
@@ -101,6 +114,7 @@ export async function GET(request: Request) {
         googleCalendarConnected: apiGoogle.configured ? apiGoogle.connected : feedGoogle.connected,
         googleCalendarWritable: apiGoogle.configured && apiGoogle.connected,
         googleCalendarError: apiGoogle.error || "",
+        googleRefreshPending: false,
         syncIssues,
       });
     }
