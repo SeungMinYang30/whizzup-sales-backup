@@ -81,7 +81,7 @@ export async function GET(request: Request) {
           86_400_000,
       );
       if (span > 62) throw new Error("달력은 한 번에 두 달까지만 조회할 수 있습니다.");
-      await flushGoogleCalendarSync({ limit: 25 });
+      await flushGoogleCalendarSync({ limit: 50 });
       const apiGoogle = await reconcileGoogleCalendarRange(start, end);
       const feedGoogle = apiGoogle.configured
         ? { configured: false, connected: false, events: [] }

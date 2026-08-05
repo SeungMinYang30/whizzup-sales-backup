@@ -14,6 +14,8 @@ const [calendar, reminders, googleApi, googleSync, crm, styles, env] = await Pro
 
 test("완료 일정은 달력에 남고 사용자가 숨길 수 있다", () => {
   assert.doesNotMatch(reminders, /listScheduleCalendarForMember[\s\S]*WHERE s\.completed = 0/);
+  assert.match(reminders, /COALESCE\(s\.completed, 0\) AS completed/);
+  assert.match(reminders, /completed: Number\(row\.completed\) === 1/);
   assert.match(calendar, /const \[hideCompleted, setHideCompleted\] = useState\(false\)/);
   assert.match(calendar, /완료 일정 숨기기/);
   assert.match(calendar, /완료 처리해도 일정은 캘린더에 계속 표시되며 취소선으로 구분됩니다/);
@@ -31,9 +33,11 @@ test("시공 일정은 별도 Google 캘린더로만 동기화한다", () => {
   assert.match(env, /WHIZZUP_GOOGLE_CONSTRUCTION_CALENDAR_ID=/);
   assert.match(googleApi, /category === "construction"[\s\S]*WHIZZUP_GOOGLE_CONSTRUCTION_CALENDAR_ID/);
   assert.match(googleApi, /googleRequest\(path, \{[\s\S]*\}, schedule\.category\)/);
-  assert.match(googleSync, /google:construction_calendar_split:v1/);
-  assert.match(googleSync, /sync_operation = 'move-construction'/);
-  assert.match(googleSync, /deleteGoogleCalendarEvent\(eventId, "general"\)/);
+  assert.match(googleSync, /google:construction_calendar_split:v2/);
+  assert.match(googleSync, /WHEN TRIM\(COALESCE\(google_event_id, ''\)\) <> '' THEN 'move-construction'/);
+  assert.match(googleSync, /const event = await upsertGoogleCalendarEvent[\s\S]*deleteGoogleCalendarEvent\(sourceEventId, "general"\)/);
+  assert.match(googleApi, /resource has been deleted/);
+  assert.match(googleApi, /if \(!googleEventId \|\| !isMissingGoogleResource\(error\)\) throw error/);
 });
 
 test("품목 카드는 개별 예산과 금액을 명확하게 표시한다", () => {

@@ -162,8 +162,16 @@ async function googleRequest(path: string, init?: RequestInit, category = "gener
     error?: { message?: string };
     [key: string]: unknown;
   };
-  if (!response.ok) throw new Error(result.error?.message || `Google Calendar 요청에 실패했습니다. (${response.status})`);
+  if (!response.ok) {
+    const message = result.error?.message || "Google Calendar 요청에 실패했습니다.";
+    throw new Error(`${message} (Google Calendar ${response.status})`);
+  }
   return result;
+}
+
+function isMissingGoogleResource(error: unknown) {
+  return error instanceof Error
+    && /Google Calendar (404|410)|not found|gone|resource has been deleted/i.test(error.message);
 }
 
 function addDays(value: string, days: number) {
@@ -259,10 +267,18 @@ export async function upsertGoogleCalendarEvent(
   const path = googleEventId
     ? `/events/${encodeURIComponent(googleEventId)}?sendUpdates=none`
     : "/events?sendUpdates=none";
-  return await googleRequest(path, {
-    method,
-    body: JSON.stringify(eventBody(schedule)),
-  }, schedule.category) as unknown as GoogleCalendarApiEvent;
+  try {
+    return await googleRequest(path, {
+      method,
+      body: JSON.stringify(eventBody(schedule)),
+    }, schedule.category) as unknown as GoogleCalendarApiEvent;
+  } catch (error) {
+    if (!googleEventId || !isMissingGoogleResource(error)) throw error;
+    return await googleRequest("/events?sendUpdates=none", {
+      method: "POST",
+      body: JSON.stringify(eventBody(schedule)),
+    }, schedule.category) as unknown as GoogleCalendarApiEvent;
+  }
 }
 
 export async function findGoogleCalendarEventByScheduleId(scheduleId: number, category = "general") {
@@ -285,7 +301,7 @@ export async function deleteGoogleCalendarEvent(googleEventId: string, category 
   try {
     await googleRequest(`/events/${encodeURIComponent(googleEventId)}?sendUpdates=none`, { method: "DELETE" }, category);
   } catch (error) {
-    if (error instanceof Error && /410|404|not found|gone/i.test(error.message)) return;
+    if (isMissingGoogleResource(error)) return;
     throw error;
   }
 }

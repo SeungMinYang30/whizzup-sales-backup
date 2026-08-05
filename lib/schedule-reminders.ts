@@ -24,6 +24,7 @@ export type ScheduleReminder = {
   startTime: string;
   endTime: string;
   endDate: string;
+  completed: boolean;
   visibility: ScheduleReminderVisibility;
   assigneeName: string;
   assigneeMemberId: number | null;
@@ -74,6 +75,7 @@ function scheduleReminderFromRow(
     startTime: String(row.start_time ?? ""),
     endTime: String(row.end_time ?? ""),
     endDate: String(row.end_date || row.scheduled_date),
+    completed: Number(row.completed) === 1,
     visibility: sharedSales
       ? "shared"
       : isSharedPostAwardSchedule({
@@ -114,6 +116,7 @@ type ReminderRow = {
   start_time: string;
   end_time: string;
   end_date: string;
+  completed: number;
   created_by: number | null;
   created_by_name: string;
   assignee_member_id: number | null;
@@ -167,6 +170,7 @@ SELECT
   COALESCE(s.start_time, '') AS start_time,
   COALESCE(s.end_time, '') AS end_time,
   COALESCE(NULLIF(s.end_date, ''), s.scheduled_date) AS end_date,
+  COALESCE(s.completed, 0) AS completed,
   s.created_by,
   s.created_by_name,
   s.assignee_member_id,

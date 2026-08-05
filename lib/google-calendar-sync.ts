@@ -276,7 +276,7 @@ export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?
   await ensureOrganizationSchedulesReady();
   await applyGoogleSharingPolicy();
   const d1 = getD1();
-  const constructionMigrationKey = "google:construction_calendar_split:v1";
+  const constructionMigrationKey = "google:construction_calendar_split:v2";
   const constructionMigration = await d1.prepare(
     "SELECT value FROM app_settings WHERE key = ?",
   ).bind(constructionMigrationKey).first<{ value: string }>();
@@ -284,9 +284,13 @@ export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?
     await d1.batch([
       d1.prepare(
         `UPDATE organization_schedules
-         SET sync_status = 'pending', sync_operation = 'move-construction', sync_error = ''
+         SET sync_status = 'pending',
+             sync_operation = CASE
+               WHEN TRIM(COALESCE(google_event_id, '')) <> '' THEN 'move-construction'
+               ELSE 'upsert'
+             END,
+             sync_error = ''
          WHERE category = 'construction'
-           AND TRIM(COALESCE(google_event_id, '')) <> ''
            AND TRIM(COALESCE(deleted_at, '')) = ''`,
       ),
       d1.prepare(
@@ -320,15 +324,16 @@ export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?
         continue;
       }
       let eventId = row.google_event_id || "";
-      if (row.sync_operation === "move-construction" && eventId) {
-        await deleteGoogleCalendarEvent(eventId, "general");
-        eventId = "";
-      }
+      const sourceEventId = row.sync_operation === "move-construction" ? eventId : "";
+      if (sourceEventId) eventId = "";
       if (!eventId) {
         const existing = await findGoogleCalendarEventByScheduleId(row.id, row.category);
         eventId = existing?.id || "";
       }
       const event = await upsertGoogleCalendarEvent(writeSchedule(row), eventId);
+      if (sourceEventId) {
+        await deleteGoogleCalendarEvent(sourceEventId, "general");
+      }
       await d1.prepare(
         `UPDATE organization_schedules
          SET google_event_id = ?, google_event_etag = ?, google_updated_at = ?,
