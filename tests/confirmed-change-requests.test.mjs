@@ -40,6 +40,14 @@ test("시공 일정은 별도 Google 캘린더로만 동기화한다", () => {
   assert.match(googleApi, /if \(!googleEventId \|\| !isMissingGoogleResource\(error\)\) throw error/);
 });
 
+test("Google에서 삭제한 시공 일정은 사이트 원본으로 자동 복원한다", () => {
+  assert.match(googleSync, /listGoogleCalendarApiEvents\(start, end, "construction"\)/);
+  assert.match(googleSync, /repairDeletedConstructionCalendarEvents/);
+  assert.match(googleSync, /sync_status = 'synced'[\s\S]*scheduled_date <= \?[\s\S]*end_date/);
+  assert.match(googleSync, /google_event_id = '', google_event_etag = '', google_updated_at = ''[\s\S]*sync_status = 'pending', sync_operation = 'upsert'/);
+  assert.match(googleSync, /restoreIds\.forEach\(\(id\) => forcedRefreshIds\.add\(id\)\)/);
+});
+
 test("품목 카드는 개별 예산과 금액을 명확하게 표시한다", () => {
   assert.match(crm, /번째 예산/);
   assert.match(crm, /총예산/);

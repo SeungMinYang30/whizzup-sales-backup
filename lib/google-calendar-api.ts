@@ -306,8 +306,8 @@ export async function deleteGoogleCalendarEvent(googleEventId: string, category 
   }
 }
 
-export async function listGoogleCalendarApiEvents(start: string, end: string) {
-  if (!readGoogleCalendarConfig()) {
+export async function listGoogleCalendarApiEvents(start: string, end: string, category = "general") {
+  if (!readGoogleCalendarConfig(category)) {
     return { configured: false, connected: false, events: [] as GoogleCalendarApiEvent[], error: "" };
   }
   try {
@@ -319,14 +319,16 @@ export async function listGoogleCalendarApiEvents(start: string, end: string) {
       maxResults: "2500",
       timeZone: "Asia/Seoul",
     });
-    const result = await googleRequest(`/events?${params}`) as { items?: GoogleCalendarApiEvent[] };
+    const result = await googleRequest(`/events?${params}`, undefined, category) as { items?: GoogleCalendarApiEvent[] };
     return { configured: true, connected: true, events: Array.isArray(result.items) ? result.items : [], error: "" };
   } catch (error) {
     return {
       configured: true,
       connected: false,
       events: [] as GoogleCalendarApiEvent[],
-      error: error instanceof Error ? error.message : "Google Calendar 연결에 실패했습니다.",
+      error: error instanceof Error ? error.message : category === "construction"
+        ? "Google '위즈업 시공' 캘린더 연결에 실패했습니다."
+        : "Google Calendar 연결에 실패했습니다.",
     };
   }
 }

@@ -534,15 +534,93 @@ async function localSiteScheduleIds() {
   return new Set(result.results.map((row: { id: number }) => Number(row.id)));
 }
 
+async function repairDeletedConstructionCalendarEvents(
+  start: string,
+  end: string,
+  events: GoogleCalendarApiEvent[],
+) {
+  const d1 = getD1();
+  const activeByScheduleId = new Map<number, GoogleCalendarApiEvent>();
+  const activeEventIds = new Set<string>();
+  for (const event of events) {
+    if (event.status === "cancelled") continue;
+    if (event.id) activeEventIds.add(event.id);
+    const properties = event.extendedProperties?.private || {};
+    const scheduleId = Number(properties.whizzupScheduleId);
+    if (
+      properties.whizzupSource === "site"
+      && Number.isSafeInteger(scheduleId)
+      && scheduleId > 0
+      && !activeByScheduleId.has(scheduleId)
+    ) {
+      activeByScheduleId.set(scheduleId, event);
+    }
+  }
+  const rows = await d1.prepare(
+    `SELECT id, google_event_id
+     FROM organization_schedules
+     WHERE category = 'construction'
+       AND TRIM(COALESCE(deleted_at, '')) = ''
+       AND sync_status = 'synced'
+       AND TRIM(COALESCE(google_event_id, '')) <> ''
+       AND scheduled_date <= ?
+       AND COALESCE(NULLIF(end_date, ''), scheduled_date) >= ?`,
+  ).bind(end, start).all<{ id: number; google_event_id: string }>();
+  const restoreIds: number[] = [];
+  const updates = [];
+  for (const row of rows.results) {
+    const scheduleId = Number(row.id);
+    const matchingEvent = activeByScheduleId.get(scheduleId);
+    if (matchingEvent) {
+      if (matchingEvent.id !== row.google_event_id) {
+        updates.push(d1.prepare(
+          `UPDATE organization_schedules
+           SET google_event_id = ?, google_event_etag = ?, google_updated_at = ?,
+               sync_error = '', last_synced_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+        ).bind(
+          matchingEvent.id,
+          matchingEvent.etag || "",
+          matchingEvent.updated || "",
+          scheduleId,
+        ));
+      }
+      continue;
+    }
+    if (activeEventIds.has(row.google_event_id)) continue;
+    updates.push(d1.prepare(
+      `UPDATE organization_schedules
+       SET google_event_id = '', google_event_etag = '', google_updated_at = '',
+           sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
+       WHERE id = ?`,
+    ).bind(scheduleId));
+    restoreIds.push(scheduleId);
+  }
+  if (updates.length) await d1.batch(updates);
+  return restoreIds;
+}
+
 export async function reconcileGoogleCalendarRange(start: string, end: string) {
   await ensureOrganizationSchedulesReady();
-  const result = await listGoogleCalendarApiEvents(start, end);
-  if (!result.connected) return { ...result, readOnlyEvents: [] as ReadOnlyGoogleSchedule[] };
+  const [result, constructionResult] = await Promise.all([
+    listGoogleCalendarApiEvents(start, end),
+    googleConstructionCalendarApiConfigured()
+      ? listGoogleCalendarApiEvents(start, end, "construction")
+      : Promise.resolve({ configured: false, connected: false, events: [] as GoogleCalendarApiEvent[], error: "" }),
+  ]);
+  const forcedRefreshIds = new Set<number>();
+  if (constructionResult.connected) {
+    const restoreIds = await repairDeletedConstructionCalendarEvents(start, end, constructionResult.events);
+    restoreIds.forEach((id) => forcedRefreshIds.add(id));
+  }
+  if (!result.connected) {
+    if (forcedRefreshIds.size) await flushGoogleCalendarSync({ ids: [...forcedRefreshIds] });
+    return { ...result, readOnlyEvents: [] as ReadOnlyGoogleSchedule[] };
+  }
   const d1 = getD1();
   const siteIds = await localSiteScheduleIds();
   const readonly: ReadOnlyGoogleSchedule[] = [];
   const seenReadonly = new Set<string>();
-  const forcedRefreshIds = new Set<number>();
   for (const event of result.events) {
     const properties = event.extendedProperties?.private || {};
     const siteId = Number(properties.whizzupScheduleId);
