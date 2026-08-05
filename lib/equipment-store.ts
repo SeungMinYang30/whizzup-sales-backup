@@ -3,7 +3,9 @@ import { ensureCollaborationReady } from "./collaboration";
 import {
   koreaTodayValue,
   parseProgressScheduleEntries,
+  readCanonicalBusinessRoundBudgets,
 } from "./records-store";
+import type { ActivityBudgetAllocation } from "./activity-budgets";
 import { PRODUCT_CATALOG } from "./product-catalog";
 import {
   DEFAULT_PROCUREMENT_FEE_RATE,
@@ -78,6 +80,387 @@ const schemaStatements = [
 ];
 
 let equipmentReadyPromise: Promise<ReturnType<typeof getD1>> | null = null;
+
+const equipmentBudgetRetrofitKey =
+  "retrofit:equipment_projects_by_canonical_budget:v1";
+
+type EquipmentProjectRow = Record<string, unknown> & {
+  id: number;
+  organization: string;
+  business_round: number;
+  name: string;
+  budget_type: string;
+  budget_original_name: string;
+  budget_group_id: number | null;
+};
+
+function equipmentBudgetIdentity(budget: ActivityBudgetAllocation) {
+  return budget.budgetGroupId
+    ? `group:${budget.budgetGroupId}`
+    : `name:${normalizeBudgetNameKey(
+        budget.budgetOriginalName || budget.budgetType,
+      )}`;
+}
+
+function projectMatchesBudget(
+  project: EquipmentProjectRow,
+  budget: ActivityBudgetAllocation,
+) {
+  if (
+    budget.budgetGroupId &&
+    Number(project.budget_group_id ?? 0) === budget.budgetGroupId
+  ) {
+    return true;
+  }
+  const targetNames = new Set(
+    [budget.budgetType, budget.budgetOriginalName]
+      .map(normalizeBudgetNameKey)
+      .filter(Boolean),
+  );
+  return [project.budget_type, project.budget_original_name, project.name]
+    .map(normalizeBudgetNameKey)
+    .some((name) => Boolean(name) && targetNames.has(name));
+}
+
+function canonicalProjectName(
+  budget: ActivityBudgetAllocation,
+  index: number,
+) {
+  return (
+    cleanEquipmentText(
+      budget.budgetType || budget.budgetOriginalName,
+      160,
+    ) || `표준 예산 ${index + 1}`
+  );
+}
+
+async function reconcileEquipmentProjectsForBusinessRaw(
+  d1: ReturnType<typeof getD1>,
+  organization: string,
+  businessRound: number,
+) {
+  const canonicalBudgets = await readCanonicalBusinessRoundBudgets(
+    d1,
+    organization,
+    businessRound,
+  );
+  if (!canonicalBudgets.length) return { changed: false, projectCount: 0 };
+
+  const projectResult = await d1
+    .prepare(
+      `SELECT *
+       FROM equipment_projects
+       WHERE organization = ? AND business_round = ?
+       ORDER BY updated_at DESC, id DESC`,
+    )
+    .bind(organization, businessRound)
+    .all<EquipmentProjectRow>();
+  const projects = projectResult.results ?? [];
+  const itemResult = projects.length
+    ? await d1
+        .prepare(
+          `SELECT *
+           FROM equipment_items
+           WHERE project_id IN (${projects.map(() => "?").join(",")})
+           ORDER BY project_id, sort_order, id`,
+        )
+        .bind(...projects.map((project) => Number(project.id)))
+        .all<Record<string, unknown>>()
+    : { results: [] as Record<string, unknown>[] };
+  const items = itemResult.results ?? [];
+  const itemsByProject = new Map<number, Record<string, unknown>[]>();
+  for (const item of items) {
+    const projectId = Number(item.project_id);
+    const rows = itemsByProject.get(projectId) ?? [];
+    rows.push(item);
+    itemsByProject.set(projectId, rows);
+  }
+
+  const assigned = new Set<number>();
+  const statements: ReturnType<typeof d1.prepare>[] = [];
+  const keepers: Array<{
+    projectId: number;
+    budget: ActivityBudgetAllocation;
+    name: string;
+  }> = [];
+
+  // Free the unique organization/round/name constraint before canonical names
+  // are applied. The whole mutation is committed through one D1 batch below.
+  for (const project of projects) {
+    statements.push(
+      d1
+        .prepare(
+          "UPDATE equipment_projects SET name = ? WHERE id = ?",
+        )
+        .bind(`__budget_reconcile_${project.id}`, Number(project.id)),
+    );
+  }
+
+  for (const [index, budget] of canonicalBudgets.entries()) {
+    const matches = projects
+      .filter(
+        (project) =>
+          !assigned.has(Number(project.id)) &&
+          projectMatchesBudget(project, budget),
+      )
+      .sort((left, right) => {
+        const leftItems = itemsByProject.get(Number(left.id))?.length ?? 0;
+        const rightItems = itemsByProject.get(Number(right.id))?.length ?? 0;
+        const leftGroup =
+          budget.budgetGroupId &&
+          Number(left.budget_group_id ?? 0) === budget.budgetGroupId
+            ? 1
+            : 0;
+        const rightGroup =
+          budget.budgetGroupId &&
+          Number(right.budget_group_id ?? 0) === budget.budgetGroupId
+            ? 1
+            : 0;
+        return rightGroup - leftGroup || rightItems - leftItems || Number(left.id) - Number(right.id);
+      });
+    let keeper = matches[0];
+    if (!keeper) {
+      const inserted = await d1
+        .prepare(
+          `INSERT INTO equipment_projects (
+             organization, business_round, name, status, budget_type,
+             budget_original_name, budget_group_id, budget_match_status,
+             budget_match_method, budget_request_id, budget_kind, notes,
+             created_by
+           ) VALUES (?, ?, ?, '제안', ?, ?, ?, ?, ?, ?, ?,
+                     '표준 예산에 맞춰 자동 생성된 품목 카드', 0)
+           RETURNING *`,
+        )
+        .bind(
+          organization,
+          businessRound,
+          `__budget_reconcile_new_${Date.now()}_${index}`,
+          budget.budgetType,
+          budget.budgetOriginalName || budget.budgetType,
+          budget.budgetGroupId,
+          budget.budgetMatchStatus,
+          budget.budgetMatchMethod,
+          budget.budgetRequestId,
+          budget.budgetKind,
+        )
+        .first<EquipmentProjectRow>();
+      if (!inserted) throw new Error("표준 예산 품목 카드를 만들지 못했습니다.");
+      keeper = inserted;
+      projects.push(inserted);
+      itemsByProject.set(Number(inserted.id), []);
+    }
+    const keeperId = Number(keeper.id);
+    assigned.add(keeperId);
+    keepers.push({
+      projectId: keeperId,
+      budget,
+      name: canonicalProjectName(budget, index),
+    });
+
+    for (const duplicate of matches.slice(1)) {
+      const duplicateId = Number(duplicate.id);
+      assigned.add(duplicateId);
+      const keeperItems = itemsByProject.get(keeperId) ?? [];
+      for (const item of itemsByProject.get(duplicateId) ?? []) {
+        const same = keeperItems.find(
+          (candidate) =>
+            normalizeBudgetNameKey(String(candidate.product_name ?? "")) ===
+              normalizeBudgetNameKey(String(item.product_name ?? "")) &&
+            normalizeBudgetNameKey(String(candidate.specification ?? "")) ===
+              normalizeBudgetNameKey(String(item.specification ?? "")),
+        );
+        if (same) {
+          statements.push(
+            d1
+              .prepare(
+                `UPDATE equipment_items
+                 SET proposed_qty = MAX(proposed_qty, ?),
+                     awarded_qty = MAX(awarded_qty, ?),
+                     installed_qty = MAX(installed_qty, ?),
+                     catalog_unit_price = COALESCE(catalog_unit_price, ?),
+                     notes = CASE WHEN notes = '' THEN ? ELSE notes END,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?`,
+              )
+              .bind(
+                Number(item.proposed_qty ?? 0),
+                Number(item.awarded_qty ?? 0),
+                Number(item.installed_qty ?? 0),
+                item.catalog_unit_price ?? null,
+                String(item.notes ?? ""),
+                Number(same.id),
+              ),
+          );
+          statements.push(
+            d1.prepare("DELETE FROM equipment_items WHERE id = ?").bind(Number(item.id)),
+          );
+        } else {
+          statements.push(
+            d1
+              .prepare(
+                "UPDATE equipment_items SET project_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+              )
+              .bind(keeperId, Number(item.id)),
+          );
+          keeperItems.push(item);
+        }
+      }
+      statements.push(
+        d1
+          .prepare(
+            `UPDATE equipment_projects
+             SET construction_amount = MAX(COALESCE(construction_amount, 0), ?),
+                 actual_construction_cost = MAX(COALESCE(actual_construction_cost, 0), ?),
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+          )
+          .bind(
+            Number(duplicate.construction_amount ?? 0),
+            Number(duplicate.actual_construction_cost ?? 0),
+            keeperId,
+          ),
+      );
+      statements.push(
+        d1.prepare("DELETE FROM budget_name_members WHERE entity_type = 'equipment_project' AND entity_id = ?").bind(duplicateId),
+      );
+      statements.push(
+        d1.prepare("DELETE FROM equipment_projects WHERE id = ?").bind(duplicateId),
+      );
+    }
+  }
+
+  const unassigned = projects.filter(
+    (project) => !assigned.has(Number(project.id)),
+  );
+  const unassignedWithData = unassigned.filter((project) => {
+    return (
+      (itemsByProject.get(Number(project.id))?.length ?? 0) > 0 ||
+      Number(project.construction_amount ?? 0) > 0 ||
+      Number(project.actual_construction_cost ?? 0) > 0
+    );
+  });
+  const unmappedKeeper = unassignedWithData[0];
+  if (unmappedKeeper) {
+    const keeperId = Number(unmappedKeeper.id);
+    for (const duplicate of unassignedWithData.slice(1)) {
+      const duplicateId = Number(duplicate.id);
+      statements.push(
+        d1.prepare("UPDATE equipment_items SET project_id = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?").bind(keeperId, duplicateId),
+      );
+      statements.push(
+        d1.prepare("DELETE FROM budget_name_members WHERE entity_type = 'equipment_project' AND entity_id = ?").bind(duplicateId),
+      );
+      statements.push(d1.prepare("DELETE FROM equipment_projects WHERE id = ?").bind(duplicateId));
+    }
+    statements.push(
+      d1
+        .prepare(
+          `UPDATE equipment_projects
+           SET name = '예산 미지정', budget_type = '예산 미지정',
+               budget_original_name = '예산 미지정', budget_group_id = NULL,
+               budget_match_status = 'unclassified', budget_match_method = 'reconcile',
+               budget_request_id = NULL, budget_kind = 'unclassified',
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+        )
+        .bind(keeperId),
+    );
+  }
+  for (const project of unassigned) {
+    if (unmappedKeeper && Number(project.id) === Number(unmappedKeeper.id)) continue;
+    if (unassignedWithData.some((row) => Number(row.id) === Number(project.id))) continue;
+    statements.push(
+      d1.prepare("DELETE FROM budget_name_members WHERE entity_type = 'equipment_project' AND entity_id = ?").bind(Number(project.id)),
+    );
+    statements.push(
+      d1.prepare("DELETE FROM equipment_projects WHERE id = ?").bind(Number(project.id)),
+    );
+  }
+
+  for (const keeper of keepers) {
+    const { budget } = keeper;
+    statements.push(
+      d1
+        .prepare(
+          `UPDATE equipment_projects
+           SET name = ?, budget_type = ?, budget_original_name = ?,
+               budget_group_id = ?, budget_match_status = ?,
+               budget_match_method = ?, budget_request_id = ?, budget_kind = ?,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+        )
+        .bind(
+          keeper.name,
+          budget.budgetType,
+          budget.budgetOriginalName || budget.budgetType,
+          budget.budgetGroupId,
+          budget.budgetMatchStatus,
+          budget.budgetMatchMethod,
+          budget.budgetRequestId,
+          budget.budgetKind,
+          keeper.projectId,
+        ),
+    );
+  }
+  if (statements.length) await d1.batch(statements);
+
+  for (const keeper of keepers) {
+    await linkBudgetNameEntity(d1, {
+      entityType: "equipment_project",
+      entityId: keeper.projectId,
+      groupId: keeper.budget.budgetGroupId,
+      originalName:
+        keeper.budget.budgetOriginalName || keeper.budget.budgetType,
+      aliasKey: normalizeBudgetNameKey(
+        keeper.budget.budgetOriginalName || keeper.budget.budgetType,
+      ),
+    });
+  }
+  return {
+    changed: statements.length > 0,
+    projectCount: keepers.length + (unmappedKeeper ? 1 : 0),
+  };
+}
+
+async function retrofitEquipmentProjectsByCanonicalBudget(
+  d1: ReturnType<typeof getD1>,
+) {
+  const applied = await d1
+    .prepare("SELECT value FROM app_settings WHERE key = ?")
+    .bind(equipmentBudgetRetrofitKey)
+    .first<{ value: string }>();
+  if (applied?.value) return;
+  const candidates = await d1
+    .prepare(
+      `SELECT organization, business_round
+       FROM equipment_projects
+       GROUP BY organization, business_round
+       HAVING COUNT(*) > 1
+       UNION
+       SELECT organization, business_round
+       FROM activities
+       WHERE json_valid(COALESCE(budgets_json, ''))
+         AND json_array_length(budgets_json) > 1
+       GROUP BY organization, business_round`,
+    )
+    .all<{ organization: string; business_round: number }>();
+  for (const candidate of candidates.results ?? []) {
+    await reconcileEquipmentProjectsForBusinessRaw(
+      d1,
+      candidate.organization,
+      Number(candidate.business_round || 1),
+    );
+  }
+  await d1
+    .prepare(
+      `INSERT INTO app_settings (key, value, updated_at)
+       VALUES (?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                                      updated_at = CURRENT_TIMESTAMP`,
+    )
+    .bind(equipmentBudgetRetrofitKey, new Date().toISOString())
+    .run();
+}
 
 async function initializeEquipment() {
   const d1 = getD1();
@@ -236,6 +619,8 @@ async function initializeEquipment() {
   if (procurementFeeBackfills.length) {
     await d1.batch(procurementFeeBackfills);
   }
+  await ensureBudgetNamesReady();
+  await retrofitEquipmentProjectsByCanonicalBudget(d1);
   return d1;
 }
 
@@ -247,6 +632,21 @@ export function ensureEquipmentReady() {
     });
   }
   return equipmentReadyPromise;
+}
+
+export async function reconcileEquipmentProjectsForBusiness(
+  organizationValue: string,
+  businessRoundValue = 1,
+) {
+  const organization = cleanEquipmentText(organizationValue, 120);
+  const businessRound = Math.max(1, Number(businessRoundValue) || 1);
+  if (!organization) return { changed: false, projectCount: 0 };
+  const d1 = await ensureEquipmentReady();
+  return reconcileEquipmentProjectsForBusinessRaw(
+    d1,
+    organization,
+    businessRound,
+  );
 }
 
 type PlannedEquipmentProduct = {
@@ -279,6 +679,7 @@ export function hasConfirmedProposalSignal(value: string) {
 
 export async function saveAiSelectedEquipmentAsPlanned(input: {
   organization: string;
+  businessRound?: number;
   budgetType?: string;
   projectName?: string;
   products: PlannedEquipmentProduct[];
@@ -297,6 +698,7 @@ export async function saveAiSelectedEquipmentAsPlanned(input: {
     }))
     .filter((product) => product.name);
   if (!organization || !products.length) return 0;
+  const businessRound = Math.max(1, Number(input.businessRound) || 1);
 
   const d1 = await ensureEquipmentReady();
   await ensureBudgetNamesReady();
@@ -309,36 +711,43 @@ export async function saveAiSelectedEquipmentAsPlanned(input: {
     .prepare(
       `SELECT *
        FROM equipment_projects
-       WHERE organization = ? AND name = ?
+       WHERE organization = ? AND business_round = ? AND name = ?
        LIMIT 1`,
     )
-    .bind(organization, projectName)
+    .bind(organization, businessRound, projectName)
     .first<Record<string, unknown>>();
   if (!project && budgetType) {
     project = await d1
       .prepare(
         `SELECT *
          FROM equipment_projects
-         WHERE organization = ? AND budget_type = ?
+         WHERE organization = ? AND business_round = ?
+           AND (budget_group_id = ? OR budget_type = ?)
          ORDER BY updated_at DESC, id DESC
          LIMIT 1`,
       )
-      .bind(organization, budgetType)
+      .bind(
+        organization,
+        businessRound,
+        budgetMetadata.budgetGroupId,
+        budgetMetadata.storedName,
+      )
       .first<Record<string, unknown>>();
   }
   if (!project) {
     project = await d1
       .prepare(
         `INSERT INTO equipment_projects (
-          organization, name, status, budget_type, notes, created_by,
+          organization, business_round, name, status, budget_type, notes, created_by,
           budget_original_name, budget_group_id, budget_match_status,
           budget_match_method, budget_request_id, budget_kind
-        ) VALUES (?, ?, '제안', ?, 'AI 대응에서 선택한 제안 예정 품목', ?,
+        ) VALUES (?, ?, ?, '제안', ?, 'AI 대응에서 선택한 제안 예정 품목', ?,
                   ?, ?, ?, ?, ?, ?)
         RETURNING *`,
       )
       .bind(
         organization,
+        businessRound,
         projectName,
         budgetMetadata.storedName,
         input.createdBy,
@@ -449,6 +858,11 @@ export async function saveAiSelectedEquipmentAsPlanned(input: {
       budgetMetadata.resolution?.aliasKey ??
       normalizeBudgetNameKey(budgetMetadata.budgetOriginalName),
   });
+  await reconcileEquipmentProjectsForBusinessRaw(
+    d1,
+    organization,
+    businessRound,
+  );
   return changed;
 }
 

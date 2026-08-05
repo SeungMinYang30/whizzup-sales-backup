@@ -341,6 +341,8 @@ export async function linkGoogleCalendarSchedule(input: {
   organization: unknown;
   businessRound: unknown;
   title: unknown;
+  label?: unknown;
+  completed?: unknown;
   category: unknown;
   assigneeMemberId: unknown;
   assigneeName: unknown;
@@ -366,6 +368,8 @@ export async function linkGoogleCalendarSchedule(input: {
   const values = eventValues(event);
   const structured = googleStructuredDescription(event.description || "");
   let title = text(input.title).slice(0, 120)
+    || text(input.label).slice(0, 120)
+    || text(event.summary).slice(0, 120)
     || (category === "construction" ? structured.constructionStage : structured.content).slice(0, 120);
   if (!title) throw new Error("일정 내용을 직접 입력해 주세요.");
   const storedCategory = category === "sales" ? "general" : category;
@@ -388,6 +392,10 @@ export async function linkGoogleCalendarSchedule(input: {
   const details = typeof input.details === "string"
     ? input.details.trim().slice(0, 500)
     : memoFromGoogleDescription(event.description || "");
+  const completed = input.completed === true
+    || input.completed === 1
+    || input.completed === "1"
+    || input.completed === "true";
   try {
     const inserted = await d1.prepare(
       `INSERT INTO organization_schedules (
@@ -395,7 +403,7 @@ export async function linkGoogleCalendarSchedule(input: {
          category, stage, details, vendor_name, completed, created_by, created_by_name, updated_by, updated_by_name,
          assignee_member_id, assignee_name, google_event_id, google_event_etag, google_updated_at,
          google_origin, sync_status, sync_operation
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending', 'upsert')
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending', 'upsert')
        RETURNING id`,
     ).bind(
       organization,
@@ -409,6 +417,7 @@ export async function linkGoogleCalendarSchedule(input: {
       category === "construction" ? title : "",
       details,
       category === "construction" ? structured.vendor : "",
+      completed ? 1 : 0,
       input.member.id,
       input.member.displayName,
       input.member.id,

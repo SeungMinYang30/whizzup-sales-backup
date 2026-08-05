@@ -148,6 +148,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   const [reloadVersion, setReloadVersion] = useState(0);
   const [editorOpen, setEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editorError, setEditorError] = useState("");
   const [editor, setEditor] = useState(() => emptyEditor(today));
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [createdInstitutions, setCreatedInstitutions] = useState<Institution[]>([]);
@@ -281,6 +282,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
 
   function openNew(date = selectedDate) {
     setReadOnlySchedule(null);
+    setEditorError("");
     setEditor({ ...emptyEditor(date), assigneeMemberId: currentMember.id, assigneeName: currentMember.displayName });
     setEditorOpen(true);
   }
@@ -297,6 +299,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
     if (schedule.category === "construction") { onOpenConstructionSchedule(); return; }
     if (schedule.category === "google") { setReadOnlySchedule(schedule); return; }
     if (!schedule.editable || typeof schedule.id !== "number") return;
+    setEditorError("");
     setEditor({
       scheduleId: schedule.id, googleEventId: "", organization: schedule.organization, businessRound: schedule.businessRound,
       organizationQuery: schedule.organization, linked: schedule.businessRound > 0, kind: kindFromSchedule(schedule),
@@ -313,8 +316,9 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
     };
     const organization = schedule.organization === "Google Calendar" ? "" : schedule.organization;
     const structured = structuredGoogleDescription(schedule.details || "");
-    const title = structured.constructionStage || structured.content;
+    const title = cleanScheduleTitle(schedule.label) || structured.constructionStage || structured.content;
     setReadOnlySchedule(null);
+    setEditorError("");
     setEditor({
       ...emptyEditor(schedule.scheduledDate),
       googleEventId: schedule.googleEventId || "",
@@ -346,6 +350,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   }
   async function createInstitution() {
     if (editor.organizationQuery.trim().length < 2) return;
+    setEditorError("");
     setSaving(true);
     try {
       const response = await fetch("/api/records", {
@@ -362,15 +367,24 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
         organization: editor.organizationQuery.trim(), businessRound: 1, region: "", progressManager: currentMember.displayName,
       }]);
       setEditor((current) => ({ ...current, organization: current.organizationQuery.trim(), businessRound: 1, linked: true }));
-      setError("");
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "기관을 등록하지 못했습니다."); }
+      setEditorError("");
+    } catch (caught) { setEditorError(caught instanceof Error ? caught.message : "기관을 등록하지 못했습니다."); }
     finally { setSaving(false); }
   }
   async function saveSchedule() {
     const organization = (editor.linked ? editor.organization : editor.organizationQuery).trim();
-    if (!organization || !editor.title.trim() || saving || !editor.assigneeMemberId || ((editor.kind === "영업" || editor.googleEventId) && !editor.linked)) return;
-    if (!editor.allDay && !editor.startTime) { setError("시간 일정은 시작 시간을 선택해 주세요."); return; }
-    if (!editor.allDay && editor.endTime && editor.endTime < editor.startTime) { setError("종료 시간은 시작 시간 이후여야 합니다."); return; }
+    if (saving) return;
+    if (!organization) { setEditorError("연결할 기관 또는 일정 장소를 입력해 주세요."); return; }
+    if (!editor.title.trim()) { setEditorError("일정 제목을 입력해 주세요."); return; }
+    if (!editor.assigneeMemberId) { setEditorError("일정 담당자를 선택해 주세요."); return; }
+    if ((editor.kind === "영업" || editor.googleEventId) && !editor.linked) { setEditorError("기존 기관을 검색해 선택한 뒤 연결해 주세요."); return; }
+    if (!editor.allDay && !editor.startTime) { setEditorError("시간 일정은 시작 시간을 선택해 주세요."); return; }
+    if (!editor.allDay && editor.endTime && editor.endTime < editor.startTime) { setEditorError("종료 시간은 시작 시간 이후여야 합니다."); return; }
+    let completed = editor.completed;
+    if (editor.googleEventId && editor.scheduledDate < today && !completed) {
+      completed = window.confirm("지난 일정입니다. 완료 상태로 연결할까요?\n확인을 누르면 완료 일정으로, 취소를 누르면 미완료 일정으로 연결됩니다.");
+    }
+    setEditorError("");
     setSaving(true);
     try {
       const response = await fetch("/api/schedules", {
@@ -379,17 +393,18 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
           action: editor.scheduleId ? "update-general-schedule" : editor.googleEventId ? "link-google-schedule" : "add-general-schedule",
           scheduleId: editor.scheduleId, googleEventId: editor.googleEventId,
           organization, businessRound: editor.linked ? editor.businessRound : 0,
+          title: editor.title.trim(),
           label: `${editor.kind} · ${editor.title.trim()}`, scheduledDate: editor.scheduledDate,
           startTime: editor.allDay ? "" : editor.startTime, endTime: editor.allDay ? "" : editor.endTime,
           category: KIND_CATEGORY[editor.kind], linked: editor.linked,
           assigneeMemberId: editor.assigneeMemberId, assigneeName: editor.assigneeName,
-          details: editor.details.trim(), completed: editor.completed,
+          details: editor.details.trim(), completed,
         }),
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error || "일정을 저장하지 못했습니다.");
-      setEditorOpen(false); setReloadVersion((value) => value + 1); setError("");
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "일정을 저장하지 못했습니다."); }
+      setEditorOpen(false); setReloadVersion((value) => value + 1); setEditorError(""); setError("");
+    } catch (caught) { setEditorError(caught instanceof Error ? caught.message : "일정을 저장하지 못했습니다."); }
     finally { setSaving(false); }
   }
   async function deleteSchedule() {
@@ -578,6 +593,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
           {!editor.allDay ? <div className="home-schedule-time-grid"><label>시작 시간 <b>*</b><select value={editor.startTime} onChange={(event) => setEditor((current) => ({ ...current, startTime: event.target.value }))}><option value="">선택</option>{TIME_OPTIONS.map((time) => <option key={time} value={time}>{time}</option>)}</select></label><label>종료 시간<select value={editor.endTime} onChange={(event) => setEditor((current) => ({ ...current, endTime: event.target.value }))}><option value="">선택 안 함</option>{TIME_OPTIONS.map((time) => <option key={time} value={time}>{time}</option>)}</select></label></div> : null}
           <label>메모 <small>선택 입력 · 새 일정부터 저장됩니다.</small><textarea value={editor.details} maxLength={500} rows={4} onChange={(event) => setEditor((current) => ({ ...current, details: event.target.value }))} placeholder="방문 목적, 준비사항 등 필요한 내용을 입력하세요. Google 일정 설명에도 표시됩니다." /></label>
           {editor.scheduleId ? <label className="schedule-completed"><input type="checkbox" checked={editor.completed} onChange={(event) => setEditor((current) => ({ ...current, completed: event.target.checked }))} /> 이 일정을 완료 상태로 지정</label> : null}
+          {editorError ? <div className="home-calendar-error" role="alert">{editorError}</div> : null}
           <footer>{editor.scheduleId ? <button type="button" className="danger-button" onClick={() => void deleteSchedule()}>사이트에서 삭제</button> : null}{linkedDetailAvailable ? <button type="button" onClick={() => { setEditorOpen(false); onOpenOrganization(editor.organization, editor.businessRound); }}>기관 상세 보기</button> : null}<span /><button type="button" onClick={() => setEditorOpen(false)}>취소</button><button type="button" className="primary-button" disabled={saving || !editor.title.trim() || !editor.organizationQuery.trim() || !editor.assigneeMemberId || ((editor.kind === "영업" || Boolean(editor.googleEventId)) && !editor.linked)} onClick={() => void saveSchedule()}>{saving ? "저장 중" : editor.syncError === GOOGLE_EVENT_DELETED_SYNC_ERROR ? "Google에 다시 연결" : editor.googleEventId ? "이대로 연결" : "저장"}</button></footer>
         </div>
       </div> : null}

@@ -258,13 +258,14 @@ export async function applyAiRecommendation(
     .first<Record<string, unknown>>();
   const activity = await d1
     .prepare(
-      `SELECT organization, budget_type, next_action, notes, follow_up_date
+      `SELECT organization, business_round, budget_type, next_action, notes, follow_up_date
        FROM activities
        WHERE id = ?`,
     )
     .bind(activityId)
     .first<{
       organization: string;
+      business_round: number;
       budget_type: string;
       next_action: string;
       notes: string;
@@ -352,6 +353,7 @@ export async function applyAiRecommendation(
     }));
     await saveAiSelectedEquipmentAsPlanned({
       organization: String(recommendation.organization ?? activity.organization),
+      businessRound: Math.max(1, Number(activity.business_round || 1)),
       budgetType: activity.budget_type,
       projectName: activity.budget_type,
       products: selectedProducts,

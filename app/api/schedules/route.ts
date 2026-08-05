@@ -184,10 +184,12 @@ export async function POST(request: Request) {
         organization: payload.organization,
         businessRound: payload.businessRound,
         title: payload.title,
+        label: payload.label,
         category: payload.category,
         assigneeMemberId: payload.assigneeMemberId,
         assigneeName: payload.assigneeName,
         details: payload.details,
+        completed: payload.completed,
         member,
       });
       return Response.json({ schedule: linked });

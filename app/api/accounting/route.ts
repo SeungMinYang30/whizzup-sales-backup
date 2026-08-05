@@ -403,6 +403,9 @@ async function buildAnalyticsPayload() {
         ep.organization,
         ep.business_round,
         ep.name AS project_name,
+        ep.budget_group_id AS project_budget_group_id,
+        ep.budget_original_name AS project_budget_original_name,
+        ep.budget_match_status AS project_budget_match_status,
         ep.created_by AS project_created_by,
         a.progress_manager,
         ei.product_name,
@@ -703,6 +706,13 @@ async function buildAnalyticsPayload() {
       itemId: Number(row.item_id),
       organization: String(row.organization ?? ""),
       projectName: String(row.project_name ?? ""),
+      budgetGroupId: String(row.project_budget_group_id ?? ""),
+      budgetName:
+        canonicalBudgetName(row.project_budget_original_name) ||
+        canonicalBudgetName(row.project_name) ||
+        "예산 미지정",
+      budgetOriginalName: String(row.project_budget_original_name ?? ""),
+      budgetMatchStatus: String(row.project_budget_match_status ?? ""),
       productName: catalogProduct?.name ||
         String(row.product_name ?? "미등록 제품"),
       sourceProductName: String(row.product_name ?? "미등록 제품"),

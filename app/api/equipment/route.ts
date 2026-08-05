@@ -5,6 +5,7 @@ import {
 import { ensureCampaignsReady } from "../../../lib/campaign-store";
 import {
   ensureEquipmentReady,
+  reconcileEquipmentProjectsForBusiness,
   syncEquipmentItemsFromProgressSchedule,
 } from "../../../lib/equipment-store";
 import { ensureMapReady } from "../../../lib/map-store";
@@ -331,6 +332,7 @@ function progressiveProjectStatus(previous: unknown, next: string) {
 
 async function readProjects(organization: string, businessRound = 1) {
   const d1 = await ensureEquipmentReady();
+  await reconcileEquipmentProjectsForBusiness(organization, businessRound);
   const projects = await d1
     .prepare(
       `SELECT p.*, COALESCE(m.display_name, '등록자') AS created_by_name

@@ -84,7 +84,10 @@ test("원본 우선순위와 제목 비추론 원칙을 지킨다", () => {
   assert.doesNotMatch(sync, /function linkedTitle/);
   assert.doesNotMatch(sync, /function suggestedCategory/);
   assert.doesNotMatch(sync, /event\.summary \|\| "", organization/);
-  assert.match(calendar, /const title = structured\.constructionStage \|\| structured\.content/);
+  assert.match(
+    calendar,
+    /const title = cleanScheduleTitle\(schedule\.label\) \|\| structured\.constructionStage \|\| structured\.content/,
+  );
   assert.match(calendar, /<option value="">단계 선택<\/option>/);
   assert.doesNotMatch(calendar, /\? "목공" : current\.title/);
 });

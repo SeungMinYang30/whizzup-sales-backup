@@ -58,6 +58,10 @@ type AnalyticsProduct = {
   itemId: number;
   organization: string;
   projectName: string;
+  budgetGroupId: string;
+  budgetName: string;
+  budgetOriginalName: string;
+  budgetMatchStatus: string;
   productName: string;
   sourceProductName: string;
   catalogItemId: string;
@@ -655,10 +659,10 @@ export default function AnalyticsPage({
   ) {
     return groupAnalyticsProductsByBusiness(rows).map((entry) => {
       const representative = entry.rows[0];
-      const projectNames = [
+      const budgetNames = [
         ...new Set(
           entry.rows
-            .map((row) => row.projectName.trim())
+            .map((row) => (row.budgetName || row.projectName).trim())
             .filter(Boolean),
         ),
       ];
@@ -680,7 +684,7 @@ export default function AnalyticsPage({
         businessRound: representative.businessRound,
         organization: representative.organization,
         activityDate: entry.activityDate,
-        primaryMeta: projectNames.join(" · ") || "사업명 미등록",
+        primaryMeta: budgetNames.join(" · ") || "예산 미지정",
         secondaryMeta: itemNames.join(" · "),
         amount: entry.rows.reduce((sum, row) => sum + row.amount, 0),
         quantity: count,
