@@ -5,6 +5,7 @@ import {
   deleteGoogleCalendarEvent,
   findGoogleCalendarEventByScheduleId,
   getGoogleCalendarEvent,
+  googleConstructionCalendarApiConfigured,
   googleCalendarApiConfigured,
   listGoogleCalendarApiEvents,
   type GoogleCalendarApiEvent,
@@ -274,16 +275,36 @@ function legacyConstructionStage(description: string) {
 export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?: number }) {
   await ensureOrganizationSchedulesReady();
   await applyGoogleSharingPolicy();
+  const d1 = getD1();
+  const constructionMigrationKey = "google:construction_calendar_split:v1";
+  const constructionMigration = await d1.prepare(
+    "SELECT value FROM app_settings WHERE key = ?",
+  ).bind(constructionMigrationKey).first<{ value: string }>();
+  if (!constructionMigration && googleConstructionCalendarApiConfigured()) {
+    await d1.batch([
+      d1.prepare(
+        `UPDATE organization_schedules
+         SET sync_status = 'pending', sync_operation = 'move-construction', sync_error = ''
+         WHERE category = 'construction'
+           AND TRIM(COALESCE(google_event_id, '')) <> ''
+           AND TRIM(COALESCE(deleted_at, '')) = ''`,
+      ),
+      d1.prepare(
+        `INSERT INTO app_settings (key, value, updated_at)
+         VALUES (?, 'prepared', CURRENT_TIMESTAMP)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+      ).bind(constructionMigrationKey),
+    ]);
+  }
   const rows = await pendingRows(options?.ids, options?.limit ?? 20);
   if (!rows.length) return;
-  const d1 = getD1();
   for (const row of rows) {
     try {
       if (!googleCalendarApiConfigured()) {
         throw new Error("Google Calendar 쓰기 연결 정보가 등록되지 않았습니다.");
       }
       if (row.sync_operation === "unlink") {
-        await deleteGoogleCalendarEvent(row.google_event_id || "");
+        await deleteGoogleCalendarEvent(row.google_event_id || "", row.category);
         await d1.prepare(
           `UPDATE organization_schedules
            SET google_event_id = '', google_event_etag = '', google_updated_at = '',
@@ -294,13 +315,17 @@ export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?
         continue;
       }
       if (row.sync_operation === "delete" || row.deleted_at) {
-        await deleteGoogleCalendarEvent(row.google_event_id || "");
+        await deleteGoogleCalendarEvent(row.google_event_id || "", row.category);
         await d1.prepare("DELETE FROM organization_schedules WHERE id = ?").bind(row.id).run();
         continue;
       }
       let eventId = row.google_event_id || "";
+      if (row.sync_operation === "move-construction" && eventId) {
+        await deleteGoogleCalendarEvent(eventId, "general");
+        eventId = "";
+      }
       if (!eventId) {
-        const existing = await findGoogleCalendarEventByScheduleId(row.id);
+        const existing = await findGoogleCalendarEventByScheduleId(row.id, row.category);
         eventId = existing?.id || "";
       }
       const event = await upsertGoogleCalendarEvent(writeSchedule(row), eventId);
@@ -363,7 +388,7 @@ export async function linkGoogleCalendarSchedule(input: {
     `SELECT id FROM activities WHERE organization = ? AND business_round = ? LIMIT 1`,
   ).bind(organization, businessRound).first<{ id: number }>();
   if (!institution) throw new Error("연결할 기관을 먼저 선택하거나 등록해 주세요.");
-  const event = await getGoogleCalendarEvent(googleEventId);
+  const event = await getGoogleCalendarEvent(googleEventId, "general");
   if (event.status === "cancelled") throw new Error("이미 삭제된 Google 일정입니다.");
   const values = eventValues(event);
   const structured = googleStructuredDescription(event.description || "");
@@ -375,6 +400,9 @@ export async function linkGoogleCalendarSchedule(input: {
   const storedCategory = category === "sales" ? "general" : category;
   let constructionProject: { id: number; work_summary: string } | null = null;
   if (category === "construction") {
+    if (!googleConstructionCalendarApiConfigured()) {
+      throw new Error("Google '위즈업 시공' 캘린더를 먼저 연결해 주세요.");
+    }
     if (!(CONSTRUCTION_STAGES as readonly string[]).includes(title)) {
       throw new Error("시공 일정은 철거·목공·도장·바닥·시스템·검수·교육 단계 중 하나를 선택해 주세요.");
     }
@@ -429,6 +457,15 @@ export async function linkGoogleCalendarSchedule(input: {
       event.updated || "",
     ).first<{ id: number }>();
     if (!inserted?.id) throw new Error("Google 일정을 연결하지 못했습니다.");
+    if (category === "construction") {
+      await deleteGoogleCalendarEvent(googleEventId, "general");
+      await d1.prepare(
+        `UPDATE organization_schedules
+         SET google_event_id = '', google_event_etag = '', google_updated_at = '',
+             sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
+         WHERE id = ?`,
+      ).bind(Number(inserted.id)).run();
+    }
     if (constructionProject && !constructionProject.work_summary?.trim() && structured.products) {
       await d1.prepare(
         `UPDATE construction_schedule_projects

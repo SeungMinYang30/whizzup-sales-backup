@@ -14,6 +14,7 @@ type HomeCalendarSchedule = {
   businessRound: number;
   label: string;
   category: ScheduleCategory;
+  completed: boolean;
   scheduledDate: string;
   startTime?: string;
   endTime?: string;
@@ -137,6 +138,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   const [monthValue, setMonthValue] = useState(today.slice(0, 7));
   const [selectedDate, setSelectedDate] = useState(today);
   const [filter, setFilter] = useState<CalendarFilter>("all");
+  const [hideCompleted, setHideCompleted] = useState(false);
   const [schedules, setSchedules] = useState<HomeCalendarSchedule[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [currentMember, setCurrentMember] = useState({ id: 0, displayName: "", role: "member" });
@@ -306,7 +308,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       title: cleanScheduleTitle(schedule.label), scheduledDate: schedule.scheduledDate,
       allDay: !schedule.startTime, startTime: schedule.startTime || "", endTime: schedule.endTime || "",
       assigneeMemberId: schedule.assigneeMemberId || 0, assigneeName: schedule.assigneeName,
-      details: schedule.details || "", completed: false, syncError: schedule.syncError || "",
+      details: schedule.details || "", completed: Boolean(schedule.completed), syncError: schedule.syncError || "",
     });
     setEditorOpen(true);
   }
@@ -323,7 +325,9 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       ...emptyEditor(schedule.scheduledDate),
       googleEventId: schedule.googleEventId || "",
       organizationQuery: organization,
-      kind: suggestedKind[schedule.suggestedCategory || "other"] || "기타",
+      kind: schedule.suggestedCategory === "construction"
+        ? suggestedKind.construction
+        : suggestedKind.sales,
       title,
       allDay: !schedule.startTime,
       startTime: schedule.startTime || "",
@@ -382,7 +386,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
     if (!editor.allDay && editor.endTime && editor.endTime < editor.startTime) { setEditorError("종료 시간은 시작 시간 이후여야 합니다."); return; }
     let completed = editor.completed;
     if (editor.googleEventId && editor.scheduledDate < today && !completed) {
-      completed = window.confirm("지난 일정입니다. 완료 상태로 연결할까요?\n확인을 누르면 완료 일정으로, 취소를 누르면 미완료 일정으로 연결됩니다.");
+      completed = window.confirm("지난 일정입니다. 완료 상태로 저장할까요?\n완료 처리해도 일정은 캘린더에 계속 표시되며 취소선으로 구분됩니다.");
     }
     setEditorError("");
     setSaving(true);
@@ -465,8 +469,10 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   }
 
   const visibleSchedules = useMemo(
-    () => schedules.filter((item) => item.category !== "construction" || isConstructionStage(item.label)),
-    [schedules],
+    () => schedules.filter((item) =>
+      (!hideCompleted || !item.completed)
+      && (item.category !== "construction" || isConstructionStage(item.label))),
+    [hideCompleted, schedules],
   );
   const filtered = useMemo(
     () => visibleSchedules.filter((item) => filter === "all" || item.category === filter),
@@ -524,6 +530,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
         ))}
         {googleState.configured && !googleState.connected ? <small className="google-calendar-state">위즈업 공유일정 연결을 확인해 주세요.</small> : null}
         {googleState.connected && !googleState.writable ? <small className="google-calendar-state">Google 일정은 읽기 전용으로 연결되었습니다.</small> : null}
+        <label className="home-calendar-completed-filter"><input type="checkbox" checked={hideCompleted} onChange={(event) => setHideCompleted(event.target.checked)} /> 완료 일정 숨기기</label>
       </div>
       {syncIssues.length ? <div className="calendar-sync-issues" role="status">
         <strong>Google Calendar 동기화 실패 {syncIssues.length}건</strong>
@@ -541,7 +548,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
             return <button type="button" className={`home-calendar-day${value.startsWith(monthPrefix) ? "" : " outside"}${value === today ? " today" : ""}${value === selectedDate ? " selected" : ""}`} key={value} onClick={() => setSelectedDate(value)}>
               <span className="home-calendar-day-number">{date.getDate()}</span>
               <span className="home-calendar-day-items">
-                {items.slice(0, 3).map((item) => <span className={item.category} key={item.id} title={`${item.organization} · ${item.label}`}>
+                {items.slice(0, 3).map((item) => <span className={`${item.category}${item.completed ? " completed" : ""}`} key={item.id} title={`${item.organization} · ${item.label}`}>
                   <b>{item.startTime ? `${item.startTime} ` : ""}{item.organization}</b><small>{cleanScheduleTitle(item.label)}</small>
                 </span>)}
                 {items.length > 3 ? <em>+{items.length - 3}건 더보기</em> : null}
@@ -553,7 +560,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
           <div className="home-calendar-agenda-heading"><span>{selectedDate === today ? "오늘" : "선택 날짜"}</span><h3>{selectedDateTitle(selectedDate)}</h3><b>{selectedSchedules.length}건</b></div>
           {loading ? <p className="home-calendar-agenda-empty">일정을 확인하는 중입니다.</p> : selectedSchedules.length ? (
             <div className="home-calendar-agenda-list">{selectedSchedules.map((item) => (
-              <button type="button" key={item.id} onClick={() => openEdit(item)}>
+              <button type="button" className={item.completed ? "completed" : ""} key={item.id} onClick={() => openEdit(item)}>
                 <i className={item.category} /><span><strong>{item.startTime ? `${item.startTime} ` : ""}{item.organization}</strong><small>{cleanScheduleTitle(item.label)}</small><small className="schedule-assignee">담당 {item.assigneeName || "미정"}{item.googleOrigin ? " · Google에서 연결" : ""}</small>{item.syncError === GOOGLE_EVENT_DELETED_SYNC_ERROR ? <small className="schedule-sync failed">Google에서 삭제됨 · 사이트 일정 유지 중</small> : item.syncStatus === "failed" ? <small className="schedule-sync failed">Google 동기화 실패 · 재시도 필요</small> : item.syncStatus === "pending" ? <small className="schedule-sync pending">Google 동기화 대기</small> : item.syncStatus === "local_only" ? <small className="schedule-sync local-only">사이트 전용 일정 · Google 공유 안 함</small> : item.googleEventId ? <small className="schedule-sync synced">Google 연결됨</small> : null}</span><em className={item.category}>{CATEGORY_LABEL[item.category]}</em>
               </button>
             ))}</div>

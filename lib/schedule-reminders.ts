@@ -198,8 +198,7 @@ export async function listScheduleRemindersForMember(
   const result = await d1
     .prepare(
       `${reminderSelect}
-       WHERE s.completed = 0
-         AND TRIM(COALESCE(s.deleted_at, '')) = ''
+       WHERE TRIM(COALESCE(s.deleted_at, '')) = ''
          AND s.scheduled_date <= ?
        ORDER BY s.scheduled_date ASC, COALESCE(s.start_time, '') ASC, s.id ASC`,
     )
@@ -255,8 +254,7 @@ export async function listScheduleCalendarForMember(
   const result = await d1
     .prepare(
       `${reminderSelect}
-       WHERE s.completed = 0
-         AND TRIM(COALESCE(s.deleted_at, '')) = ''
+       WHERE TRIM(COALESCE(s.deleted_at, '')) = ''
          AND s.scheduled_date <= ?
          AND COALESCE(NULLIF(s.end_date, ''), s.scheduled_date) >= ?
        ORDER BY s.scheduled_date ASC, COALESCE(s.start_time, '') ASC, s.id ASC`,

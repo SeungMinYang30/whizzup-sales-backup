@@ -987,6 +987,8 @@ type EquipmentProject = {
   name: string;
   status: string;
   budgetType: string;
+  budgetOriginalName: string;
+  budgetGroupId: number | null;
   notes: string;
   constructionAmount: number | null;
   actualConstructionCost: number | null;
@@ -2148,6 +2150,11 @@ function normalizeEquipmentProject(
     name: budgetType.trim() || displayName,
     status: String(row.status ?? "") || "제안",
     budgetType,
+    budgetOriginalName: String(value("budgetOriginalName", "budget_original_name")),
+    budgetGroupId:
+      Number(value("budgetGroupId", "budget_group_id")) > 0
+        ? Number(value("budgetGroupId", "budget_group_id"))
+        : null,
     notes,
     constructionAmount:
       value("constructionAmount", "construction_amount") === null ||
@@ -2166,6 +2173,13 @@ function normalizeEquipmentProject(
         )
       : [],
   };
+}
+
+function equipmentBudgetKey(value: unknown) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .toLocaleLowerCase("ko-KR")
+    .replace(/[^0-9a-z가-힣]/g, "");
 }
 
 function cleanAiEquipmentItems(value: unknown): EquipmentItemDraft[] {
@@ -3736,12 +3750,14 @@ async function saveAiEquipmentPreview(preview: AiPreview) {
 function OrganizationEquipmentManager({
   organization,
   businessRound = 1,
+  budgets = [],
   onToast,
   refreshVersion = 0,
   onEquipmentChanged,
 }: {
   organization: string;
   businessRound?: number;
+  budgets?: ActivityBudgetAllocation[];
   onToast: (message: string) => void;
   refreshVersion?: number;
   onEquipmentChanged?: () => void;
@@ -4957,7 +4973,7 @@ function OrganizationEquipmentManager({
         </div>
       ) : (
         <div className="equipment-project-list">
-          {projects.map((project) => {
+          {projects.map((project, projectIndex) => {
             const protectionPendingKinds = project.items.filter(
               (item) => item.protectionStatus === "신청 필요",
             ).length;
@@ -5002,14 +5018,32 @@ function OrganizationEquipmentManager({
             const projectMarginRate = projectQuotationAmount
               ? (projectMarginAmount / projectQuotationAmount) * 100
               : 0;
+            const linkedBudget = budgets.find((budget) =>
+              (project.budgetGroupId && budget.budgetGroupId === project.budgetGroupId)
+              || equipmentBudgetKey(budget.budgetType || budget.budgetOriginalName)
+                === equipmentBudgetKey(project.budgetType || project.budgetOriginalName || project.name));
+            const linkedBudgetAmount = parseMoneyAmount(
+              linkedBudget?.budgetAmountOverride
+                || linkedBudget?.budgetInstitutionAmount
+                || linkedBudget?.budgetAmount
+                || "",
+            );
+            const remainingBudget = linkedBudgetAmount - projectQuotationAmount;
             return (
               <article className="equipment-project-card" key={project.id}>
                 <header>
-                  <div>
-                    <strong>{project.items.length}개 품목</strong>
+                  <div className="equipment-project-title">
+                    <span className="equipment-budget-order">{projectIndex + 1}번째 예산</span>
+                    <div>
+                      <h4>{project.budgetType || project.name || "예산 미지정"}</h4>
+                      <p>{project.items.length}개 품목 · 공사비 포함 개별 예산 관리</p>
+                    </div>
                   </div>
                 </header>
                 <div className="equipment-project-summary">
+                  <span>총예산 <b>{linkedBudgetAmount > 0 ? `${linkedBudgetAmount.toLocaleString("ko-KR")}원` : "금액 미입력"}</b></span>
+                  <span>품목·공사비 합계 <b>{projectQuotationAmount.toLocaleString("ko-KR")}원</b></span>
+                  <span className={linkedBudgetAmount > 0 && remainingBudget < 0 ? "budget-over" : ""}>남은 예산 <b>{linkedBudgetAmount > 0 ? `${remainingBudget.toLocaleString("ko-KR")}원` : "계산 전"}</b></span>
                   <span className={protectionPendingKinds ? "needs-protection" : ""}>
                     {protectionPendingKinds ? (
                       <>영업보호 <b>{protectionPendingKinds}</b>건 필요</>
@@ -5077,6 +5111,7 @@ function OrganizationEquipmentManager({
                     }`}>
                       <div className="equipment-item-name">
                         <strong>{item.productName}</strong>
+                        <small className="equipment-item-budget">연결 예산 · {project.budgetType || project.name || "예산 미지정"}</small>
                         {(item.specification ||
                           item.catalogNote ||
                           item.catalogUnitPrice !== null ||
@@ -5176,6 +5211,11 @@ function OrganizationEquipmentManager({
                     className="equipment-entry-panel"
                     id={`equipment-item-editor-${project.id}`}
                   >
+                    <div className="equipment-entry-budget-context">
+                      <span>{projectIndex + 1}번째 예산</span>
+                      <strong>{project.budgetType || project.name || "예산 미지정"}</strong>
+                      <small>이 영역에서 저장한 품목과 공사비는 이 예산에만 연결됩니다.</small>
+                    </div>
                     <>
                       <div className="equipment-entry-tabs">
                         <button
@@ -20332,6 +20372,7 @@ export default function CrmApp({
               <OrganizationEquipmentManager
                 organization={detailOrganization}
                 businessRound={selectedDetailBusinessRound}
+                budgets={detailLatest?.budgets ?? []}
                 onToast={setToast}
                 refreshVersion={equipmentRefreshVersion}
                 onEquipmentChanged={() =>

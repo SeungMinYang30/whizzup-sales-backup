@@ -75,9 +75,15 @@ export function googleCalendarApiConfigured() {
   return Boolean(readGoogleCalendarConfig());
 }
 
-function readGoogleCalendarConfig(): GoogleCalendarConfig | null {
-  const calendarId = process.env.WHIZZUP_GOOGLE_CALENDAR_ID?.trim()
-    || calendarIdFromIcsUrl(process.env.WHIZZUP_GOOGLE_CALENDAR_ICS_URL?.trim() || "");
+export function googleConstructionCalendarApiConfigured() {
+  return Boolean(readGoogleCalendarConfig("construction"));
+}
+
+function readGoogleCalendarConfig(category = "general"): GoogleCalendarConfig | null {
+  const calendarId = category === "construction"
+    ? process.env.WHIZZUP_GOOGLE_CONSTRUCTION_CALENDAR_ID?.trim()
+    : process.env.WHIZZUP_GOOGLE_CALENDAR_ID?.trim()
+      || calendarIdFromIcsUrl(process.env.WHIZZUP_GOOGLE_CALENDAR_ICS_URL?.trim() || "");
   const raw = process.env.WHIZZUP_GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON?.trim();
   if (!calendarId || !raw) return null;
   try {
@@ -134,9 +140,11 @@ async function accessToken(config: GoogleCalendarConfig) {
   return tokenCache.accessToken;
 }
 
-async function googleRequest(path: string, init?: RequestInit) {
-  const config = readGoogleCalendarConfig();
-  if (!config) throw new Error("Google Calendar 쓰기 연결 정보가 등록되지 않았습니다.");
+async function googleRequest(path: string, init?: RequestInit, category = "general") {
+  const config = readGoogleCalendarConfig(category);
+  if (!config) throw new Error(category === "construction"
+    ? "Google '위즈업 시공' 캘린더 연결 정보가 등록되지 않았습니다."
+    : "Google Calendar 쓰기 연결 정보가 등록되지 않았습니다.");
   const token = await accessToken(config);
   const response = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(config.calendarId)}${path}`,
@@ -254,28 +262,28 @@ export async function upsertGoogleCalendarEvent(
   return await googleRequest(path, {
     method,
     body: JSON.stringify(eventBody(schedule)),
-  }) as unknown as GoogleCalendarApiEvent;
+  }, schedule.category) as unknown as GoogleCalendarApiEvent;
 }
 
-export async function findGoogleCalendarEventByScheduleId(scheduleId: number) {
+export async function findGoogleCalendarEventByScheduleId(scheduleId: number, category = "general") {
   const params = new URLSearchParams({
     privateExtendedProperty: `whizzupScheduleId=${scheduleId}`,
     showDeleted: "true",
     maxResults: "10",
   });
-  const result = await googleRequest(`/events?${params}`) as { items?: GoogleCalendarApiEvent[] };
+  const result = await googleRequest(`/events?${params}`, undefined, category) as { items?: GoogleCalendarApiEvent[] };
   return (result.items || []).find((event) => event.status !== "cancelled") || null;
 }
 
-export async function getGoogleCalendarEvent(googleEventId: string) {
+export async function getGoogleCalendarEvent(googleEventId: string, category = "general") {
   if (!googleEventId) throw new Error("Google 일정을 선택해 주세요.");
-  return await googleRequest(`/events/${encodeURIComponent(googleEventId)}`) as unknown as GoogleCalendarApiEvent;
+  return await googleRequest(`/events/${encodeURIComponent(googleEventId)}`, undefined, category) as unknown as GoogleCalendarApiEvent;
 }
 
-export async function deleteGoogleCalendarEvent(googleEventId: string) {
+export async function deleteGoogleCalendarEvent(googleEventId: string, category = "general") {
   if (!googleEventId) return;
   try {
-    await googleRequest(`/events/${encodeURIComponent(googleEventId)}?sendUpdates=none`, { method: "DELETE" });
+    await googleRequest(`/events/${encodeURIComponent(googleEventId)}?sendUpdates=none`, { method: "DELETE" }, category);
   } catch (error) {
     if (error instanceof Error && /410|404|not found|gone/i.test(error.message)) return;
     throw error;
