@@ -51,7 +51,7 @@ function primaryOrigin() {
 function standbyOrigin() {
   return (
     serverValue("APP_ORIGIN") ||
-    "https://whizzup-sales-backup.vercel.app"
+    "https://whizzup-sales-hub.vercel.app"
   ).replace(/\/+$/, "");
 }
 

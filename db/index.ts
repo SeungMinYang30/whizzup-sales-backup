@@ -100,6 +100,10 @@ function ensureVercelSchemaReady() {
 }
 
 export function normalizeSqlForPostgres(query: string) {
+  if (/^\s*PRAGMA\s+optimize\s*;?\s*$/i.test(query)) {
+    return "SELECT 1";
+  }
+
   const tableInfo = query.match(
     /^\s*PRAGMA\s+table_info\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*;?\s*$/i,
   );
@@ -136,6 +140,15 @@ export function normalizeSqlForPostgres(query: string) {
     )
     .replace(/datetime\(\s*'now'\s*\)/gi, "CURRENT_TIMESTAMP")
     .replace(/datetime\(([^)]+)\)/gi, "($1)::timestamptz")
+    .replace(/json_valid\(COALESCE\(([^,]+),\s*''\)\)/gi,
+      "(CASE WHEN COALESCE($1, '') ~ '^\\s*[\\[{]' THEN 1 ELSE 0 END)")
+    .replace(/json_array_length\(([^)]+)\)/gi, "jsonb_array_length(($1)::jsonb)")
+    .replace(/\bjson_array\(/gi, "jsonb_build_array(")
+    .replace(/\bjson_object\(/gi, "jsonb_build_object(")
+    .replace(
+      /\)\)\s+END AS canonical_budgets_json/gi,
+      "))::text END AS canonical_budgets_json",
+    )
     .replace(/\bNOT\s+GLOB\s+'\*\[0-9\]\*'/gi, "!~ '[0-9]'")
     .replace(/\bGLOB\s+'\*\[0-9\]\*'/gi, "~ '[0-9]'")
     .replace(

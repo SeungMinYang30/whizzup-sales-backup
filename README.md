@@ -1,11 +1,12 @@
-# WHIZZUP 영업관리 독립 운영 사이트
+# WHIZZUP Sales Hub
 
-기존 OpenAI Sites 영업관리 시스템과 별도로 운영할 수 있도록 만든
-Vercel + Supabase 기반 독립 사이트입니다. 화면과 주요 업무 기능은 기존
-사이트를 유지하고, 로그인은 Google 계정과 Supabase Auth를 사용합니다.
+Vercel + Supabase 기반 WHIZZUP 영업관리 운영 사이트입니다. 화면과 주요
+업무 기능은 기존 OpenAI Sites 운영본을 유지하고, 로그인은 Google 계정과
+Supabase Auth를 사용합니다.
 
-현재 소스는 OpenAI Sites 운영본 v94의 기능을 기준으로 병렬화되어
-있습니다. Sites 운영본은 이 저장소의 배포 과정에서 수정되지 않습니다.
+현재 소스는 OpenAI Sites 운영본 v399를 Vercel 환경에 맞게 이식한
+버전입니다. 최종 전환 전까지 기존 Sites 운영본과 `whizzup.kr`은 변경하지
+않습니다.
 
 ## 구성
 
@@ -19,8 +20,8 @@ Vercel + Supabase 기반 독립 사이트입니다. 화면과 주요 업무 기�
 
 1. Supabase SQL Editor에서
    `supabase/migrations/202607180001_initial_schema.sql`을 실행합니다.
-   기존 데이터베이스라면 이어서
-   `supabase/migrations/202607200001_sites_v94_parallel.sql`도 실행합니다.
+   기존 데이터베이스라면 앱의 서버 스키마 보정이 누락된 최신 테이블과
+   컬럼을 추가합니다.
 2. Supabase Auth에서 Google 공급자를 설정합니다.
 3. `.env.example`의 항목을 Vercel 환경변수에 등록합니다.
    `DATABASE_URL`은 Supabase `Connect` 화면의 **Transaction pooler
@@ -61,7 +62,10 @@ pnpm run build
   기능 마이그레이션은 `drizzle/`에 있습니다.
 - 앱 코드에서도 필요한 테이블을 `CREATE TABLE IF NOT EXISTS`로 확인해 기존
   배포 데이터와 호환됩니다.
-- 기존 GPT Sites 구성원 데이터가 동기화되면 동일한 Google 이메일의 승인·역할·권한을 이어서 사용합니다.
+- 기존 GPT Sites 구성원 데이터가 동기화되면 동일한 Google 이메일의
+  승인·역할·개별 권한을 이어서 사용합니다. 구성원은 Vercel 사이트에서
+  `Google로 계속하기`를 최초 한 번만 누르면 되며, 신규 가입 신청이나
+  관리자 재승인은 필요하지 않습니다.
 
 ## Google Calendar 연동
 

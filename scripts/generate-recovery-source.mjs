@@ -8,30 +8,27 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputPath = path.join(root, "lib", "generated-recovery-source.ts");
 
 const includedRoots = [
-  ".openai",
   "app",
   "db",
   "drizzle",
-  "examples",
   "lib",
   "public",
   "scripts",
+  "supabase",
   "tests",
-  "worker",
 ];
 
 const includedFiles = [
   ".env.example",
   ".gitignore",
-  "drizzle.config.ts",
   "eslint.config.mjs",
   "next.config.ts",
-  "package-lock.json",
   "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
   "postcss.config.mjs",
   "README.md",
   "tsconfig.json",
-  "vite.config.ts",
 ];
 
 const excludedNames = new Set([
@@ -66,7 +63,7 @@ for (const filename of includedFiles) {
 
 archive["RECOVERY_SOURCE_GUIDE.txt"] = strToU8(
   [
-    "WHIZZUP TM·미팅 영업관리 소스 원본",
+    "WHIZZUP Sales Hub Vercel 소스 원본",
     "",
     "이 압축은 다른 호스팅 또는 새 Codex 작업에서 사이트를 복구하기 위한 원본입니다.",
     "node_modules, 빌드 결과, 로그인 세션, OAuth 토큰, API 키와 기타 비밀값은 포함하지 않습니다.",
@@ -75,12 +72,12 @@ archive["RECOVERY_SOURCE_GUIDE.txt"] = strToU8(
     "1. 이 ZIP의 압축을 풉니다.",
     "2. 비상복구 패키지에 함께 들어 있는 WHIZZUP_full_backup_*.json을 보관합니다.",
     "3. 새 Codex 작업에 압축을 푼 폴더와 DB 백업 파일을 연결합니다.",
-    "4. .env.example을 기준으로 새 호스팅의 인증 및 환경값을 설정합니다.",
-    "5. 다른 호스팅에서는 ChatGPT 로그인과 D1 데이터베이스 연결부를 해당 환경에 맞게 조정합니다.",
+    "4. .env.example을 기준으로 Vercel과 Supabase 환경값을 설정합니다.",
+    "5. 같은 Google 이메일로 로그인하면 복원된 구성원 승인과 권한을 이어받습니다.",
     "",
     "기본 실행",
-    "npm install",
-    "npm run build",
+    "pnpm install",
+    "pnpm build",
     "",
   ].join("\r\n"),
 );

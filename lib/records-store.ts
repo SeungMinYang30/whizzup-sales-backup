@@ -1576,8 +1576,9 @@ export async function insertActivity(
         organization,
         clean(inheritedPayload.region),
       );
-  const record = await d1
-    .prepare(`
+  return await d1.transaction(async (transaction) => {
+    const record = await transaction
+      .prepare(`
       INSERT INTO activities (
         seed_key, activity_date, date_confidence, activity_type, category, contact_method,
         region, organization, business_round, budget_type, budget_amount,
@@ -1595,7 +1596,7 @@ export async function insertActivity(
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING *
     `)
-    .bind(
+      .bind(
       clean(payload.seedKey) || null,
       clean(payload.activityDate) || null,
       clean(payload.dateConfidence) || "확정",
@@ -1654,53 +1655,58 @@ export async function insertActivity(
       }),
       sourceChat,
       clean(finalizedText(payload.notes)),
-    )
-    .first<Record<string, unknown>>();
+      )
+      .first<Record<string, unknown>>();
 
-  if (!record) throw new Error("기록을 저장하지 못했습니다.");
-  if (payload.skipRelatedWrites !== true) {
-    await d1
-      .prepare(`
-        INSERT OR REPLACE INTO activity_authors (
+    if (!record) throw new Error("기록을 저장하지 못했습니다.");
+    if (payload.skipRelatedWrites !== true) {
+      await transaction
+        .prepare(`
+        INSERT INTO activity_authors (
           activity_id, member_id, created_by_name, created_at
         ) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT (activity_id) DO UPDATE SET
+          member_id = excluded.member_id,
+          created_by_name = excluded.created_by_name,
+          created_at = excluded.created_at
       `)
-      .bind(Number(record.id), member.id, member.displayName)
-      .run();
-    await syncBusinessProgressManagerFromLatestAuthor(
-      d1,
-      organization,
-      businessRound,
-    );
-    await linkBudgetNameEntity(d1, {
-      entityType: "activity",
-      entityId: Number(record.id),
-      groupId: budgetMetadata.budgetGroupId,
-      originalName: budgetMetadata.budgetOriginalName,
-      aliasKey: normalizeBudgetNameKey(budgetMetadata.budgetOriginalName),
-    });
-    if (budgetMetadata.budgetRequestId) {
-      await linkBudgetRequestRecord(d1, {
-        requestId: budgetMetadata.budgetRequestId,
-        entityType: "activity",
-        entityId: Number(record.id),
-        originalName: budgetMetadata.budgetOriginalName,
-        organization,
-      });
-    }
-    if (payload.syncBusinessRoundBudgets === true) {
-      await synchronizeBusinessRoundBudgets(
-        d1,
+        .bind(Number(record.id), member.id, member.displayName)
+        .run();
+      await syncBusinessProgressManagerFromLatestAuthor(
+        transaction,
         organization,
         businessRound,
-        resolvedBudgets,
       );
+      await linkBudgetNameEntity(transaction, {
+        entityType: "activity",
+        entityId: Number(record.id),
+        groupId: budgetMetadata.budgetGroupId,
+        originalName: budgetMetadata.budgetOriginalName,
+        aliasKey: normalizeBudgetNameKey(budgetMetadata.budgetOriginalName),
+      });
+      if (budgetMetadata.budgetRequestId) {
+        await linkBudgetRequestRecord(transaction, {
+          requestId: budgetMetadata.budgetRequestId,
+          entityType: "activity",
+          entityId: Number(record.id),
+          originalName: budgetMetadata.budgetOriginalName,
+          organization,
+        });
+      }
+      if (payload.syncBusinessRoundBudgets === true) {
+        await synchronizeBusinessRoundBudgets(
+          transaction,
+          organization,
+          businessRound,
+          resolvedBudgets,
+        );
+      }
     }
-  }
-  return {
-    ...record,
-    created_by_name: member.displayName,
-  } as Record<string, unknown> & { created_by_name: string };
+    return {
+      ...record,
+      created_by_name: member.displayName,
+    } as Record<string, unknown> & { created_by_name: string };
+  });
 }
 
 export async function syncProgressScheduleStatuses() {

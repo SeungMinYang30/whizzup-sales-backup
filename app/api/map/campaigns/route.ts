@@ -1180,9 +1180,13 @@ export async function POST(request: Request) {
         targetAndRelationStatements.push(
           d1
             .prepare(`
-              INSERT OR REPLACE INTO activity_authors (
+              INSERT INTO activity_authors (
                 activity_id, member_id, created_by_name, created_at
               ) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+              ON CONFLICT (activity_id) DO UPDATE SET
+                member_id = excluded.member_id,
+                created_by_name = excluded.created_by_name,
+                created_at = excluded.created_at
             `)
             .bind(activityId, member.id, member.displayName),
         );

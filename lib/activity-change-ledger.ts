@@ -1,4 +1,4 @@
-import { getD1 } from "../db";
+import { getD1, isPostgresDatabase } from "../db";
 import type { Member } from "./collaboration";
 import { ensureRecordsReady } from "./records-store";
 
@@ -189,10 +189,16 @@ export function valuesEqual(left: unknown, right: unknown) {
 }
 
 function fullSnapshotSql(alias: string) {
-  return `json_object(${ACTIVITY_CHANGE_TRACKED_COLUMNS.flatMap((column) => [
+  if (!isPostgresDatabase()) {
+    return `json_object(${ACTIVITY_CHANGE_TRACKED_COLUMNS.flatMap((column) => [
+      `'${column}'`,
+      `${alias}.${column}`,
+    ]).join(", ")})`;
+  }
+  return `jsonb_build_object(${ACTIVITY_CHANGE_TRACKED_COLUMNS.flatMap((column) => [
     `'${column}'`,
     `${alias}.${column}`,
-  ]).join(", ")})`;
+  ]).join(", ")})::text`;
 }
 
 function currentValueSql(column: ActivityChangeTrackedColumn) {
@@ -200,36 +206,64 @@ function currentValueSql(column: ActivityChangeTrackedColumn) {
 }
 
 function valueChangedSql(column: ActivityChangeTrackedColumn) {
-  return `json_extract(before_json, '$.${column}') IS NOT ${currentValueSql(column)}`;
+  if (!isPostgresDatabase()) {
+    return `json_extract(before_json, '$.${column}') IS NOT ${currentValueSql(column)}`;
+  }
+  return `(before_json::jsonb -> '${column}') IS DISTINCT FROM to_jsonb(${currentValueSql(column)})`;
 }
 
 function actualSnapshotSql(useBeforeValue: boolean) {
-  const snapshotEntries = ACTIVITY_CHANGE_TRACKED_COLUMNS.flatMap((column) => [
-    `'${column}'`,
-    useBeforeValue
-      ? `json_extract(before_json, '$.${column}')`
-      : currentValueSql(column),
-  ]);
-  const unchangedPaths = ACTIVITY_CHANGE_TRACKED_COLUMNS.map(
-    (column) =>
-      `CASE WHEN ${valueChangedSql(column)}
-       THEN '$.__keep_${column}'
-       ELSE '$.${column}' END`,
-  );
-  return `json_remove(
-    json_object(${snapshotEntries.join(", ")}),
-    ${unchangedPaths.join(", ")}
-  )`;
+  if (!isPostgresDatabase()) {
+    const snapshotEntries = ACTIVITY_CHANGE_TRACKED_COLUMNS.flatMap((column) => [
+      `'${column}'`,
+      useBeforeValue
+        ? `json_extract(before_json, '$.${column}')`
+        : currentValueSql(column),
+    ]);
+    const unchangedPaths = ACTIVITY_CHANGE_TRACKED_COLUMNS.map(
+      (column) =>
+        `CASE WHEN ${valueChangedSql(column)}
+         THEN '$.__keep_${column}'
+         ELSE '$.${column}' END`,
+    );
+    return `json_remove(
+      json_object(${snapshotEntries.join(", ")}),
+      ${unchangedPaths.join(", ")}
+    )`;
+  }
+  const entries = ACTIVITY_CHANGE_TRACKED_COLUMNS.map((column) =>
+    `('${column}', ${
+      useBeforeValue
+        ? `before_json::jsonb -> '${column}'`
+        : `to_jsonb(${currentValueSql(column)})`
+    }, ${valueChangedSql(column)})`,
+  ).join(", ");
+  return `(SELECT COALESCE(
+      jsonb_object_agg(entry_key, entry_value) FILTER (WHERE changed),
+      '{}'::jsonb
+    )::text
+    FROM (VALUES ${entries}) AS entries(entry_key, entry_value, changed))`;
 }
 
 function changedFieldsSql() {
+  if (!isPostgresDatabase()) {
+    const legacyValues = ACTIVITY_CHANGE_TRACKED_COLUMNS.map(
+      (column) =>
+        `CASE WHEN ${valueChangedSql(column)} THEN '${column}' ELSE NULL END`,
+    ).join(", ");
+    return `(SELECT COALESCE(json_group_array(value), '[]')
+      FROM json_each(json_array(${legacyValues}))
+      WHERE value IS NOT NULL)`;
+  }
   const values = ACTIVITY_CHANGE_TRACKED_COLUMNS.map(
     (column) =>
-      `CASE WHEN ${valueChangedSql(column)} THEN '${column}' ELSE NULL END`,
+      `(CASE WHEN ${valueChangedSql(column)} THEN '${column}' ELSE NULL END)`,
   ).join(", ");
-  return `(SELECT COALESCE(json_group_array(value), '[]')
-    FROM json_each(json_array(${values}))
-    WHERE value IS NOT NULL)`;
+  return `(SELECT COALESCE(
+      jsonb_agg(value) FILTER (WHERE value IS NOT NULL),
+      '[]'::jsonb
+    )::text
+    FROM (VALUES ${values}) AS changed(value))`;
 }
 
 export function prepareActivityChangeBatchUpsert(
@@ -250,7 +284,7 @@ export function prepareActivityChangeBatchUpsert(
          actor_member_id, actor_name
        ) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-         operation_total = MAX(activity_change_batches.operation_total, excluded.operation_total),
+         operation_total = GREATEST(activity_change_batches.operation_total, excluded.operation_total),
          updated_at = CURRENT_TIMESTAMP`,
     )
     .bind(

@@ -181,40 +181,93 @@ export async function getOrCreateMember(
 ) {
   const d1 = await ensureCollaborationReady();
   const email = identity.email.trim().toLowerCase();
+  const bootstrapAdminEmail =
+    process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase() ?? "";
+  const isBootstrapAdmin = Boolean(
+    bootstrapAdminEmail && bootstrapAdminEmail === email,
+  );
   let row = await d1
-    .prepare("SELECT * FROM members WHERE email = ?")
-    .bind(email)
+    .prepare(
+      "SELECT * FROM members WHERE auth_user_id = ? OR lower(email) = lower(?) LIMIT 1",
+    )
+    .bind(identity.authUserId, email)
     .first<Record<string, unknown>>();
 
   if (!row) {
-    const count = await d1
-      .prepare("SELECT COUNT(*) AS count FROM members")
-      .first<{ count: number }>();
-    const firstMember = (count?.count ?? 0) === 0;
     await d1
       .prepare(`
-        INSERT OR IGNORE INTO members (
-          email, display_name, role, status, approved_at, last_seen_at
-        ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO members (
+          auth_user_id, email, display_name, role, status, approved_at,
+          last_seen_at
+        ) VALUES (?, ?, ?, 'member', 'pending', NULL, CURRENT_TIMESTAMP)
+        ON CONFLICT (email) DO NOTHING
       `)
-      .bind(
-        email,
-        identity.displayName,
-        firstMember ? "admin" : "member",
-        firstMember ? "approved" : "pending",
-        firstMember ? new Date().toISOString() : null,
-      )
+      .bind(identity.authUserId, email, identity.displayName)
       .run();
     row = await d1
-      .prepare("SELECT * FROM members WHERE email = ?")
+      .prepare("SELECT * FROM members WHERE lower(email) = lower(?) LIMIT 1")
       .bind(email)
       .first<Record<string, unknown>>();
-  } else if (refreshLastSeen) {
+  }
+
+  if (row) {
     await d1
-      .prepare("UPDATE members SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?")
-      .bind(Number(row.id))
+      .prepare(`
+        UPDATE members
+        SET auth_user_id = NULL
+        WHERE auth_user_id = ? AND id <> ?
+      `)
+      .bind(identity.authUserId, Number(row.id))
       .run();
-    row.last_seen_at = new Date().toISOString();
+    await d1
+      .prepare(`
+        UPDATE members
+        SET auth_user_id = ?,
+            display_name = CASE
+              WHEN TRIM(COALESCE(display_name, '')) = '' THEN ?
+              ELSE display_name
+            END,
+            last_seen_at = CASE
+              WHEN ? = 1 THEN CURRENT_TIMESTAMP
+              ELSE last_seen_at
+            END
+        WHERE id = ?
+        RETURNING *
+      `)
+      .bind(
+        identity.authUserId,
+        identity.displayName,
+        refreshLastSeen ? 1 : 0,
+        Number(row.id),
+      )
+      .first<Record<string, unknown>>()
+      .then((updated) => {
+        if (updated) row = updated;
+      });
+  }
+
+  if (row && isBootstrapAdmin) {
+    const promoted = await d1
+      .prepare(`
+        UPDATE members AS candidate
+        SET role = 'admin',
+            status = 'approved',
+            approved_at = COALESCE(candidate.approved_at, CURRENT_TIMESTAMP),
+            last_seen_at = CURRENT_TIMESTAMP
+        WHERE candidate.id = ?
+          AND lower(candidate.email) = lower(?)
+          AND NOT EXISTS (
+            SELECT 1
+            FROM members AS approved_admin
+            WHERE approved_admin.role = 'admin'
+              AND approved_admin.status = 'approved'
+              AND approved_admin.id <> candidate.id
+          )
+        RETURNING *
+      `)
+      .bind(Number(row.id), bootstrapAdminEmail)
+      .first<Record<string, unknown>>();
+    if (promoted) row = promoted;
   }
 
   if (
@@ -412,11 +465,16 @@ export async function requireMemberPermission(permission: MemberPermission) {
 }
 
 export function accessErrorResponse(error: unknown) {
-  if (error instanceof AccessError) {
+  if (
+    error instanceof AccessError &&
+    error.status >= 400 &&
+    error.status < 500
+  ) {
     return Response.json({ error: error.message }, { status: error.status });
   }
+  console.error("Unhandled collaboration request error", error);
   return Response.json(
-    { error: error instanceof Error ? error.message : "요청을 처리하지 못했습니다." },
+    { error: "요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요." },
     { status: 500 },
   );
 }

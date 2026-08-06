@@ -274,9 +274,9 @@ async function reconcileEquipmentProjectsForBusinessRaw(
             d1
               .prepare(
                 `UPDATE equipment_items
-                 SET proposed_qty = MAX(proposed_qty, ?),
-                     awarded_qty = MAX(awarded_qty, ?),
-                     installed_qty = MAX(installed_qty, ?),
+                 SET proposed_qty = GREATEST(proposed_qty, ?),
+                     awarded_qty = GREATEST(awarded_qty, ?),
+                     installed_qty = GREATEST(installed_qty, ?),
                      catalog_unit_price = COALESCE(catalog_unit_price, ?),
                      notes = CASE WHEN notes = '' THEN ? ELSE notes END,
                      updated_at = CURRENT_TIMESTAMP
@@ -309,8 +309,8 @@ async function reconcileEquipmentProjectsForBusinessRaw(
         d1
           .prepare(
             `UPDATE equipment_projects
-             SET construction_amount = MAX(COALESCE(construction_amount, 0), ?),
-                 actual_construction_cost = MAX(COALESCE(actual_construction_cost, 0), ?),
+             SET construction_amount = GREATEST(COALESCE(construction_amount, 0), ?),
+                 actual_construction_cost = GREATEST(COALESCE(actual_construction_cost, 0), ?),
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = ?`,
           )
@@ -1087,9 +1087,9 @@ export async function syncImportedAwardEquipment(input: {
       await d1
         .prepare(
           `UPDATE equipment_items
-           SET proposed_qty = MAX(proposed_qty, ?),
-               awarded_qty = MAX(awarded_qty, ?),
-               installed_qty = MAX(installed_qty, ?),
+           SET proposed_qty = GREATEST(proposed_qty, ?),
+               awarded_qty = GREATEST(awarded_qty, ?),
+               installed_qty = GREATEST(installed_qty, ?),
                unit = CASE WHEN unit = '' THEN ? ELSE unit END,
                status = '설치 완료',
                updated_by = ?,

@@ -109,7 +109,7 @@ export async function GET(request: Request) {
         `SELECT *
          FROM activity_change_batches
          WHERE ${scopeWhere}
-         ORDER BY datetime(created_at) DESC, rowid DESC
+         ORDER BY datetime(created_at) DESC, id DESC
          LIMIT ? OFFSET ?`,
       )
       .bind(...scopeBindings, limit + 1, offset)

@@ -154,7 +154,7 @@ const awardAccountingQuery = `
             ) * COALESCE(ei.catalog_unit_price, 0)
             + CAST(
                 (
-                  MAX(
+                  GREATEST(
                     0,
                     COALESCE(
                       NULLIF(ei.proposed_qty, 0),
@@ -162,7 +162,7 @@ const awardAccountingQuery = `
                       NULLIF(ei.installed_qty, 0),
                       1
                     ) * COALESCE(ei.catalog_unit_price, 0)
-                  ) * MAX(0, COALESCE(ei.procurement_fee_rate, 0))
+                  ) * GREATEST(0, COALESCE(ei.procurement_fee_rate, 0))
                 ) / 10
                 AS INTEGER
               ) * 10
@@ -193,8 +193,8 @@ const awardAccountingQuery = `
         CASE
           WHEN COALESCE(ei.supply_type, 'partner') = 'direct' THEN 0
           ELSE CAST(
-            (COALESCE(NULLIF(ei.proposed_qty, 0), NULLIF(ei.awarded_qty, 0), NULLIF(ei.installed_qty, 0), 1) * MAX(0, COALESCE(ei.catalog_unit_price, 0)) *
-              MAX(0, MIN(1, COALESCE(ei.commission_rate, 0)))) / 10
+            (COALESCE(NULLIF(ei.proposed_qty, 0), NULLIF(ei.awarded_qty, 0), NULLIF(ei.installed_qty, 0), 1) * GREATEST(0, COALESCE(ei.catalog_unit_price, 0)) *
+              GREATEST(0, LEAST(1, COALESCE(ei.commission_rate, 0)))) / 10
             AS INTEGER
           ) * 10
         END
@@ -203,10 +203,10 @@ const awardAccountingQuery = `
         CASE
           WHEN ei.execution_type <> '컨소' THEN 0
           WHEN ei.commission_input_type = 'amount'
-            THEN MAX(0, COALESCE(ei.consortium_payment_amount, 0))
+            THEN GREATEST(0, COALESCE(ei.consortium_payment_amount, 0))
           ELSE CAST(
-            (COALESCE(NULLIF(ei.proposed_qty, 0), NULLIF(ei.awarded_qty, 0), NULLIF(ei.installed_qty, 0), 1) * MAX(0, COALESCE(ei.catalog_unit_price, 0)) *
-              MAX(0, MIN(1, COALESCE(ei.consortium_commission_rate, 0)))) / 10
+            (COALESCE(NULLIF(ei.proposed_qty, 0), NULLIF(ei.awarded_qty, 0), NULLIF(ei.installed_qty, 0), 1) * GREATEST(0, COALESCE(ei.catalog_unit_price, 0)) *
+              GREATEST(0, LEAST(1, COALESCE(ei.consortium_commission_rate, 0)))) / 10
             AS INTEGER
           ) * 10
         END

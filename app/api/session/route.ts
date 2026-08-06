@@ -12,6 +12,19 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const member = await requireMember(true);
+    if (member.status !== "approved") {
+      return Response.json({
+        member,
+        pendingCount: 0,
+        approvedCount: 0,
+        sharedGptUrl: "",
+        aiConfigured: false,
+        aiModel: "",
+        canViewPresence: false,
+        canManageActivityHistory: false,
+      });
+    }
+
     const d1 = await ensureCollaborationReady();
     const counts = await d1
       .prepare(`

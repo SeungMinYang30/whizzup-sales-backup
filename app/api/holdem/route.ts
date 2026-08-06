@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     await d1.prepare(`INSERT INTO holdem_weekly_scores (member_id, week_start, best_chips, games_played, wins, updated_at)
       VALUES (?, ?, ?, 1, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(member_id, week_start) DO UPDATE SET
-        best_chips = MAX(best_chips, excluded.best_chips), games_played = games_played + 1,
+        best_chips = GREATEST(best_chips, excluded.best_chips), games_played = games_played + 1,
         wins = wins + excluded.wins, updated_at = CURRENT_TIMESTAMP`)
       .bind(member.id, weekStart(), chips, won).run();
     return GET();
