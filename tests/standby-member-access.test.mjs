@@ -7,18 +7,15 @@ function source(relativePath) {
   return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
 }
 
-test("백업사이트 대기 계정은 본사이트의 승인 상태를 즉시 확인한다", () => {
+test("복제된 승인 구성원은 Sites 실시간 조회 없이 로컬 이메일로 연결한다", () => {
   const collaboration = source("../lib/collaboration.ts");
-  const primaryAccess = source("../lib/primary-member-access.ts");
 
-  assert.match(collaboration, /String\(row\.status\) === "pending"/);
-  assert.match(collaboration, /fetchApprovedPrimaryMember\(email\)/);
-  assert.match(collaboration, /status = 'approved'/);
-  assert.match(collaboration, /WHERE id = \? AND status = 'pending'/);
-  assert.match(primaryAccess, /PRIMARY_EXPORT_SECRET/);
-  assert.match(primaryAccess, /\/api\/standby-export/);
-  assert.match(primaryAccess, /String\(member\.status \?\? ""\) === "approved"/);
-  assert.match(primaryAccess, /cache: "no-store"/);
+  assert.match(collaboration, /lower\(email\) = lower\(\?\)/);
+  assert.match(collaboration, /SET auth_user_id = \?/);
+  assert.match(collaboration, /WHERE lower\(email\) = lower\(\?\)/);
+  assert.doesNotMatch(collaboration, /fetchApprovedPrimaryMember/);
+  assert.doesNotMatch(collaboration, /primary-member-access/);
+  assert.doesNotMatch(collaboration, /\/api\/standby-export/);
 });
 
 test("명시적으로 승인한 백업 운영 계정은 기존 승인 상태와 관계없이 전체 권한으로 맞춘다", () => {
@@ -62,7 +59,7 @@ test("백업 구성원 권한은 PostgreSQL JSON 배열로 저장한다", () => 
   assert.match(collaboration, /"'\[\]'::jsonb"/);
   assert.match(
     collaboration,
-    /memberPermissionsJsonExpression\(primaryPermissions\)/,
+    /memberPermissionsJsonExpression\(standbyPermissions\)/,
   );
   assert.match(membersRoute, /memberPermissionsJsonExpression\(permissions\)/);
   assert.match(membersRoute, /\.\.\.permissions/);
@@ -81,12 +78,28 @@ test("백업 PostgreSQL은 복제된 운영 데이터에 D1 전용 소급 작업
   const database = source("../db/index.ts");
   const budgetNames = source("../lib/budget-names.ts");
   const recordsStore = source("../lib/records-store.ts");
+  const initializeAt = budgetNames.indexOf("async function initializeBudgetNames()");
+  const postgresGuardAt = budgetNames.indexOf(
+    "if (isPostgresDatabase())",
+    initializeAt,
+  );
+  const postgresReturnAt = budgetNames.indexOf("return d1;", postgresGuardAt);
+  const additiveSchemaAt = budgetNames.indexOf(
+    "ensureAdditiveBudgetSchema(d1)",
+    initializeAt,
+  );
+  const backfillAt = budgetNames.indexOf(
+    "backfillBudgetOriginalNames(d1)",
+    initializeAt,
+  );
 
   assert.match(database, /export function isPostgresDatabase\(\)/);
-  assert.match(
-    budgetNames,
-    /ensureAdditiveBudgetSchema\(d1\);[\s\S]{0,520}if \(isPostgresDatabase\(\)\) return d1;[\s\S]{0,160}backfillBudgetOriginalNames\(d1\);[\s\S]{0,80}ensureSelfBudgetGroup\(d1\)/,
-  );
+  assert.ok(initializeAt >= 0);
+  assert.ok(postgresGuardAt > initializeAt);
+  assert.ok(postgresReturnAt > postgresGuardAt);
+  assert.ok(additiveSchemaAt > postgresReturnAt);
+  assert.ok(backfillAt > additiveSchemaAt);
+  assert.match(budgetNames, /backfillBudgetOriginalNames\(d1\);[\s\S]{0,80}ensureSelfBudgetGroup\(d1\)/);
   assert.match(
     recordsStore,
     /ensureBudgetNamesReady\(\);[\s\S]{0,100}if \(!isPostgresDatabase\(\)\) \{[\s\S]{0,220}retrofitBusinessRoundBudgets\(d1\)/,

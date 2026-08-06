@@ -8,6 +8,19 @@ Supabase Auth를 사용합니다.
 버전입니다. 최종 전환 전까지 기존 Sites 운영본과 `whizzup.kr`은 변경하지
 않습니다.
 
+## 전환 전 백업 운영
+
+- 최종 전환 전에는 OpenAI Sites가 메인이고 Vercel은 대기 백업입니다.
+- `Sites -> Vercel` 복제는 인증된 `/api/standby-sync` 작업에서만 실행되며,
+  일반 화면 로딩과 Google 로그인은 Sites에 접속하지 않습니다.
+- 구성원과 권한은 백업 데이터의 `members` 테이블에 포함됩니다. Vercel은
+  복제된 이메일과 Supabase 로그인 계정을 로컬에서 연결하므로 Sites 장애가
+  로그인 요청을 지연시키지 않습니다.
+- 복제 중에는 Sites만 업무 입력 원본으로 사용해야 합니다. Vercel에서 직접
+  변경한 데이터는 다음 복제 때 Sites 데이터로 교체될 수 있습니다.
+- Vercel을 메인으로 전환할 때는 마지막 복제를 확인한 뒤 주기 작업을 중단하고
+  `APP_ORIGIN`, Google 로그인 반환 주소, 도메인을 순서대로 전환합니다.
+
 ## 구성
 
 - Vercel: Next.js 애플리케이션

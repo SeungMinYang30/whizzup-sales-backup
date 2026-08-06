@@ -129,8 +129,8 @@ test("restored approved members reuse the same Google email without reapproval",
 
   assert.match(collaboration, /lower\(email\) = lower\(\?\)/);
   assert.match(collaboration, /SET auth_user_id = \?/);
-  assert.match(collaboration, /fetchApprovedPrimaryMember\(email\)/);
-  assert.match(collaboration, /primaryMember\.permissions/);
+  assert.doesNotMatch(collaboration, /fetchApprovedPrimaryMember/);
+  assert.doesNotMatch(collaboration, /primary-member-access/);
   assert.match(backupStore, /name: "members"/);
   assert.match(backupStore, /"permissions"/);
   assert.match(backupStore, /parseMemberPermissions/);
@@ -143,6 +143,14 @@ test("restored approved members reuse the same Google email without reapproval",
     backupStore,
     /Number\(backupAdmin\.id\) !== currentAdmin\.id/,
   );
+});
+
+test("normal Vercel pages do not fall back to the Sites host", async () => {
+  const layout = await read("app/layout.tsx");
+
+  assert.match(layout, /process\.env\.APP_ORIGIN/);
+  assert.match(layout, /https:\/\/whizzup-sales-hub\.vercel\.app/);
+  assert.doesNotMatch(layout, /chatgpt\.site/);
 });
 
 test("the clean Vercel origin replaces the retired backup alias", async () => {

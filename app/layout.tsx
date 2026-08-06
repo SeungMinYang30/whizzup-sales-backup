@@ -9,7 +9,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") || "https";
   const origin = host
     ? `${protocol}://${host}`
-    : "https://whizzup-sales-hub.jackallan.chatgpt.site";
+    : process.env.APP_ORIGIN?.trim() || "https://whizzup-sales-hub.vercel.app";
   const title = "위즈업 영업관리 | TM·미팅 통합관리";
   const description =
     "AI로 통화·미팅을 기록하고 학교·기관의 수주 진행 상태, 설치 실적과 영업 동선을 지도에서 관리합니다.";

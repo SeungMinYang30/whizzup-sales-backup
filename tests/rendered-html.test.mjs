@@ -8,7 +8,6 @@ test("builds the Korean collaborative sales management application", async () =>
     crm,
     styles,
     layout,
-    hosting,
     baseMigration,
     collaborationMigration,
     awardMigration,
@@ -67,7 +66,6 @@ test("builds the Korean collaborative sales management application", async () =>
     readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0000_wild_malcolm_colcord.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0001_same_sue_storm.sql", import.meta.url), "utf8"),
     readFile(
@@ -199,7 +197,6 @@ test("builds the Korean collaborative sales management application", async () =>
     ),
     readFile(new URL("../lib/ai-recommendations.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/readability.css", import.meta.url), "utf8"),
-    access(new URL("../dist/server/index.js", import.meta.url)),
   ]);
   const productVendorLinks = await readFile(
     new URL("../lib/product-vendor-links.ts", import.meta.url),
@@ -1146,7 +1143,6 @@ test("builds the Korean collaborative sales management application", async () =>
   assert.match(crm, /isUnregisteredBudgetName\(value\)/);
   assert.match(crm, /toggleInstitutionBulkEditor/);
   assert.match(crm, /method: editingId \? "PUT" : "POST"/);
-  assert.match(hosting, /"d1": "DB"/);
   assert.match(baseMigration, /CREATE TABLE `activities`/);
   assert.match(collaborationMigration, /CREATE TABLE `members`/);
   assert.match(collaborationMigration, /CREATE TABLE `oauth_tokens`/);
