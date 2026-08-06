@@ -104,10 +104,10 @@ function getSqlClient() {
     globalDatabase.whizzupPostgres = postgres(databaseUrl(), {
       prepare: false,
       ssl: "require",
-      // Vercel can start several isolated functions at once. One short-lived
-      // pooled connection per function prevents a dashboard load from
-      // exhausting the Supabase transaction pool.
-      max: 1,
+      // A dashboard loads several independent APIs concurrently. Three short-
+      // lived connections prevent one slow query from blocking every request
+      // while staying well below the Supabase transaction-pool limit.
+      max: 3,
       idle_timeout: 5,
       connect_timeout: 15,
       max_lifetime: 60,

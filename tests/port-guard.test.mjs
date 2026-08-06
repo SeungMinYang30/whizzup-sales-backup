@@ -45,7 +45,7 @@ test("Supabase auth refresh responses are private and verified", async () => {
 test("serverless database access has bounded concurrent connections and query deadlines", async () => {
   const database = await readFile(new URL("db/index.ts", root), "utf8");
   assert.match(database, /prepare:\s*false/);
-  assert.match(database, /max:\s*1/);
+  assert.match(database, /max:\s*3/);
   assert.match(database, /idle_timeout:\s*5/);
   assert.match(database, /DATABASE_QUERY_TIMEOUT_MS\s*=\s*15_000/);
   assert.match(database, /recycleSqlClient/);
