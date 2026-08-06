@@ -378,6 +378,12 @@ export async function GET(request: Request) {
       ensureRecordsReady(),
       ensureJointProjectsReady(),
     ]);
+    const dashboardManagerName = dashboardScope
+      ? canonicalProgressManagerName(
+          member.displayName,
+          await listRegisteredSalesNames(d1),
+        )
+      : member.displayName;
     const selectRecordsSql = dashboardScope
       ? `
         WITH
@@ -390,6 +396,14 @@ export async function GET(request: Request) {
             ) AS row_number
           FROM activities
           WHERE TRIM(COALESCE(organization, '')) <> ''
+            AND source_chat <> '영업지도 PDF 가져오기'
+            AND source_chat <> '수주 관리 엑셀 등록'
+            AND source_chat <> '수주 관리 직접 등록'
+            AND source_chat NOT LIKE '구글 시트 연동|%'
+            AND NOT (
+              source_chat = '수주업체 관리'
+              AND activity_type IN ('협력사 등록', '협력사 등록 해제')
+            )
         ),
         ranked_awards AS (
           SELECT
@@ -541,7 +555,12 @@ export async function GET(request: Request) {
     const statement = d1.prepare(selectRecordsSql);
     const result = dashboardScope
       ? await statement
-          .bind(member.displayName, member.displayName, limit + 1, offset)
+          .bind(
+            dashboardManagerName,
+            dashboardManagerName,
+            limit + 1,
+            offset,
+          )
           .all()
       : await statement.bind(limit + 1, offset).all();
     const records = (result.results as Record<string, unknown>[])

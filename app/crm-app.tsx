@@ -7887,8 +7887,18 @@ export default function CrmApp({
             isCampaignRegistrationSystemRecord(record)
           ) return false;
           if (isOwner && dashboardActivityScope === "all") return true;
-          const displayName = session?.member.displayName.trim() ?? "";
-          return Boolean(displayName) && record.progressManager.trim() === displayName;
+          const sessionDisplayName = session?.member.displayName.trim() ?? "";
+          const displayName =
+            resolveRegisteredSalesName(
+              sessionDisplayName,
+              registeredSalesNames,
+            ) ?? sessionDisplayName;
+          const recordManager =
+            resolveRegisteredSalesName(
+              record.progressManager,
+              registeredSalesNames,
+            ) ?? record.progressManager.trim();
+          return Boolean(displayName) && recordManager === displayName;
         })
         .sort(
           (a, b) =>
@@ -7896,7 +7906,13 @@ export default function CrmApp({
             b.id - a.id,
         )
         .slice(0, 20),
-    [dashboardActivityScope, isOwner, records, session?.member.displayName],
+    [
+      dashboardActivityScope,
+      isOwner,
+      records,
+      registeredSalesNames,
+      session?.member.displayName,
+    ],
   );
 
   const today = new Date();

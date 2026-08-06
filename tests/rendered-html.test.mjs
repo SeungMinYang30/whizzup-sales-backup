@@ -710,6 +710,14 @@ test("builds the Korean collaborative sales management application", async () =>
   assert.match(crm, /최종 컨택 오래된순/);
   assert.match(crm, /setFollowupSort\("activity-desc"\)/);
   assert.match(crm, /const dashboardRecentRecords = useMemo/);
+  assert.match(
+    crm,
+    /resolveRegisteredSalesName\(\s*sessionDisplayName,\s*registeredSalesNames/,
+  );
+  assert.match(
+    crm,
+    /resolveRegisteredSalesName\(\s*record\.progressManager,\s*registeredSalesNames/,
+  );
   assert.match(crm, /\.slice\(0, 20\)/);
   assert.match(
     crm,
