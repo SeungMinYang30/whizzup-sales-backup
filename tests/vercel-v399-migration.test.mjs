@@ -46,3 +46,14 @@ test("the clean Vercel origin replaces the retired backup alias", async () => {
   assert.match(syncRoute, /https:\/\/whizzup-sales-hub\.vercel\.app/);
   assert.doesNotMatch(syncRoute, /whizzup-sales-backup\.vercel\.app/);
 });
+
+test("preview Google login returns to the preview deployment", async () => {
+  const startRoute = await read("app/auth/google/route.ts");
+  const callbackRoute = await read("app/auth/callback/route.ts");
+
+  for (const route of [startRoute, callbackRoute]) {
+    assert.match(route, /process\.env\.VERCEL_ENV === "preview"/);
+    assert.match(route, /return requestUrl\.origin/);
+    assert.match(route, /process\.env\.APP_ORIGIN/);
+  }
+});

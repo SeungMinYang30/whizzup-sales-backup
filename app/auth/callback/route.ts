@@ -4,6 +4,11 @@ import { safeRelativeReturnPath } from "../../chatgpt-auth";
 
 export const dynamic = "force-dynamic";
 
+function applicationOrigin(requestUrl: URL) {
+  if (process.env.VERCEL_ENV === "preview") return requestUrl.origin;
+  return process.env.APP_ORIGIN?.trim() || requestUrl.origin;
+}
+
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
@@ -15,7 +20,7 @@ export async function GET(request: Request) {
     const supabase = await createServerSupabaseClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      const origin = process.env.APP_ORIGIN?.trim() || requestUrl.origin;
+      const origin = applicationOrigin(requestUrl);
       return NextResponse.redirect(new URL(returnTo, origin));
     }
   }

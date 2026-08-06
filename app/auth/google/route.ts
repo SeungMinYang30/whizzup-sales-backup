@@ -7,6 +7,11 @@ import { safeRelativeReturnPath } from "../../chatgpt-auth";
 
 export const dynamic = "force-dynamic";
 
+function applicationOrigin(requestUrl: URL) {
+  if (process.env.VERCEL_ENV === "preview") return requestUrl.origin;
+  return process.env.APP_ORIGIN?.trim() || requestUrl.origin;
+}
+
 export async function GET(request: Request) {
   try {
     getSupabasePublicConfig();
@@ -14,8 +19,7 @@ export async function GET(request: Request) {
     const returnTo = safeRelativeReturnPath(
       requestUrl.searchParams.get("return_to") ?? "/",
     );
-    const configuredOrigin = process.env.APP_ORIGIN?.trim();
-    const origin = configuredOrigin || requestUrl.origin;
+    const origin = applicationOrigin(requestUrl);
     const callbackUrl = new URL("/auth/callback", origin);
     callbackUrl.searchParams.set("return_to", returnTo);
 
