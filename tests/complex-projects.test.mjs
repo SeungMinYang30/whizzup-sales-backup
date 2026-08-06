@@ -48,6 +48,8 @@ test("complex project activation uses searched institution rounds and approved s
   assert.match(store, /query\.replace\(\/\\s\+\/g, ""\)\.length < 2/);
   assert.match(store, /status = 'approved' AND is_sales = 1/);
   assert.match(store, /manager_member_id = COALESCE\(excluded\.manager_member_id, complex_projects\.manager_member_id\)/);
+  assert.match(store, /TRIM\(construction_schedule_projects\.work_summary\)/);
+  assert.match(store, /ELSE construction_schedule_projects\.work_summary/);
   assert.match(page, /두 글자부터 검색합니다/);
   assert.match(page, /whizzup\.complexProjectTarget/);
   assert.match(crm, /복합사업으로 관리/);

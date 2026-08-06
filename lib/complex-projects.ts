@@ -483,7 +483,11 @@ export async function createComplexProject(payload: Record<string, unknown>, mem
         created_by, created_by_name, updated_by, updated_by_name)
      VALUES (?, ?, ?, 'manual', 0, ?, ?, ?, ?)
      ON CONFLICT(organization, business_round) DO UPDATE SET
-       work_summary = CASE WHEN TRIM(work_summary) = '' THEN excluded.work_summary ELSE work_summary END,
+       work_summary = CASE
+         WHEN TRIM(construction_schedule_projects.work_summary) = ''
+           THEN excluded.work_summary
+         ELSE construction_schedule_projects.work_summary
+       END,
        hidden_at = '', updated_by = excluded.updated_by,
        updated_by_name = excluded.updated_by_name, updated_at = CURRENT_TIMESTAMP`,
   ).bind(organization, businessRound, name, member.id, member.displayName, member.id, member.displayName).run();
