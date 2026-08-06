@@ -82,11 +82,11 @@ function isRetryableConnectionError(error: unknown) {
 }
 
 async function recycleSqlClient() {
-  const client = globalDatabase.whizzupPostgres;
+  // Concurrent requests in the same warm Vercel instance share this client.
+  // Ending it here would destroy healthy in-flight queries owned by another
+  // request. Detach it instead; postgres.js closes the old pool after the
+  // short idle timeout while the retry receives a fresh client.
   globalDatabase.whizzupPostgres = undefined;
-  if (client) {
-    await client.end({ timeout: 0 }).catch(() => undefined);
-  }
 }
 
 function databaseUrl() {

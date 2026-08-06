@@ -49,6 +49,7 @@ test("serverless database access has bounded concurrent connections and query de
   assert.match(database, /idle_timeout:\s*5/);
   assert.match(database, /DATABASE_QUERY_TIMEOUT_MS\s*=\s*15_000/);
   assert.match(database, /recycleSqlClient/);
+  assert.doesNotMatch(database, /client\.end\(\{\s*timeout:\s*0\s*\}\)/);
   assert.match(database, /statement_timeout:\s*12000/);
   assert.match(database, /lock_timeout:\s*5000/);
 });
