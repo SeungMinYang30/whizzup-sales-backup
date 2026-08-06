@@ -10807,7 +10807,7 @@ tr:hover .row-actions { opacity: 1; }
 .construction-new-institution-form label:nth-child(3) { grid-column: 1 / -1; }
 .construction-new-institution-form input { min-height: 42px; border: 1px solid #ccd6e9; border-radius: 8px; padding: 0 12px; background: #fff; color: #17233a; font-size: 14px; }
 .construction-new-institution-form > button { grid-column: 1 / -1; justify-self: end; min-height: 42px; }
-.construction-stage-editor { width: min(900px, 96vw); }
+.construction-stage-editor { width: min(1120px, calc(100vw - 32px)); box-sizing: border-box; }
 .construction-editor-summary { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 14px; margin: 16px 0; }
 .construction-editor-summary > label:first-child { display: grid; gap: 6px; color: #53627b; font-size: 13px; font-weight: 850; }
 .construction-editor-summary input[type="text"] { min-height: 43px; font-size: 14px; }
@@ -10815,7 +10815,7 @@ tr:hover .row-actions { opacity: 1; }
 .construction-project-complete input { width: 17px; height: 17px; accent-color: #13a071; }
 .construction-stage-table { overflow-x: auto; border: 1px solid #d9e1ed; border-radius: 11px; }
 .construction-stage-head,
-.construction-stage-row { min-width: 980px; display: grid; grid-template-columns: 50px 90px minmax(150px, .8fr) minmax(190px, 1.2fr) 150px 150px 52px; align-items: center; }
+.construction-stage-row { width: 100%; min-width: 0; display: grid; grid-template-columns: 52px 96px minmax(135px, .85fr) minmax(170px, 1.25fr) minmax(135px, .8fr) minmax(135px, .8fr) 52px; align-items: center; }
 .construction-stage-head { min-height: 42px; background: #f1f4f9; color: #68768d; font-size: 12px; font-weight: 900; text-align: center; }
 .construction-stage-row { min-height: 49px; border-top: 1px solid #e5eaf1; background: #fbfcfe; opacity: .72; }
 .construction-stage-row.active { background: #fff; opacity: 1; }
@@ -10835,6 +10835,11 @@ tr:hover .row-actions { opacity: 1; }
 .construction-product-picker > div:last-child label { display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid #d8e0ed; border-radius: 7px; background: #fff; color: #31435f; font-size: 12px; font-weight: 750; cursor: pointer; }
 .construction-product-picker input { width: 15px; height: 15px; accent-color: #3f49e6; }
 .construction-products-empty { padding: 10px 12px; border-radius: 8px; background: #fff8eb; color: #8b641d; }
+
+@media (max-width: 700px) {
+  .construction-stage-head,
+  .construction-stage-row { width: auto; min-width: 850px; grid-template-columns: 50px 90px 150px 200px 150px 150px 60px; }
+}
 
 .home-calendar-header p { font-size: 14px; }
 .home-calendar-filters { gap: 9px; flex-wrap: wrap; }
