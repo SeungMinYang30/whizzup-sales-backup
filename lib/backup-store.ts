@@ -1157,7 +1157,10 @@ function nullableInteger(value: unknown, label: string) {
   return asInteger(value, label);
 }
 
-function normalizeEquipmentProjectRows(rows: unknown[]) {
+function normalizeEquipmentProjectRows(
+  rows: unknown[],
+  fallbackCreatedBy: number | null,
+) {
   const occupiedNames = new Set<string>();
   rows.forEach((row) => {
     if (!isPlainObject(row)) return;
@@ -1189,6 +1192,10 @@ function normalizeEquipmentProjectRows(rows: unknown[]) {
     return {
       ...row,
       name,
+      created_by:
+        Number(row.created_by) === 0 && fallbackCreatedBy
+          ? fallbackCreatedBy
+          : row.created_by,
       activity_id: "activity_id" in row ? row.activity_id : null,
       business_round: "business_round" in row ? row.business_round : 1,
       construction_amount:
@@ -2570,6 +2577,28 @@ export async function validateFullBackup(
   const restoresBudgetNameCatalog =
     Array.isArray(input.data.budget_name_groups) &&
     Array.isArray(input.data.budget_name_aliases);
+  const backupMembers = Array.isArray(input.data.members)
+    ? input.data.members.filter(isPlainObject)
+    : [];
+  const currentAdminEmail = String(currentAdmin?.email ?? "")
+    .trim()
+    .toLowerCase();
+  const fallbackEquipmentProjectCreator =
+    backupMembers.find(
+      (row) =>
+        currentAdminEmail &&
+        String(row.email ?? "").trim().toLowerCase() === currentAdminEmail,
+    ) ??
+    backupMembers.find(
+      (row) =>
+        String(row.status ?? "") === "approved" &&
+        String(row.role ?? "") === "admin",
+    ) ??
+    backupMembers.find((row) => String(row.status ?? "") === "approved") ??
+    backupMembers[0];
+  const fallbackEquipmentProjectCreatedBy = fallbackEquipmentProjectCreator
+    ? Number(fallbackEquipmentProjectCreator.id)
+    : null;
   for (const table of BACKUP_TABLES) {
     const rows = input.data[table.name];
     if (
@@ -2786,7 +2815,13 @@ export async function validateFullBackup(
                   : row,
               )
           : table.name === "equipment_projects"
-            ? normalizeEquipmentProjectRows(rows)
+            ? normalizeEquipmentProjectRows(
+                rows,
+                Number.isSafeInteger(fallbackEquipmentProjectCreatedBy) &&
+                  Number(fallbackEquipmentProjectCreatedBy) > 0
+                  ? Number(fallbackEquipmentProjectCreatedBy)
+                  : null,
+              )
           : table.name === "equipment_items" &&
               input.schemaVersion !== BACKUP_SCHEMA_VERSION
             ? rows.map((row) =>

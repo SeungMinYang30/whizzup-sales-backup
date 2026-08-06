@@ -138,7 +138,7 @@ test("full backup restore accepts every current persisted business column", () =
 test("full backup restore repairs blank equipment project names without changing links", () => {
   assert.match(
     backupStore,
-    /function normalizeEquipmentProjectRows\(rows: unknown\[\]\)/,
+    /function normalizeEquipmentProjectRows\([\s\S]*fallbackCreatedBy: number \| null/,
   );
   assert.match(
     backupStore,
@@ -150,7 +150,11 @@ test("full backup restore repairs blank equipment project names without changing
   );
   assert.match(
     backupStore,
-    /table\.name === "equipment_projects"[\s\S]*normalizeEquipmentProjectRows\(rows\)/,
+    /table\.name === "equipment_projects"[\s\S]*normalizeEquipmentProjectRows\([\s\S]*fallbackEquipmentProjectCreatedBy/,
+  );
+  assert.match(
+    backupStore,
+    /Number\(row\.created_by\) === 0 && fallbackCreatedBy[\s\S]*fallbackCreatedBy[\s\S]*row\.created_by/,
   );
 });
 
