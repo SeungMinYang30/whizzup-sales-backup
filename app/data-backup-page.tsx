@@ -225,7 +225,6 @@ export default function DataBackupPage({
     setBackupPayload(null);
     setBackupInspection(null);
     setBackupError("");
-    setSafetyBackupDownloaded(false);
     setRestoreConfirmation("");
     if (file.size > 12 * 1024 * 1024) {
       setBackupError("12MB 이하의 전체 백업 파일을 선택해 주세요.");
