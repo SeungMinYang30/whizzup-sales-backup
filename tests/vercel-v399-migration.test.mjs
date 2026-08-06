@@ -55,6 +55,8 @@ test("Postgres compatibility serializes and de-duplicates runtime migrations", a
   assert.match(adapter, /ADD COLUMN IF NOT EXISTS/);
   assert.match(adapter, /ADD\\s\+COLUMN/);
   assert.match(adapter, /a\.created_at::text/);
+  assert.match(adapter, /COALESCE\(\$1, ''\) ~/);
+  assert.doesNotMatch(adapter, /json_valid[\s\S]*?THEN 1 ELSE 0/);
 });
 
 test("large full backups use gzip across the Vercel request boundary", async () => {

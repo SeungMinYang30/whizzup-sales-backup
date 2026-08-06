@@ -145,8 +145,10 @@ export function normalizeSqlForPostgres(query: string) {
     )
     .replace(/datetime\(\s*'now'\s*\)/gi, "CURRENT_TIMESTAMP")
     .replace(/datetime\(([^)]+)\)/gi, "($1)::timestamptz")
-    .replace(/json_valid\(COALESCE\(([^,]+),\s*''\)\)/gi,
-      "(CASE WHEN COALESCE($1, '') ~ '^\\s*[\\[{]' THEN 1 ELSE 0 END)")
+    .replace(
+      /json_valid\(COALESCE\(([^,]+),\s*''\)\)/gi,
+      "(COALESCE($1, '') ~ '^\\s*[\\[{]')",
+    )
     .replace(/json_array_length\(([^)]+)\)/gi, "jsonb_array_length(($1)::jsonb)")
     .replace(/\bjson_array\(/gi, "jsonb_build_array(")
     .replace(/\bjson_object\(/gi, "jsonb_build_object(")
