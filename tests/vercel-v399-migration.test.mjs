@@ -109,6 +109,8 @@ test("large full backups use gzip across the Vercel request boundary", async () 
   assert.match(store, /reconnectedCampaignTargets/);
   assert.match(store, /detachedCampaignTargets/);
   assert.match(store, /Number\(row\.created_by\) !== 0/);
+  assert.match(store, /const tableResults = await Promise\.all/);
+  assert.match(page, /Date\.now\(\) - timestamp <= 30 \* 60 \* 1000/);
 });
 
 test("campaign targets reconcile business rounds before creating indexes", async () => {

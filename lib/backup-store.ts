@@ -2463,10 +2463,16 @@ export async function createFullBackup(): Promise<FullBackup> {
   const data = {} as Record<BackupTableName, BackupRow[]>;
   const counts = {} as Record<BackupTableName, number>;
 
-  for (const table of BACKUP_TABLES) {
-    const result = await d1
-      .prepare(`SELECT * FROM ${table.name} ORDER BY ${table.orderBy}`)
-      .all<BackupRow>();
+  const tableResults = await Promise.all(
+    BACKUP_TABLES.map(async (table) => {
+      const result = await d1
+        .prepare(`SELECT * FROM ${table.name} ORDER BY ${table.orderBy}`)
+        .all<BackupRow>();
+      return { table, rows: result.results };
+    }),
+  );
+  for (const { table, rows } of tableResults) {
+    const result = { results: rows };
     data[table.name] = result.results;
     counts[table.name] = result.results.length;
   }
