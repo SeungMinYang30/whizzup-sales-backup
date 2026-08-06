@@ -19,6 +19,7 @@ test("Vercel v399 schema contains every newly introduced operational area", asyn
     assert.match(schema, new RegExp(`CREATE TABLE IF NOT EXISTS public\\.${table}`));
   }
   assert.match(schema, /ADD COLUMN IF NOT EXISTS budgets_json/);
+  assert.match(schema, /ADD COLUMN IF NOT EXISTS award_stage_manual/);
   assert.match(schema, /ADD COLUMN IF NOT EXISTS auth_user_id uuid/);
   assert.match(schema, /hidden_at text NOT NULL DEFAULT ''/);
   assert.match(schema, /ADD COLUMN IF NOT EXISTS hidden_at/);
@@ -82,6 +83,9 @@ test("large full backups use gzip across the Vercel request boundary", async () 
   assert.match(page, /application\/gzip/);
   assert.match(store, /if \(isPostgresDatabase\(\)\) \{/);
   assert.match(store, /d1\.prepare\("SELECT 1"\)\.run\(\)/);
+  assert.match(store, /"current_view"/);
+  assert.match(store, /"award_stage_manual"/);
+  assert.match(store, /"google_origin"/);
 });
 
 test("campaign targets reconcile business rounds before creating indexes", async () => {
