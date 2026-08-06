@@ -199,7 +199,11 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
         {
           cache: "no-store",
           signal: controller.signal,
-          timeoutMs: refreshGoogle ? 15_000 : 12_000,
+          // The stored site calendar stays fast. Google reconciliation may
+          // update and repair several events, so let that single background
+          // request finish instead of aborting and immediately duplicating it.
+          timeoutMs: refreshGoogle ? 45_000 : 12_000,
+          retries: refreshGoogle ? 0 : 1,
         },
       );
         const payload = await response.json() as {

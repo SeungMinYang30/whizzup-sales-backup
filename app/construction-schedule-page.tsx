@@ -148,7 +148,10 @@ export default function ConstructionSchedulePage({
     try {
       const response = await resilientFetch("/api/schedules?scope=construction-board", {
         cache: "no-store",
-        timeoutMs: 15_000,
+        // Supabase can need more than 15 seconds to wake a cold pooled
+        // connection. Do not abort a healthy board response and show 0 rows.
+        timeoutMs: 45_000,
+        retries: 0,
       });
       const payload = (await response.json()) as {
         projects?: ConstructionProject[];
