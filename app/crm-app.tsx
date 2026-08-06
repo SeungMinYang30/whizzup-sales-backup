@@ -35,6 +35,7 @@ import {
   requestOfficialSchoolDecision,
   type OfficialSchoolConfirmation,
 } from "./institution-confirmation";
+import { resilientFetch } from "./resilient-fetch";
 import type {
   AccountingEntry,
   AccountingWorkspaceTab,
@@ -3381,9 +3382,9 @@ async function requestRecords(scope: RecordsScope = "full") {
   let offset = 0;
 
   for (let page = 0; page < maximumPages; page += 1) {
-    const response = await fetch(
+    const response = await resilientFetch(
       `/api/records?scope=${scope}&limit=${pageSize}&offset=${offset}`,
-      { cache: "no-store" },
+      { cache: "no-store", timeoutMs: 15_000 },
     );
     const payload = (await response.json()) as {
       records?: Record<string, unknown>[];
@@ -3453,7 +3454,10 @@ function normalizeUpdatedActivity(
 }
 
 async function requestSession() {
-  const response = await fetch("/api/session", { cache: "no-store" });
+  const response = await resilientFetch("/api/session", {
+    cache: "no-store",
+    timeoutMs: 12_000,
+  });
   const payload = (await response.json()) as SessionPayload & { error?: string };
   if (!response.ok) throw new Error(payload.error || "사용자 정보를 확인하지 못했습니다.");
   return {
@@ -3472,8 +3476,9 @@ async function requestSession() {
 }
 
 async function requestScheduleReminders() {
-  const response = await fetch("/api/schedules?scope=reminders", {
+  const response = await resilientFetch("/api/schedules?scope=reminders", {
     cache: "no-store",
+    timeoutMs: 12_000,
   });
   const payload = (await response.json()) as {
     reminders?: ScheduleReminderRecord[];
@@ -6762,12 +6767,6 @@ export default function CrmApp({
     void requestSession()
       .then(async (nextSession) => {
         if (!active) return;
-        const preloadManagerRecords =
-          nextSession.member.status === "approved" &&
-          memberCan(nextSession.member, "records:manage");
-        if (preloadManagerRecords) {
-          fullRecordsLoadingRef.current = true;
-        }
         setSession(nextSession);
         setSessionLoading(false);
         if (nextSession.member.status === "approved") {
@@ -6777,16 +6776,15 @@ export default function CrmApp({
             void loadManagerAlerts();
           }
           void loadActivityReviewAssignees();
-          const nextRecords = await requestRecords(
-            preloadManagerRecords ? "full" : "dashboard",
-          ).finally(() => {
-            fullRecordsLoadingRef.current = false;
-          });
+          // The dashboard only needs the latest institution, award, and
+          // schedule rows. Load the complete history lazily when a detailed
+          // management view is opened.
+          const nextRecords = await requestRecords("dashboard");
           if (!active) return;
           if (!recordsFullyLoadedRef.current) {
             setRecords(nextRecords);
-            recordsFullyLoadedRef.current = preloadManagerRecords;
-            setRecordsFullyLoaded(preloadManagerRecords);
+            recordsFullyLoadedRef.current = false;
+            setRecordsFullyLoaded(false);
           }
           window.setTimeout(() => {
             if (active) void loadProtectionReviews();

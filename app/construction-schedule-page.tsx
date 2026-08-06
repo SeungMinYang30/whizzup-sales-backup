@@ -12,6 +12,7 @@ import {
   constructionStageIndex,
   isConstructionStage,
 } from "../lib/construction-stages";
+import { resilientFetch } from "./resilient-fetch";
 import { downloadConstructionTimelineXlsx } from "./activity-xlsx";
 
 type ScheduleRecord = {
@@ -145,8 +146,9 @@ export default function ConstructionSchedulePage({
   async function load() {
     setLoading(true);
     try {
-      const response = await fetch("/api/schedules?scope=construction-board", {
+      const response = await resilientFetch("/api/schedules?scope=construction-board", {
         cache: "no-store",
+        timeoutMs: 15_000,
       });
       const payload = (await response.json()) as {
         projects?: ConstructionProject[];

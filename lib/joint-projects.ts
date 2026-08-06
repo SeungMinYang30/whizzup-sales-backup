@@ -1,4 +1,4 @@
-import { getD1 } from "../db";
+import { getD1, isPostgresDatabase } from "../db";
 import { ensureCollaborationReady } from "./collaboration";
 import {
   INSTITUTION_ALIASES_SETTING_KEY,
@@ -908,6 +908,10 @@ async function ensureJointProjectColumns(d1: ReturnType<typeof getD1>) {
 
 async function initialize() {
   const d1 = getD1();
+  if (isPostgresDatabase()) {
+    await d1.prepare("SELECT 1").all();
+    return d1;
+  }
   await ensureCollaborationReady();
   await d1.batch([
     d1.prepare(createProjectsSql),

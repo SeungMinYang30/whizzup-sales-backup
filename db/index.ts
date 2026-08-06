@@ -43,6 +43,52 @@ const globalDatabase = globalThis as typeof globalThis & {
   whizzupSchemaReady?: Promise<void>;
 };
 
+const DATABASE_QUERY_TIMEOUT_MS = 15_000;
+const DATABASE_SCHEMA_TIMEOUT_MS = 25_000;
+
+class DatabaseConnectionTimeoutError extends Error {
+  constructor(message = "데이터베이스 응답 시간이 초과되었습니다.") {
+    super(message);
+    this.name = "DatabaseConnectionTimeoutError";
+  }
+}
+
+async function withDatabaseTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new DatabaseConnectionTimeoutError()),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function isRetryableConnectionError(error: unknown) {
+  if (error instanceof DatabaseConnectionTimeoutError) return true;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /connection|socket|timeout|timed out|terminated|closed|reset|econn/i.test(
+    message,
+  );
+}
+
+async function recycleSqlClient() {
+  const client = globalDatabase.whizzupPostgres;
+  globalDatabase.whizzupPostgres = undefined;
+  if (client) {
+    await client.end({ timeout: 0 }).catch(() => undefined);
+  }
+}
+
 function databaseUrl() {
   const value = process.env.DATABASE_URL?.trim();
   if (!value) {
@@ -58,10 +104,13 @@ function getSqlClient() {
     globalDatabase.whizzupPostgres = postgres(databaseUrl(), {
       prepare: false,
       ssl: "require",
-      max: 3,
-      idle_timeout: 20,
+      // Vercel can start several isolated functions at once. One short-lived
+      // pooled connection per function prevents a dashboard load from
+      // exhausting the Supabase transaction pool.
+      max: 1,
+      idle_timeout: 5,
       connect_timeout: 15,
-      max_lifetime: 300,
+      max_lifetime: 60,
       connection: {
         statement_timeout: 12000,
         lock_timeout: 5000,
@@ -72,36 +121,89 @@ function getSqlClient() {
   return globalDatabase.whizzupPostgres;
 }
 
+async function schemaVersionIsCurrent(executor: QueryExecutor) {
+  const migrationTable = (await executor.unsafe(
+    "SELECT to_regclass('public.vercel_schema_migrations')::text AS relation_name",
+  )) as QueryRow[];
+  if (!migrationTable[0]?.relation_name) return false;
+  const current = (await executor.unsafe(
+    `SELECT 1 AS current
+     FROM public.vercel_schema_migrations
+     WHERE version = $1
+     LIMIT 1`,
+    [VERCEL_SCHEMA_VERSION],
+  )) as QueryRow[];
+  return current.length > 0;
+}
+
+async function reconcileVercelSchema() {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const sql = getSqlClient();
+    try {
+      await withDatabaseTimeout(
+        (async () => {
+          // Almost every request runs against an already-current schema. Check
+          // that first without opening a transaction or waiting for the global
+          // migration lock.
+          if (await schemaVersionIsCurrent(sql as unknown as QueryExecutor)) {
+            return;
+          }
+          await sql.begin(async (transaction) => {
+            await transaction.unsafe("SELECT pg_advisory_xact_lock(7053990602)");
+            if (
+              await schemaVersionIsCurrent(
+                transaction as unknown as QueryExecutor,
+              )
+            ) {
+              return;
+            }
+            await transaction.unsafe(VERCEL_SCHEMA_SQL);
+          });
+        })(),
+        DATABASE_SCHEMA_TIMEOUT_MS,
+      );
+      return;
+    } catch (error) {
+      if (attempt === 0 && isRetryableConnectionError(error)) {
+        await recycleSqlClient();
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
 function ensureVercelSchemaReady() {
   if (!globalDatabase.whizzupSchemaReady) {
-    globalDatabase.whizzupSchemaReady = (async () => {
-      const sql = getSqlClient();
-      await sql.begin(async (transaction) => {
-        // Several serverless runtimes may initialize together. Serialize the
-        // reconciliation so a concurrent request cannot leave a partial schema.
-        await transaction.unsafe("SELECT pg_advisory_xact_lock(7053990602)");
-        const migrationTable = (await transaction.unsafe(
-          "SELECT to_regclass('public.vercel_schema_migrations')::text AS relation_name",
-        )) as QueryRow[];
-        if (migrationTable[0]?.relation_name) {
-          const current = (await transaction.unsafe(
-            `SELECT 1 AS current
-             FROM public.vercel_schema_migrations
-             WHERE version = $1
-             LIMIT 1`,
-            [VERCEL_SCHEMA_VERSION],
-          )) as QueryRow[];
-          if (current.length > 0) return;
-        }
-        await transaction.unsafe(VERCEL_SCHEMA_SQL);
-      });
-    })()
+    globalDatabase.whizzupSchemaReady = reconcileVercelSchema()
       .catch((error) => {
         globalDatabase.whizzupSchemaReady = undefined;
         throw error;
       });
   }
   return globalDatabase.whizzupSchemaReady;
+}
+
+async function executeDirectQuery<T extends QueryRow>(
+  query: string,
+  parameters: unknown[],
+  canRetry: boolean,
+) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return (await withDatabaseTimeout(
+        getSqlClient().unsafe(query, parameters),
+        DATABASE_QUERY_TIMEOUT_MS,
+      )) as PostgresResult<T>;
+    } catch (error) {
+      if (isRetryableConnectionError(error)) {
+        await recycleSqlClient();
+        if (canRetry && attempt === 0) continue;
+      }
+      throw error;
+    }
+  }
+  throw new DatabaseConnectionTimeoutError();
 }
 
 export function normalizeSqlForPostgres(query: string) {
@@ -216,12 +318,20 @@ class PreparedStatement {
     if (!executor && !this.executor) {
       await ensureVercelSchemaReady();
     }
+    const normalizedQuery = normalizeSqlForPostgres(this.query);
+    if (!executor && !this.executor) {
+      return executeDirectQuery<T>(
+        normalizedQuery,
+        this.parameters,
+        /^\s*(SELECT|WITH)\b/i.test(normalizedQuery),
+      );
+    }
     const queryExecutor =
       executor ??
       this.executor ??
       (getSqlClient() as unknown as QueryExecutor);
     const rows = (await queryExecutor.unsafe(
-      normalizeSqlForPostgres(this.query),
+      normalizedQuery,
       this.parameters,
     )) as PostgresResult<T>;
     return rows;

@@ -1,4 +1,4 @@
-import { getD1 } from "../db";
+import { getD1, isPostgresDatabase } from "../db";
 import { ensureCollaborationReady } from "./collaboration";
 
 const createCampaignsSql = `
@@ -52,6 +52,10 @@ let campaignsReadyPromise: Promise<ReturnType<typeof getD1>> | null = null;
 
 async function initializeCampaigns() {
   const d1 = getD1();
+  if (isPostgresDatabase()) {
+    await d1.prepare("SELECT 1").all();
+    return d1;
+  }
   await ensureCollaborationReady();
   await d1.batch([
     d1.prepare(createCampaignsSql),

@@ -328,7 +328,9 @@ export function buildCampaignAssignmentBackfillStatements() {
         AND TRIM(COALESCE(progress_manager, '')) <> ${targetMemberName}
         AND (
           TRIM(COALESCE(progress_manager, '')) IN ('', '해당 없음')
-          OR COALESCE(${targetUpdatedAt}, '') >= COALESCE(updated_at, '')
+          OR ${targetUpdatedAt} IS NULL
+          OR updated_at IS NULL
+          OR ${targetUpdatedAt} >= updated_at
         )
     `,
     `
@@ -340,8 +342,13 @@ export function buildCampaignAssignmentBackfillStatements() {
           assigned_member_id IS NULL
           OR (
             assigned_member_id <> ${activityMemberId}
-            AND COALESCE(${activityUpdatedAt}, '') >
-                COALESCE(updated_at, '')
+            AND (
+              updated_at IS NULL
+              OR (
+                ${activityUpdatedAt} IS NOT NULL
+                AND ${activityUpdatedAt} > updated_at
+              )
+            )
           )
         )
     `,

@@ -1,4 +1,4 @@
-import { getD1 } from "../db";
+import { getD1, isPostgresDatabase } from "../db";
 import { ensureEquipmentReady } from "./equipment-store";
 import { ensureRecordsReady } from "./records-store";
 import {
@@ -124,9 +124,13 @@ const schemaStatements = [
 let accountingReadyPromise: Promise<ReturnType<typeof getD1>> | null = null;
 
 async function initializeAccounting() {
+  const d1 = getD1();
+  if (isPostgresDatabase()) {
+    await d1.prepare("SELECT 1").all();
+    return d1;
+  }
   await ensureRecordsReady();
   await ensureEquipmentReady();
-  const d1 = getD1();
   await d1.batch(schemaStatements.map((statement) => d1.prepare(statement)));
   const columns = await d1
     .prepare("PRAGMA table_info(accounting_settlements)")

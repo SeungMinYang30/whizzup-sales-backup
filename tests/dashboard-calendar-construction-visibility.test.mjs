@@ -47,7 +47,7 @@ test("대시보드 시공 현황과 일정표는 같은 조회 결과를 공유�
   assert.doesNotMatch(crmApp, /fetch\("\/api\/schedules\?scope=construction-board"/);
   assert.match(crmApp, /onDashboardCounts=\{setConstructionDashboardCounts\}/);
   assert.equal(
-    (constructionPage.match(/fetch\("\/api\/schedules\?scope=construction-board"/g) ?? []).length,
+    (constructionPage.match(/resilientFetch\("\/api\/schedules\?scope=construction-board"/g) ?? []).length,
     1,
   );
   assert.match(constructionPage, /onDashboardCounts\(projects\.filter/);

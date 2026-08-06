@@ -1,4 +1,4 @@
-import { getD1 } from "../db";
+import { getD1, isPostgresDatabase } from "../db";
 import { ensureCollaborationReady } from "./collaboration";
 import {
   koreaTodayValue,
@@ -464,6 +464,10 @@ async function retrofitEquipmentProjectsByCanonicalBudget(
 
 async function initializeEquipment() {
   const d1 = getD1();
+  if (isPostgresDatabase()) {
+    await d1.prepare("SELECT 1").all();
+    return d1;
+  }
   await ensureCollaborationReady();
   await d1.batch(schemaStatements.map((statement) => d1.prepare(statement)));
   const columns = await d1

@@ -5,6 +5,7 @@ import {
   constructionStageIndex,
   isConstructionStage,
 } from "../lib/construction-stages";
+import { resilientFetch } from "./resilient-fetch";
 
 type ScheduleCategory = "sales" | "meeting" | "construction" | "showroom" | "other" | "personal" | "google";
 type CalendarFilter = "all" | ScheduleCategory;
@@ -193,9 +194,13 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
     const controller = new AbortController();
     setLoading(true);
     const requestCalendar = async (refreshGoogle: boolean) => {
-      const response = await fetch(
+      const response = await resilientFetch(
         `/api/schedules?scope=calendar&start=${rangeStart}&end=${rangeEnd}&refreshGoogle=${refreshGoogle ? "1" : "0"}`,
-        { cache: "no-store", signal: controller.signal },
+        {
+          cache: "no-store",
+          signal: controller.signal,
+          timeoutMs: refreshGoogle ? 15_000 : 12_000,
+        },
       );
         const payload = await response.json() as {
           schedules?: HomeCalendarSchedule[]; currentMember?: { id: number; displayName: string; role: string };

@@ -1131,6 +1131,10 @@ let recordsReadyPromise: Promise<ReturnType<typeof getD1>> | null = null;
 
 async function initializeRecords() {
   const d1 = getD1();
+  if (isPostgresDatabase()) {
+    await d1.prepare("SELECT 1").all();
+    return d1;
+  }
   await ensureCollaborationReady();
   await d1.batch([
     d1.prepare(createTableSql),

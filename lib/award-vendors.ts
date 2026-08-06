@@ -1,4 +1,4 @@
-import { getD1 } from "../db";
+import { getD1, isPostgresDatabase } from "../db";
 import { ensureRecordsReady } from "./records-store";
 import { getPostgresObjectStorage } from "./postgres-object-storage";
 
@@ -156,8 +156,11 @@ async function ensureAwardVendorActiveColumn(
 
 export function ensureAwardVendorsReady() {
   if (!awardVendorsReadyPromise) {
-    awardVendorsReadyPromise = ensureRecordsReady()
+    awardVendorsReadyPromise = (isPostgresDatabase()
+      ? getD1().prepare("SELECT 1").all().then(() => getD1())
+      : ensureRecordsReady())
       .then(async (d1) => {
+        if (isPostgresDatabase()) return d1;
         await d1.batch(schema.map((statement) => d1.prepare(statement)));
         await ensureAwardVendorActiveColumn(d1);
         await migrateLegacyPartnerActivities(d1);

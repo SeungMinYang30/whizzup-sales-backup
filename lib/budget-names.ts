@@ -920,13 +920,16 @@ async function ensureExactBudgetRetrofit(d1: D1Database) {
 
 async function initializeBudgetNames() {
   const d1 = getD1();
+  if (isPostgresDatabase()) {
+    await d1.prepare("SELECT 1").all();
+    return d1;
+  }
   await d1.batch(schemaStatements.map((statement) => d1.prepare(statement)));
   await ensureAdditiveBudgetSchema(d1);
   // The standby PostgreSQL database receives already-normalized rows from the
   // primary Sites backup. Re-running the primary D1/SQLite data retrofits here
   // can both mutate replicated data and execute SQLite-only expressions.
   // Keep schema checks above, but leave one-time data repair to the primary.
-  if (isPostgresDatabase()) return d1;
   await backfillBudgetOriginalNames(d1);
   await ensureSelfBudgetGroup(d1);
   await ensureKnownPurposeBudgetGroups(d1);
