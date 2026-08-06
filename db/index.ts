@@ -1,5 +1,7 @@
 import postgres from "postgres";
 import {
+  VERCEL_BASE_SCHEMA_VERSION,
+  VERCEL_INCREMENTAL_SCHEMA_SQL,
   VERCEL_SCHEMA_SQL,
   VERCEL_SCHEMA_VERSION,
 } from "./vercel-schema";
@@ -121,7 +123,7 @@ function getSqlClient() {
   return globalDatabase.whizzupPostgres;
 }
 
-async function schemaVersionIsCurrent(executor: QueryExecutor) {
+async function schemaVersionExists(executor: QueryExecutor, version: string) {
   const migrationTable = (await executor.unsafe(
     "SELECT to_regclass('public.vercel_schema_migrations')::text AS relation_name",
   )) as QueryRow[];
@@ -131,9 +133,13 @@ async function schemaVersionIsCurrent(executor: QueryExecutor) {
      FROM public.vercel_schema_migrations
      WHERE version = $1
      LIMIT 1`,
-    [VERCEL_SCHEMA_VERSION],
+    [version],
   )) as QueryRow[];
   return current.length > 0;
+}
+
+function schemaVersionIsCurrent(executor: QueryExecutor) {
+  return schemaVersionExists(executor, VERCEL_SCHEMA_VERSION);
 }
 
 async function reconcileVercelSchema() {
@@ -157,7 +163,15 @@ async function reconcileVercelSchema() {
             ) {
               return;
             }
-            await transaction.unsafe(VERCEL_SCHEMA_SQL);
+            const baseSchemaIsReady = await schemaVersionExists(
+              transaction as unknown as QueryExecutor,
+              VERCEL_BASE_SCHEMA_VERSION,
+            );
+            await transaction.unsafe(
+              baseSchemaIsReady
+                ? VERCEL_INCREMENTAL_SCHEMA_SQL
+                : VERCEL_SCHEMA_SQL,
+            );
           });
         })(),
         DATABASE_SCHEMA_TIMEOUT_MS,

@@ -34,6 +34,10 @@ const vercelSchemaSource = await readFile(
   new URL("../db/vercel-schema.ts", import.meta.url),
   "utf8",
 );
+const databaseSource = await readFile(
+  new URL("../db/index.ts", import.meta.url),
+  "utf8",
+);
 const globalSearchSource = await readFile(
   new URL("../app/global-institution-search.tsx", import.meta.url),
   "utf8",
@@ -99,6 +103,12 @@ test("제품 기준정보와 연결정보는 묶음 조회하고 조회 인덱�
   assert.match(productRelationsSource, /'vendor' AS row_kind[\s\S]*UNION ALL[\s\S]*'link' AS row_kind[\s\S]*UNION ALL[\s\S]*'supply' AS row_kind/);
   assert.match(vercelSchemaSource, /activities_organization_round_date_idx/);
   assert.match(vercelSchemaSource, /sales_campaign_targets_org_round_campaign_idx/);
+});
+
+test("운영 DB는 전체 스키마 대신 기준 버전 이후의 증분 스키마만 적용한다", () => {
+  assert.match(vercelSchemaSource, /VERCEL_BASE_SCHEMA_VERSION = "202608060007_full_backup_columns"/);
+  assert.match(vercelSchemaSource, /export const VERCEL_INCREMENTAL_SCHEMA_SQL/);
+  assert.match(databaseSource, /baseSchemaIsReady[\s\S]*VERCEL_INCREMENTAL_SCHEMA_SQL[\s\S]*VERCEL_SCHEMA_SQL/);
 });
 
 test("전체 기관 검색은 입력을 막지 않고 짧게 지연한 결과를 재사용한다", () => {
