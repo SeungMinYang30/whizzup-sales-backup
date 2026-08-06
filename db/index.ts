@@ -76,20 +76,25 @@ function ensureVercelSchemaReady() {
   if (!globalDatabase.whizzupSchemaReady) {
     globalDatabase.whizzupSchemaReady = (async () => {
       const sql = getSqlClient();
-      const migrationTable = (await sql.unsafe(
-        "SELECT to_regclass('public.vercel_schema_migrations')::text AS relation_name",
-      )) as QueryRow[];
-      if (migrationTable[0]?.relation_name) {
-        const current = (await sql.unsafe(
-          `SELECT 1 AS current
-           FROM public.vercel_schema_migrations
-           WHERE version = $1
-           LIMIT 1`,
-          [VERCEL_SCHEMA_VERSION],
+      await sql.begin(async (transaction) => {
+        // Several serverless runtimes may initialize together. Serialize the
+        // reconciliation so a concurrent request cannot leave a partial schema.
+        await transaction.unsafe("SELECT pg_advisory_xact_lock(7053990602)");
+        const migrationTable = (await transaction.unsafe(
+          "SELECT to_regclass('public.vercel_schema_migrations')::text AS relation_name",
         )) as QueryRow[];
-        if (current.length > 0) return;
-      }
-      await sql.unsafe(VERCEL_SCHEMA_SQL);
+        if (migrationTable[0]?.relation_name) {
+          const current = (await transaction.unsafe(
+            `SELECT 1 AS current
+             FROM public.vercel_schema_migrations
+             WHERE version = $1
+             LIMIT 1`,
+            [VERCEL_SCHEMA_VERSION],
+          )) as QueryRow[];
+          if (current.length > 0) return;
+        }
+        await transaction.unsafe(VERCEL_SCHEMA_SQL);
+      });
     })()
       .catch((error) => {
         globalDatabase.whizzupSchemaReady = undefined;
@@ -158,6 +163,10 @@ export function normalizeSqlForPostgres(query: string) {
     .replace(
       /^\s*SELECT\s+name\s+FROM\s+information_schema\.tables/i,
       "SELECT table_name AS name FROM information_schema.tables",
+    )
+    .replace(
+      /\bADD\s+COLUMN\s+(?!IF\s+NOT\s+EXISTS\b)/gi,
+      "ADD COLUMN IF NOT EXISTS ",
     );
 
   const wasInsertOrIgnore = /\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(query);

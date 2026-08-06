@@ -21,6 +21,15 @@ test("Vercel v399 schema contains every newly introduced operational area", asyn
   assert.match(schema, /ADD COLUMN IF NOT EXISTS budgets_json/);
   assert.match(schema, /ADD COLUMN IF NOT EXISTS auth_user_id uuid/);
   assert.match(schema, /hidden_at text NOT NULL DEFAULT ''/);
+  assert.match(schema, /ADD COLUMN IF NOT EXISTS hidden_at/);
+  assert.match(schema, /ADD COLUMN IF NOT EXISTS selection_date/);
+});
+
+test("Postgres compatibility serializes and de-duplicates runtime migrations", async () => {
+  const adapter = await read("db/index.ts");
+  assert.match(adapter, /pg_advisory_xact_lock/);
+  assert.match(adapter, /ADD COLUMN IF NOT EXISTS/);
+  assert.match(adapter, /ADD\\s\+COLUMN/);
 });
 
 test("restored approved members reuse the same Google email without reapproval", async () => {
