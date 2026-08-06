@@ -23,6 +23,10 @@ test("Vercel v399 schema contains every newly introduced operational area", asyn
   assert.match(schema, /hidden_at text NOT NULL DEFAULT ''/);
   assert.match(schema, /ADD COLUMN IF NOT EXISTS hidden_at/);
   assert.match(schema, /ADD COLUMN IF NOT EXISTS selection_date/);
+  assert.match(
+    schema,
+    /manager_alert_acknowledgements[\s\S]*?ADD COLUMN IF NOT EXISTS hidden_at text/,
+  );
 });
 
 test("Postgres compatibility serializes and de-duplicates runtime migrations", async () => {
@@ -30,6 +34,18 @@ test("Postgres compatibility serializes and de-duplicates runtime migrations", a
   assert.match(adapter, /pg_advisory_xact_lock/);
   assert.match(adapter, /ADD COLUMN IF NOT EXISTS/);
   assert.match(adapter, /ADD\\s\+COLUMN/);
+  assert.match(adapter, /a\.created_at::text/);
+});
+
+test("large full backups use gzip across the Vercel request boundary", async () => {
+  const route = await read("app/api/backup/route.ts");
+  const page = await read("app/data-backup-page.tsx");
+
+  assert.match(route, /gzipSync/);
+  assert.match(route, /gunzipSync/);
+  assert.match(route, /Content-Encoding": "gzip"/);
+  assert.match(page, /CompressionStream\("gzip"\)/);
+  assert.match(page, /application\/gzip/);
 });
 
 test("restored approved members reuse the same Google email without reapproval", async () => {

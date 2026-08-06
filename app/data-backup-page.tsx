@@ -80,6 +80,24 @@ async function readError(response: Response, fallback: string) {
   }
 }
 
+async function compressedJsonRequest(payload: unknown) {
+  const json = JSON.stringify(payload);
+  if (typeof CompressionStream === "undefined") {
+    return {
+      headers: { "Content-Type": "application/json" },
+      body: json,
+    };
+  }
+
+  const compressed = new Blob([json])
+    .stream()
+    .pipeThrough(new CompressionStream("gzip"));
+  return {
+    headers: { "Content-Type": "application/gzip" },
+    body: await new Response(compressed).arrayBuffer(),
+  };
+}
+
 export default function DataBackupPage({
   onDataChanged,
   notify,
@@ -194,10 +212,13 @@ export default function DataBackupPage({
       setBusy("inspect-backup");
       const text = await file.text();
       const backup = JSON.parse(text) as unknown;
+      const request = await compressedJsonRequest({
+        action: "inspect-backup",
+        backup,
+      });
       const response = await fetch("/api/backup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "inspect-backup", backup }),
+        ...request,
       });
       const payload = (await response.json()) as {
         inspection?: BackupInspection;
@@ -232,15 +253,15 @@ export default function DataBackupPage({
     }
     try {
       setBusy("restore");
+      const request = await compressedJsonRequest({
+        action: "restore-backup",
+        backup: backupPayload,
+        confirmation: restoreConfirmation,
+        safetyBackupDownloaded,
+      });
       const response = await fetch("/api/backup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "restore-backup",
-          backup: backupPayload,
-          confirmation: restoreConfirmation,
-          safetyBackupDownloaded,
-        }),
+        ...request,
       });
       const payload = (await response.json()) as {
         ok?: boolean;

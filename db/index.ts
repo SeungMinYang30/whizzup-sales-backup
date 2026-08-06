@@ -165,6 +165,10 @@ export function normalizeSqlForPostgres(query: string) {
       "SELECT table_name AS name FROM information_schema.tables",
     )
     .replace(
+      /SUBSTR\(COALESCE\(NULLIF\(a\.created_at,\s*''\),\s*a\.activity_date\),\s*1,\s*10\)/gi,
+      "SUBSTR(COALESCE(a.created_at::text, a.activity_date::text), 1, 10)",
+    )
+    .replace(
       /\bADD\s+COLUMN\s+(?!IF\s+NOT\s+EXISTS\b)/gi,
       "ADD COLUMN IF NOT EXISTS ",
     );
