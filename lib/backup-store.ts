@@ -1329,6 +1329,36 @@ function repairBrokenActivityReferences(
     return { ...project, activity_id: null };
   });
 
+  let reconnectedCampaignTargets = 0;
+  let detachedCampaignTargets = 0;
+  data.sales_campaign_targets = data.sales_campaign_targets.map((target) => {
+    const activityId = target.activity_id;
+    if (
+      activityId === null ||
+      activityId === "" ||
+      activityIds.has(String(activityId))
+    ) {
+      return target;
+    }
+    const candidates = [
+      ...(activitiesByBusiness.get(activityBusinessKey(target)) ?? []),
+    ].sort((left, right) => {
+      const dateDifference =
+        Date.parse(String(right.activity_date ?? "")) -
+        Date.parse(String(left.activity_date ?? ""));
+      if (Number.isFinite(dateDifference) && dateDifference) {
+        return dateDifference;
+      }
+      return Number(right.id ?? 0) - Number(left.id ?? 0);
+    });
+    if (candidates.length) {
+      reconnectedCampaignTargets += 1;
+      return { ...target, activity_id: candidates[0].id };
+    }
+    detachedCampaignTargets += 1;
+    return { ...target, activity_id: null, created_activity: 0 };
+  });
+
   const campaignTargetIds = new Set(
     data.sales_campaign_targets.map((row) => String(row.id)),
   );
@@ -1394,6 +1424,16 @@ function repairBrokenActivityReferences(
   if (detachedProjects) {
     notices.push(
       `연결할 현재 기록이 없는 사업 ${detachedProjects}건은 사업 정보는 보존하고 활동 연결만 해제했습니다.`,
+    );
+  }
+  if (reconnectedCampaignTargets) {
+    notices.push(
+      `삭제된 활동을 가리키던 예산별 기관 ${reconnectedCampaignTargets}건을 같은 기관·사업 차수의 현재 기록으로 다시 연결했습니다.`,
+    );
+  }
+  if (detachedCampaignTargets) {
+    notices.push(
+      `연결할 현재 기록이 없는 예산별 기관 ${detachedCampaignTargets}건은 기관 정보는 보존하고 활동 연결만 해제했습니다.`,
     );
   }
   if (detachedInactiveJointLinks) {
