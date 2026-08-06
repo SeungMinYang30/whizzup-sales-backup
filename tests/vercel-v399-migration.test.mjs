@@ -58,6 +58,7 @@ test("Postgres compatibility serializes and de-duplicates runtime migrations", a
   assert.match(adapter, /STRING_AGG\(TRIM\(ei\.product_name\)::text/);
   assert.match(adapter, /STRING_AGG\(a\.alias_name::text/);
   assert.match(adapter, /SUBSTR\(\$1::text,/);
+  assert.match(adapter, /EXTRACT\(YEAR FROM CURRENT_DATE\)/);
   assert.match(adapter, /COALESCE\(\$1, ''\) ~/);
   assert.doesNotMatch(adapter, /json_valid[\s\S]*?THEN 1 ELSE 0/);
 });

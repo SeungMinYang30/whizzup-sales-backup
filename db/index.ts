@@ -146,6 +146,10 @@ export function normalizeSqlForPostgres(query: string) {
     .replace(/datetime\(\s*'now'\s*\)/gi, "CURRENT_TIMESTAMP")
     .replace(/datetime\(([^)]+)\)/gi, "($1)::timestamptz")
     .replace(
+      /STRFTIME\(\s*'%Y'\s*,\s*'now'\s*\)/gi,
+      "EXTRACT(YEAR FROM CURRENT_DATE)",
+    )
+    .replace(
       /json_valid\(COALESCE\(([^,]+),\s*''\)\)/gi,
       "(COALESCE($1, '') ~ '^\\s*[\\[{]')",
     )
