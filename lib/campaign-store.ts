@@ -77,6 +77,16 @@ async function initializeCampaigns() {
       )
       .run();
   }
+  const targetColumns = await d1
+    .prepare("PRAGMA table_info(sales_campaign_targets)")
+    .all<{ name: string }>();
+  if (!targetColumns.results.some((column) => column.name === "business_round")) {
+    await d1
+      .prepare(
+        "ALTER TABLE sales_campaign_targets ADD COLUMN business_round INTEGER NOT NULL DEFAULT 1",
+      )
+      .run();
+  }
   await d1.batch([
     d1.prepare(
       "CREATE UNIQUE INDEX IF NOT EXISTS sales_campaigns_name_idx ON sales_campaigns (name)",

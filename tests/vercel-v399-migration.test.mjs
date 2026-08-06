@@ -25,6 +25,10 @@ test("Vercel v399 schema contains every newly introduced operational area", asyn
   assert.match(schema, /ADD COLUMN IF NOT EXISTS selection_date/);
   assert.match(
     schema,
+    /sales_campaign_targets[\s\S]*?ADD COLUMN IF NOT EXISTS business_round/,
+  );
+  assert.match(
+    schema,
     /authored_quotations[\s\S]*?ADD COLUMN IF NOT EXISTS business_round/,
   );
   assert.match(
@@ -62,6 +66,16 @@ test("large full backups use gzip across the Vercel request boundary", async () 
   assert.match(route, /Content-Encoding": "gzip"/);
   assert.match(page, /CompressionStream\("gzip"\)/);
   assert.match(page, /application\/gzip/);
+});
+
+test("campaign targets reconcile business rounds before creating indexes", async () => {
+  const store = await read("lib/campaign-store.ts");
+  const reconcileAt = store.indexOf(
+    "ALTER TABLE sales_campaign_targets ADD COLUMN business_round",
+  );
+  const indexAt = store.indexOf("sales_campaign_targets_org_round_campaign_idx");
+  assert.ok(reconcileAt > 0);
+  assert.ok(indexAt > reconcileAt);
 });
 
 test("restored approved members reuse the same Google email without reapproval", async () => {
