@@ -22,6 +22,9 @@ import {
   createQuotationWorkbook,
   type QuotationLine,
 } from "../lib/quotation-xlsx";
+import {
+  createSelectionCommitteeWorkbook,
+} from "../lib/selection-committee-xlsx";
 import QuotationManagementPage, {
   type QuotationInstitutionOption,
 } from "./quotation-management-page";
@@ -344,6 +347,9 @@ export default function ProductCatalogPage({
   const [favoriteProductIds, setFavoriteProductIds] = useState<string[]>([]);
   const [vendorOptions, setVendorOptions] = useState<ProductVendorOption[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [selectionWorkbookOpen, setSelectionWorkbookOpen] = useState(false);
+  const [selectionQuantities, setSelectionQuantities] = useState<Record<string, string>>({});
+  const [selectionWorkbookBusy, setSelectionWorkbookBusy] = useState(false);
   const [bulkVendorId, setBulkVendorId] = useState("__choose__");
   const [catalogView, setCatalogView] = useState<"all" | "favorites">("all");
   const [productPage, setProductPage] = useState(1);
@@ -474,6 +480,10 @@ export default function ProductCatalogPage({
   const currentPageSelected =
     productPageItems.length > 0 &&
     productPageItems.every((product) => selectedProductIdSet.has(product.id));
+  const selectedProducts = useMemo(
+    () => products.filter((product) => selectedProductIdSet.has(product.id)),
+    [products, selectedProductIdSet],
+  );
 
   useEffect(() => {
     setProductPage(1);
@@ -949,6 +959,39 @@ export default function ProductCatalogPage({
     setMessage("");
   }
 
+  function openSelectionWorkbook() {
+    if (!selectedProducts.length) {
+      setMessage("물품선정 자료에 넣을 제품을 먼저 선택해 주세요.");
+      return;
+    }
+    setSelectionQuantities(Object.fromEntries(selectedProducts.map((product) => [product.id, "1"])));
+    setSelectionWorkbookOpen(true);
+    setMessage("");
+  }
+
+  async function downloadSelectionWorkbook() {
+    if (selectionWorkbookBusy) return;
+    setSelectionWorkbookBusy(true);
+    setMessage("");
+    try {
+      const lines = selectedProducts.map((product) => {
+        const quantity = Number(selectionQuantities[product.id] || 1);
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          throw new Error(`${product.name}의 수량을 확인해 주세요.`);
+        }
+        return { productId: product.id, quantity };
+      });
+      const bytes = await createSelectionCommitteeWorkbook(lines, products);
+      downloadBytes(bytes, `물품선정위원회_집계표_평가표_${localDateString()}.xlsx`);
+      setSelectionWorkbookOpen(false);
+      setMessage("일산초 원본 디자인의 물품선정위원회 자료를 내려받았습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "물품선정 엑셀을 만들지 못했습니다.");
+    } finally {
+      setSelectionWorkbookBusy(false);
+    }
+  }
+
   function addQuotationProduct(product: ProductCatalogItem) {
     setQuotation((current) => {
       if (!current) return current;
@@ -1223,6 +1266,14 @@ export default function ProductCatalogPage({
             onClick={() => void persistBulkProductVendor()}
           >
             {saving ? "저장 중…" : "선택 제품 일괄 적용"}
+          </button>
+          <button
+            type="button"
+            className="selection-workbook-button"
+            disabled={!selectedProductIds.length || selectionWorkbookBusy}
+            onClick={openSelectionWorkbook}
+          >
+            물품선정 자료 만들기
           </button>
           {selectedProductIds.length > 0 && (
             <button
@@ -1579,6 +1630,47 @@ export default function ProductCatalogPage({
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {selectionWorkbookOpen && (
+        <div
+          className="product-catalog-modal-shell"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target && !selectionWorkbookBusy) setSelectionWorkbookOpen(false);
+          }}
+        >
+          <section className="product-catalog-dialog selection-workbook-dialog" role="dialog" aria-modal="true" aria-labelledby="selection-workbook-title">
+            <div className="product-catalog-dialog-header">
+              <div>
+                <span className="section-kicker">SELECTION COMMITTEE</span>
+                <h3 id="selection-workbook-title">물품선정위원회 자료 만들기</h3>
+                <p>일산초 원본 엑셀의 서식·색상·배치·인쇄 설정을 유지하고 선택한 제품을 연결합니다.</p>
+              </div>
+              <button type="button" aria-label="닫기" disabled={selectionWorkbookBusy} onClick={() => setSelectionWorkbookOpen(false)}>×</button>
+            </div>
+            <div className="selection-workbook-notice">
+              수량×단가 기준으로 2천만 원 이상·미만 표로 자동 분류하며, 같은 품명의 등록 제품을 비교 후보로 자동 배치합니다.
+            </div>
+            <div className="selection-workbook-lines">
+              {selectedProducts.map((product) => {
+                const quantity = Number(selectionQuantities[product.id] || 1);
+                const total = (product.unitPrice ?? 0) * (Number.isFinite(quantity) ? quantity : 0);
+                const alternatives = products.filter((candidate) => candidate.id !== product.id && normalizeSearchValue(candidate.name) === normalizeSearchValue(product.name)).length;
+                return <div className="selection-workbook-line" key={product.id}>
+                  <div><strong>{product.name}</strong><small>{product.specification || "규격 미등록"}</small><small>비교 후보 {Math.min(2, alternatives)}개 자동 연결</small></div>
+                  <label><span>수량</span><input type="number" min="1" value={selectionQuantities[product.id] ?? "1"} onChange={(event) => setSelectionQuantities((current) => ({ ...current, [product.id]: event.target.value }))} /></label>
+                  <div className="selection-workbook-amount"><span>기준 금액</span><strong>{priceFormatter.format(total)}원</strong><em>{total >= 20_000_000 ? "2천만원 이상" : "2천만원 미만"}</em></div>
+                </div>;
+              })}
+            </div>
+            <div className="product-catalog-dialog-actions">
+              <a className="secondary-button" href="/templates/일산초_물품선정위원회_원본양식.xlsx" download>원본 빈 양식</a>
+              <button type="button" className="secondary-button" disabled={selectionWorkbookBusy} onClick={() => setSelectionWorkbookOpen(false)}>취소</button>
+              <button type="button" className="primary-button" disabled={selectionWorkbookBusy} onClick={() => void downloadSelectionWorkbook()}>{selectionWorkbookBusy ? "엑셀 생성 중…" : "연결된 엑셀 내려받기"}</button>
+            </div>
+          </section>
         </div>
       )}
 

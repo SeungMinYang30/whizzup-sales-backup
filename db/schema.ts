@@ -820,6 +820,8 @@ export const complexProjects = sqliteTable(
     name: text("name").notNull(),
     status: text("status").notNull().default("준비"),
     totalBudget: integer("total_budget"),
+    sourceType: text("source_type").notNull().default("whizzup"),
+    sourceAwardStatus: text("source_award_status").notNull().default("위즈업 수주"),
     managerMemberId: integer("manager_member_id"),
     managerName: text("manager_name").notNull().default(""),
     notes: text("notes").notNull().default(""),
@@ -834,6 +836,7 @@ export const complexProjects = sqliteTable(
   (table) => [
     uniqueIndex("complex_projects_scope_idx").on(table.organization, table.businessRound),
     index("complex_projects_active_idx").on(table.active, table.status, table.updatedAt, table.id),
+    index("complex_projects_source_idx").on(table.sourceType, table.active, table.organization, table.businessRound),
   ],
 );
 

@@ -12,7 +12,8 @@ test("complex projects reuse canonical budgets and items across accounting and a
   ]);
 
   assert.match(store, /JOIN equipment_projects ep ON ep\.id = link\.equipment_project_id/);
-  assert.match(store, /JOIN equipment_items item ON item\.id = detail\.equipment_item_id/);
+  assert.match(store, /JOIN equipment_items item ON item\.project_id = link\.equipment_project_id/);
+  assert.match(store, /LEFT JOIN complex_project_item_details detail ON detail\.equipment_item_id = item\.id/);
   assert.match(store, /linkBudgetNameEntity/);
   assert.match(store, /INSERT OR IGNORE INTO complex_project_item_details[\s\S]*JOIN equipment_items item/);
   assert.match(page, /기존 표준 예산과 품목 카드를 그대로 사용해 통계·회계 이중 집계를 막습니다/);
@@ -46,6 +47,10 @@ test("complex project activation uses searched institution rounds and approved s
   ]);
 
   assert.match(store, /query\.replace\(\/\\s\+\/g, ""\)\.length < 2/);
+  assert.match(store, /a\.award_status = '위즈업 수주'/);
+  assert.match(store, /clean\(payload\.sourceType, 30\) === "external"/);
+  assert.match(page, /외부 사업 수기 등록/);
+  assert.match(page, /수금·수주 통계에는 포함되지 않습니다/);
   assert.match(store, /status = 'approved' AND is_sales = 1/);
   assert.match(store, /manager_member_id = COALESCE\(excluded\.manager_member_id, complex_projects\.manager_member_id\)/);
   assert.match(store, /TRIM\(construction_schedule_projects\.work_summary\)/);
@@ -100,6 +105,8 @@ test("merge and full backup preserve every complex-project relation", async () =
   assert.match(backup, /2026-08-07-complex-project-controls/);
   assert.match(backup, /"complex_delivery_id"/);
   assert.match(backup, /"manager_member_id"/);
+  assert.match(backup, /"source_type"/);
+  assert.match(backup, /row\[column\] \?\? "whizzup"/);
   assert.match(backup, /"protection_expires_at"/);
   assert.match(merge, /UPDATE complex_project_zones SET complex_project_id/);
   assert.match(merge, /UPDATE complex_project_item_details SET complex_project_id/);

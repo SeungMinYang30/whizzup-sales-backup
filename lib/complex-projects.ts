@@ -1,4 +1,4 @@
-import { getD1 } from "../db";
+import { getD1, isPostgresDatabase } from "../db";
 import type { Member } from "./collaboration";
 import { ensureBudgetNamesReady, linkBudgetNameEntity, normalizeBudgetNameKey } from "./budget-names";
 import { ensureEquipmentReady } from "./equipment-store";
@@ -17,6 +17,8 @@ const schemaStatements = [
     name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT '준비',
     total_budget INTEGER,
+    source_type TEXT NOT NULL DEFAULT 'whizzup',
+    source_award_status TEXT NOT NULL DEFAULT '위즈업 수주',
     manager_member_id INTEGER,
     manager_name TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
@@ -31,6 +33,8 @@ const schemaStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS complex_projects_active_idx
    ON complex_projects (active, status, updated_at, id)`,
+  `CREATE INDEX IF NOT EXISTS complex_projects_source_idx
+   ON complex_projects (source_type, active, organization, business_round)`,
   `CREATE TABLE IF NOT EXISTS complex_project_budget_links (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     complex_project_id INTEGER NOT NULL,
@@ -141,6 +145,10 @@ function validDate(value: unknown) {
 }
 
 async function initializeComplexProjects() {
+  // Vercel/Postgres applies the versioned schema once in db/index.ts. Running
+  // every subsystem migration and the historical item backfill on each cold
+  // start made institution search and the first mutation unnecessarily slow.
+  if (isPostgresDatabase()) return getD1();
   await Promise.all([
     ensureRecordsReady(),
     ensureEquipmentReady(),
@@ -155,6 +163,12 @@ async function initializeComplexProjects() {
     .all<{ name: string }>();
   if (!projectColumns.results.some((column) => column.name === "manager_member_id")) {
     await d1.prepare("ALTER TABLE complex_projects ADD COLUMN manager_member_id INTEGER").run();
+  }
+  if (!projectColumns.results.some((column) => column.name === "source_type")) {
+    await d1.prepare("ALTER TABLE complex_projects ADD COLUMN source_type TEXT NOT NULL DEFAULT 'whizzup'").run();
+  }
+  if (!projectColumns.results.some((column) => column.name === "source_award_status")) {
+    await d1.prepare("ALTER TABLE complex_projects ADD COLUMN source_award_status TEXT NOT NULL DEFAULT '위즈업 수주'").run();
   }
   const detailColumns = await d1
     .prepare("PRAGMA table_info(complex_project_item_details)")
@@ -228,6 +242,7 @@ async function requireProject(d1: ReturnType<typeof getD1>, projectId: number) {
 
 async function syncBudgetLinks(d1: ReturnType<typeof getD1>, projectId: number) {
   const project = await requireProject(d1, projectId);
+  if (clean(project.source_type, 30) !== "whizzup") return;
   await d1.prepare(
     `INSERT INTO complex_project_budget_links
        (complex_project_id, equipment_project_id, sort_order)
@@ -235,11 +250,14 @@ async function syncBudgetLinks(d1: ReturnType<typeof getD1>, projectId: number) 
             COALESCE((SELECT MAX(sort_order) + 1 FROM complex_project_budget_links WHERE complex_project_id = ?), 0)
               + ROW_NUMBER() OVER (ORDER BY ep.id) - 1
      FROM equipment_projects ep
+     JOIN activities activity ON activity.id = ep.activity_id
      WHERE ep.organization = ? AND ep.business_round = ?
+       AND activity.award_status = '위즈업 수주'
        AND NOT EXISTS (
          SELECT 1 FROM complex_project_budget_links link
          WHERE link.complex_project_id = ? AND link.equipment_project_id = ep.id
-       )`,
+       )
+     ON CONFLICT(complex_project_id, equipment_project_id) DO NOTHING`,
   ).bind(
     projectId,
     projectId,
@@ -257,8 +275,31 @@ async function syncBudgetLinks(d1: ReturnType<typeof getD1>, projectId: number) 
   ).bind(projectId, projectId).run();
 }
 
+async function syncAllWhizzupBudgetLinks(d1: ReturnType<typeof getD1>) {
+  await d1.prepare(
+    `INSERT INTO complex_project_budget_links
+       (complex_project_id, equipment_project_id, sort_order)
+     SELECT project.id, equipment.id, equipment.id
+     FROM complex_projects project
+     JOIN equipment_projects equipment
+       ON equipment.organization = project.organization
+      AND equipment.business_round = project.business_round
+     JOIN activities activity ON activity.id = equipment.activity_id
+     WHERE project.active = 1
+       AND project.source_type = 'whizzup'
+       AND activity.award_status = '위즈업 수주'
+       AND NOT EXISTS (
+         SELECT 1 FROM complex_project_budget_links existing
+         WHERE existing.complex_project_id = project.id
+           AND existing.equipment_project_id = equipment.id
+       )
+     ON CONFLICT(complex_project_id, equipment_project_id) DO NOTHING`,
+  ).run();
+}
+
 export async function listComplexProjects() {
   const d1 = await ensureComplexProjectsReady();
+  await syncAllWhizzupBudgetLinks(d1);
   const [projectResult, budgetResult, zoneResult, itemResult, deliveryResult, groupResult, memberResult] = await Promise.all([
     d1.prepare(
       `SELECT * FROM complex_projects WHERE active = 1
@@ -276,15 +317,31 @@ export async function listComplexProjects() {
     d1.prepare("SELECT * FROM complex_project_zones ORDER BY complex_project_id, sort_order, id")
       .all<Record<string, unknown>>(),
     d1.prepare(
-      `SELECT detail.*, item.project_id, item.product_name, item.specification,
+      `SELECT link.complex_project_id, item.id AS equipment_item_id,
+              detail.zone_id,
+              COALESCE(detail.item_category, '기자재') AS item_category,
+              COALESCE(detail.procurement_method, '') AS procurement_method,
+              COALESCE(detail.procurement_identifier, '') AS procurement_identifier,
+              COALESCE(detail.delivery_location, '') AS delivery_location,
+              COALESCE(detail.selection_round, '') AS selection_round,
+              COALESCE(detail.selection_status, '') AS selection_status,
+              COALESCE(detail.change_reason, '') AS change_reason,
+              COALESCE(detail.electrical_requirements, '') AS electrical_requirements,
+              COALESCE(detail.network_requirements, '') AS network_requirements,
+              COALESCE(detail.protection_vendor_name, '') AS protection_vendor_name,
+              COALESCE(detail.protection_state, item.protection_status, '신청 필요') AS protection_state,
+              COALESCE(detail.protection_expires_at, '') AS protection_expires_at,
+              detail.updated_by, detail.updated_by_name, detail.updated_at,
+              item.project_id, item.product_name, item.specification,
               item.proposed_qty, item.awarded_qty, item.installed_qty, item.unit,
               item.status, item.notes, item.catalog_unit_price, item.price_status,
               item.supplier_vendor_name, item.protection_status,
               ep.name AS budget_name, ep.budget_group_id
-       FROM complex_project_item_details detail
-       JOIN equipment_items item ON item.id = detail.equipment_item_id
+       FROM complex_project_budget_links link
+       JOIN equipment_items item ON item.project_id = link.equipment_project_id
+       LEFT JOIN complex_project_item_details detail ON detail.equipment_item_id = item.id
        JOIN equipment_projects ep ON ep.id = item.project_id
-       ORDER BY detail.complex_project_id, item.sort_order, item.id`,
+       ORDER BY link.complex_project_id, item.sort_order, item.id`,
     ).all<Record<string, unknown>>(),
     d1.prepare("SELECT * FROM complex_project_deliveries ORDER BY complex_project_id, start_date, id")
       .all<Record<string, unknown>>(),
@@ -388,7 +445,9 @@ export async function listComplexProjects() {
 export async function searchComplexProjectCandidates(value: unknown) {
   const query = clean(value, 80);
   if (query.replace(/\s+/g, "").length < 2) return [];
-  const d1 = await ensureComplexProjectsReady();
+  // Candidate search only needs the already-versioned Postgres schema. Avoid
+  // waiting for the full complex-project page initialization on every search.
+  const d1 = getD1();
   const like = `%${query.toLocaleLowerCase("ko-KR")}%`;
   const result = await d1.prepare(
     `WITH latest AS (
@@ -398,8 +457,11 @@ export async function searchComplexProjectCandidates(value: unknown) {
                 ORDER BY a.activity_date DESC, a.id DESC
               ) AS row_number
        FROM activities a
-       WHERE LOWER(a.organization) LIKE ?
-          OR LOWER(COALESCE(a.region, '')) LIKE ?
+       WHERE a.award_status = '위즈업 수주'
+         AND (
+           LOWER(a.organization) LIKE ?
+           OR LOWER(COALESCE(a.region, '')) LIKE ?
+         )
      )
      SELECT latest.organization, latest.business_round, latest.region,
             latest.progress_manager,
@@ -416,8 +478,7 @@ export async function searchComplexProjectCandidates(value: unknown) {
       AND existing.business_round = latest.business_round
       AND existing.active = 1
      WHERE latest.row_number = 1
-     ORDER BY CASE WHEN latest.award_status = '위즈업 수주' THEN 0 ELSE 1 END,
-              latest.activity_date DESC, latest.organization COLLATE NOCASE
+     ORDER BY latest.activity_date DESC, latest.organization COLLATE NOCASE
      LIMIT 30`,
   ).bind(like, like).all<Record<string, unknown>>();
   return result.results;
@@ -427,12 +488,23 @@ export async function createComplexProject(payload: Record<string, unknown>, mem
   const d1 = await ensureComplexProjectsReady();
   const organization = clean(payload.organization, 120);
   const businessRound = Math.max(1, integer(payload.businessRound, 1));
+  const sourceType = clean(payload.sourceType, 30) === "external" ? "external" : "whizzup";
   if (!organization) throw new Error("복합사업 기관을 선택해 주세요.");
-  const activity = await d1.prepare(
-    `SELECT id FROM activities WHERE organization = ? AND business_round = ?
+  const activity = sourceType === "whizzup" ? await d1.prepare(
+    `SELECT id, award_status FROM activities WHERE organization = ? AND business_round = ?
+       AND award_status = '위즈업 수주'
      ORDER BY activity_date DESC, id DESC LIMIT 1`,
-  ).bind(organization, businessRound).first<{ id: number }>();
-  if (!activity) throw new Error("연결할 기관 사업 기록을 찾지 못했습니다.");
+  ).bind(organization, businessRound).first<{ id: number; award_status: string }>() : null;
+  if (sourceType === "whizzup" && !activity) {
+    throw new Error("위즈업 수주로 확정된 기관·사업 차수를 찾지 못했습니다.");
+  }
+  const existingSource = await d1.prepare(
+    `SELECT id, source_type FROM complex_projects
+     WHERE organization = ? AND business_round = ? LIMIT 1`,
+  ).bind(organization, businessRound).first<{ id: number; source_type: string }>();
+  if (existingSource && clean(existingSource.source_type, 30) !== sourceType) {
+    throw new Error("같은 기관·차수에 다른 출처의 복합사업이 이미 있습니다. 기존 사업을 열어 확인해 주세요.");
+  }
   const name = clean(payload.name, 160) || `${organization} 복합사업`;
   const requestedManagerId = integer(payload.managerMemberId) || null;
   const requestedManager = requestedManagerId
@@ -445,53 +517,60 @@ export async function createComplexProject(payload: Record<string, unknown>, mem
     throw new Error("승인된 영업담당자를 선택해 주세요.");
   }
   const managerName = requestedManager?.display_name || clean(payload.managerName, 120);
-  await d1.prepare(
-    `INSERT INTO complex_projects
-       (organization, business_round, name, status, total_budget, manager_member_id, manager_name, notes,
-        created_by, created_by_name, updated_by, updated_by_name)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(organization, business_round) DO UPDATE SET
-       name = excluded.name, status = excluded.status,
-       total_budget = COALESCE(excluded.total_budget, complex_projects.total_budget),
-       manager_member_id = COALESCE(excluded.manager_member_id, complex_projects.manager_member_id),
-       manager_name = CASE WHEN excluded.manager_name <> '' THEN excluded.manager_name ELSE complex_projects.manager_name END,
-       notes = excluded.notes, active = 1,
-       updated_by = excluded.updated_by, updated_by_name = excluded.updated_by_name,
-       updated_at = CURRENT_TIMESTAMP`,
-  ).bind(
-    organization,
-    businessRound,
-    name,
-    clean(payload.status, 30) || "준비",
-    nullableMoney(payload.totalBudget),
-    requestedManager?.id ?? null,
-    managerName,
-    clean(payload.notes, 1000),
-    member.id,
-    member.displayName,
-    member.id,
-    member.displayName,
-  ).run();
-  const project = await d1.prepare(
-    "SELECT id FROM complex_projects WHERE organization = ? AND business_round = ?",
-  ).bind(organization, businessRound).first<{ id: number }>();
-  if (!project) throw new Error("복합사업을 저장하지 못했습니다.");
-  await syncBudgetLinks(d1, project.id);
-  await d1.prepare(
-    `INSERT INTO construction_schedule_projects
-       (organization, business_round, work_summary, work_summary_mode, completed,
-        created_by, created_by_name, updated_by, updated_by_name)
-     VALUES (?, ?, ?, 'manual', 0, ?, ?, ?, ?)
-     ON CONFLICT(organization, business_round) DO UPDATE SET
-       work_summary = CASE
-         WHEN TRIM(construction_schedule_projects.work_summary) = ''
-           THEN excluded.work_summary
-         ELSE construction_schedule_projects.work_summary
-       END,
-       hidden_at = '', updated_by = excluded.updated_by,
-       updated_by_name = excluded.updated_by_name, updated_at = CURRENT_TIMESTAMP`,
-  ).bind(organization, businessRound, name, member.id, member.displayName, member.id, member.displayName).run();
-  await writeEvent(d1, project.id, "create_or_enable", { organization, businessRound, name }, member);
+  await d1.transaction(async (transaction) => {
+    await transaction.prepare(
+      `INSERT INTO complex_projects
+         (organization, business_round, name, status, total_budget, source_type, source_award_status,
+          manager_member_id, manager_name, notes,
+          created_by, created_by_name, updated_by, updated_by_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(organization, business_round) DO UPDATE SET
+         name = excluded.name, status = excluded.status,
+         total_budget = COALESCE(excluded.total_budget, complex_projects.total_budget),
+         source_type = excluded.source_type,
+         source_award_status = excluded.source_award_status,
+         manager_member_id = COALESCE(excluded.manager_member_id, complex_projects.manager_member_id),
+         manager_name = CASE WHEN excluded.manager_name <> '' THEN excluded.manager_name ELSE complex_projects.manager_name END,
+         notes = excluded.notes, active = 1,
+         updated_by = excluded.updated_by, updated_by_name = excluded.updated_by_name,
+         updated_at = CURRENT_TIMESTAMP`,
+    ).bind(
+      organization,
+      businessRound,
+      name,
+      clean(payload.status, 30) || "준비",
+      nullableMoney(payload.totalBudget),
+      sourceType,
+      sourceType === "whizzup" ? "위즈업 수주" : clean(payload.sourceAwardStatus, 40) || "외부 사업",
+      requestedManager?.id ?? null,
+      managerName,
+      clean(payload.notes, 1000),
+      member.id,
+      member.displayName,
+      member.id,
+      member.displayName,
+    ).run();
+    const project = await transaction.prepare(
+      "SELECT id FROM complex_projects WHERE organization = ? AND business_round = ?",
+    ).bind(organization, businessRound).first<{ id: number }>();
+    if (!project) throw new Error("복합사업을 저장하지 못했습니다.");
+    await syncBudgetLinks(transaction, project.id);
+    await transaction.prepare(
+      `INSERT INTO construction_schedule_projects
+         (organization, business_round, work_summary, work_summary_mode, completed,
+          created_by, created_by_name, updated_by, updated_by_name)
+       VALUES (?, ?, ?, 'manual', 0, ?, ?, ?, ?)
+       ON CONFLICT(organization, business_round) DO UPDATE SET
+         work_summary = CASE
+           WHEN TRIM(construction_schedule_projects.work_summary) = ''
+             THEN excluded.work_summary
+           ELSE construction_schedule_projects.work_summary
+         END,
+         hidden_at = '', updated_by = excluded.updated_by,
+         updated_by_name = excluded.updated_by_name, updated_at = CURRENT_TIMESTAMP`,
+    ).bind(organization, businessRound, name, member.id, member.displayName, member.id, member.displayName).run();
+    await writeEvent(transaction, project.id, "create_or_enable", { organization, businessRound, name, sourceType }, member);
+  });
   return listComplexProjects();
 }
 
@@ -530,15 +609,26 @@ export async function addComplexBudget(payload: Record<string, unknown>, member:
      FROM budget_name_groups WHERE id = ? AND active = 1`,
   ).bind(groupId).first<Record<string, unknown>>();
   if (!group) throw new Error("등록된 표준 예산명을 선택해 주세요.");
+  const isExternal = clean(project.source_type, 30) === "external";
   const existing = await d1.prepare(
-    `SELECT id FROM equipment_projects
-     WHERE organization = ? AND business_round = ? AND budget_group_id = ? LIMIT 1`,
-  ).bind(String(project.organization), Number(project.business_round), groupId).first<{ id: number }>();
+    `SELECT ep.id FROM equipment_projects ep
+     LEFT JOIN activities activity ON activity.id = ep.activity_id
+     WHERE ep.organization = ? AND ep.business_round = ? AND ep.budget_group_id = ?
+       AND (
+         (? = 1 AND ep.activity_id IS NULL)
+         OR (? = 0 AND activity.award_status = '위즈업 수주')
+       )
+     LIMIT 1`,
+  ).bind(
+    String(project.organization), Number(project.business_round), groupId,
+    isExternal ? 1 : 0, isExternal ? 1 : 0,
+  ).first<{ id: number }>();
   let equipmentProjectId = Number(existing?.id ?? 0);
   if (!equipmentProjectId) {
-    const activity = await d1.prepare(
+    const activity = isExternal ? null : await d1.prepare(
       `SELECT id FROM activities WHERE organization = ? AND business_round = ?
-       ORDER BY CASE WHEN award_status = '위즈업 수주' THEN 0 ELSE 1 END, activity_date DESC, id DESC LIMIT 1`,
+         AND award_status = '위즈업 수주'
+       ORDER BY activity_date DESC, id DESC LIMIT 1`,
     ).bind(String(project.organization), Number(project.business_round)).first<{ id: number }>();
     const inserted = await d1.prepare(
       `INSERT INTO equipment_projects
@@ -620,12 +710,19 @@ export async function saveComplexItem(payload: Record<string, unknown>, member: 
   const protectionDetail = clean(payload.protectionStatus, 30) || "신청 필요";
   const protectionResolved = ["신청 완료", "승인", "보호 중", "해당 없음"].includes(protectionDetail);
   const protectionStatus = protectionResolved ? "신청 완료" : "신청 필요";
+  const zoneId = integer(payload.zoneId) || null;
+  if (zoneId) {
+    const zone = await d1.prepare("SELECT id FROM complex_project_zones WHERE id = ? AND complex_project_id = ?")
+      .bind(zoneId, projectId).first<{ id: number }>();
+    if (!zone) throw new Error("선택한 설치 공간을 찾지 못했습니다.");
+  }
   let savedId = itemId;
   if (itemId) {
     const linkedItem = await d1.prepare(
-      `SELECT detail.equipment_item_id
-       FROM complex_project_item_details detail
-       WHERE detail.equipment_item_id = ? AND detail.complex_project_id = ?`,
+      `SELECT item.id AS equipment_item_id
+       FROM equipment_items item
+       JOIN complex_project_budget_links link ON link.equipment_project_id = item.project_id
+       WHERE item.id = ? AND link.complex_project_id = ?`,
     ).bind(itemId, projectId).first<{ equipment_item_id: number }>();
     if (!linkedItem) throw new Error("수정할 복합사업 품목을 찾지 못했습니다.");
     await d1.prepare(
@@ -660,12 +757,6 @@ export async function saveComplexItem(payload: Record<string, unknown>, member: 
     savedId = Number(inserted?.id ?? 0);
   }
   if (!savedId) throw new Error("품목을 저장하지 못했습니다.");
-  const zoneId = integer(payload.zoneId) || null;
-  if (zoneId) {
-    const zone = await d1.prepare("SELECT id FROM complex_project_zones WHERE id = ? AND complex_project_id = ?")
-      .bind(zoneId, projectId).first<{ id: number }>();
-    if (!zone) throw new Error("선택한 설치 공간을 찾지 못했습니다.");
-  }
   await d1.prepare(
     `INSERT INTO complex_project_item_details
        (equipment_item_id, complex_project_id, zone_id, item_category, procurement_method,
@@ -790,8 +881,8 @@ export async function saveComplexDelivery(payload: Record<string, unknown>, memb
   const itemId = integer(payload.itemId);
   const item = await d1.prepare(
     `SELECT item.* FROM equipment_items item
-     JOIN complex_project_item_details detail ON detail.equipment_item_id = item.id
-     WHERE item.id = ? AND detail.complex_project_id = ?`,
+     JOIN complex_project_budget_links link ON link.equipment_project_id = item.project_id
+     WHERE item.id = ? AND link.complex_project_id = ?`,
   ).bind(itemId, projectId).first<Record<string, unknown>>();
   if (!item) throw new Error("일정을 연결할 품목을 찾지 못했습니다.");
   const deliveryId = integer(payload.deliveryId);

@@ -10,6 +10,8 @@ type ComplexProject = Row & {
   name: string;
   status: string;
   total_budget: number | null;
+  source_type: "whizzup" | "external";
+  source_award_status: string;
   manager_name: string;
   notes: string;
   budgets: Row[];
@@ -69,6 +71,7 @@ export default function ComplexProjectPage(props: {
   const [editItem, setEditItem] = useState<Row | null>(null);
   const [editDelivery, setEditDelivery] = useState<Row | null>(null);
   const [candidateSearch, setCandidateSearch] = useState("");
+  const [createSourceType, setCreateSourceType] = useState<"whizzup" | "external">("whizzup");
   const [candidates, setCandidates] = useState<Row[]>([]);
   const [candidateLoading, setCandidateLoading] = useState(false);
   const [selectedScope, setSelectedScope] = useState("");
@@ -138,7 +141,7 @@ export default function ComplexProjectPage(props: {
 
   useEffect(() => {
     const query = candidateSearch.trim();
-    if (!createOpen || query.replace(/\s+/g, "").length < 2) {
+    if (!createOpen || createSourceType !== "whizzup" || query.replace(/\s+/g, "").length < 2) {
       setCandidates([]);
       setCandidateLoading(false);
       return;
@@ -168,7 +171,7 @@ export default function ComplexProjectPage(props: {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [candidateSearch, createOpen]);
+  }, [candidateSearch, createOpen, createSourceType]);
 
   const selected = useMemo(
     () => data.projects.find((project) => Number(project.id) === selectedId) ?? null,
@@ -189,7 +192,7 @@ export default function ComplexProjectPage(props: {
       if (!response.ok) throw new Error(readError(body));
       setData(body);
       setMessage(success);
-      return true;
+      return body;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장하지 못했습니다.");
       return false;
@@ -202,14 +205,22 @@ export default function ComplexProjectPage(props: {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const scope = selectedScope.split("\u001f");
-    if (!scope[0]) {
+    const organization = createSourceType === "external"
+      ? String(form.get("externalOrganization") ?? "").trim()
+      : scope[0];
+    const businessRound = createSourceType === "external"
+      ? Math.max(1, Number(form.get("externalBusinessRound") || 1))
+      : Number(scope[1] || 1);
+    if (!organization) {
       setMessage("검색 결과에서 기관과 사업 차수를 선택해 주세요.");
       return;
     }
     const ok = await mutate({
       action: "create_project",
-      organization: scope[0],
-      businessRound: Number(scope[1] || 1),
+      sourceType: createSourceType,
+      sourceAwardStatus: form.get("sourceAwardStatus"),
+      organization,
+      businessRound,
       name: form.get("name"),
       status: "준비",
       totalBudget: form.get("totalBudget"),
@@ -217,11 +228,16 @@ export default function ComplexProjectPage(props: {
       notes: form.get("notes"),
     }, "복합사업을 시작했습니다.");
     if (ok) {
+      const created = ok.projects.find(
+        (project) => project.organization === organization && numberValue(project.business_round) === businessRound,
+      );
+      if (created) setSelectedId(Number(created.id));
       setCreateOpen(false);
       setCandidateSearch("");
       setCandidates([]);
       setSelectedScope("");
       setCreateManagerId("");
+      setCreateSourceType("whizzup");
     }
   }
 
@@ -356,6 +372,11 @@ export default function ComplexProjectPage(props: {
       {createOpen && (
         <form className="complex-inline-form" onSubmit={createProject}>
           <strong>기관의 복합사업 활성화</strong>
+          <div className="complex-source-switch wide" role="radiogroup" aria-label="복합사업 출처">
+            <button type="button" role="radio" aria-checked={createSourceType === "whizzup"} className={createSourceType === "whizzup" ? "selected" : ""} onClick={() => { setCreateSourceType("whizzup"); setSelectedScope(""); }}>위즈업 수주에서 선택</button>
+            <button type="button" role="radio" aria-checked={createSourceType === "external"} className={createSourceType === "external" ? "selected" : ""} onClick={() => { setCreateSourceType("external"); setSelectedScope(""); setCandidates([]); }}>외부 사업 수기 등록</button>
+          </div>
+          {createSourceType === "whizzup" ? <>
           <label className="wide">기관 검색
             <input
               value={candidateSearch}
@@ -394,6 +415,12 @@ export default function ComplexProjectPage(props: {
             })}
             {!candidateLoading && candidateSearch.replace(/\s+/g, "").length >= 2 && !candidates.length && <p>일치하는 기관·사업 차수가 없습니다.</p>}
           </div>
+          </> : <>
+            <div className="complex-external-notice wide">협력사·타업체 수주를 위한 내부 일정·품목 관리입니다. 수금·수주 통계에는 포함되지 않습니다.</div>
+            <label>기관명<input name="externalOrganization" required placeholder="기관명" /></label>
+            <label>사업 차수<input name="externalBusinessRound" type="number" min="1" defaultValue="1" /></label>
+            <label>외부 수주 구분<select name="sourceAwardStatus" defaultValue="협력사 수주"><option>협력사 수주</option><option>타업체 수주</option><option>기타 외부 사업</option></select></label>
+          </>}
           <label>사업명<input name="name" placeholder="예: 일산초 공간재구조화 사업" /></label>
           <label>총 관리예산<input name="totalBudget" type="number" min="0" placeholder="예: 1279228000" /></label>
           <label>진행 담당자
@@ -403,7 +430,7 @@ export default function ComplexProjectPage(props: {
             </select>
           </label>
           <label className="wide">메모<textarea name="notes" rows={2} /></label>
-          <div className="complex-form-actions"><button type="button" onClick={() => setCreateOpen(false)}>취소</button><button className="primary" disabled={busy || !selectedScope}>시작</button></div>
+          <div className="complex-form-actions"><button type="button" onClick={() => setCreateOpen(false)}>취소</button><button className="primary" disabled={busy || (createSourceType === "whizzup" && !selectedScope)}>{busy ? "저장 중…" : "시작"}</button></div>
         </form>
       )}
 
@@ -411,7 +438,7 @@ export default function ComplexProjectPage(props: {
         <aside className="complex-project-list" aria-label="복합사업 목록">
           {data.projects.map((project) => (
             <button type="button" className={selectedId === Number(project.id) ? "active" : ""} key={project.id} onClick={() => setSelectedId(Number(project.id))}>
-              <span><b>{project.name}</b><small>{project.organization} · {numberValue(project.business_round)}차</small></span>
+              <span><b>{project.name}</b><small>{project.organization} · {numberValue(project.business_round)}차</small><small>{project.source_type === "external" ? `${project.source_award_status} · 통계 제외` : "위즈업 수주 연결"}</small></span>
               <em>{project.status}</em>
               <span className="complex-list-alerts">
                 {project.summary.unscheduled_count > 0 && <small>일정 미정 {project.summary.unscheduled_count}</small>}
@@ -428,7 +455,7 @@ export default function ComplexProjectPage(props: {
           {loading ? <div className="empty-state">복합사업을 불러오는 중입니다.</div> : selected ? (
             <>
               <div className="complex-detail-heading">
-                <div><h3>{selected.name}</h3><p>{selected.organization} · {numberValue(selected.business_round)}차 사업</p></div>
+                <div><h3>{selected.name}</h3><p>{selected.organization} · {numberValue(selected.business_round)}차 사업 · {selected.source_type === "external" ? `${selected.source_award_status}(통계 제외)` : "위즈업 수주"}</p></div>
                 <button type="button" onClick={() => props.onOpenOrganization?.(selected.organization, numberValue(selected.business_round))}>기관 상세 보기</button>
               </div>
 

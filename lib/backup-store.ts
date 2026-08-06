@@ -767,7 +767,7 @@ export const BACKUP_TABLES = [
     name: "complex_projects",
     columns: [
       "id", "organization", "business_round", "name", "status",
-      "total_budget", "manager_member_id", "manager_name", "notes", "active",
+      "total_budget", "source_type", "source_award_status", "manager_member_id", "manager_name", "notes", "active",
       "created_by", "created_by_name", "updated_by", "updated_by_name",
       "created_at", "updated_at",
     ],
@@ -3091,7 +3091,12 @@ function insertStatements(
                 .join(", ")})`
             : "'[]'::jsonb";
         }
-        parameters.push(row[column] ?? null);
+        const restoredValue = table.name === "complex_projects" && column === "source_type"
+          ? row[column] ?? "whizzup"
+          : table.name === "complex_projects" && column === "source_award_status"
+            ? row[column] ?? "위즈업 수주"
+            : row[column] ?? null;
+        parameters.push(restoredValue);
         return "?";
       });
       return `(${placeholders.join(", ")})`;
