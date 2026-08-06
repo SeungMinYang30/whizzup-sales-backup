@@ -29,14 +29,15 @@ export default async function LoginPage({
           <span className="oauth-brand-logo" role="img" aria-label="WHIZZUP" />
           <div>
             <strong>WHIZZUP SALES HUB</strong>
-            <small>독립 운영 사이트</small>
+            <small>영업 통합 관리</small>
           </div>
         </div>
         <p className="oauth-kicker">SECURE SIGN IN</p>
         <h1>Google 계정으로 로그인</h1>
         <p>
           회사 구성원 확인과 기록 작성자 표시를 위해 Google 계정으로
-          로그인합니다. 처음 접속한 구성원은 관리자 승인 후 사용할 수 있습니다.
+          로그인합니다. 기존 WHIZZUP 승인 구성원은 같은 이메일로 로그인하면
+          기존 역할과 권한이 그대로 연결됩니다.
         </p>
         {errorMessage ? <p className="oauth-error">{errorMessage}</p> : null}
         <Link
@@ -46,7 +47,7 @@ export default async function LoginPage({
           Google로 계속하기
         </Link>
         <p className="oauth-footnote">
-          사이트 로그인 정보와 영업 데이터는 별도로 관리됩니다.
+          신규 이메일만 관리자 승인 절차가 필요합니다.
         </p>
       </section>
     </main>
