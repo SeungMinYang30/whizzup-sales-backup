@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import {
   accessErrorResponse,
   requireApprovedMember,
@@ -138,7 +139,7 @@ export async function PUT(request: Request) {
     const member = await requireApprovedMember();
     const payload = (await request.json()) as Record<string, unknown>;
     if (payload.action === "save-construction") {
-      const board = await saveConstructionSchedules({
+      const saved = await saveConstructionSchedules({
         organization: payload.organization,
         businessRound: payload.businessRound,
         workSummary: payload.workSummary,
@@ -148,8 +149,26 @@ export async function PUT(request: Request) {
         memberId: member.id,
         memberName: member.displayName,
       });
-      await flushGoogleCalendarSync({ limit: 50 });
-      return Response.json(board);
+      if (saved.syncIds.length) {
+        const syncIds = [...saved.syncIds];
+        after(async () => {
+          try {
+            for (let index = 0; index < syncIds.length; index += 50) {
+              await flushGoogleCalendarSync({ ids: syncIds.slice(index, index + 50) });
+            }
+          } catch (error) {
+            console.error(
+              "Construction Google Calendar background sync failed",
+              error instanceof Error ? error.message : "Unknown error",
+            );
+          }
+        });
+      }
+      return Response.json({
+        project: saved.project,
+        schedules: saved.schedules,
+        googleSyncPending: saved.syncIds.length > 0,
+      });
     }
     if (payload.action === "update-general-schedule") {
       const schedule = await updateOrganizationSchedule({

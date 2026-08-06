@@ -154,3 +154,18 @@ test("시공 일정은 시공·납품 일정표 행을 유지하고 기관 상�
   assert.match(crm, /`\/api\/schedules\?organization=\$\{encodeURIComponent\(detailOrganization\)\}/);
   assert.match(crm, /Google 동기화 실패 · 재시도/);
 });
+
+test("시공 일정 저장 응답은 Google 동기화를 기다리지 않고 범위 결과만 반환한다", () => {
+  const branch = route.slice(
+    route.indexOf('if (payload.action === "save-construction")'),
+    route.indexOf('if (payload.action === "update-general-schedule")'),
+  );
+  assert.match(route, /import \{ after \} from "next\/server"/);
+  assert.match(branch, /after\(async \(\) =>/);
+  assert.match(branch, /flushGoogleCalendarSync\(\{ ids: syncIds\.slice/);
+  assert.doesNotMatch(branch, /await flushGoogleCalendarSync\(\{ limit:/);
+  assert.match(branch, /project: saved\.project/);
+  assert.match(branch, /googleSyncPending: saved\.syncIds\.length > 0/);
+  assert.match(store, /Promise<ConstructionScheduleSaveResult>/);
+  assert.match(store, /WHERE organization = \? AND business_round = \? AND category = 'construction'/);
+});

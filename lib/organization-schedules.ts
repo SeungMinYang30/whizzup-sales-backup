@@ -64,6 +64,12 @@ export type ConstructionScheduleProject = {
   updatedAt: string;
 };
 
+export type ConstructionScheduleSaveResult = {
+  project: ConstructionScheduleProject;
+  schedules: OrganizationSchedule[];
+  syncIds: number[];
+};
+
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS organization_schedules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -294,6 +300,26 @@ function scheduleJson(row: Record<string, unknown>): OrganizationSchedule {
   };
 }
 
+function constructionProjectJson(
+  row: Record<string, unknown>,
+  sourceProductNames: string[],
+): ConstructionScheduleProject {
+  const mode = row.work_summary_mode === "manual" ? "manual" : "auto";
+  return {
+    id: Number(row.id),
+    organization: String(row.organization ?? ""),
+    businessRound: Math.max(1, Number(row.business_round) || 1),
+    workSummary: mode === "auto" && sourceProductNames.length
+      ? sourceProductNames.join(" · ")
+      : String(row.work_summary ?? ""),
+    workSummaryMode: mode,
+    sourceProductNames,
+    completed: Number(row.completed) === 1,
+    hidden: clean(row.hidden_at) !== "",
+    updatedAt: String(row.updated_at ?? ""),
+  };
+}
+
 async function isWhizzupAwardScope(
   d1: Awaited<ReturnType<typeof ensureOrganizationSchedulesReady>>,
   organization: string,
@@ -453,41 +479,45 @@ export async function listConstructionScheduleBoard() {
   if (!isPostgresDatabase()) await ensureEquipmentReady();
   // GET 요청에서 대량 DELETE를 실행하지 않습니다. 최신 수주 상태를 한 번
   // 읽어 화면에서 필터링하면 D1 쓰기 잠금 없이 동일한 결과를 얻습니다.
-  const [projectsResult, schedulesResult, productResult, latestAwardsResult] = await Promise.all([
+  const [projectsResult, schedulesResult, productResult] = await Promise.all([
     d1.prepare(
-      `SELECT * FROM construction_schedule_projects
+      `SELECT csp.*,
+              COALESCE((
+                SELECT a.award_status
+                FROM activities a
+                WHERE a.organization = csp.organization
+                  AND a.business_round = csp.business_round
+                ORDER BY a.activity_date DESC, a.id DESC
+                LIMIT 1
+              ), '') AS latest_award_status
+       FROM construction_schedule_projects csp
        ORDER BY completed ASC, updated_at DESC, organization COLLATE NOCASE ASC`,
     ).all<Record<string, unknown>>(),
     d1.prepare(
-       `SELECT * FROM organization_schedules
-       WHERE COALESCE(category, 'general') = 'construction'
-         AND TRIM(COALESCE(deleted_at, '')) = ''
-       ORDER BY scheduled_date ASC, id ASC`,
+       `SELECT os.*
+        FROM organization_schedules os
+        JOIN construction_schedule_projects csp
+          ON csp.organization = os.organization
+         AND csp.business_round = os.business_round
+        WHERE COALESCE(os.category, 'general') = 'construction'
+          AND TRIM(COALESCE(os.deleted_at, '')) = ''
+        ORDER BY os.scheduled_date ASC, os.id ASC`,
     ).all<Record<string, unknown>>(),
     d1.prepare(
       `SELECT p.organization, p.business_round, i.product_name, i.sort_order, i.id
        FROM equipment_projects p
+       JOIN construction_schedule_projects csp
+         ON csp.organization = p.organization
+        AND csp.business_round = p.business_round
        JOIN equipment_items i ON i.project_id = p.id
        WHERE TRIM(COALESCE(i.product_name, '')) <> ''
        ORDER BY p.organization COLLATE NOCASE ASC, p.business_round ASC,
                  p.updated_at DESC, i.sort_order ASC, i.id ASC`,
     ).all<Record<string, unknown>>(),
-    d1.prepare(
-      `SELECT organization, business_round, award_status
-       FROM (
-         SELECT organization, business_round, award_status,
-                ROW_NUMBER() OVER (
-                  PARTITION BY organization, business_round
-                  ORDER BY activity_date DESC, id DESC
-                ) AS row_number
-         FROM activities
-       )
-       WHERE row_number = 1`,
-    ).all<Record<string, unknown>>(),
   ]);
   const whizzupScopes = new Set(
-    latestAwardsResult.results
-      .filter((row) => clean(row.award_status) === "위즈업 수주")
+    projectsResult.results
+      .filter((row) => clean(row.latest_award_status) === "위즈업 수주")
       .map((row) => `${String(row.organization ?? "")}\u001f${Math.max(1, Number(row.business_round) || 1)}`),
   );
   const productNamesByScope = new Map<string, string[]>();
@@ -504,20 +534,7 @@ export async function listConstructionScheduleBoard() {
       const organization = String(row.organization ?? "");
       const businessRound = Math.max(1, Number(row.business_round) || 1);
       const sourceProductNames = productNamesByScope.get(`${organization}\u001f${businessRound}`) ?? [];
-      const mode = row.work_summary_mode === "manual" ? "manual" : "auto";
-      return {
-        id: Number(row.id),
-        organization,
-        businessRound,
-        workSummary: mode === "auto" && sourceProductNames.length
-          ? sourceProductNames.join(" · ")
-          : String(row.work_summary ?? ""),
-        workSummaryMode: mode,
-        sourceProductNames,
-        completed: Number(row.completed) === 1,
-        hidden: clean(row.hidden_at) !== "",
-        updatedAt: String(row.updated_at ?? ""),
-      } satisfies ConstructionScheduleProject;
+      return constructionProjectJson(row, sourceProductNames);
     }),
     schedules: schedulesResult.results.filter((row) =>
       whizzupScopes.has(`${String(row.organization ?? "")}\u001f${Math.max(1, Number(row.business_round) || 1)}`),
@@ -653,7 +670,7 @@ export async function saveConstructionSchedules(input: {
   schedules: unknown;
   memberId: number;
   memberName: string;
-}) {
+}): Promise<ConstructionScheduleSaveResult> {
   const organization = clean(input.organization).slice(0, 120);
   const businessRound = Math.max(1, Number(input.businessRound) || 1);
   if (!organization) throw new Error("기관을 확인해 주세요.");
@@ -790,7 +807,40 @@ export async function saveConstructionSchedules(input: {
       completed: schedule.completed || projectCompleted,
     })),
   ]);
-  return listConstructionScheduleBoard();
+  const [projectRow, scheduleRows, productRows] = await Promise.all([
+    d1.prepare(
+      `SELECT * FROM construction_schedule_projects
+       WHERE organization = ? AND business_round = ?
+       LIMIT 1`,
+    ).bind(organization, businessRound).first<Record<string, unknown>>(),
+    d1.prepare(
+      `SELECT * FROM organization_schedules
+       WHERE organization = ? AND business_round = ? AND category = 'construction'
+       ORDER BY scheduled_date ASC, id ASC`,
+    ).bind(organization, businessRound).all<Record<string, unknown>>(),
+    d1.prepare(
+      `SELECT i.product_name, i.sort_order, i.id
+       FROM equipment_projects p
+       JOIN equipment_items i ON i.project_id = p.id
+       WHERE p.organization = ? AND p.business_round = ?
+         AND TRIM(COALESCE(i.product_name, '')) <> ''
+       ORDER BY p.updated_at DESC, i.sort_order ASC, i.id ASC`,
+    ).bind(organization, businessRound).all<Record<string, unknown>>(),
+  ]);
+  if (!projectRow) throw new Error("저장한 시공 일정표 기관을 찾지 못했습니다.");
+  const sourceProductNames = [...new Set(
+    productRows.results.map((row) => clean(row.product_name)).filter(Boolean),
+  )];
+  return {
+    project: constructionProjectJson(projectRow, sourceProductNames),
+    schedules: scheduleRows.results
+      .filter((row) => clean(row.deleted_at) === "")
+      .map(scheduleJson),
+    syncIds: scheduleRows.results
+      .filter((row) => ["pending", "failed"].includes(clean(row.sync_status)))
+      .map((row) => Number(row.id))
+      .filter((id) => Number.isSafeInteger(id) && id > 0),
+  };
 }
 
 export async function removeConstructionScheduleProject(input: {

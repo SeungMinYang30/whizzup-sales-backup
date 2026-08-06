@@ -53,6 +53,14 @@ test("대시보드 시공 현황과 일정표는 같은 조회 결과를 공유�
   assert.match(constructionPage, /onDashboardCounts\(projects\.filter/);
 });
 
+test("시공 일정표 조회는 등록 기관 범위만 읽어 전체 영업·품목 스캔을 피한다", () => {
+  assert.match(schedules, /FROM construction_schedule_projects csp/);
+  assert.match(schedules, /JOIN construction_schedule_projects csp[\s\S]*?csp\.organization = os\.organization/);
+  assert.match(schedules, /JOIN construction_schedule_projects csp[\s\S]*?csp\.organization = p\.organization/);
+  assert.match(schedules, /SELECT a\.award_status[\s\S]*?a\.organization = csp\.organization[\s\S]*?LIMIT 1/);
+  assert.doesNotMatch(schedules, /ROW_NUMBER\(\) OVER \([\s\S]*?PARTITION BY organization, business_round/);
+});
+
 test("시공 일정표 목록 삭제는 원본을 보존하고 기관 추가로 재등록한다", () => {
   assert.match(schedules, /hidden_at TEXT NOT NULL DEFAULT ''/);
   assert.match(schedules, /setConstructionScheduleProjectHidden/);

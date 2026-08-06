@@ -388,9 +388,11 @@ export default function ConstructionSchedulePage({
       if (activeItems.some((item) => !item.scheduledDate || !item.endDate || item.endDate < item.scheduledDate)) {
         throw new Error("시작일과 종료일을 확인해 주세요.");
       }
-      const response = await fetch("/api/schedules", {
+      const response = await resilientFetch("/api/schedules", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        timeoutMs: 20_000,
+        retries: 0,
         body: JSON.stringify({
           action: "save-construction",
           organization: editor.organization,
@@ -402,15 +404,38 @@ export default function ConstructionSchedulePage({
         }),
       });
       const payload = (await response.json()) as {
+        project?: ConstructionProject;
         projects?: ConstructionProject[];
         schedules?: ConstructionSchedule[];
+        googleSyncPending?: boolean;
         error?: string;
       };
       if (!response.ok) throw new Error(payload.error || "일정을 저장하지 못했습니다.");
-      setProjects(payload.projects ?? []);
-      setSchedules(payload.schedules ?? []);
+      if (payload.project) {
+        const savedProject = payload.project;
+        setProjects((current) => current.map((project) =>
+          scopeKey(project.organization, project.businessRound)
+            === scopeKey(savedProject.organization, savedProject.businessRound)
+            ? savedProject
+            : project,
+        ));
+        setSchedules((current) => [
+          ...current.filter((schedule) =>
+            scopeKey(schedule.organization, schedule.businessRound)
+              !== scopeKey(savedProject.organization, savedProject.businessRound),
+          ),
+          ...(payload.schedules ?? []),
+        ]);
+      } else {
+        // Older deployments can still return a complete board while a new
+        // client bundle is rolling out. Keep that response compatible.
+        setProjects(payload.projects ?? []);
+        setSchedules(payload.schedules ?? []);
+      }
       setEditor(null);
-      setMessage("일정이 기관 상세와 HOME에 함께 반영되었습니다.");
+      setMessage(payload.googleSyncPending
+        ? "일정이 저장되었습니다. Google Calendar는 뒤에서 동기화 중입니다."
+        : "일정이 기관 상세와 HOME에 함께 반영되었습니다.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "일정을 저장하지 못했습니다.");
     } finally {
