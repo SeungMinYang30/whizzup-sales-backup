@@ -36,13 +36,9 @@ const dashboardQuery = `
         AND activity_type IN ('협력사 등록', '협력사 등록 해제')
       )
   ),
-  ranked_awards AS (
+  award_records AS (
     SELECT
-      id,
-      ROW_NUMBER() OVER (
-        PARTITION BY organization
-        ORDER BY activity_date DESC, id DESC
-      ) AS row_number
+      id
     FROM activities
     WHERE TRIM(COALESCE(organization, '')) <> ''
       AND COALESCE(award_status, '미정') <> '미정'
@@ -73,7 +69,7 @@ const dashboardQuery = `
   dashboard_ids AS (
     SELECT id FROM ranked_organizations WHERE row_number = 1
     UNION
-    SELECT id FROM ranked_awards WHERE row_number = 1
+    SELECT id FROM award_records
     UNION
     SELECT id FROM ranked_schedules WHERE row_number <= 3
     UNION
