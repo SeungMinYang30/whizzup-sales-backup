@@ -98,6 +98,22 @@ async function compressedJsonRequest(payload: unknown) {
   };
 }
 
+async function downloadableBlob(response: Response) {
+  if (response.headers.get("x-whizzup-content-encoding") !== "gzip") {
+    return response.blob();
+  }
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error(
+      "이 브라우저는 대용량 백업 압축 해제를 지원하지 않습니다. 최신 Chrome 또는 Edge를 사용해 주세요.",
+    );
+  }
+  const compressed = new Blob([await response.arrayBuffer()]).stream();
+  const decompressed = compressed.pipeThrough(new DecompressionStream("gzip"));
+  return new Response(decompressed, {
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+  }).blob();
+}
+
 export default function DataBackupPage({
   onDataChanged,
   notify,
@@ -154,7 +170,7 @@ export default function DataBackupPage({
           await readError(response, "백업 파일을 만들지 못했습니다."),
         );
       }
-      const blob = await response.blob();
+      const blob = await downloadableBlob(response);
       saveBlob(
         blob,
         responseFilename(

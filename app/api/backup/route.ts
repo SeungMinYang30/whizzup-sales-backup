@@ -115,10 +115,9 @@ export async function GET(request: Request) {
       headers: {
         ...downloadHeaders(
           `WHIZZUP_full_backup_${todayValue()}.json`,
-          "application/json; charset=utf-8",
+          "application/gzip",
         ),
-        "Content-Encoding": "gzip",
-        Vary: "Accept-Encoding",
+        "X-WHIZZUP-Content-Encoding": "gzip",
       },
     });
   } catch (error) {

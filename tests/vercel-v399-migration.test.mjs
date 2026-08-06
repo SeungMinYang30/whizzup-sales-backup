@@ -65,8 +65,9 @@ test("large full backups use gzip across the Vercel request boundary", async () 
 
   assert.match(route, /gzipSync/);
   assert.match(route, /gunzipSync/);
-  assert.match(route, /Content-Encoding": "gzip"/);
+  assert.match(route, /X-WHIZZUP-Content-Encoding": "gzip"/);
   assert.match(page, /CompressionStream\("gzip"\)/);
+  assert.match(page, /DecompressionStream\("gzip"\)/);
   assert.match(page, /application\/gzip/);
 });
 
