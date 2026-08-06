@@ -15,6 +15,12 @@ test("Vercel v399 schema contains every newly introduced operational area", asyn
     "organization_schedules",
     "construction_schedule_projects",
     "authored_quotations",
+    "activity_change_batches",
+    "activity_change_items",
+    "data_control_events",
+    "organization_school_links",
+    "product_vendor_links",
+    "product_supply_settings",
   ]) {
     assert.match(schema, new RegExp(`CREATE TABLE IF NOT EXISTS public\\.${table}`));
   }
