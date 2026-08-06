@@ -25,6 +25,10 @@ test("Vercel v399 schema contains every newly introduced operational area", asyn
   assert.match(schema, /ADD COLUMN IF NOT EXISTS selection_date/);
   assert.match(
     schema,
+    /authored_quotations[\s\S]*?ADD COLUMN IF NOT EXISTS business_round/,
+  );
+  assert.match(
+    schema,
     /manager_alert_acknowledgements[\s\S]*?ADD COLUMN IF NOT EXISTS hidden_at text/,
   );
 });

@@ -226,6 +226,8 @@ CREATE TABLE IF NOT EXISTS public.authored_quotations (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE public.authored_quotations
+  ADD COLUMN IF NOT EXISTS business_round integer NOT NULL DEFAULT 1;
 CREATE INDEX IF NOT EXISTS authored_quotations_org_date_idx
   ON public.authored_quotations
   (organization, business_round, quote_date, id);
