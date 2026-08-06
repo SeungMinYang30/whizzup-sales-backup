@@ -54,6 +54,12 @@ CREATE TABLE IF NOT EXISTS public.joint_project_members (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE public.joint_project_members
+  ADD COLUMN IF NOT EXISTS institution_key text NOT NULL DEFAULT '';
+ALTER TABLE public.joint_project_members
+  ADD COLUMN IF NOT EXISTS business_round integer NOT NULL DEFAULT 1;
+ALTER TABLE public.joint_project_members
+  ADD COLUMN IF NOT EXISTS campaign_target_id bigint;
 CREATE UNIQUE INDEX IF NOT EXISTS joint_project_members_project_business_idx
   ON public.joint_project_members (project_id, organization, business_round);
 CREATE INDEX IF NOT EXISTS joint_project_members_business_idx

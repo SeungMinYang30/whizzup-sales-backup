@@ -37,6 +37,10 @@ test("Vercel v399 schema contains every newly introduced operational area", asyn
   );
   assert.match(
     schema,
+    /joint_project_members[\s\S]*?ADD COLUMN IF NOT EXISTS business_round/,
+  );
+  assert.match(
+    schema,
     /manager_alert_acknowledgements[\s\S]*?ADD COLUMN IF NOT EXISTS hidden_at text/,
   );
 });
