@@ -1,4 +1,4 @@
-import { getD1 } from "../db";
+import { getD1, isPostgresDatabase } from "../db";
 import { ensureEquipmentReady } from "./equipment-store";
 import { isConstructionStage } from "./construction-stages";
 import {
@@ -440,7 +440,10 @@ function normalizeConstructionScheduleInputs(value: unknown) {
 
 export async function listConstructionScheduleBoard() {
   const d1 = await ensureOrganizationSchedulesReady();
-  await ensureEquipmentReady();
+  // Vercel has already reconciled these tables in the shared Postgres schema.
+  // Running the full equipment retrofit from a read-only dashboard request can
+  // keep the schedule board waiting behind unrelated migration work.
+  if (!isPostgresDatabase()) await ensureEquipmentReady();
   // GET 요청에서 대량 DELETE를 실행하지 않습니다. 최신 수주 상태를 한 번
   // 읽어 화면에서 필터링하면 D1 쓰기 잠금 없이 동일한 결과를 얻습니다.
   const [projectsResult, schedulesResult, productResult, latestAwardsResult] = await Promise.all([

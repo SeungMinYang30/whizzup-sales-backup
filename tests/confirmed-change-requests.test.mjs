@@ -2,11 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [calendar, reminders, googleApi, googleSync, crm, styles, env] = await Promise.all([
+const [calendar, reminders, googleApi, googleSync, schedules, crm, styles, env] = await Promise.all([
   readFile(new URL("../app/home-calendar.tsx", import.meta.url), "utf8"),
   readFile(new URL("../lib/schedule-reminders.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/google-calendar-api.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/google-calendar-sync.ts", import.meta.url), "utf8"),
+  readFile(new URL("../lib/organization-schedules.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   readFile(new URL("../.env.example", import.meta.url), "utf8"),
@@ -38,6 +39,10 @@ test("시공 일정은 별도 Google 캘린더로만 동기화한다", () => {
   assert.match(googleSync, /const event = await upsertGoogleCalendarEvent[\s\S]*deleteGoogleCalendarEvent\(sourceEventId, "general"\)/);
   assert.match(googleApi, /resource has been deleted/);
   assert.match(googleApi, /if \(!googleEventId \|\| !isMissingGoogleResource\(error\)\) throw error/);
+});
+
+test("Vercel 일정표 조회는 장비 전체 보정 작업을 기다리지 않는다", () => {
+  assert.match(schedules, /if \(!isPostgresDatabase\(\)\) await ensureEquipmentReady\(\)/);
 });
 
 test("Google에서 삭제한 시공 일정은 사이트 원본으로 자동 복원한다", () => {
