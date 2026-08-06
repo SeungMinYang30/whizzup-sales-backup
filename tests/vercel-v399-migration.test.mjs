@@ -114,10 +114,14 @@ test("restored approved members reuse the same Google email without reapproval",
   assert.match(backupStore, /name: "members"/);
   assert.match(backupStore, /"permissions"/);
   assert.match(backupStore, /parseMemberPermissions/);
-  assert.match(backupStore, /현재 복원 담당자 계정이 같은 ID의 승인된 구성원/);
+  assert.match(backupStore, /현재 복원 담당자 이메일이 승인된 구성원/);
   assert.doesNotMatch(
     backupStore,
     /String\(backupAdmin\.role\) !== "admin"/,
+  );
+  assert.doesNotMatch(
+    backupStore,
+    /Number\(backupAdmin\.id\) !== currentAdmin\.id/,
   );
 });
 

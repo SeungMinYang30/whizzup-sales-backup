@@ -2449,11 +2449,10 @@ function validateRows(
     );
     if (
       !backupAdmin ||
-      Number(backupAdmin.id) !== currentAdmin.id ||
       String(backupAdmin.status) !== "approved"
     ) {
       throw new BackupValidationError(
-        "현재 복원 담당자 계정이 같은 ID의 승인된 구성원으로 포함된 백업만 복원할 수 있습니다.",
+        "현재 복원 담당자 이메일이 승인된 구성원으로 포함된 백업만 복원할 수 있습니다.",
       );
     }
   }
