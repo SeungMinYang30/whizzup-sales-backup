@@ -43,6 +43,20 @@ test("대시보드는 저장된 일정을 먼저 표시하고 Google 확인은 �
   assert.match(calendar, /Google 일정 확인 중/);
 });
 
+test("초기 대시보드는 핵심 기록을 먼저 받고 후순위 자료를 단계적으로 불러온다", () => {
+  const initialLoad = crmApp.slice(
+    crmApp.indexOf("void requestSession()"),
+    crmApp.indexOf('if (sessionStatus !== "approved") return;', crmApp.indexOf("void requestSession()")),
+  );
+  assert.ok(initialLoad.indexOf('requestRecords("dashboard")') < initialLoad.indexOf("ensureBudgetReviewCatalog()"));
+  assert.match(initialLoad, /deferDashboardTask\(250/);
+  assert.match(initialLoad, /deferDashboardTask\(750/);
+  assert.match(initialLoad, /deferDashboardTask\(1_250/);
+  assert.match(crmApp, /fetch\("\/api\/award-vendors"[\s\S]*?\}, 1_500\)/);
+  assert.match(crmApp, /const firstHeartbeat = window\.setTimeout\(heartbeat, 2_000\)/);
+  assert.match(crmApp, /requestScheduleReminders\(\)[\s\S]*?\}, 600\)/);
+});
+
 test("대시보드 시공 현황과 일정표는 같은 조회 결과를 공유한다", () => {
   assert.doesNotMatch(crmApp, /fetch\("\/api\/schedules\?scope=construction-board"/);
   assert.match(crmApp, /onDashboardCounts=\{setConstructionDashboardCounts\}/);

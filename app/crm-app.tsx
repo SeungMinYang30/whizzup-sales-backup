@@ -6764,21 +6764,22 @@ export default function CrmApp({
 
   useEffect(() => {
     let active = true;
+    const deferredTimers: number[] = [];
+    const deferDashboardTask = (delay: number, task: () => void) => {
+      deferredTimers.push(window.setTimeout(() => {
+        if (active) task();
+      }, delay));
+    };
     void requestSession()
       .then(async (nextSession) => {
         if (!active) return;
         setSession(nextSession);
         setSessionLoading(false);
         if (nextSession.member.status === "approved") {
-          void ensureBudgetReviewCatalog();
-          void loadEquipmentQuoteSummaries();
-          if (memberCan(nextSession.member, "records:manage")) {
-            void loadManagerAlerts();
-          }
-          void loadActivityReviewAssignees();
           // The dashboard only needs the latest institution, award, and
           // schedule rows. Load the complete history lazily when a detailed
-          // management view is opened.
+          // management view is opened. Keep optional dashboard requests out
+          // of this critical path so they do not compete for DB connections.
           const nextRecords = await requestRecords("dashboard");
           if (!active) return;
           if (!recordsFullyLoadedRef.current) {
@@ -6786,11 +6787,21 @@ export default function CrmApp({
             recordsFullyLoadedRef.current = false;
             setRecordsFullyLoaded(false);
           }
-          window.setTimeout(() => {
-            if (active) void loadProtectionReviews();
-          }, 250);
-          void loadActivityReviews();
-          void loadCorrectionRequests();
+          deferDashboardTask(250, () => {
+            void ensureBudgetReviewCatalog();
+            void loadActivityReviewAssignees();
+          });
+          deferDashboardTask(750, () => {
+            void loadEquipmentQuoteSummaries();
+            if (memberCan(nextSession.member, "records:manage")) {
+              void loadManagerAlerts();
+            }
+            void loadActivityReviews();
+          });
+          deferDashboardTask(1_250, () => {
+            void loadProtectionReviews();
+            void loadCorrectionRequests();
+          });
         }
         setError("");
       })
@@ -6807,43 +6818,47 @@ export default function CrmApp({
       });
     return () => {
       active = false;
+      deferredTimers.forEach((timer) => window.clearTimeout(timer));
     };
   }, []);
 
   useEffect(() => {
     if (sessionStatus !== "approved") return;
-    void fetch("/api/award-vendors", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) return;
-        const payload = await response.json() as {
-          vendors?: Array<{
-            id?: number;
-            companyName?: string;
-            contactName?: string;
-            contactPhone?: string;
-            contactEmail?: string;
-            notes?: string;
-          }>;
-        };
-        setAwardVendors(
-          (payload.vendors ?? [])
-            .map((vendor) => ({
-              id: Number(vendor.id),
-              organization: String(vendor.companyName ?? "").trim(),
-              contactName: String(vendor.contactName ?? "").trim(),
-              contactPhone: String(vendor.contactPhone ?? "").trim(),
-              contactEmail: String(vendor.contactEmail ?? "").trim(),
-              notes: String(vendor.notes ?? "").trim(),
-            }))
-            .filter(
-              (vendor) =>
-                Number.isSafeInteger(vendor.id) &&
-                vendor.id > 0 &&
-                Boolean(vendor.organization),
-            ),
-        );
-      })
-      .catch(() => undefined);
+    const timer = window.setTimeout(() => {
+      void fetch("/api/award-vendors", { cache: "no-store" })
+        .then(async (response) => {
+          if (!response.ok) return;
+          const payload = await response.json() as {
+            vendors?: Array<{
+              id?: number;
+              companyName?: string;
+              contactName?: string;
+              contactPhone?: string;
+              contactEmail?: string;
+              notes?: string;
+            }>;
+          };
+          setAwardVendors(
+            (payload.vendors ?? [])
+              .map((vendor) => ({
+                id: Number(vendor.id),
+                organization: String(vendor.companyName ?? "").trim(),
+                contactName: String(vendor.contactName ?? "").trim(),
+                contactPhone: String(vendor.contactPhone ?? "").trim(),
+                contactEmail: String(vendor.contactEmail ?? "").trim(),
+                notes: String(vendor.notes ?? "").trim(),
+              }))
+              .filter(
+                (vendor) =>
+                  Number.isSafeInteger(vendor.id) &&
+                  vendor.id > 0 &&
+                  Boolean(vendor.organization),
+              ),
+          );
+        })
+        .catch(() => undefined);
+    }, 1_500);
+    return () => window.clearTimeout(timer);
   }, [sessionStatus]);
 
   useEffect(() => {
@@ -6859,32 +6874,39 @@ export default function CrmApp({
         keepalive: true,
       }).catch(() => undefined);
     };
-    heartbeat();
+    const firstHeartbeat = window.setTimeout(heartbeat, 2_000);
     const timer = window.setInterval(heartbeat, 15_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(firstHeartbeat);
+      window.clearInterval(timer);
+    };
   }, [sessionStatus, view]);
 
   useEffect(() => {
     if (sessionStatus !== "approved" || view !== "dashboard") return;
     let active = true;
-    setScheduleRemindersLoading(true);
-    void requestScheduleReminders()
-      .then((reminders) => {
-        if (active) setScheduleReminders(reminders);
-      })
-      .catch((caught: unknown) => {
-        if (!active) return;
-        setToast(
-          caught instanceof Error
-            ? caught.message
-            : "내 일정을 불러오지 못했습니다.",
-        );
-      })
-      .finally(() => {
-        if (active) setScheduleRemindersLoading(false);
-      });
+    const timer = window.setTimeout(() => {
+      if (!active) return;
+      setScheduleRemindersLoading(true);
+      void requestScheduleReminders()
+        .then((reminders) => {
+          if (active) setScheduleReminders(reminders);
+        })
+        .catch((caught: unknown) => {
+          if (!active) return;
+          setToast(
+            caught instanceof Error
+              ? caught.message
+              : "내 일정을 불러오지 못했습니다.",
+          );
+        })
+        .finally(() => {
+          if (active) setScheduleRemindersLoading(false);
+        });
+    }, 600);
     return () => {
       active = false;
+      window.clearTimeout(timer);
     };
   }, [scheduleReminderRefreshVersion, sessionStatus, view]);
 
