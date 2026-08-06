@@ -80,7 +80,8 @@ test("large full backups use gzip across the Vercel request boundary", async () 
   assert.match(page, /CompressionStream\("gzip"\)/);
   assert.match(page, /DecompressionStream\("gzip"\)/);
   assert.match(page, /application\/gzip/);
-  assert.match(store, /if \(isPostgresDatabase\(\)\) \{[\s\S]{0,220}SELECT 1/);
+  assert.match(store, /if \(isPostgresDatabase\(\)\) \{/);
+  assert.match(store, /d1\.prepare\("SELECT 1"\)\.run\(\)/);
 });
 
 test("campaign targets reconcile business rounds before creating indexes", async () => {
