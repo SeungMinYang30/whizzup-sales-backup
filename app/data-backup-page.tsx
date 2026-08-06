@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import TrashPage from "./trash-page";
 
 type BackupInspection = {
@@ -142,12 +142,14 @@ export default function DataBackupPage({
   const [backupInspection, setBackupInspection] =
     useState<BackupInspection | null>(null);
   const [backupError, setBackupError] = useState("");
-  const [safetyBackupDownloaded, setSafetyBackupDownloaded] = useState(() => {
-    if (typeof window === "undefined") return false;
+  const [safetyBackupDownloaded, setSafetyBackupDownloaded] = useState(false);
+  useEffect(() => {
     const savedAt = window.localStorage.getItem("whizzup-last-full-backup-at");
     const timestamp = savedAt ? Date.parse(savedAt) : Number.NaN;
-    return Number.isFinite(timestamp) && Date.now() - timestamp <= 30 * 60 * 1000;
-  });
+    if (Number.isFinite(timestamp) && Date.now() - timestamp <= 30 * 60 * 1000) {
+      setSafetyBackupDownloaded(true);
+    }
+  }, []);
   const [restoreConfirmation, setRestoreConfirmation] = useState("");
   const [csvFileName, setCsvFileName] = useState("");
   const [csvText, setCsvText] = useState("");
