@@ -44,6 +44,7 @@ test("Supabase auth refresh responses are private and verified", async () => {
 
 test("serverless database access has bounded concurrent connections and query deadlines", async () => {
   const database = await readFile(new URL("db/index.ts", root), "utf8");
+  const vercel = await readFile(new URL("vercel.json", root), "utf8");
   assert.match(database, /prepare:\s*false/);
   assert.match(database, /max:\s*3/);
   assert.match(database, /idle_timeout:\s*5/);
@@ -52,6 +53,7 @@ test("serverless database access has bounded concurrent connections and query de
   assert.doesNotMatch(database, /client\.end\(\{\s*timeout:\s*0\s*\}\)/);
   assert.match(database, /statement_timeout:\s*12000/);
   assert.match(database, /lock_timeout:\s*5000/);
+  assert.match(vercel, /"regions"\s*:\s*\[\s*"icn1"\s*\]/);
 });
 
 test("activity and author writes share one transaction", async () => {
