@@ -22,26 +22,51 @@ export default function GlobalInstitutionSearch({
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<Institution[]>([]);
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
+  const cacheRef = useRef(new Map<string, Institution[]>());
 
   useEffect(() => {
     if (query.trim().length < 2) {
       setItems([]);
+      setLoading(false);
+      return;
+    }
+    const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
+    const cached = cacheRef.current.get(normalizedQuery);
+    if (cached) {
+      setItems(cached);
+      setLoading(false);
+      setOpen(true);
       return;
     }
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
+      setLoading(true);
       void fetch(`/api/institutions/search?q=${encodeURIComponent(query.trim())}`, {
         cache: "no-store",
         signal: controller.signal,
       })
-        .then((response) => response.json())
-        .then((payload: { institutions?: Institution[] }) => {
-          setItems(Array.isArray(payload.institutions) ? payload.institutions : []);
+        .then(async (response) => {
+          const payload = (await response.json()) as {
+            institutions?: Institution[];
+          };
+          if (!response.ok) throw new Error("기관 검색을 완료하지 못했습니다.");
+          return payload;
+        })
+        .then((payload) => {
+          const nextItems = Array.isArray(payload.institutions)
+            ? payload.institutions
+            : [];
+          cacheRef.current.set(normalizedQuery, nextItems);
+          setItems(nextItems);
           setOpen(true);
         })
-        .catch(() => undefined);
-    }, 220);
+        .catch(() => undefined)
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, 120);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
@@ -68,7 +93,7 @@ export default function GlobalInstitutionSearch({
       />
       {open && query.trim().length >= 2 ? (
         <div className="global-institution-results">
-          {items.length ? items.map((item) => (
+          {loading ? <p>기관을 검색하는 중입니다.</p> : items.length ? items.map((item) => (
             <button
               type="button"
               key={`${item.organization}-${item.businessRound}`}

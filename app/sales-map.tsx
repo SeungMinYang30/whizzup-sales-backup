@@ -949,6 +949,59 @@ function normalizeCampaignMember(
   };
 }
 
+type CampaignListData = {
+  campaigns: SalesCampaign[];
+  targets: SalesCampaignTarget[];
+  members: CampaignMember[];
+  loadedAt: number;
+};
+
+const CAMPAIGN_CACHE_TTL_MS = 30_000;
+let campaignListCache: CampaignListData | null = null;
+let campaignListRequest: Promise<CampaignListData> | null = null;
+
+async function requestCampaignList(force = false) {
+  if (
+    !force &&
+    campaignListCache &&
+    Date.now() - campaignListCache.loadedAt < CAMPAIGN_CACHE_TTL_MS
+  ) {
+    return campaignListCache;
+  }
+  if (!force && campaignListRequest) return campaignListRequest;
+
+  const request = fetch("/api/map/campaigns", { cache: "no-store" })
+    .then(async (response) => {
+      const payload = (await response.json()) as {
+        campaigns?: Record<string, unknown>[];
+        targets?: Record<string, unknown>[];
+        members?: Record<string, unknown>[];
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(
+          payload.error || "영업 카테고리를 불러오지 못했습니다.",
+        );
+      }
+      return {
+        campaigns: (payload.campaigns ?? []).map(normalizeCampaign),
+        targets: (payload.targets ?? []).map(normalizeCampaignTarget),
+        members: (payload.members ?? []).map(normalizeCampaignMember),
+        loadedAt: Date.now(),
+      } satisfies CampaignListData;
+    })
+    .then((data) => {
+      campaignListCache = data;
+      return data;
+    });
+  if (!force) campaignListRequest = request;
+  try {
+    return await request;
+  } finally {
+    if (!force && campaignListRequest === request) campaignListRequest = null;
+  }
+}
+
 function resolveMapStatus(record: SalesMapRecord | undefined): MapStatus {
   if (!record || record.awardStatus === "미정") return "영업 중";
   if (record.awardStatus === "타업체 수주") return "타업체";
@@ -1295,6 +1348,7 @@ export default function SalesMapPage({
   const onSearchChangeRef = useRef(onSearchChange);
   const skipNextVisibleBoundsFitRef = useRef(false);
   const previousActiveRef = useRef(active);
+  const mapResourcesRequestedRef = useRef(false);
   const [javascriptKey, setJavascriptKey] = useState("");
   const [keyInput, setKeyInput] = useState("");
   const [configLoading, setConfigLoading] = useState(true);
@@ -1400,6 +1454,7 @@ export default function SalesMapPage({
   } | null>(null);
   const [notice, setNotice] = useState("");
   const [searchDraft, setSearchDraft] = useState(search);
+  const deferredSearchDraft = useDeferredValue(searchDraft);
   const deferredCampaignInstitutionSearch = useDeferredValue(
     campaignInstitutionSearch,
   );
@@ -1622,27 +1677,10 @@ export default function SalesMapPage({
   async function loadCampaigns() {
     try {
       setCampaignLoading(true);
-      const response = await fetch("/api/map/campaigns", {
-        cache: "no-store",
-      });
-      const payload = (await response.json()) as {
-        campaigns?: Record<string, unknown>[];
-        targets?: Record<string, unknown>[];
-        members?: Record<string, unknown>[];
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(
-          payload.error || "영업 카테고리를 불러오지 못했습니다.",
-        );
-      }
-      setCampaigns((payload.campaigns ?? []).map(normalizeCampaign));
-      setCampaignTargets(
-        (payload.targets ?? []).map(normalizeCampaignTarget),
-      );
-      setCampaignMembers(
-        (payload.members ?? []).map(normalizeCampaignMember),
-      );
+      const campaignData = await requestCampaignList(true);
+      setCampaigns(campaignData.campaigns);
+      setCampaignTargets(campaignData.targets);
+      setCampaignMembers(campaignData.members);
     } catch (caught) {
       setNotice(
         caught instanceof Error
@@ -1655,6 +1693,8 @@ export default function SalesMapPage({
   }
 
   useEffect(() => {
+    if (displayMode !== "map" || mapResourcesRequestedRef.current) return;
+    mapResourcesRequestedRef.current = true;
     let mounted = true;
     void fetch("/api/map/config", { cache: "no-store" })
       .then(async (response) => {
@@ -1706,25 +1746,14 @@ export default function SalesMapPage({
         if (mounted) setLocationsLoading(false);
       });
 
-    void fetch("/api/map/campaigns", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = (await response.json()) as {
-          campaigns?: Record<string, unknown>[];
-          targets?: Record<string, unknown>[];
-          members?: Record<string, unknown>[];
-          error?: string;
-        };
-        if (!response.ok) {
-          throw new Error(
-            payload.error || "영업 카테고리를 불러오지 못했습니다.",
-          );
-        }
-        return {
-          campaigns: (payload.campaigns ?? []).map(normalizeCampaign),
-          targets: (payload.targets ?? []).map(normalizeCampaignTarget),
-          members: (payload.members ?? []).map(normalizeCampaignMember),
-        };
-      })
+    return () => {
+      mounted = false;
+    };
+  }, [displayMode]);
+
+  useEffect(() => {
+    let mounted = true;
+    void requestCampaignList()
       .then((campaignData) => {
         if (!mounted) return;
         setCampaigns(campaignData.campaigns);
@@ -4537,7 +4566,7 @@ export default function SalesMapPage({
     "수주 후 진행",
     "완료",
   ];
-  const budgetKeyword = search.trim().toLocaleLowerCase("ko-KR");
+  const budgetKeyword = deferredSearchDraft.trim().toLocaleLowerCase("ko-KR");
   const matchesBudgetTargetFilters = (target: SalesCampaignTarget) => {
     if (
       budgetQuickFilter === "whizzup" &&

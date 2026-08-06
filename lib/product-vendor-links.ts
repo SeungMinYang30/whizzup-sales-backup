@@ -1,4 +1,4 @@
-import { getD1 } from "../db";
+import { getD1, isPostgresDatabase } from "../db";
 import { ensureAwardVendorsReady } from "./award-vendors";
 
 export type ProductVendorOption = {
@@ -18,13 +18,22 @@ export type ProductSupplySetting = {
   marginRate: number | null;
 };
 
+export type ProductCatalogRelations = {
+  vendors: ProductVendorOption[];
+  linkMap: Map<string, ProductVendorLink>;
+  supplyMap: Map<string, ProductSupplySetting>;
+};
+
 let productVendorLinksReadyPromise: Promise<ReturnType<typeof getD1>> | null =
   null;
 
 export function ensureProductVendorLinksReady() {
   if (!productVendorLinksReadyPromise) {
-    productVendorLinksReadyPromise = ensureAwardVendorsReady()
+    productVendorLinksReadyPromise = (isPostgresDatabase()
+      ? Promise.resolve(getD1())
+      : ensureAwardVendorsReady())
       .then(async (d1) => {
+        if (isPostgresDatabase()) return d1;
         await d1.batch([
           d1.prepare(
             `CREATE TABLE IF NOT EXISTS product_vendor_links (
@@ -225,6 +234,90 @@ export async function readProductSupplySettingMap(): Promise<
       ],
     ),
   );
+}
+
+export async function readProductCatalogRelations(): Promise<ProductCatalogRelations> {
+  const d1 = await ensureProductVendorLinksReady();
+  const rows = await d1
+    .prepare(
+      `SELECT
+         'vendor' AS row_kind,
+         CAST(vendor.id AS TEXT) AS product_id,
+         vendor.id AS vendor_id,
+         vendor.company_name AS vendor_name,
+         NULL AS supply_type,
+         NULL AS margin_rate
+       FROM award_vendors vendor
+       WHERE vendor.is_active = 1
+       UNION ALL
+       SELECT
+         'link' AS row_kind,
+         links.product_id,
+         links.vendor_id,
+         COALESCE(NULLIF(vendor.company_name, ''), links.vendor_name_snapshot)
+           AS vendor_name,
+         NULL AS supply_type,
+         NULL AS margin_rate
+       FROM product_vendor_links links
+       LEFT JOIN award_vendors vendor
+         ON vendor.id = links.vendor_id AND vendor.is_active = 1
+       LEFT JOIN product_supply_settings supply
+         ON supply.product_id = links.product_id
+       WHERE COALESCE(supply.supply_type, 'partner') = 'partner'
+       UNION ALL
+       SELECT
+         'supply' AS row_kind,
+         supply.product_id,
+         NULL AS vendor_id,
+         '' AS vendor_name,
+         supply.supply_type,
+         supply.margin_rate
+       FROM product_supply_settings supply`,
+    )
+    .all<{
+      row_kind: string;
+      product_id: string;
+      vendor_id: number | null;
+      vendor_name: string;
+      supply_type: string | null;
+      margin_rate: number | null;
+    }>();
+
+  const vendors: ProductVendorOption[] = [];
+  const linkMap = new Map<string, ProductVendorLink>();
+  const supplyMap = new Map<string, ProductSupplySetting>();
+  rows.results.forEach((row) => {
+    const productId = String(row.product_id ?? "");
+    if (row.row_kind === "vendor") {
+      vendors.push({
+        id: Number(row.vendor_id),
+        companyName: String(row.vendor_name ?? ""),
+      });
+      return;
+    }
+    if (row.row_kind === "link") {
+      linkMap.set(productId, {
+        productId,
+        supplierVendorId: Number(row.vendor_id),
+        supplierVendorName: String(row.vendor_name ?? ""),
+      });
+      return;
+    }
+    if (row.row_kind === "supply") {
+      supplyMap.set(productId, {
+        productId,
+        supplyType: row.supply_type === "direct" ? "direct" : "partner",
+        marginRate:
+          row.margin_rate === null || row.margin_rate === undefined
+            ? null
+            : Number(row.margin_rate),
+      });
+    }
+  });
+  vendors.sort((left, right) =>
+    left.companyName.localeCompare(right.companyName, "ko-KR"),
+  );
+  return { vendors, linkMap, supplyMap };
 }
 
 export async function setProductVendorLink(

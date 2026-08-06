@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import type { AuthoredQuotation, AuthoredQuotationItem } from "../lib/authored-quotations";
 import type { ProductCatalogItem } from "../lib/product-catalog";
 import { createQuotationWorkbook } from "../lib/quotation-xlsx";
@@ -66,9 +66,14 @@ function downloadBytes(bytes: Uint8Array, name: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
-export default function QuotationManagementPage({ institutions }: { institutions: QuotationInstitutionOption[] }) {
+export default function QuotationManagementPage({
+  institutions,
+  products,
+}: {
+  institutions: QuotationInstitutionOption[];
+  products: ProductCatalogItem[];
+}) {
   const [quotes, setQuotes] = useState<AuthoredQuotation[]>([]);
-  const [products, setProducts] = useState<ProductCatalogItem[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [query, setQuery] = useState("");
   const [productQuery, setProductQuery] = useState("");
@@ -79,16 +84,12 @@ export default function QuotationManagementPage({ institutions }: { institutions
   async function load() {
     setLoading(true);
     try {
-      const [quoteResponse, productResponse] = await Promise.all([
-        fetch("/api/quotations", { cache: "no-store" }),
-        fetch("/api/product-catalog", { cache: "no-store" }),
-      ]);
+      const quoteResponse = await fetch("/api/quotations", {
+        cache: "no-store",
+      });
       const quotePayload = await quoteResponse.json() as { quotations?: AuthoredQuotation[]; error?: string };
-      const productPayload = await productResponse.json() as { products?: ProductCatalogItem[]; error?: string };
       if (!quoteResponse.ok) throw new Error(quotePayload.error || "견적서를 불러오지 못했습니다.");
-      if (!productResponse.ok) throw new Error(productPayload.error || "제품을 불러오지 못했습니다.");
       setQuotes(quotePayload.quotations ?? []);
-      setProducts(productPayload.products ?? []);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "자료를 불러오지 못했습니다.");
     } finally {
@@ -98,17 +99,19 @@ export default function QuotationManagementPage({ institutions }: { institutions
 
   useEffect(() => { void load(); }, []);
 
+  const deferredQuery = useDeferredValue(query);
+  const deferredProductQuery = useDeferredValue(productQuery);
   const filteredQuotes = useMemo(() => {
-    const key = query.trim().toLocaleLowerCase("ko-KR");
+    const key = deferredQuery.trim().toLocaleLowerCase("ko-KR");
     return key
       ? quotes.filter((quote) => `${quote.organization} ${quote.projectTitle} ${quote.quoteNumber}`.toLocaleLowerCase("ko-KR").includes(key))
       : quotes;
-  }, [query, quotes]);
+  }, [deferredQuery, quotes]);
 
   const filteredProducts = useMemo(() => {
-    const key = productQuery.trim().toLocaleLowerCase("ko-KR").replace(/\s/g, "");
+    const key = deferredProductQuery.trim().toLocaleLowerCase("ko-KR").replace(/\s/g, "");
     return products.filter((product) => !key || `${product.name}${product.specification}${product.note}`.toLocaleLowerCase("ko-KR").replace(/\s/g, "").includes(key)).slice(0, 80);
-  }, [productQuery, products]);
+  }, [deferredProductQuery, products]);
 
   const numbers = useMemo(() => {
     if (!draft) return { subtotal: 0, supply: 0, tax: 0, total: 0, earning: 0, consortium: 0, margin: 0, marginRate: 0 };

@@ -35,8 +35,25 @@ import {
 } from "../../../../lib/trash-store";
 import { ensureJointProjectsReady } from "../../../../lib/joint-projects";
 import { parseStoredActivityBudgetMoney } from "../../../../lib/activity-budgets";
+import { isPostgresDatabase } from "../../../../db";
 
 export const dynamic = "force-dynamic";
+
+let campaignBasicsBackfillPromise: Promise<void> | null = null;
+
+async function ensureCampaignBasicsBackfilled(
+  d1: Awaited<ReturnType<typeof ensureCampaignsReady>>,
+) {
+  if (!campaignBasicsBackfillPromise) {
+    campaignBasicsBackfillPromise = backfillCampaignInstitutionBasics(d1).catch(
+      (error) => {
+        campaignBasicsBackfillPromise = null;
+        throw error;
+      },
+    );
+  }
+  await campaignBasicsBackfillPromise;
+}
 
 type BusinessMatchMode = "auto" | "link-current" | "new" | "list-only";
 
@@ -353,7 +370,11 @@ export async function GET() {
       ensureJointProjectsReady(),
     ]);
     const d1 = await ensureCampaignsReady();
-    await backfillCampaignInstitutionBasics(d1);
+    // PostgreSQL receives already-normalized rows from the Sites backup.
+    // D1 keeps the legacy repair path, but only once per warm worker.
+    if (!isPostgresDatabase()) {
+      await ensureCampaignBasicsBackfilled(d1);
+    }
     const [campaigns, targets, members, budgetCatalog] = await Promise.all([
       d1
         .prepare(`

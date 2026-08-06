@@ -411,7 +411,7 @@ export default function ProductCatalogPage({
     };
   }, []);
 
-  const deferredSearch = useDeferredValue(search);
+  const deferredSearch = useDeferredValue(searchDraft);
   const normalizedSearch = normalizeSearchValue(deferredSearch.trim());
   const quotationOpen = quotation !== null;
   const quotationLines = quotation?.lines ?? null;
@@ -1064,7 +1064,10 @@ export default function ProductCatalogPage({
 
   return (
     <>
-      <QuotationManagementPage institutions={institutions} />
+      <QuotationManagementPage
+        institutions={institutions}
+        products={products}
+      />
 
       <section className="panel product-catalog-panel">
         <div className="product-catalog-sticky-controls">

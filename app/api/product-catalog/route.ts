@@ -10,6 +10,7 @@ import {
 import {
   ensureProductVendorLinksReady,
   readActiveProductVendors,
+  readProductCatalogRelations,
   readProductSupplySettingMap,
   readProductVendorLinkMap,
   setProductVendorLinks,
@@ -142,18 +143,69 @@ async function readStoredProducts() {
   }
 }
 
+async function readCatalogSettings(memberId: number) {
+  const d1 = await ensureCollaborationReady();
+  const orderKey = orderSettingKey(memberId);
+  const favoritesKey = favoritesSettingKey(memberId);
+  const rows = await d1
+    .prepare(
+      `SELECT key, value
+       FROM app_settings
+       WHERE key IN (?, ?, ?)`,
+    )
+    .bind(SETTING_KEY, orderKey, favoritesKey)
+    .all<{ key: string; value: string }>();
+  const settings = new Map(
+    rows.results.map((row) => [String(row.key), String(row.value ?? "")]),
+  );
+  let products = PRODUCT_CATALOG;
+  try {
+    const stored = normalizeProducts(
+      JSON.parse(settings.get(SETTING_KEY) || "[]"),
+    );
+    if (stored.length) products = stored;
+  } catch {
+    products = PRODUCT_CATALOG;
+  }
+  const parseProductIds = (key: string) => {
+    try {
+      return normalizeProductOrder(
+        JSON.parse(settings.get(key) || "[]"),
+        products,
+      );
+    } catch {
+      return [];
+    }
+  };
+  return {
+    products,
+    productOrder: parseProductIds(orderKey),
+    favoriteProductIds: parseProductIds(favoritesKey),
+  };
+}
+
 async function catalogResponse(
   memberId: number,
   products: ProductCatalogItem[],
+  savedSettings?: {
+    productOrder: string[];
+    favoriteProductIds: string[];
+  },
 ) {
-  const [productOrder, favoriteProductIds, linkMap, supplyMap, vendors] =
-    await Promise.all([
-      readProductOrder(memberId, products),
-      readFavoriteProductIds(memberId, products),
-      readProductVendorLinkMap(),
-      readProductSupplySettingMap(),
-      readActiveProductVendors(),
-    ]);
+  const [memberSettings, relations] = await Promise.all([
+    savedSettings
+      ? Promise.resolve(savedSettings)
+      : Promise.all([
+          readProductOrder(memberId, products),
+          readFavoriteProductIds(memberId, products),
+        ]).then(([productOrder, favoriteProductIds]) => ({
+          productOrder,
+          favoriteProductIds,
+        })),
+    readProductCatalogRelations(),
+  ]);
+  const { productOrder, favoriteProductIds } = memberSettings;
+  const { linkMap, supplyMap, vendors } = relations;
   const linkedProducts = applyProductOrder(products, productOrder).map(
     (product) => {
       const link = linkMap.get(product.id);
@@ -274,9 +326,9 @@ async function writeMemberProductSetting(
 export async function GET() {
   try {
     const member = await requireApprovedMember();
-    const products = await readStoredProducts();
+    const settings = await readCatalogSettings(member.id);
     return Response.json(
-      await catalogResponse(member.id, products),
+      await catalogResponse(member.id, settings.products, settings),
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

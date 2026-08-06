@@ -1,4 +1,5 @@
-export const VERCEL_SCHEMA_VERSION = "202608070001_complex_projects";
+export const VERCEL_SCHEMA_VERSION =
+  "202608070002_complex_projects_page_loading_performance";
 
 export const VERCEL_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS public.vercel_schema_migrations (
@@ -427,6 +428,14 @@ ALTER TABLE public.equipment_items
   ADD COLUMN IF NOT EXISTS protection_status text NOT NULL DEFAULT '신청 필요';
 ALTER TABLE public.equipment_items
   ADD COLUMN IF NOT EXISTS protection_completed_at text;
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS supplier_vendor_id bigint;
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS supplier_vendor_name text NOT NULL DEFAULT '';
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS supply_type text NOT NULL DEFAULT 'partner';
+ALTER TABLE public.equipment_items
+  ADD COLUMN IF NOT EXISTS margin_rate double precision;
 
 -- The original standby database used fixed enum-like checks from the first
 -- release. The main Sites database stores these fields as text and now uses
@@ -673,6 +682,12 @@ CREATE INDEX IF NOT EXISTS members_sales_idx
   ON public.members (status, is_sales, display_name);
 CREATE INDEX IF NOT EXISTS activities_organization_date_idx
   ON public.activities (organization, activity_date DESC, id DESC);
+CREATE INDEX IF NOT EXISTS activities_organization_round_date_idx
+  ON public.activities
+  (organization, business_round, activity_date DESC, id DESC);
+CREATE INDEX IF NOT EXISTS activities_organization_round_manager_date_idx
+  ON public.activities
+  (organization, business_round, progress_manager, activity_date DESC, id DESC);
 CREATE INDEX IF NOT EXISTS activities_date_idx
   ON public.activities (activity_date DESC, id DESC);
 CREATE INDEX IF NOT EXISTS activities_manager_created_idx
@@ -685,6 +700,15 @@ CREATE INDEX IF NOT EXISTS activity_review_ack_snoozed_idx
   ON public.activity_review_acknowledgements (member_id, snoozed_until);
 CREATE INDEX IF NOT EXISTS activity_assignment_history_activity_idx
   ON public.activity_assignment_history (activity_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS sales_campaigns_name_idx
+  ON public.sales_campaigns (name);
+CREATE UNIQUE INDEX IF NOT EXISTS sales_campaign_targets_campaign_org_idx
+  ON public.sales_campaign_targets (campaign_id, organization);
+CREATE INDEX IF NOT EXISTS sales_campaign_targets_assignee_idx
+  ON public.sales_campaign_targets (assigned_member_id, campaign_id);
+CREATE INDEX IF NOT EXISTS sales_campaign_targets_org_round_campaign_idx
+  ON public.sales_campaign_targets
+  (organization, business_round, campaign_id);
 
 DROP TRIGGER IF EXISTS ai_recommendations_touch_updated_at
   ON public.ai_recommendations;
@@ -794,6 +818,37 @@ SET execution_type = '직영', consortium_company = ''
 WHERE execution_type IS NULL
    OR execution_type = ''
    OR execution_type = '미정';
+
+INSERT INTO public.product_supply_settings (
+  product_id, supply_type, margin_rate, updated_by
+) VALUES ('quote-62', 'direct', 0.5545454545454546, 0)
+ON CONFLICT (product_id) DO NOTHING;
+
+DELETE FROM public.product_vendor_links
+WHERE product_id IN (
+  SELECT product_id
+  FROM public.product_supply_settings
+  WHERE supply_type = 'direct'
+);
+
+UPDATE public.equipment_items
+SET supply_type = 'direct',
+    margin_rate = (
+      SELECT margin_rate
+      FROM public.product_supply_settings
+      WHERE product_id = equipment_items.catalog_item_id
+    ),
+    commission_rate = NULL,
+    supplier_vendor_id = NULL,
+    supplier_vendor_name = '',
+    updated_at = CURRENT_TIMESTAMP
+WHERE status IN ('제안 예정', '제안', '견적')
+  AND COALESCE(supply_type, 'partner') = 'partner'
+  AND catalog_item_id IN (
+    SELECT product_id
+    FROM public.product_supply_settings
+    WHERE supply_type = 'direct'
+  );
 
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
