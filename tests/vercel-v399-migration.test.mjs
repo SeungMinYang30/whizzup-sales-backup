@@ -26,6 +26,18 @@ test("Vercel v399 schema contains every newly introduced operational area", asyn
   }
   assert.match(schema, /ADD COLUMN IF NOT EXISTS budgets_json/);
   assert.match(schema, /ADD COLUMN IF NOT EXISTS award_stage_manual/);
+  assert.match(
+    schema,
+    /quotation_documents[\s\S]*?ADD COLUMN IF NOT EXISTS business_round/,
+  );
+  assert.match(
+    schema,
+    /sales_campaigns[\s\S]*?ADD COLUMN IF NOT EXISTS budget_amount_mode/,
+  );
+  assert.match(
+    schema,
+    /sales_campaign_targets[\s\S]*?ADD COLUMN IF NOT EXISTS created_activity/,
+  );
   assert.match(schema, /ADD COLUMN IF NOT EXISTS auth_user_id uuid/);
   assert.match(schema, /hidden_at text NOT NULL DEFAULT ''/);
   assert.match(schema, /ADD COLUMN IF NOT EXISTS hidden_at/);
