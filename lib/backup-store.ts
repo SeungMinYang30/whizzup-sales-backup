@@ -1329,6 +1329,36 @@ function repairBrokenActivityReferences(
     return { ...project, activity_id: null };
   });
 
+  const campaignTargetIds = new Set(
+    data.sales_campaign_targets.map((row) => String(row.id)),
+  );
+  const jointProjectStatus = new Map(
+    data.joint_projects.map((row) => [String(row.id), String(row.status ?? "")]),
+  );
+  let detachedInactiveJointLinks = 0;
+  data.joint_project_members = data.joint_project_members.map((member) => {
+    const missingActivity =
+      member.activity_id !== null &&
+      member.activity_id !== "" &&
+      !activityIds.has(String(member.activity_id));
+    const missingCampaignTarget =
+      member.campaign_target_id !== null &&
+      member.campaign_target_id !== "" &&
+      !campaignTargetIds.has(String(member.campaign_target_id));
+    if (!missingActivity && !missingCampaignTarget) return member;
+    if (jointProjectStatus.get(String(member.project_id)) !== "inactive") {
+      return member;
+    }
+    detachedInactiveJointLinks += 1;
+    return {
+      ...member,
+      activity_id: missingActivity ? null : member.activity_id,
+      campaign_target_id: missingCampaignTarget
+        ? null
+        : member.campaign_target_id,
+    };
+  });
+
   const historyEntryIds = new Set(
     data.accounting_commission_entry_history.map((row) =>
       String(row.entry_id),
@@ -1364,6 +1394,11 @@ function repairBrokenActivityReferences(
   if (detachedProjects) {
     notices.push(
       `연결할 현재 기록이 없는 사업 ${detachedProjects}건은 사업 정보는 보존하고 활동 연결만 해제했습니다.`,
+    );
+  }
+  if (detachedInactiveJointLinks) {
+    notices.push(
+      `종료된 공동사업의 삭제된 활동·대상기관 연결 ${detachedInactiveJointLinks}건은 공동사업 이력은 보존하고 끊어진 연결만 해제했습니다.`,
     );
   }
   if (discardedAccountingEntries.length) {
