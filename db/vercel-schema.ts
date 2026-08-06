@@ -152,6 +152,8 @@ CREATE TABLE IF NOT EXISTS public.organization_schedules (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE public.organization_schedules
+  ADD COLUMN IF NOT EXISTS business_round integer NOT NULL DEFAULT 1;
 CREATE INDEX IF NOT EXISTS organization_schedules_scope_date_idx
   ON public.organization_schedules
   (organization, business_round, completed, scheduled_date, id);
@@ -180,6 +182,8 @@ CREATE TABLE IF NOT EXISTS public.construction_schedule_projects (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE public.construction_schedule_projects
+  ADD COLUMN IF NOT EXISTS business_round integer NOT NULL DEFAULT 1;
 ALTER TABLE public.construction_schedule_projects
   ADD COLUMN IF NOT EXISTS work_summary_mode text NOT NULL DEFAULT 'auto';
 ALTER TABLE public.construction_schedule_projects
