@@ -426,7 +426,7 @@ export async function GET() {
             AND current_member.status = 'approved'
             AND current_member.is_sales = 1
            WHERE c.import_status = 'complete'
-           GROUP BY c.id
+           GROUP BY c.id, g.canonical_name, m.display_name
           ORDER BY c.selection_date DESC, c.created_at DESC, c.id DESC
         `)
         .all(),

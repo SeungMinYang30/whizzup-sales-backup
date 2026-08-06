@@ -322,6 +322,15 @@ test("명단 등록은 같은 연도 위즈업 사업을 단계와 관계없이 
   );
 });
 
+test("예산별 기관 명단 집계는 PostgreSQL에서도 표준 예산명과 작성자를 안전하게 묶는다", async () => {
+  const route = await source("../app/api/map/campaigns/route.ts");
+
+  assert.match(
+    route,
+    /GROUP BY c\.id, g\.canonical_name, m\.display_name/,
+  );
+});
+
 test("잘못 입력된 예산명은 원본을 보존해 같은 사업의 활동과 품목에 함께 반영한다", async () => {
   const route = await source("../app/api/map/campaigns/route.ts");
 
