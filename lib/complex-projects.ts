@@ -7,6 +7,7 @@ import {
   refreshOrganizationScheduleMirror,
 } from "./organization-schedules";
 import { ensureRecordsReady } from "./records-store";
+import { ensureMapReady } from "./map-store";
 
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS complex_projects (
@@ -16,6 +17,7 @@ const schemaStatements = [
     name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT '준비',
     total_budget INTEGER,
+    manager_member_id INTEGER,
     manager_name TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
     active INTEGER NOT NULL DEFAULT 1,
@@ -63,6 +65,14 @@ const schemaStatements = [
     procurement_method TEXT NOT NULL DEFAULT '',
     procurement_identifier TEXT NOT NULL DEFAULT '',
     delivery_location TEXT NOT NULL DEFAULT '',
+    selection_round TEXT NOT NULL DEFAULT '',
+    selection_status TEXT NOT NULL DEFAULT '',
+    change_reason TEXT NOT NULL DEFAULT '',
+    electrical_requirements TEXT NOT NULL DEFAULT '',
+    network_requirements TEXT NOT NULL DEFAULT '',
+    protection_vendor_name TEXT NOT NULL DEFAULT '',
+    protection_state TEXT NOT NULL DEFAULT '신청 필요',
+    protection_expires_at TEXT NOT NULL DEFAULT '',
     updated_by INTEGER,
     updated_by_name TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -136,9 +146,34 @@ async function initializeComplexProjects() {
     ensureEquipmentReady(),
     ensureBudgetNamesReady(),
     ensureOrganizationSchedulesReady(),
+    ensureMapReady(),
   ]);
   const d1 = getD1();
   await d1.batch(schemaStatements.map((statement) => d1.prepare(statement)));
+  const projectColumns = await d1
+    .prepare("PRAGMA table_info(complex_projects)")
+    .all<{ name: string }>();
+  if (!projectColumns.results.some((column) => column.name === "manager_member_id")) {
+    await d1.prepare("ALTER TABLE complex_projects ADD COLUMN manager_member_id INTEGER").run();
+  }
+  const detailColumns = await d1
+    .prepare("PRAGMA table_info(complex_project_item_details)")
+    .all<{ name: string }>();
+  const detailMigrations = [
+    ["selection_round", "ALTER TABLE complex_project_item_details ADD COLUMN selection_round TEXT NOT NULL DEFAULT ''"],
+    ["selection_status", "ALTER TABLE complex_project_item_details ADD COLUMN selection_status TEXT NOT NULL DEFAULT ''"],
+    ["change_reason", "ALTER TABLE complex_project_item_details ADD COLUMN change_reason TEXT NOT NULL DEFAULT ''"],
+    ["electrical_requirements", "ALTER TABLE complex_project_item_details ADD COLUMN electrical_requirements TEXT NOT NULL DEFAULT ''"],
+    ["network_requirements", "ALTER TABLE complex_project_item_details ADD COLUMN network_requirements TEXT NOT NULL DEFAULT ''"],
+    ["protection_vendor_name", "ALTER TABLE complex_project_item_details ADD COLUMN protection_vendor_name TEXT NOT NULL DEFAULT ''"],
+    ["protection_state", "ALTER TABLE complex_project_item_details ADD COLUMN protection_state TEXT NOT NULL DEFAULT '신청 필요'"],
+    ["protection_expires_at", "ALTER TABLE complex_project_item_details ADD COLUMN protection_expires_at TEXT NOT NULL DEFAULT ''"],
+  ] as const;
+  for (const [column, sql] of detailMigrations) {
+    if (!detailColumns.results.some((entry) => entry.name === column)) {
+      await d1.prepare(sql).run();
+    }
+  }
   const scheduleColumns = await d1
     .prepare("PRAGMA table_info(organization_schedules)")
     .all<{ name: string }>();
@@ -224,7 +259,7 @@ async function syncBudgetLinks(d1: ReturnType<typeof getD1>, projectId: number) 
 
 export async function listComplexProjects() {
   const d1 = await ensureComplexProjectsReady();
-  const [projectResult, budgetResult, zoneResult, itemResult, deliveryResult, groupResult, candidateResult] = await Promise.all([
+  const [projectResult, budgetResult, zoneResult, itemResult, deliveryResult, groupResult, memberResult] = await Promise.all([
     d1.prepare(
       `SELECT * FROM complex_projects WHERE active = 1
        ORDER BY CASE status WHEN '진행' THEN 0 WHEN '준비' THEN 1 WHEN '완료' THEN 2 ELSE 3 END,
@@ -259,13 +294,10 @@ export async function listComplexProjects() {
        ORDER BY sort_order, canonical_name COLLATE NOCASE, id`,
     ).all<Record<string, unknown>>(),
     d1.prepare(
-      `SELECT organization, business_round,
-              MAX(CASE WHEN award_status = '위즈업 수주' THEN 1 ELSE 0 END) AS whizzup_award,
-              MAX(activity_date) AS latest_date
-       FROM activities
-       WHERE TRIM(COALESCE(organization, '')) <> ''
-       GROUP BY organization, business_round
-       ORDER BY organization COLLATE NOCASE, business_round`,
+      `SELECT id, display_name, email
+       FROM members
+       WHERE status = 'approved' AND is_sales = 1
+       ORDER BY display_name COLLATE NOCASE, id`,
     ).all<Record<string, unknown>>(),
   ]);
 
@@ -330,15 +362,65 @@ export async function listComplexProjects() {
           quote_amount: quoted,
           item_count: items.length,
           unscheduled_count: items.filter((row) => row.schedule_state === "일정 미정" || row.schedule_state === "수량 미배정").length,
-          protection_needed_count: items.filter((row) => String(row.protection_status) !== "신청 완료").length,
+          protection_needed_count: items.filter((row) => {
+            const state = clean(row.protection_state || row.protection_status);
+            return !["신청 완료", "승인", "보호 중", "해당 없음"].includes(state);
+          }).length,
           quantity_issue_count: items.filter((row) => row.schedule_state === "수량 초과").length,
           price_missing_count: items.filter((row) => row.catalog_unit_price === null || row.catalog_unit_price === undefined).length,
+          selection_pending_count: items.filter((row) => {
+            const status = clean(row.selection_status);
+            return Boolean(status) && !["선정 완료", "확정"].includes(status);
+          }).length,
+          budget_unassigned_count: items.filter((row) => !Number(row.budget_group_id)).length,
+          remaining_budget: project.total_budget === null || project.total_budget === undefined
+            ? null
+            : integer(project.total_budget) - quoted,
         },
       };
     }),
     budgetGroups: groupResult.results,
-    candidates: candidateResult.results,
+    members: memberResult.results,
+    candidates: [],
   };
+}
+
+export async function searchComplexProjectCandidates(value: unknown) {
+  const query = clean(value, 80);
+  if (query.replace(/\s+/g, "").length < 2) return [];
+  const d1 = await ensureComplexProjectsReady();
+  const like = `%${query.toLocaleLowerCase("ko-KR")}%`;
+  const result = await d1.prepare(
+    `WITH latest AS (
+       SELECT a.*,
+              ROW_NUMBER() OVER (
+                PARTITION BY a.organization, a.business_round
+                ORDER BY a.activity_date DESC, a.id DESC
+              ) AS row_number
+       FROM activities a
+       WHERE LOWER(a.organization) LIKE ?
+          OR LOWER(COALESCE(a.region, '')) LIKE ?
+     )
+     SELECT latest.organization, latest.business_round, latest.region,
+            latest.progress_manager,
+            CASE WHEN latest.award_status = '위즈업 수주' THEN 1 ELSE 0 END AS whizzup_award,
+            latest.award_status, latest.activity_date AS latest_date,
+            COALESCE(location.road_address, location.address, '') AS address,
+            existing.id AS complex_project_id,
+            existing.name AS complex_project_name
+     FROM latest
+     LEFT JOIN organization_locations location
+       ON location.organization = latest.organization
+     LEFT JOIN complex_projects existing
+       ON existing.organization = latest.organization
+      AND existing.business_round = latest.business_round
+      AND existing.active = 1
+     WHERE latest.row_number = 1
+     ORDER BY CASE WHEN latest.award_status = '위즈업 수주' THEN 0 ELSE 1 END,
+              latest.activity_date DESC, latest.organization COLLATE NOCASE
+     LIMIT 30`,
+  ).bind(like, like).all<Record<string, unknown>>();
+  return result.results;
 }
 
 export async function createComplexProject(payload: Record<string, unknown>, member: Member) {
@@ -352,15 +434,28 @@ export async function createComplexProject(payload: Record<string, unknown>, mem
   ).bind(organization, businessRound).first<{ id: number }>();
   if (!activity) throw new Error("연결할 기관 사업 기록을 찾지 못했습니다.");
   const name = clean(payload.name, 160) || `${organization} 복합사업`;
+  const requestedManagerId = integer(payload.managerMemberId) || null;
+  const requestedManager = requestedManagerId
+    ? await d1.prepare(
+        `SELECT id, display_name FROM members
+         WHERE id = ? AND status = 'approved' AND is_sales = 1`,
+      ).bind(requestedManagerId).first<{ id: number; display_name: string }>()
+    : null;
+  if (requestedManagerId && !requestedManager) {
+    throw new Error("승인된 영업담당자를 선택해 주세요.");
+  }
+  const managerName = requestedManager?.display_name || clean(payload.managerName, 120);
   await d1.prepare(
     `INSERT INTO complex_projects
-       (organization, business_round, name, status, total_budget, manager_name, notes,
+       (organization, business_round, name, status, total_budget, manager_member_id, manager_name, notes,
         created_by, created_by_name, updated_by, updated_by_name)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(organization, business_round) DO UPDATE SET
        name = excluded.name, status = excluded.status,
-       total_budget = COALESCE(excluded.total_budget, total_budget),
-       manager_name = excluded.manager_name, notes = excluded.notes, active = 1,
+       total_budget = COALESCE(excluded.total_budget, complex_projects.total_budget),
+       manager_member_id = COALESCE(excluded.manager_member_id, complex_projects.manager_member_id),
+       manager_name = CASE WHEN excluded.manager_name <> '' THEN excluded.manager_name ELSE complex_projects.manager_name END,
+       notes = excluded.notes, active = 1,
        updated_by = excluded.updated_by, updated_by_name = excluded.updated_by_name,
        updated_at = CURRENT_TIMESTAMP`,
   ).bind(
@@ -369,7 +464,8 @@ export async function createComplexProject(payload: Record<string, unknown>, mem
     name,
     clean(payload.status, 30) || "준비",
     nullableMoney(payload.totalBudget),
-    clean(payload.managerName, 120),
+    requestedManager?.id ?? null,
+    managerName,
     clean(payload.notes, 1000),
     member.id,
     member.displayName,
@@ -399,12 +495,21 @@ export async function updateComplexProject(payload: Record<string, unknown>, mem
   const d1 = await ensureComplexProjectsReady();
   const projectId = integer(payload.projectId);
   await requireProject(d1, projectId);
+  const requestedManagerId = integer(payload.managerMemberId) || null;
+  const requestedManager = requestedManagerId
+    ? await d1.prepare(
+        `SELECT id, display_name FROM members
+         WHERE id = ? AND status = 'approved' AND is_sales = 1`,
+      ).bind(requestedManagerId).first<{ id: number; display_name: string }>()
+    : null;
+  if (requestedManagerId && !requestedManager) throw new Error("승인된 영업담당자를 선택해 주세요.");
   await d1.prepare(
-    `UPDATE complex_projects SET name = ?, status = ?, total_budget = ?, manager_name = ?, notes = ?,
+    `UPDATE complex_projects SET name = ?, status = ?, total_budget = ?, manager_member_id = ?, manager_name = ?, notes = ?,
        updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
   ).bind(
     clean(payload.name, 160), clean(payload.status, 30) || "준비",
-    nullableMoney(payload.totalBudget), clean(payload.managerName, 120), clean(payload.notes, 1000),
+    nullableMoney(payload.totalBudget), requestedManager?.id ?? null,
+    requestedManager?.display_name || clean(payload.managerName, 120), clean(payload.notes, 1000),
     member.id, member.displayName, projectId,
   ).run();
   await writeEvent(d1, projectId, "update_project", payload, member);
@@ -508,7 +613,9 @@ export async function saveComplexItem(payload: Record<string, unknown>, member: 
   const awardedQty = integer(payload.awardedQty);
   const installedQty = integer(payload.installedQty);
   const unitPrice = nullableMoney(payload.unitPrice);
-  const protectionStatus = clean(payload.protectionStatus, 30) === "신청 완료" ? "신청 완료" : "신청 필요";
+  const protectionDetail = clean(payload.protectionStatus, 30) || "신청 필요";
+  const protectionResolved = ["신청 완료", "승인", "보호 중", "해당 없음"].includes(protectionDetail);
+  const protectionStatus = protectionResolved ? "신청 완료" : "신청 필요";
   let savedId = itemId;
   if (itemId) {
     const linkedItem = await d1.prepare(
@@ -526,7 +633,7 @@ export async function saveComplexItem(payload: Record<string, unknown>, member: 
       Number(budgetLink.equipment_project_id), productName, clean(payload.specification, 400), proposedQty, awardedQty, installedQty,
       clean(payload.unit, 20) || "대", clean(payload.status, 30) || "수주", clean(payload.notes, 1000),
       unitPrice, unitPrice === null ? "금액 미입력" : "입력 완료", clean(payload.supplierName, 160),
-      protectionStatus, protectionStatus === "신청 완료" ? new Date().toISOString() : null,
+      protectionStatus, protectionResolved ? new Date().toISOString() : null,
       member.id, itemId,
     ).run();
   } else {
@@ -543,7 +650,7 @@ export async function saveComplexItem(payload: Record<string, unknown>, member: 
       awardedQty, installedQty, clean(payload.unit, 20) || "대", clean(payload.status, 30) || "수주",
       clean(payload.notes, 1000), unitPrice, unitPrice === null ? "금액 미입력" : "입력 완료",
       clean(payload.supplierName, 160), protectionStatus,
-      protectionStatus === "신청 완료" ? new Date().toISOString() : null,
+      protectionResolved ? new Date().toISOString() : null,
       member.id, member.id, Number(budgetLink.equipment_project_id),
     ).first<{ id: number }>();
     savedId = Number(inserted?.id ?? 0);
@@ -558,18 +665,33 @@ export async function saveComplexItem(payload: Record<string, unknown>, member: 
   await d1.prepare(
     `INSERT INTO complex_project_item_details
        (equipment_item_id, complex_project_id, zone_id, item_category, procurement_method,
-        procurement_identifier, delivery_location, updated_by, updated_by_name)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        procurement_identifier, delivery_location, selection_round, selection_status,
+        change_reason, electrical_requirements, network_requirements,
+        protection_vendor_name, protection_state, protection_expires_at, updated_by, updated_by_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(equipment_item_id) DO UPDATE SET
        complex_project_id = excluded.complex_project_id, zone_id = excluded.zone_id,
        item_category = excluded.item_category, procurement_method = excluded.procurement_method,
        procurement_identifier = excluded.procurement_identifier,
-       delivery_location = excluded.delivery_location, updated_by = excluded.updated_by,
+       delivery_location = excluded.delivery_location,
+       selection_round = excluded.selection_round,
+       selection_status = excluded.selection_status,
+       change_reason = excluded.change_reason,
+       electrical_requirements = excluded.electrical_requirements,
+       network_requirements = excluded.network_requirements,
+       protection_vendor_name = excluded.protection_vendor_name,
+       protection_state = excluded.protection_state,
+       protection_expires_at = excluded.protection_expires_at,
+       updated_by = excluded.updated_by,
        updated_by_name = excluded.updated_by_name, updated_at = CURRENT_TIMESTAMP`,
   ).bind(
     savedId, projectId, zoneId, clean(payload.itemCategory, 40) || "기자재",
     clean(payload.procurementMethod, 80), clean(payload.procurementIdentifier, 120),
-    clean(payload.deliveryLocation, 160), member.id, member.displayName,
+    clean(payload.deliveryLocation, 160), clean(payload.selectionRound, 40),
+    clean(payload.selectionStatus, 40), clean(payload.changeReason, 500),
+    clean(payload.electricalRequirements, 500), clean(payload.networkRequirements, 500),
+    clean(payload.protectionVendorName, 160) || clean(payload.supplierName, 160),
+    protectionDetail, validDate(payload.protectionExpiresAt), member.id, member.displayName,
   ).run();
   await d1.prepare("UPDATE equipment_projects SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")
     .bind(Number(budgetLink.equipment_project_id)).run();

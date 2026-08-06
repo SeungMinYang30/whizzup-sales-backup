@@ -1696,7 +1696,10 @@ export default function SalesMapPage({
     if (displayMode !== "map" || mapResourcesRequestedRef.current) return;
     mapResourcesRequestedRef.current = true;
     let mounted = true;
-    void fetch("/api/map/config", { cache: "no-store" })
+    if (displayMode === "map") {
+      setConfigLoading(true);
+      setLocationsLoading(true);
+      void fetch("/api/map/config", { cache: "no-store" })
       .then(async (response) => {
         const payload = (await response.json()) as {
           javascriptKey?: string;
@@ -1745,6 +1748,10 @@ export default function SalesMapPage({
       .finally(() => {
         if (mounted) setLocationsLoading(false);
       });
+    } else {
+      setConfigLoading(false);
+      setLocationsLoading(false);
+    }
 
     return () => {
       mounted = false;
@@ -1775,7 +1782,7 @@ export default function SalesMapPage({
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [displayMode]);
 
   useEffect(() => {
     if (
@@ -2019,6 +2026,7 @@ export default function SalesMapPage({
   useEffect(() => {
     const maps = sdkRef.current;
     if (
+      displayMode !== "map" ||
       !canEditLocations ||
       !recordsReady ||
       !sdkReady ||
@@ -2110,7 +2118,7 @@ export default function SalesMapPage({
         autoLocateRunningRef.current = false;
       }
     };
-  }, [canEditLocations, locationsLoading, records, recordsReady, sdkReady]);
+  }, [canEditLocations, displayMode, locationsLoading, records, recordsReady, sdkReady]);
 
   const activeCampaign = useMemo(
     () =>

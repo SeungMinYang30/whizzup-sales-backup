@@ -11080,6 +11080,16 @@ tr:hover .row-actions { opacity: 1; }
 .complex-project-list em { align-self: start; padding: 4px 8px; border-radius: 999px; background: #eaf8f1; color: #16825b; font-size: 11px; font-style: normal; font-weight: 800; }
 .complex-project-list .complex-list-alerts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; }
 .complex-list-alerts small { padding: 3px 7px; border-radius: 999px; background: #fff5e5; color: #a76300; }
+.complex-candidate-results { display: grid; gap: 7px; max-height: 270px; overflow: auto; padding: 8px; border: 1px solid #d9e2f2; border-radius: 12px; background: #fff; }
+.complex-candidate-results > button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 11px 13px; border: 1px solid #e1e7f2; border-radius: 10px; background: #fff; color: #24334f; text-align: left; }
+.complex-candidate-results > button.selected { border-color: #4053f4; background: #eef2ff; box-shadow: inset 3px 0 #4053f4; }
+.complex-candidate-results span { display: grid; gap: 3px; min-width: 0; }
+.complex-candidate-results small { overflow: hidden; color: #6f7c93; text-overflow: ellipsis; white-space: nowrap; }
+.complex-candidate-results em { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; background: #eef3ff; color: #3d50c8; font-size: 11px; font-style: normal; font-weight: 800; }
+.complex-candidate-results p { margin: 0; padding: 16px; color: #758198; text-align: center; }
+.history-complex-project-action { display: flex; align-items: center; gap: 10px; padding: 10px 0 4px; }
+.history-complex-project-action button { min-height: 38px; padding: 0 14px; border: 1px solid #aebcff; border-radius: 10px; background: #eef1ff; color: #3448c5; font-weight: 800; }
+.history-complex-project-action small { color: var(--muted); line-height: 1.45; }
 .complex-project-detail { display: grid; gap: 14px; min-width: 0; }
 .complex-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 20px 22px; border: 1px solid #dfe6f3; border-radius: 16px; background: #fff; }
 .complex-detail-heading h3 { margin: 0 0 5px; font-size: 22px; color: #162441; }
@@ -11129,6 +11139,8 @@ details.complex-section > summary { cursor: pointer; font-size: 17px; font-weigh
 .complex-item-metrics b { color: #263550; font-size: 13px; }
 .complex-item-metrics .warning-text b { color: #b56c00; }
 .complex-item-metrics .ok b { color: #16825b; }
+.complex-item-notes { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 12px; }
+.complex-item-notes span { padding: 5px 8px; border: 1px solid #dae3f2; border-radius: 999px; background: #f7f9fd; color: #51617c; font-size: 11px; font-weight: 750; }
 .complex-delivery-list { display: grid; gap: 6px; padding: 12px 16px; }
 .complex-delivery-list > span { display: grid; grid-template-columns: 80px minmax(150px, 1fr) minmax(110px, auto) auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 9px; background: #f6f8fc; }
 .complex-delivery-list small { color: #68758d; }
@@ -11145,6 +11157,8 @@ details.complex-section > summary { cursor: pointer; font-size: 17px; font-weigh
 }
 
 @media (max-width: 760px) {
+  .history-complex-project-action { align-items: stretch; flex-direction: column; }
+  .history-complex-project-action button { width: 100%; }
   .complex-page-header, .complex-detail-heading, .complex-section-title { align-items: stretch; flex-direction: column; }
   .complex-page-header button, .complex-detail-heading > button, .complex-section-title > button { width: 100%; }
   .complex-workspace { grid-template-columns: minmax(0, 1fr); }

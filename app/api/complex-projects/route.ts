@@ -10,14 +10,21 @@ import {
   saveComplexDelivery,
   saveComplexItem,
   saveComplexZone,
+  searchComplexProjectCandidates,
   updateComplexProject,
 } from "../../../lib/complex-projects";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await requireApprovedMember();
+    const candidateQuery = new URL(request.url).searchParams.get("candidateQuery");
+    if (candidateQuery !== null) {
+      return Response.json({
+        candidates: await searchComplexProjectCandidates(candidateQuery),
+      });
+    }
     return Response.json(await listComplexProjects());
   } catch (error) {
     return accessErrorResponse(error);

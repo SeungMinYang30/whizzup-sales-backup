@@ -29,8 +29,9 @@ import { ensureComplexProjectsReady } from "./complex-projects";
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-08-07-complex-projects";
+export const BACKUP_SCHEMA_VERSION = "2026-08-07-complex-project-controls";
 const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
+  "2026-08-07-complex-projects",
   "2026-08-03-construction-schedule-board",
   "2026-08-03-authored-quotations",
   "2026-08-03-organization-schedules",
@@ -766,7 +767,7 @@ export const BACKUP_TABLES = [
     name: "complex_projects",
     columns: [
       "id", "organization", "business_round", "name", "status",
-      "total_budget", "manager_name", "notes", "active",
+      "total_budget", "manager_member_id", "manager_name", "notes", "active",
       "created_by", "created_by_name", "updated_by", "updated_by_name",
       "created_at", "updated_at",
     ],
@@ -784,7 +785,14 @@ export const BACKUP_TABLES = [
   },
   {
     name: "complex_project_item_details",
-    columns: ["equipment_item_id", "complex_project_id", "zone_id", "item_category", "procurement_method", "procurement_identifier", "delivery_location", "updated_by", "updated_by_name", "created_at", "updated_at"],
+    columns: [
+      "equipment_item_id", "complex_project_id", "zone_id", "item_category",
+      "procurement_method", "procurement_identifier", "delivery_location",
+      "selection_round", "selection_status", "change_reason",
+      "electrical_requirements", "network_requirements",
+      "protection_vendor_name", "protection_state", "protection_expires_at",
+      "updated_by", "updated_by_name", "created_at", "updated_at",
+    ],
     orderBy: "equipment_item_id",
   },
   {
@@ -2452,6 +2460,7 @@ function validateRows(
   data.complex_projects.forEach((row) => {
     assertReference(row.created_by, memberIds, "complex_projects.created_by", true);
     assertReference(row.updated_by, memberIds, "complex_projects.updated_by", true);
+    assertReference(row.manager_member_id, memberIds, "complex_projects.manager_member_id", true);
   });
   data.complex_project_budget_links.forEach((row) => {
     assertReference(row.complex_project_id, complexProjectIds, "complex_project_budget_links.complex_project_id");
@@ -2464,6 +2473,7 @@ function validateRows(
     assertReference(row.complex_project_id, complexProjectIds, "complex_project_item_details.complex_project_id");
     assertReference(row.equipment_item_id, equipmentItemIds, "complex_project_item_details.equipment_item_id");
     assertReference(row.zone_id, complexZoneIds, "complex_project_item_details.zone_id", true);
+    assertReference(row.updated_by, memberIds, "complex_project_item_details.updated_by", true);
   });
   data.complex_project_deliveries.forEach((row) => {
     assertReference(row.complex_project_id, complexProjectIds, "complex_project_deliveries.complex_project_id");

@@ -454,13 +454,38 @@ function normalizeBudgetCatalogOption(
 }
 
 async function requestBudgetReviewCatalog() {
-  const response = await fetch("/api/budget-catalog", { cache: "no-store" });
-  const payload = (await response.json()) as {
+  let response: Response | null = null;
+  let payload: {
     catalog?: unknown[];
     groups?: unknown[];
     options?: unknown[];
     error?: string;
-  };
+  } = {};
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      response = await fetch("/api/budget-catalog", { cache: "no-store" });
+      const text = await response.text();
+      try {
+        payload = text ? JSON.parse(text) : {};
+      } catch {
+        payload = {
+          error: response.ok
+            ? "표준 예산명 응답을 확인하지 못했습니다. 다시 시도해 주세요."
+            : "표준 예산명 목록을 불러오지 못했습니다.",
+        };
+      }
+      if (response.ok || ![408, 425, 429, 500, 502, 503, 504].includes(response.status)) {
+        break;
+      }
+    } catch {
+      response = null;
+      payload = { error: "표준 예산명 연결이 잠시 지연되고 있습니다." };
+    }
+    if (attempt < 2) await waitForBulkRetry(300);
+  }
+  if (!response) {
+    throw new Error("표준 예산명 연결이 지연되고 있습니다. 잠시 후 다시 열어 주세요.");
+  }
   if (!response.ok) {
     throw new Error(payload.error || "표준 예산명 목록을 불러오지 못했습니다.");
   }
@@ -13278,35 +13303,54 @@ export default function CrmApp({
       .join(" · ");
     try {
       setInstitutionBudgetBusy(true);
-      const response = await fetch("/api/records", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ids: selectedInstitutionIds,
-          budgetType,
-          budgetAmount,
-          standardBudgetOnly: true,
-          progressManager: institutionBulkProgressManager,
-          contactName: institutionBulkContactName.trim(),
-          followUpDate: institutionBulkFollowUpDate,
-          nextAction: institutionBulkNextAction.trim(),
-          status: "상담 진행",
-          awardStatus: institutionBulkAwardStatus,
-          awardCompany: institutionBulkAwardCompany.trim(),
-          applyFields,
-          onlyEmpty: false,
-          operationId,
-          operationScope: "pre_awards",
-          operationLabel,
-          operationTotal: selectedInstitutionIds.length,
-        }),
+      const requestBody = JSON.stringify({
+        ids: selectedInstitutionIds,
+        budgetType,
+        budgetAmount,
+        standardBudgetOnly: true,
+        progressManager: institutionBulkProgressManager,
+        contactName: institutionBulkContactName.trim(),
+        followUpDate: institutionBulkFollowUpDate,
+        nextAction: institutionBulkNextAction.trim(),
+        status: "상담 진행",
+        awardStatus: institutionBulkAwardStatus,
+        awardCompany: institutionBulkAwardCompany.trim(),
+        applyFields,
+        onlyEmpty: false,
+        operationId,
+        operationScope: "pre_awards",
+        operationLabel,
+        operationTotal: selectedInstitutionIds.length,
       });
-      const payload = (await response.json()) as {
-        updatedIds?: number[];
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(payload.error || "예산 정보를 일괄 저장하지 못했습니다.");
+      let payload: { updatedIds?: number[]; error?: string } | null = null;
+      let lastError = "예산 정보를 일괄 저장하지 못했습니다.";
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          const response = await fetch("/api/records", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: requestBody,
+          });
+          const text = await response.text();
+          let current: { updatedIds?: number[]; error?: string } = {};
+          try {
+            current = text ? JSON.parse(text) : {};
+          } catch {
+            current = { error: "저장 결과를 확인하지 못했습니다." };
+          }
+          if (response.ok) {
+            payload = current;
+            break;
+          }
+          lastError = current.error || lastError;
+          if (![408, 425, 429, 500, 502, 503, 504].includes(response.status)) break;
+        } catch {
+          lastError = "서버 연결이 잠시 지연되고 있습니다.";
+        }
+        if (attempt < 2) await waitForBulkRetry(500);
+      }
+      if (!payload) {
+        throw new Error(`${lastError} 잠시 후 다시 시도해 주세요.`);
       }
       const updatedIds = new Set(payload.updatedIds ?? selectedInstitutionIds);
       setRecords((current) =>
@@ -19678,6 +19722,28 @@ export default function CrmApp({
                 >
                   + 새 사업
                 </button>
+              </div>
+              <div className="history-complex-project-action">
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.sessionStorage.setItem(
+                      "whizzup.complexProjectTarget",
+                      JSON.stringify({
+                        organization: detailOrganization,
+                        businessRound: selectedDetailBusinessRound,
+                      }),
+                    );
+                    cancelDetailInlineEdit();
+                    setDetailOrganization(null);
+                    void selectView("complex-projects");
+                  }}
+                >
+                  복합사업으로 관리
+                </button>
+                <small>
+                  현재 기관의 {selectedDetailBusinessRound}차 사업을 활성화하거나 기존 복합사업을 엽니다.
+                </small>
               </div>
               <JointProjectSummary
                 projectId={detailDisplayRecord.jointProjectId}
