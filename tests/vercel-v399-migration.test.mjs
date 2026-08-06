@@ -72,6 +72,7 @@ test("recent activity dates are portable between SQLite and Postgres", async () 
 test("large full backups use gzip across the Vercel request boundary", async () => {
   const route = await read("app/api/backup/route.ts");
   const page = await read("app/data-backup-page.tsx");
+  const store = await read("lib/backup-store.ts");
 
   assert.match(route, /gzipSync/);
   assert.match(route, /gunzipSync/);
@@ -79,6 +80,7 @@ test("large full backups use gzip across the Vercel request boundary", async () 
   assert.match(page, /CompressionStream\("gzip"\)/);
   assert.match(page, /DecompressionStream\("gzip"\)/);
   assert.match(page, /application\/gzip/);
+  assert.match(store, /if \(isPostgresDatabase\(\)\) \{[\s\S]{0,220}SELECT 1/);
 });
 
 test("campaign targets reconcile business rounds before creating indexes", async () => {

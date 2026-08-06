@@ -1,4 +1,4 @@
-import { getD1 } from "../db";
+import { getD1, isPostgresDatabase } from "../db";
 import { ensureCampaignsReady } from "./campaign-store";
 import {
   ensureCollaborationReady,
@@ -1038,6 +1038,14 @@ export class BackupValidationError extends Error {
 }
 
 async function ensureBackupReady() {
+  if (isPostgresDatabase()) {
+    const d1 = getD1();
+    // Vercel's versioned Postgres migration already reconciles every backup
+    // table. Re-running each legacy SQLite bootstrap serially can exceed the
+    // serverless timeout and is unnecessary once that migration is current.
+    await d1.prepare("SELECT 1").run();
+    return d1;
+  }
   await ensureCollaborationReady();
   await ensureRecordsReady();
   await ensureMapReady();
