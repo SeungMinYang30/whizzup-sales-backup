@@ -2363,7 +2363,12 @@ function validateRows(
     );
   });
   projects.forEach((row) => {
-    assertReference(row.created_by, memberIds, "equipment_projects.created_by");
+    // Budget cards created automatically by the legacy Sites app use 0 as the
+    // system actor. Preserve that sentinel instead of attributing the record
+    // to an arbitrary member during a full restore.
+    if (Number(row.created_by) !== 0) {
+      assertReference(row.created_by, memberIds, "equipment_projects.created_by");
+    }
     assertReference(
       row.activity_id,
       activityIds,

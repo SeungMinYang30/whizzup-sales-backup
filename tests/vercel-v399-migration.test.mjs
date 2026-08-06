@@ -90,6 +90,7 @@ test("large full backups use gzip across the Vercel request boundary", async () 
   assert.match(store, /jointProjectStatus/);
   assert.match(store, /reconnectedCampaignTargets/);
   assert.match(store, /detachedCampaignTargets/);
+  assert.match(store, /Number\(row\.created_by\) !== 0/);
 });
 
 test("campaign targets reconcile business rounds before creating indexes", async () => {
