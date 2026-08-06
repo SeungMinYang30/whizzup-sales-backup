@@ -131,6 +131,13 @@ let schedulesReadyPromise: Promise<ReturnType<typeof getD1>> | null = null;
 
 async function initializeOrganizationSchedules() {
   const d1 = getD1();
+  if (isPostgresDatabase()) {
+    // The shared Vercel schema migration owns these tables and columns. A
+    // lightweight read both triggers that migration and avoids repeating DDL
+    // from every cold dashboard function.
+    await d1.prepare("SELECT 1").all();
+    return d1;
+  }
   // 일정 조회는 HOME 첫 화면에서 여러 API와 동시에 실행됩니다. 여기서
   // 활동 전체의 데이터 보정까지 기다리면 일정 조회 하나가 D1 쓰기 잠금을
   // 오래 잡아 다른 초기 화면 요청도 함께 멈춥니다. 일정 테이블은 독립

@@ -42,6 +42,10 @@ test("시공 일정은 별도 Google 캘린더로만 동기화한다", () => {
 });
 
 test("Vercel 일정표 조회는 장비 전체 보정 작업을 기다리지 않는다", () => {
+  assert.match(
+    schedules,
+    /if \(isPostgresDatabase\(\)\) \{[\s\S]*await d1\.prepare\("SELECT 1"\)\.all\(\);[\s\S]*return d1;/,
+  );
   assert.match(schedules, /if \(!isPostgresDatabase\(\)\) await ensureEquipmentReady\(\)/);
 });
 
