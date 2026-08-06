@@ -55,8 +55,17 @@ test("Postgres compatibility serializes and de-duplicates runtime migrations", a
   assert.match(adapter, /ADD COLUMN IF NOT EXISTS/);
   assert.match(adapter, /ADD\\s\+COLUMN/);
   assert.match(adapter, /a\.created_at::text/);
+  assert.match(adapter, /STRING_AGG\(TRIM\(ei\.product_name\)::text/);
+  assert.match(adapter, /STRING_AGG\(a\.alias_name::text/);
+  assert.match(adapter, /SUBSTR\(\$1::text,/);
   assert.match(adapter, /COALESCE\(\$1, ''\) ~/);
   assert.doesNotMatch(adapter, /json_valid[\s\S]*?THEN 1 ELSE 0/);
+});
+
+test("recent activity dates are portable between SQLite and Postgres", async () => {
+  const route = await read("app/api/records/route.ts");
+  assert.match(route, /NULLIF\(CAST\(a\.created_at AS TEXT\), ''\)/);
+  assert.match(route, /CAST\(a\.activity_date AS TEXT\)/);
 });
 
 test("large full backups use gzip across the Vercel request boundary", async () => {

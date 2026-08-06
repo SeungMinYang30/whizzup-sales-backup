@@ -171,6 +171,18 @@ export function normalizeSqlForPostgres(query: string) {
       "SUBSTR(COALESCE(a.created_at::text, a.activity_date::text), 1, 10)",
     )
     .replace(
+      /GROUP_CONCAT\(TRIM\(ei\.product_name\),\s*' · '\)/gi,
+      "STRING_AGG(TRIM(ei.product_name)::text, ' · ')",
+    )
+    .replace(
+      /GROUP_CONCAT\(a\.alias_name,\s*' \| '\)/gi,
+      "STRING_AGG(a.alias_name::text, ' | ')",
+    )
+    .replace(
+      /SUBSTR\(\s*([A-Za-z_][A-Za-z0-9_.]*)\s*,/gi,
+      "SUBSTR($1::text,",
+    )
+    .replace(
       /\bADD\s+COLUMN\s+(?!IF\s+NOT\s+EXISTS\b)/gi,
       "ADD COLUMN IF NOT EXISTS ",
     );

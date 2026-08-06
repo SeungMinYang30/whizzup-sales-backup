@@ -479,7 +479,7 @@ export async function GET(request: Request) {
            OR (
              a.category <> '내부'
              AND a.progress_manager = ?
-             AND DATE(SUBSTR(COALESCE(NULLIF(a.created_at, ''), a.activity_date), 1, 10))
+             AND DATE(SUBSTR(COALESCE(NULLIF(CAST(a.created_at AS TEXT), ''), CAST(a.activity_date AS TEXT)), 1, 10))
                  >= DATE('now', '-7 day')
            )
         ORDER BY
