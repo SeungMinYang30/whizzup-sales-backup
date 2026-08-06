@@ -183,11 +183,12 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   }, [createdInstitutions, records]);
 
   useEffect(() => {
+    if (!editorOpen || members.length) return;
     void fetch("/api/members?scope=assignees", { cache: "no-store" })
       .then((response) => response.json())
       .then((payload: { members?: Member[] }) => setMembers(Array.isArray(payload.members) ? payload.members : []))
       .catch(() => undefined);
-  }, []);
+  }, [editorOpen, members.length]);
 
   useEffect(() => {
     let active = true;
@@ -234,6 +235,10 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
         applyPayload(await requestCalendar(false));
         if (!active) return;
         setLoading(false);
+        // Let the visible dashboard records and stored calendar settle before
+        // the slower Google reconciliation uses DB and external connections.
+        await new Promise((resolve) => window.setTimeout(resolve, 1_500));
+        if (!active) return;
         setGoogleRefreshing(true);
         try {
           applyPayload(await requestCalendar(true));

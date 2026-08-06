@@ -40,6 +40,7 @@ test("대시보드는 저장된 일정을 먼저 표시하고 Google 확인은 �
   assert.match(scheduleRoute, /if \(!refreshGoogle\)[\s\S]*?listScheduleCalendarForMember/);
   assert.match(calendar, /requestCalendar\(false\)/);
   assert.match(calendar, /requestCalendar\(true\)/);
+  assert.match(calendar, /window\.setTimeout\(resolve, 1_500\)/);
   assert.match(calendar, /Google 일정 확인 중/);
 });
 
@@ -52,9 +53,12 @@ test("초기 대시보드는 핵심 기록을 먼저 받고 후순위 자료를 
   assert.match(initialLoad, /deferDashboardTask\(250/);
   assert.match(initialLoad, /deferDashboardTask\(750/);
   assert.match(initialLoad, /deferDashboardTask\(1_250/);
+  assert.match(crmApp, /dashboardRecordsRequest = requestRecords\("dashboard"\)/);
+  assert.match(initialLoad, /prefetchedRecords\.error[\s\S]*?requestRecords\("dashboard"\)/);
   assert.match(crmApp, /fetch\("\/api\/award-vendors"[\s\S]*?\}, 1_500\)/);
   assert.match(crmApp, /const firstHeartbeat = window\.setTimeout\(heartbeat, 2_000\)/);
   assert.match(crmApp, /requestScheduleReminders\(\)[\s\S]*?\}, 600\)/);
+  assert.match(calendar, /if \(!editorOpen \|\| members\.length\) return;[\s\S]*?\/api\/members\?scope=assignees/);
 });
 
 test("대시보드 시공 현황과 일정표는 같은 조회 결과를 공유한다", () => {

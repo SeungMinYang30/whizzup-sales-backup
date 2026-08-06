@@ -6770,6 +6770,12 @@ export default function CrmApp({
         if (active) task();
       }, delay));
     };
+    // Approved returning users can load their dashboard rows while the
+    // session endpoint confirms permissions. If the parallel request is too
+    // early for a first-time user, retry once after the session is known.
+    const dashboardRecordsRequest = requestRecords("dashboard")
+      .then((records) => ({ records, error: null as unknown }))
+      .catch((error: unknown) => ({ records: [] as Activity[], error }));
     void requestSession()
       .then(async (nextSession) => {
         if (!active) return;
@@ -6780,7 +6786,10 @@ export default function CrmApp({
           // schedule rows. Load the complete history lazily when a detailed
           // management view is opened. Keep optional dashboard requests out
           // of this critical path so they do not compete for DB connections.
-          const nextRecords = await requestRecords("dashboard");
+          const prefetchedRecords = await dashboardRecordsRequest;
+          const nextRecords = prefetchedRecords.error
+            ? await requestRecords("dashboard")
+            : prefetchedRecords.records;
           if (!active) return;
           if (!recordsFullyLoadedRef.current) {
             setRecords(nextRecords);
