@@ -129,6 +129,7 @@ const AnalyticsPage = lazy(() => import("./analytics-page"));
 const OwnerPerformancePage = lazy(() => import("./owner-performance-page"));
 const InventoryPage = lazy(() => import("./inventory-page"));
 const ConstructionSchedulePage = lazy(() => import("./construction-schedule-page"));
+const ComplexProjectPage = lazy(() => import("./complex-project-page"));
 const QuotationDocuments = lazy(() => import("./quotation-documents"));
 const SalesMapPage = lazy(() => import("./sales-map"));
 const HomeCalendar = lazy(() => import("./home-calendar"));
@@ -1011,6 +1012,7 @@ type EquipmentQuoteSummary = {
 type View =
   | "dashboard"
   | "budget-institutions"
+  | "complex-projects"
   | "records"
   | "followup"
   | "schedules"
@@ -1590,6 +1592,7 @@ const emptyForm: FormState = {
 const navItems: { id: View; label: string; mark: string }[] = [
   { id: "dashboard", label: "대시보드", mark: "D" },
   { id: "budget-institutions", label: "예산별 기관", mark: "B" },
+  { id: "complex-projects", label: "복합사업 관리", mark: "X" },
   { id: "followup", label: "기관별 관리(수주 전)", mark: "F" },
   { id: "awards", label: "기관별 관리(수주 후)", mark: "W" },
   { id: "vendors", label: "협력사 관리", mark: "V" },
@@ -1600,6 +1603,7 @@ const navItems: { id: View; label: string; mark: string }[] = [
 const presenceViewLabels: Record<View, string> = {
   dashboard: "대시보드",
   "budget-institutions": "예산별 기관",
+  "complex-projects": "복합사업 관리",
   records: "영업 기록",
   followup: "기관별 관리(수주 전)",
   schedules: "일정",
@@ -1661,6 +1665,7 @@ const completedAwardStages = new Set([COMPLETED_AWARD_STAGE, "완공"]);
 const availableViews = new Set<View>([
   "dashboard",
   "budget-institutions",
+  "complex-projects",
   "records",
   "followup",
   "schedules",
@@ -14916,6 +14921,8 @@ export default function CrmApp({
       ? "대시보드"
       : view === "budget-institutions"
         ? "예산별 기관"
+        : view === "complex-projects"
+          ? "복합사업 관리"
         : view === "records"
         ? teamPeriodDays === "all"
           ? "팀 업무 현황"
@@ -15410,7 +15417,7 @@ export default function CrmApp({
               setDetailBusinessRound(businessRound);
               setDetailOrganization(organization);
             }} />
-          ) : view !== "map" && view !== "budget-institutions" && view !== "trash" && view !== "accounting" && view !== "analytics" && view !== "owner-performance" && view !== "inventory" && (
+          ) : view !== "map" && view !== "budget-institutions" && view !== "complex-projects" && view !== "trash" && view !== "accounting" && view !== "analytics" && view !== "owner-performance" && view !== "inventory" && (
             <div className="global-search">
               <span>⌕</span>
               <BufferedInput
@@ -15483,7 +15490,7 @@ export default function CrmApp({
           </div>
         </header>
 
-        <div className={`content ${view === "dashboard" || view === "followup" || view === "map" || view === "budget-institutions" || view === "backup" || view === "records" || view === "organizations" || view === "awards" || view === "products" || view === "vendors" || view === "accounting" || view === "analytics" || view === "owner-performance" || view === "inventory" ? "content-wide" : ""}`}>
+        <div className={`content ${view === "dashboard" || view === "followup" || view === "map" || view === "budget-institutions" || view === "complex-projects" || view === "backup" || view === "records" || view === "organizations" || view === "awards" || view === "products" || view === "vendors" || view === "accounting" || view === "analytics" || view === "owner-performance" || view === "inventory" ? "content-wide" : ""}`}>
           <div className="page-heading">
             <div>
               <p className="eyebrow">TM · MEETING MANAGEMENT</p>
@@ -15517,6 +15524,8 @@ export default function CrmApp({
                         ? "기관 위치와 진행 상태를 확인하고, 방문할 학교를 선택해 영업 동선을 계획합니다."
                       : view === "budget-institutions"
                         ? "선정기관 명단을 예산별로 관리하고, 기존 영업 기록과 안전하게 연결합니다."
+                      : view === "complex-projects"
+                        ? "큰 사업의 예산·공간·품목·영업보호·분할 납품을 기존 회계와 통계에 연결해 관리합니다."
                       : view === "lounge"
                         ? "가상 칩으로 가볍게 쉬어가는 승인 구성원 전용 공간입니다."
                       : view === "schedules"
@@ -16250,7 +16259,18 @@ export default function CrmApp({
             </Suspense>
           )}
 
-          {view === "map" || view === "budget-institutions" || view === "lounge" ? null : view === "accounting" ? (
+          {view === "complex-projects" && (
+            <Suspense fallback={<DeferredPageFallback />}>
+              <ComplexProjectPage
+                onOpenOrganization={(organization, businessRound) => {
+                  setDetailBusinessRound(businessRound);
+                  setDetailOrganization(organization);
+                }}
+              />
+            </Suspense>
+          )}
+
+          {view === "map" || view === "budget-institutions" || view === "complex-projects" || view === "lounge" ? null : view === "accounting" ? (
             <Suspense fallback={<DeferredPageFallback />}>
               <AccountingPage
                 key={accountingInitialTab}

@@ -127,6 +127,7 @@ export const organizationSchedules = sqliteTable(
       .notNull()
       .default(false),
     sourceActivityId: integer("source_activity_id"),
+    complexDeliveryId: integer("complex_delivery_id"),
     assigneeMemberId: integer("assignee_member_id"),
     assigneeName: text("assignee_name").notNull().default(""),
     googleEventId: text("google_event_id").notNull().default(""),
@@ -163,6 +164,9 @@ export const organizationSchedules = sqliteTable(
     uniqueIndex("organization_schedules_google_event_idx").on(
       table.googleEventId,
     ).where(sql`${table.googleEventId} <> ''`),
+    uniqueIndex("organization_schedules_complex_delivery_idx").on(
+      table.complexDeliveryId,
+    ).where(sql`${table.complexDeliveryId} IS NOT NULL`),
   ],
 );
 
@@ -806,6 +810,126 @@ export const equipmentItems = sqliteTable("equipment_items", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const complexProjects = sqliteTable(
+  "complex_projects",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organization: text("organization").notNull(),
+    businessRound: integer("business_round").notNull().default(1),
+    name: text("name").notNull(),
+    status: text("status").notNull().default("준비"),
+    totalBudget: integer("total_budget"),
+    managerName: text("manager_name").notNull().default(""),
+    notes: text("notes").notNull().default(""),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    createdBy: integer("created_by").notNull(),
+    createdByName: text("created_by_name").notNull().default(""),
+    updatedBy: integer("updated_by"),
+    updatedByName: text("updated_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("complex_projects_scope_idx").on(table.organization, table.businessRound),
+    index("complex_projects_active_idx").on(table.active, table.status, table.updatedAt, table.id),
+  ],
+);
+
+export const complexProjectBudgetLinks = sqliteTable(
+  "complex_project_budget_links",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    complexProjectId: integer("complex_project_id").notNull(),
+    equipmentProjectId: integer("equipment_project_id").notNull(),
+    allocatedAmount: integer("allocated_amount"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("complex_project_budget_links_scope_idx").on(table.complexProjectId, table.equipmentProjectId),
+    index("complex_project_budget_links_project_idx").on(table.complexProjectId, table.sortOrder, table.id),
+  ],
+);
+
+export const complexProjectZones = sqliteTable(
+  "complex_project_zones",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    complexProjectId: integer("complex_project_id").notNull(),
+    building: text("building").notNull().default(""),
+    floor: text("floor").notNull().default(""),
+    room: text("room").notNull().default(""),
+    name: text("name").notNull(),
+    notes: text("notes").notNull().default(""),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("complex_project_zones_project_idx").on(table.complexProjectId, table.sortOrder, table.id)],
+);
+
+export const complexProjectItemDetails = sqliteTable(
+  "complex_project_item_details",
+  {
+    equipmentItemId: integer("equipment_item_id").primaryKey(),
+    complexProjectId: integer("complex_project_id").notNull(),
+    zoneId: integer("zone_id"),
+    itemCategory: text("item_category").notNull().default("기자재"),
+    procurementMethod: text("procurement_method").notNull().default(""),
+    procurementIdentifier: text("procurement_identifier").notNull().default(""),
+    deliveryLocation: text("delivery_location").notNull().default(""),
+    updatedBy: integer("updated_by"),
+    updatedByName: text("updated_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("complex_project_item_details_project_idx").on(table.complexProjectId, table.zoneId, table.equipmentItemId)],
+);
+
+export const complexProjectDeliveries = sqliteTable(
+  "complex_project_deliveries",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    complexProjectId: integer("complex_project_id").notNull(),
+    equipmentItemId: integer("equipment_item_id").notNull(),
+    scheduleId: integer("schedule_id"),
+    kind: text("kind").notNull().default("납품"),
+    plannedQty: integer("planned_qty").notNull().default(0),
+    completedQty: integer("completed_qty").notNull().default(0),
+    startDate: text("start_date").notNull().default(""),
+    endDate: text("end_date").notNull().default(""),
+    vendorName: text("vendor_name").notNull().default(""),
+    location: text("location").notNull().default(""),
+    status: text("status").notNull().default("일정 미정"),
+    notes: text("notes").notNull().default(""),
+    createdBy: integer("created_by"),
+    createdByName: text("created_by_name").notNull().default(""),
+    updatedBy: integer("updated_by"),
+    updatedByName: text("updated_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("complex_project_deliveries_project_idx").on(table.complexProjectId, table.startDate, table.id),
+    index("complex_project_deliveries_item_idx").on(table.equipmentItemId, table.status, table.id),
+  ],
+);
+
+export const complexProjectEvents = sqliteTable(
+  "complex_project_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    complexProjectId: integer("complex_project_id").notNull(),
+    action: text("action").notNull(),
+    detailJson: text("detail_json").notNull().default("{}"),
+    changedBy: integer("changed_by").notNull(),
+    changedByName: text("changed_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("complex_project_events_project_idx").on(table.complexProjectId, table.createdAt, table.id)],
+);
 
 export const productVendorLinks = sqliteTable(
   "product_vendor_links",

@@ -25,11 +25,13 @@ import { ensureJointProjectsReady } from "./joint-projects";
 import { ensureInventoryReady } from "./inventory-store";
 import { ensureOrganizationSchedulesReady } from "./organization-schedules";
 import { ensureAuthoredQuotationsReady } from "./authored-quotations";
+import { ensureComplexProjectsReady } from "./complex-projects";
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-08-03-construction-schedule-board";
+export const BACKUP_SCHEMA_VERSION = "2026-08-07-complex-projects";
 const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
+  "2026-08-03-construction-schedule-board",
   "2026-08-03-authored-quotations",
   "2026-08-03-organization-schedules",
   "2026-08-03-inventory-ledger",
@@ -103,6 +105,14 @@ const ORGANIZATION_SCHEDULE_BACKUP_TABLES = new Set([
   "organization_schedules",
   "construction_schedule_projects",
 ]);
+const COMPLEX_PROJECT_BACKUP_TABLES = new Set([
+  "complex_projects",
+  "complex_project_budget_links",
+  "complex_project_zones",
+  "complex_project_item_details",
+  "complex_project_deliveries",
+  "complex_project_events",
+]);
 
 function legacyBackupMayOmitTable(
   schemaVersion: string,
@@ -115,7 +125,8 @@ function legacyBackupMayOmitTable(
       (COMPLETE_BUSINESS_BACKUP_TABLES.has(tableName) ||
         JOINT_PROJECT_BACKUP_TABLES.has(tableName) ||
         INVENTORY_BACKUP_TABLES.has(tableName) ||
-        ORGANIZATION_SCHEDULE_BACKUP_TABLES.has(tableName)))
+        ORGANIZATION_SCHEDULE_BACKUP_TABLES.has(tableName) ||
+        COMPLEX_PROJECT_BACKUP_TABLES.has(tableName)))
   );
 }
 
@@ -710,6 +721,7 @@ export const BACKUP_TABLES = [
       "details",
       "completed",
       "source_activity_id",
+      "complex_delivery_id",
       "assignee_member_id",
       "assignee_name",
       "google_event_id",
@@ -748,6 +760,41 @@ export const BACKUP_TABLES = [
       "created_at",
       "updated_at",
     ],
+    orderBy: "id",
+  },
+  {
+    name: "complex_projects",
+    columns: [
+      "id", "organization", "business_round", "name", "status",
+      "total_budget", "manager_name", "notes", "active",
+      "created_by", "created_by_name", "updated_by", "updated_by_name",
+      "created_at", "updated_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "complex_project_budget_links",
+    columns: ["id", "complex_project_id", "equipment_project_id", "allocated_amount", "sort_order", "created_at", "updated_at"],
+    orderBy: "id",
+  },
+  {
+    name: "complex_project_zones",
+    columns: ["id", "complex_project_id", "building", "floor", "room", "name", "notes", "sort_order", "created_at", "updated_at"],
+    orderBy: "id",
+  },
+  {
+    name: "complex_project_item_details",
+    columns: ["equipment_item_id", "complex_project_id", "zone_id", "item_category", "procurement_method", "procurement_identifier", "delivery_location", "updated_by", "updated_by_name", "created_at", "updated_at"],
+    orderBy: "equipment_item_id",
+  },
+  {
+    name: "complex_project_deliveries",
+    columns: ["id", "complex_project_id", "equipment_item_id", "schedule_id", "kind", "planned_qty", "completed_qty", "start_date", "end_date", "vendor_name", "location", "status", "notes", "created_by", "created_by_name", "updated_by", "updated_by_name", "created_at", "updated_at"],
+    orderBy: "id",
+  },
+  {
+    name: "complex_project_events",
+    columns: ["id", "complex_project_id", "action", "detail_json", "changed_by", "changed_by_name", "created_at"],
     orderBy: "id",
   },
   {
@@ -1070,6 +1117,7 @@ async function ensureBackupReady() {
   await ensureInventoryReady();
   await ensureOrganizationSchedulesReady();
   await ensureAuthoredQuotationsReady();
+  await ensureComplexProjectsReady();
   const d1 = getD1();
   await ensureInstitutionDecisionsReady(d1);
   await d1.prepare(`CREATE TABLE IF NOT EXISTS holdem_weekly_scores (
@@ -1966,6 +2014,8 @@ function validateRows(
     "sales_campaign_targets",
   );
   const projectIds = rowSet(projects, "id", "equipment_projects");
+  const complexProjectIds = rowSet(data.complex_projects, "id", "complex_projects");
+  const complexZoneIds = rowSet(data.complex_project_zones, "id", "complex_project_zones");
   const jointProjectIds = rowSet(jointProjects, "id", "joint_projects");
   const vendorIds = rowSet(vendors, "id", "award_vendors");
   const inventoryProductIds = rowSet(
@@ -2398,6 +2448,31 @@ function validateRows(
   data.equipment_items.forEach((row) =>
     assertReference(row.project_id, projectIds, "equipment_items.project_id"),
   );
+  const equipmentItemIds = rowSet(data.equipment_items, "id", "equipment_items");
+  data.complex_projects.forEach((row) => {
+    assertReference(row.created_by, memberIds, "complex_projects.created_by", true);
+    assertReference(row.updated_by, memberIds, "complex_projects.updated_by", true);
+  });
+  data.complex_project_budget_links.forEach((row) => {
+    assertReference(row.complex_project_id, complexProjectIds, "complex_project_budget_links.complex_project_id");
+    assertReference(row.equipment_project_id, projectIds, "complex_project_budget_links.equipment_project_id");
+  });
+  data.complex_project_zones.forEach((row) =>
+    assertReference(row.complex_project_id, complexProjectIds, "complex_project_zones.complex_project_id"),
+  );
+  data.complex_project_item_details.forEach((row) => {
+    assertReference(row.complex_project_id, complexProjectIds, "complex_project_item_details.complex_project_id");
+    assertReference(row.equipment_item_id, equipmentItemIds, "complex_project_item_details.equipment_item_id");
+    assertReference(row.zone_id, complexZoneIds, "complex_project_item_details.zone_id", true);
+  });
+  data.complex_project_deliveries.forEach((row) => {
+    assertReference(row.complex_project_id, complexProjectIds, "complex_project_deliveries.complex_project_id");
+    assertReference(row.equipment_item_id, equipmentItemIds, "complex_project_deliveries.equipment_item_id");
+  });
+  data.complex_project_events.forEach((row) => {
+    assertReference(row.complex_project_id, complexProjectIds, "complex_project_events.complex_project_id");
+    assertReference(row.changed_by, memberIds, "complex_project_events.changed_by", true);
+  });
   data.accounting_settlements.forEach((row) =>
     assertReference(
       row.activity_id,
@@ -2723,6 +2798,17 @@ export async function validateFullBackup(
                   }
                 : row,
             )
+          : table.name === "organization_schedules" &&
+              input.schemaVersion !== BACKUP_SCHEMA_VERSION
+            ? rows.map((row) =>
+                isPlainObject(row)
+                  ? {
+                      ...row,
+                      complex_delivery_id:
+                        "complex_delivery_id" in row ? row.complex_delivery_id : null,
+                    }
+                  : row,
+              )
           : table.name === "budget_name_groups" &&
               input.schemaVersion !== BACKUP_SCHEMA_VERSION
             ? rows.map((row, index) =>
@@ -3025,6 +3111,7 @@ type RestorePresence = {
   restoresBudgetNameCatalog: boolean;
   restoresJointProjects: boolean;
   restoresInventory: boolean;
+  restoresComplexProjects: boolean;
 };
 
 function restorePresenceFromInput(input: unknown): RestorePresence {
@@ -3058,6 +3145,9 @@ function restorePresenceFromInput(input: unknown): RestorePresence {
     restoresInventory:
       Array.isArray(rawData?.inventory_products) &&
       Array.isArray(rawData?.inventory_transactions),
+    restoresComplexProjects: [...COMPLEX_PROJECT_BACKUP_TABLES].every((tableName) =>
+      Array.isArray(rawData?.[tableName]),
+    ),
   };
 }
 
@@ -3077,6 +3167,7 @@ async function replaceDatabaseFromBackup(
     restoresBudgetNameCatalog: true,
     restoresJointProjects: true,
     restoresInventory: true,
+    restoresComplexProjects: true,
   },
 ) {
   const {
@@ -3093,6 +3184,7 @@ async function replaceDatabaseFromBackup(
     restoresBudgetNameCatalog,
     restoresJointProjects,
     restoresInventory,
+    restoresComplexProjects,
   } = presence;
   const d1 = await ensureBackupReady();
   const statements = [
@@ -3107,6 +3199,16 @@ async function replaceDatabaseFromBackup(
           d1.prepare("DELETE FROM joint_project_events"),
           d1.prepare("DELETE FROM joint_project_members"),
           d1.prepare("DELETE FROM joint_projects"),
+        ]
+      : []),
+    ...(restoresComplexProjects
+      ? [
+          d1.prepare("DELETE FROM complex_project_events"),
+          d1.prepare("DELETE FROM complex_project_deliveries"),
+          d1.prepare("DELETE FROM complex_project_item_details"),
+          d1.prepare("DELETE FROM complex_project_zones"),
+          d1.prepare("DELETE FROM complex_project_budget_links"),
+          d1.prepare("DELETE FROM complex_projects"),
         ]
       : []),
     ...(restoresAwardVendorDocuments
@@ -3183,6 +3285,7 @@ async function replaceDatabaseFromBackup(
     "activities",
     "organization_schedules",
     "construction_schedule_projects",
+    "complex_projects",
     "activity_change_batches",
     "activity_change_items",
     "data_control_events",
@@ -3201,12 +3304,17 @@ async function replaceDatabaseFromBackup(
     "authored_quotations",
     "sales_campaigns",
     "equipment_projects",
+    "complex_project_budget_links",
     "activity_authors",
     "sales_campaign_targets",
     "joint_projects",
     "joint_project_members",
     "joint_project_events",
     "equipment_items",
+    "complex_project_zones",
+    "complex_project_item_details",
+    "complex_project_deliveries",
+    "complex_project_events",
     "budget_name_request_records",
     "budget_name_members",
     "budget_name_events",
@@ -3227,6 +3335,12 @@ async function replaceDatabaseFromBackup(
         tableName === "joint_project_members" ||
         tableName === "joint_project_events") &&
       !restoresJointProjects
+    ) {
+      return;
+    }
+    if (
+      COMPLEX_PROJECT_BACKUP_TABLES.has(tableName) &&
+      !restoresComplexProjects
     ) {
       return;
     }

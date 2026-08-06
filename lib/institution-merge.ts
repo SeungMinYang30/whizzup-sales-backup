@@ -21,6 +21,7 @@ import { ensureOrganizationSchedulesReady } from "./organization-schedules";
 import { ensureSchoolDirectoryReady } from "./school-directory";
 import { replaceOrganizationReferences } from "./share-text";
 import { ensureTrashReady } from "./trash-store";
+import { ensureComplexProjectsReady } from "./complex-projects";
 
 export type InstitutionMergeCounts = {
   organization: string;
@@ -37,6 +38,7 @@ export type InstitutionMergeCounts = {
   decisionCount: number;
   trashSnapshotCount: number;
   accountingCount: number;
+  complexProjectCount: number;
   hasLocation: boolean;
   locationRegion: string;
   locationAddress: string;
@@ -58,6 +60,12 @@ export type InstitutionMergeConflict = {
 export type InstitutionMergeResolutions = Record<string, string>;
 
 type EquipmentProjectMergeRow = {
+  id: number;
+  business_round: number;
+  name: string;
+};
+
+type ComplexProjectMergeRow = {
   id: number;
   business_round: number;
   name: string;
@@ -178,6 +186,7 @@ async function ensureInstitutionMergeReady() {
     ensureJointProjectsReady(),
     ensureOrganizationSchedulesReady(),
     ensureInstitutionDecisionsReady(d1),
+    ensureComplexProjectsReady(),
   ]);
   return d1;
 }
@@ -199,6 +208,7 @@ async function countsForOrganization(organization: string) {
     decisions,
     trashSnapshots,
     accounting,
+    complexProjects,
     location,
   ] = await Promise.all([
     d1
@@ -312,6 +322,10 @@ async function countsForOrganization(organization: string) {
       .bind(organization, organization, organization)
       .first<{ count: number }>(),
     d1
+      .prepare("SELECT COUNT(*) AS count FROM complex_projects WHERE organization = ? AND active = 1")
+      .bind(organization)
+      .first<{ count: number }>(),
+    d1
       .prepare(
         `SELECT TRIM(region) AS region, TRIM(address) AS address,
                 TRIM(road_address) AS road_address,
@@ -339,6 +353,7 @@ async function countsForOrganization(organization: string) {
     decisionCount: Number(decisions?.count ?? 0),
     trashSnapshotCount: Number(trashSnapshots?.count ?? 0),
     accountingCount: Number(accounting?.count ?? 0),
+    complexProjectCount: Number(complexProjects?.count ?? 0),
     hasLocation: Boolean(location),
     locationRegion: String(location?.region ?? ""),
     locationAddress: String(location?.road_address || location?.address || ""),
@@ -541,6 +556,8 @@ export async function mergeInstitutionRecords(
     canonicalLocation,
     aliasProjects,
     canonicalProjects,
+    aliasComplexProjects,
+    canonicalComplexProjects,
     aliasRecommendations,
     trashSnapshots,
   ] = await Promise.all([
@@ -608,6 +625,20 @@ export async function mergeInstitutionRecords(
       )
       .bind(canonical)
       .all<EquipmentProjectMergeRow>(),
+    d1
+      .prepare(
+        `SELECT id, business_round, name FROM complex_projects
+         WHERE organization = ? AND active = 1 ORDER BY id`,
+      )
+      .bind(alias)
+      .all<ComplexProjectMergeRow>(),
+    d1
+      .prepare(
+        `SELECT id, business_round, name FROM complex_projects
+         WHERE organization = ? AND active = 1 ORDER BY id`,
+      )
+      .bind(canonical)
+      .all<ComplexProjectMergeRow>(),
     d1
       .prepare(
         `SELECT id, interests_json, recommended_products_json,
@@ -1278,6 +1309,29 @@ export async function mergeInstitutionRecords(
       statements.unshift(
         d1
           .prepare(
+            `INSERT OR IGNORE INTO complex_project_budget_links
+               (complex_project_id, equipment_project_id, allocated_amount, sort_order, created_at, updated_at)
+             SELECT complex_project_id, ?, allocated_amount, sort_order, created_at, CURRENT_TIMESTAMP
+             FROM complex_project_budget_links WHERE equipment_project_id = ?`,
+          )
+          .bind(targetProjectId, project.id),
+        d1
+          .prepare(
+            `UPDATE complex_project_budget_links
+             SET allocated_amount = COALESCE(allocated_amount, (
+                   SELECT MAX(source.allocated_amount)
+                   FROM complex_project_budget_links source
+                   WHERE source.complex_project_id = complex_project_budget_links.complex_project_id
+                     AND source.equipment_project_id = ?
+                 )), updated_at = CURRENT_TIMESTAMP
+             WHERE equipment_project_id = ?`,
+          )
+          .bind(project.id, targetProjectId),
+        d1
+          .prepare("DELETE FROM complex_project_budget_links WHERE equipment_project_id = ?")
+          .bind(project.id),
+        d1
+          .prepare(
             "UPDATE equipment_items SET project_id = ? WHERE project_id = ?",
           )
           .bind(targetProjectId, project.id),
@@ -1299,6 +1353,51 @@ export async function mergeInstitutionRecords(
            WHERE id = ?`,
         )
         .bind(canonical, nextName, alias, canonical, project.id),
+    );
+  }
+
+  const complexTargetByRound = new Map<number, ComplexProjectMergeRow>(
+    canonicalComplexProjects.results.map((project: ComplexProjectMergeRow) => [
+      Math.max(1, Number(project.business_round) || 1),
+      project,
+    ]),
+  );
+  for (const project of aliasComplexProjects.results) {
+    const round = Math.max(1, Number(project.business_round) || 1);
+    const target = complexTargetByRound.get(round);
+    if (!target) {
+      statements.push(
+        d1.prepare(
+          `UPDATE complex_projects SET organization = ?, name = REPLACE(name, ?, ?),
+           updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        ).bind(canonical, alias, canonical, memberId, project.id),
+      );
+      complexTargetByRound.set(round, project);
+      continue;
+    }
+    statements.push(
+      d1.prepare(
+        `INSERT OR IGNORE INTO complex_project_budget_links
+           (complex_project_id, equipment_project_id, allocated_amount, sort_order, created_at, updated_at)
+         SELECT ?, equipment_project_id, allocated_amount, sort_order, created_at, CURRENT_TIMESTAMP
+         FROM complex_project_budget_links WHERE complex_project_id = ?`,
+      ).bind(target.id, project.id),
+      d1.prepare(
+        `UPDATE complex_project_budget_links
+         SET allocated_amount = COALESCE(allocated_amount, (
+               SELECT MAX(source.allocated_amount)
+               FROM complex_project_budget_links source
+               WHERE source.complex_project_id = ?
+                 AND source.equipment_project_id = complex_project_budget_links.equipment_project_id
+             )), updated_at = CURRENT_TIMESTAMP
+         WHERE complex_project_id = ?`,
+      ).bind(project.id, target.id),
+      d1.prepare("DELETE FROM complex_project_budget_links WHERE complex_project_id = ?").bind(project.id),
+      d1.prepare("UPDATE complex_project_zones SET complex_project_id = ?, updated_at = CURRENT_TIMESTAMP WHERE complex_project_id = ?").bind(target.id, project.id),
+      d1.prepare("UPDATE complex_project_item_details SET complex_project_id = ?, updated_at = CURRENT_TIMESTAMP WHERE complex_project_id = ?").bind(target.id, project.id),
+      d1.prepare("UPDATE complex_project_deliveries SET complex_project_id = ?, updated_at = CURRENT_TIMESTAMP WHERE complex_project_id = ?").bind(target.id, project.id),
+      d1.prepare("UPDATE complex_project_events SET complex_project_id = ? WHERE complex_project_id = ?").bind(target.id, project.id),
+      d1.prepare("DELETE FROM complex_projects WHERE id = ?").bind(project.id),
     );
   }
 
