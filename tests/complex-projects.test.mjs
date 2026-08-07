@@ -146,6 +146,22 @@ test("complex project items preserve selection protection and site requirements"
   assert.match(schema, /protectionExpiresAt: text\("protection_expires_at"\)/);
 });
 
+test("complex project items always expose shared comparison-document management", async () => {
+  const [store, page, route] = await Promise.all([
+    read("../lib/complex-projects.ts"),
+    read("../app/complex-project-page.tsx"),
+    read("../app/api/product-comparison-documents/route.ts"),
+  ]);
+
+  assert.match(store, /comparison_document_key/);
+  assert.match(store, /equipment-item:\$\{integer\(row\.equipment_item_id\)\}/);
+  assert.match(page, /\+ 비교표 등록/);
+  assert.match(page, /물품 비교표/);
+  assert.match(page, /uploadComparisonDocument/);
+  assert.match(page, /deleteComparisonDocument/);
+  assert.match(route, /PDF, Excel 또는 Word 비교표/);
+});
+
 test("merge and full backup preserve every complex-project relation", async () => {
   const [merge, backup] = await Promise.all([
     read("../lib/institution-merge.ts"),

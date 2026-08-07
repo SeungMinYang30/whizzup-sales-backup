@@ -165,5 +165,6 @@ test("product comparison documents are attached once and reused by complex proje
   assert.match(route, /PDF, Excel 또는 Word 비교표/);
   assert.match(catalog, /물품 비교표/);
   assert.match(catalog, /product-comparison-documents\?id=/);
-  assert.match(complex, /comparison\.product_id = item\.catalog_item_id/);
+  assert.match(complex, /comparisonDocumentCounts/);
+  assert.match(complex, /comparison_document_key: comparisonDocumentKey/);
 });

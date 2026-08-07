@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { resilientFetch } from "./resilient-fetch";
 
 type Row = Record<string, unknown>;
@@ -39,6 +39,16 @@ type Payload = {
   budgetGroups: Row[];
   members: Row[];
   candidates: Row[];
+};
+
+type ComparisonDocument = {
+  id: number;
+  productId: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdByName: string;
+  createdAt: string;
 };
 
 const emptyPayload: Payload = { projects: [], budgetGroups: [], members: [], candidates: [] };
@@ -83,6 +93,10 @@ export default function ComplexProjectPage(props: {
   const [deliveryItemId, setDeliveryItemId] = useState<number | null>(null);
   const [editItem, setEditItem] = useState<Row | null>(null);
   const [editDelivery, setEditDelivery] = useState<Row | null>(null);
+  const [comparisonItem, setComparisonItem] = useState<Row | null>(null);
+  const [comparisonDocuments, setComparisonDocuments] = useState<ComparisonDocument[]>([]);
+  const [comparisonBusy, setComparisonBusy] = useState(false);
+  const [comparisonMessage, setComparisonMessage] = useState("");
   const [candidateSearch, setCandidateSearch] = useState("");
   const [createSourceType, setCreateSourceType] = useState<"whizzup" | "external">("whizzup");
   const [candidates, setCandidates] = useState<Row[]>([]);
@@ -415,6 +429,111 @@ export default function ComplexProjectPage(props: {
     await mutate({ action: "delete_entity", projectId: selected.id, entity, id }, "항목을 삭제했습니다.");
   }
 
+  function updateComparisonDocumentCount(itemId: number, count: number) {
+    setData((current) => ({
+      ...current,
+      projects: current.projects.map((project) => ({
+        ...project,
+        items: project.items.map((item) =>
+          numberValue(item.equipment_item_id) === itemId
+            ? { ...item, comparison_document_count: Math.max(0, count) }
+            : item,
+        ),
+      })),
+    }));
+  }
+
+  async function openComparisonDocuments(item: Row) {
+    const documentKey = String(item.comparison_document_key ?? "").trim();
+    if (!documentKey) {
+      setMessage("비교표를 연결할 품목 정보를 확인하지 못했습니다.");
+      return;
+    }
+    setComparisonItem(item);
+    setComparisonDocuments([]);
+    setComparisonMessage("");
+    setComparisonBusy(true);
+    try {
+      const response = await resilientFetch(
+        `/api/product-comparison-documents?productId=${encodeURIComponent(documentKey)}`,
+        { cache: "no-store", timeoutMs: 12_000, retries: 0 },
+      );
+      const body = await readJson<{ documents?: ComparisonDocument[]; error?: string }>(response);
+      if (!response.ok || !Array.isArray(body.documents)) {
+        throw new Error(body.error || "비교표를 불러오지 못했습니다.");
+      }
+      setComparisonDocuments(body.documents);
+    } catch (error) {
+      setComparisonMessage(error instanceof Error ? error.message : "비교표를 불러오지 못했습니다.");
+    } finally {
+      setComparisonBusy(false);
+    }
+  }
+
+  async function uploadComparisonDocument(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !comparisonItem || comparisonBusy) return;
+    const documentKey = String(comparisonItem.comparison_document_key ?? "").trim();
+    if (!documentKey) return;
+    setComparisonBusy(true);
+    setComparisonMessage("");
+    try {
+      const formData = new FormData();
+      formData.set("productId", documentKey);
+      formData.set("file", file);
+      const response = await fetch("/api/product-comparison-documents", {
+        method: "POST",
+        body: formData,
+      });
+      const body = await readJson<{ document?: ComparisonDocument; error?: string }>(response);
+      if (!response.ok || !body.document) {
+        throw new Error(body.error || "비교표를 첨부하지 못했습니다.");
+      }
+      const nextDocuments = [body.document, ...comparisonDocuments];
+      setComparisonDocuments(nextDocuments);
+      updateComparisonDocumentCount(
+        numberValue(comparisonItem.equipment_item_id),
+        nextDocuments.length,
+      );
+      setComparisonMessage("비교표를 첨부했습니다.");
+    } catch (error) {
+      setComparisonMessage(error instanceof Error ? error.message : "비교표를 첨부하지 못했습니다.");
+    } finally {
+      setComparisonBusy(false);
+    }
+  }
+
+  async function deleteComparisonDocument(document: ComparisonDocument) {
+    if (
+      !comparisonItem ||
+      comparisonBusy ||
+      !window.confirm(`'${document.originalName}' 비교표를 삭제할까요?`)
+    ) return;
+    setComparisonBusy(true);
+    setComparisonMessage("");
+    try {
+      const response = await fetch("/api/product-comparison-documents", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: document.id }),
+      });
+      const body = await readJson<{ error?: string }>(response);
+      if (!response.ok) throw new Error(body.error || "비교표를 삭제하지 못했습니다.");
+      const nextDocuments = comparisonDocuments.filter((item) => item.id !== document.id);
+      setComparisonDocuments(nextDocuments);
+      updateComparisonDocumentCount(
+        numberValue(comparisonItem.equipment_item_id),
+        nextDocuments.length,
+      );
+      setComparisonMessage("비교표를 삭제했습니다.");
+    } catch (error) {
+      setComparisonMessage(error instanceof Error ? error.message : "비교표를 삭제하지 못했습니다.");
+    } finally {
+      setComparisonBusy(false);
+    }
+  }
+
   async function cancelProject() {
     if (!selected) return;
     const reason = window.prompt(
@@ -610,9 +729,11 @@ export default function ComplexProjectPage(props: {
                         {(item.deliveries ?? []).map((delivery) => <span key={String(delivery.id)}><b>{String(delivery.kind)}</b><small>{String(delivery.start_date || "일정 미정")}{delivery.end_date && delivery.end_date !== delivery.start_date ? ` ~ ${delivery.end_date}` : ""}</small><small>{numberValue(delivery.planned_qty)}{String(item.unit)} · {String(delivery.status)}</small><button type="button" onClick={() => { setDeliveryItemId(itemId); setEditDelivery(delivery); }}>수정</button><button type="button" onClick={() => void removeEntity("delivery", numberValue(delivery.id))}>삭제</button></span>)}
                       </div>
                       <footer>
-                        {numberValue(item.comparison_document_count) > 0 && Boolean(item.catalog_item_id) && (
-                          <a href={`/api/product-comparison-documents?productId=${encodeURIComponent(String(item.catalog_item_id))}&latest=1`} target="_blank" rel="noreferrer">비교표 내려받기</a>
-                        )}
+                        <button type="button" onClick={() => void openComparisonDocuments(item)}>
+                          {numberValue(item.comparison_document_count) > 0
+                            ? `비교표 ${numberValue(item.comparison_document_count)}건`
+                            : "+ 비교표 등록"}
+                        </button>
                         <button type="button" onClick={() => { setEditItem(item); setItemOpen(true); }}>품목 수정</button>
                         <button type="button" className="primary" onClick={() => { setDeliveryItemId(itemId); setEditDelivery(null); }}>+ 분할 일정</button>
                       </footer>
@@ -626,6 +747,70 @@ export default function ComplexProjectPage(props: {
           ) : <div className="empty-state">왼쪽에서 복합사업을 선택해 주세요.</div>}
         </div>
       </div>
+
+      {comparisonItem && (
+        <div
+          className="product-catalog-modal-shell"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target && !comparisonBusy) {
+              setComparisonItem(null);
+            }
+          }}
+        >
+          <section
+            className="product-catalog-dialog product-comparison-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="complex-comparison-title"
+          >
+            <div className="product-catalog-dialog-header">
+              <div>
+                <span className="section-kicker">PRODUCT COMPARISON</span>
+                <h3 id="complex-comparison-title">물품 비교표</h3>
+                <p>{String(comparisonItem.product_name || "품목")}에 연결된 비교표를 관리합니다.</p>
+              </div>
+              <button
+                type="button"
+                aria-label="닫기"
+                disabled={comparisonBusy}
+                onClick={() => setComparisonItem(null)}
+              >
+                ×
+              </button>
+            </div>
+            <label className="product-comparison-upload">
+              <strong>{comparisonBusy ? "처리 중…" : "+ 비교표 첨부"}</strong>
+              <span>PDF·Excel·Word · 파일당 20MB 이하</span>
+              <input
+                type="file"
+                accept=".pdf,.xlsx,.xls,.docx"
+                disabled={comparisonBusy}
+                onChange={(event) => void uploadComparisonDocument(event)}
+              />
+            </label>
+            {comparisonMessage && <p className="product-comparison-message">{comparisonMessage}</p>}
+            <div className="product-comparison-list">
+              {comparisonDocuments.map((document) => (
+                <article key={document.id}>
+                  <div>
+                    <strong>{document.originalName}</strong>
+                    <small>{(document.sizeBytes / 1024 / 1024).toFixed(2)}MB · {document.createdByName || "운영자"}</small>
+                  </div>
+                  <a href={`/api/product-comparison-documents?id=${document.id}`} target="_blank" rel="noreferrer">내려받기</a>
+                  <button type="button" disabled={comparisonBusy} onClick={() => void deleteComparisonDocument(document)}>삭제</button>
+                </article>
+              ))}
+              {!comparisonDocuments.length && !comparisonBusy && (
+                <div className="empty-state">첨부된 비교표가 없습니다.</div>
+              )}
+            </div>
+            <div className="product-catalog-dialog-actions">
+              <button type="button" className="primary-button" disabled={comparisonBusy} onClick={() => setComparisonItem(null)}>확인</button>
+            </div>
+          </section>
+        </div>
+      )}
     </section>
   );
 }

@@ -410,7 +410,7 @@ export async function listComplexProjects() {
     readCurrentProductCatalogMap(d1),
     readProductCatalogRelations(),
   ]);
-  const [projectResult, budgetResult, zoneResult, itemResult, deliveryResult, groupResult, memberResult] = await d1.batch([
+  const [projectResult, budgetResult, zoneResult, itemResult, deliveryResult, groupResult, memberResult, comparisonResult] = await d1.batch([
     d1.prepare(
       `SELECT * FROM complex_projects WHERE active = 1
        ORDER BY CASE status WHEN '진행' THEN 0 WHEN '준비' THEN 1 WHEN '완료' THEN 2 ELSE 3 END,
@@ -448,9 +448,7 @@ export async function listComplexProjects() {
               item.supply_type, item.margin_rate, item.procurement_fee_rate,
               item.consortium_commission_rate, item.consortium_payment_amount,
               item.supplier_vendor_id, item.supplier_vendor_name, item.protection_status,
-              ep.name AS budget_name, ep.budget_group_id,
-              (SELECT COUNT(*) FROM product_comparison_documents comparison
-               WHERE comparison.product_id = item.catalog_item_id) AS comparison_document_count
+              ep.name AS budget_name, ep.budget_group_id
        FROM complex_project_budget_links link
        JOIN equipment_items item ON item.project_id = link.equipment_project_id
        LEFT JOIN complex_project_item_details detail ON detail.equipment_item_id = item.id
@@ -478,7 +476,19 @@ export async function listComplexProjects() {
          )
        ORDER BY display_name COLLATE NOCASE, id`,
     ),
+    d1.prepare(
+      `SELECT product_id, COUNT(*) AS document_count
+       FROM product_comparison_documents
+       GROUP BY product_id`,
+    ),
   ]);
+
+  const comparisonDocumentCounts = new Map(
+    comparisonResult.results.map((row: Record<string, unknown>) => [
+      clean(row.product_id, 180),
+      integer(row.document_count),
+    ]),
+  );
 
   const budgetsByProject = new Map<number, Record<string, unknown>[]>();
   budgetResult.results.forEach((row: Record<string, unknown>) => {
@@ -507,6 +517,8 @@ export async function listComplexProjects() {
       installedQty,
     });
     const catalogId = clean(row.catalog_item_id, 160);
+    const comparisonDocumentKey =
+      catalogId || `equipment-item:${integer(row.equipment_item_id)}`;
     const catalogProduct = catalogProducts.get(catalogId);
     const storedUnitPrice = nullableMoney(row.catalog_unit_price);
     const keepsZeroPrice = [
@@ -561,6 +573,9 @@ export async function listComplexProjects() {
       ...(itemsByProject.get(projectId) ?? []),
       {
         ...row,
+        comparison_document_key: comparisonDocumentKey,
+        comparison_document_count:
+          comparisonDocumentCounts.get(comparisonDocumentKey) ?? 0,
         settlement_quantity: settlementQuantity,
         quantity_source:
           proposedQty > 0
