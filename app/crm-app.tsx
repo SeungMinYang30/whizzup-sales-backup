@@ -41,6 +41,7 @@ import type {
   AccountingWorkspaceTab,
 } from "./accounting-page";
 import BudgetNameManager from "./budget-name-manager";
+import OwnerLocalLoginSetup from "./owner-local-login-setup";
 import BudgetNameSelector, {
   type BudgetAmountMode,
   type BudgetKind,
@@ -16541,6 +16542,7 @@ export default function CrmApp({
                   </div>
                   <b>승인 대기 → 승인 → 역할·권한 설정</b>
                 </div>
+                {isOwner ? <OwnerLocalLoginSetup email={session.member.email} /> : null}
                 {session.canViewPresence && (
                   <div className="member-presence-overview">
                     <div>

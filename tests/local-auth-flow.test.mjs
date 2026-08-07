@@ -28,6 +28,18 @@ test("비밀번호는 강한 해시와 로그인 잠금으로 보호한다", asy
   assert.match(login, /failures >= 5/);
 });
 
+test("대표는 현재 승인된 계정에 이메일 아이디 로그인을 안전하게 연결한다", async () => {
+  const [ownerRoute, ownerSetup] = await Promise.all([
+    read("app/api/local-auth/owner-credentials/route.ts"),
+    read("app/owner-local-login-setup.tsx"),
+  ]);
+  assert.match(ownerRoute, /requirePrimaryOwner/);
+  assert.match(ownerRoute, /username = owner\.email\.trim\(\)\.toLowerCase\(\)/);
+  assert.match(ownerRoute, /WHERE id = \? AND role = 'admin' AND status = 'approved'/);
+  assert.match(ownerSetup, /Google 로그인도 계속 사용할 수 있습니다/);
+  assert.match(ownerSetup, /\/api\/local-auth\/owner-credentials/);
+});
+
 test("대표 관리자 외 계정은 원본 보관 후 연결 이력을 보존하며 정리한다", async () => {
   const cleanup = await read("app/api/members/cleanup/route.ts");
   assert.match(cleanup, /freeyang30@gmail\.com/);

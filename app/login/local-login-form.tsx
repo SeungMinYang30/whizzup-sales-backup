@@ -50,7 +50,7 @@ export default function LocalLoginForm({ returnTo }: { returnTo: string }) {
         {mode === "signup" ? (
           <label><span>이름</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={40} autoComplete="name" required /></label>
         ) : null}
-        <label><span>아이디</span><input value={username} onChange={(event) => setUsername(event.target.value.toLowerCase())} minLength={4} maxLength={30} autoCapitalize="none" autoComplete="username" required /></label>
+        <label><span>{mode === "login" ? "아이디 또는 대표 이메일" : "아이디"}</span><input value={username} onChange={(event) => setUsername(event.target.value.toLowerCase())} minLength={4} maxLength={30} autoCapitalize="none" autoComplete="username" required /></label>
         <label><span>비밀번호</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} maxLength={72} autoComplete={mode === "login" ? "current-password" : "new-password"} required /></label>
         {mode === "signup" ? <small>아이디는 영문 소문자·숫자 4자 이상, 비밀번호는 영문과 숫자를 포함해 8자 이상 입력해 주세요.</small> : null}
         {message ? <p className="local-auth-success">{message}</p> : null}
