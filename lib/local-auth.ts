@@ -44,7 +44,33 @@ export function ensureLocalAuthSchema() {
       "REVOKE ALL ON member_account_archives FROM anon, authenticated",
     ];
     localAuthSchemaPromise = d1
-      .batch(statements.map((statement) => d1.prepare(statement)))
+      .prepare(
+        `SELECT
+           to_regclass('public.local_auth_sessions') IS NOT NULL AS has_sessions,
+           to_regclass('public.member_account_archives') IS NOT NULL AS has_archives,
+           COUNT(*) FILTER (
+             WHERE column_name IN (
+               'username', 'password_hash', 'password_salt',
+               'password_iterations', 'failed_login_count', 'locked_until'
+             )
+           ) AS member_auth_columns
+         FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'members'`,
+      )
+      .first<{
+        has_sessions: boolean;
+        has_archives: boolean;
+        member_auth_columns: number | string;
+      }>()
+      .then(async (schema) => {
+        const ready =
+          Boolean(schema?.has_sessions) &&
+          Boolean(schema?.has_archives) &&
+          Number(schema?.member_auth_columns ?? 0) === 6;
+        if (!ready) {
+          await d1.batch(statements.map((statement) => d1.prepare(statement)));
+        }
+      })
       .then(() => undefined)
       .catch((error) => {
         localAuthSchemaPromise = null;
