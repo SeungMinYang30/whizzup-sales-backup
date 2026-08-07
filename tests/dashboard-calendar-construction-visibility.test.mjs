@@ -65,9 +65,13 @@ test("대시보드 기록은 기관 사업별 최신 수주와 화면 대상 공
   assert.match(recordsRoute, /WHERE source_activity\.id IN \(SELECT id FROM dashboard_ids\)/);
 });
 
-test("대시보드 시공 현황과 일정표는 같은 조회 결과를 공유한다", () => {
-  assert.doesNotMatch(crmApp, /fetch\("\/api\/schedules\?scope=construction-board"/);
+test("대시보드 시공 현황은 경량 요약을 즉시 조회하고 전체 일정표는 뒤에서 불러온다", () => {
+  assert.match(crmApp, /scope=construction-summary&today=/);
+  assert.doesNotMatch(crmApp, /scope=construction-board/);
   assert.match(crmApp, /onDashboardCounts=\{setConstructionDashboardCounts\}/);
+  assert.match(crmApp, /constructionDashboardCounts\?\.planned/);
+  assert.match(scheduleRoute, /scope"\) === "construction-summary"/);
+  assert.match(scheduleRoute, /listConstructionScheduleSummary\(today\)/);
   assert.equal(
     (constructionPage.match(/resilientFetch\("\/api\/schedules\?scope=construction-board"/g) ?? []).length,
     1,
@@ -75,6 +79,20 @@ test("대시보드 시공 현황과 일정표는 같은 조회 결과를 공유�
   assert.match(constructionPage, /retries: 2/);
   assert.match(constructionPage, /window\.setTimeout\(\(\) => void load\(\), 8_000\)/);
   assert.match(constructionPage, /onDashboardCounts\(projects\.filter/);
+});
+
+test("시공 현황 요약은 숨김과 타사 수주를 제외하고 필요한 일정 상태만 읽는다", () => {
+  const summary = schedules.slice(
+    schedules.indexOf("export async function listConstructionScheduleSummary"),
+    schedules.indexOf("export async function addConstructionScheduleProject"),
+  );
+  assert.match(summary, /FROM construction_schedule_projects csp/);
+  assert.match(summary, /latest_award_status/);
+  assert.match(summary, /!== "위즈업 수주"/);
+  assert.match(summary, /TRIM\(COALESCE\(csp\.hidden_at, ''\)\) = ''/);
+  assert.match(summary, /FROM organization_schedules os/);
+  assert.match(summary, /os\.scheduled_date <= \?/);
+  assert.doesNotMatch(summary, /equipment_projects|equipment_items/);
 });
 
 test("시공 일정표 조회는 등록 기관 범위만 읽어 전체 영업·품목 스캔을 피한다", () => {

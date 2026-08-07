@@ -6226,11 +6226,9 @@ export default function CrmApp({
   );
   const [view, setView] = useState<View>("dashboard");
   const [constructionDashboardCounts, setConstructionDashboardCounts] =
-    useState<ConstructionDashboardCounts>({
-      planned: 0,
-      active: 0,
-      completed: 0,
-    });
+    useState<ConstructionDashboardCounts | null>(null);
+  const [constructionDashboardCountsFailed, setConstructionDashboardCountsFailed] =
+    useState(false);
   const [accountingInitialTab, setAccountingInitialTab] =
     useState<AccountingWorkspaceTab>("collections");
   const [accountingStatusByBusinessKey, setAccountingStatusByBusinessKey] =
@@ -6908,6 +6906,37 @@ export default function CrmApp({
       }
     };
   }, [sessionStatus, view]);
+
+  useEffect(() => {
+    if (sessionStatus !== "approved") return;
+    let active = true;
+    const today = toLocalDateValue(new Date());
+    setConstructionDashboardCountsFailed(false);
+    void resilientFetch(
+      `/api/schedules?scope=construction-summary&today=${encodeURIComponent(today)}`,
+      {
+        cache: "no-store",
+        timeoutMs: 15_000,
+        retries: 1,
+      },
+    )
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          counts?: ConstructionDashboardCounts;
+          error?: string;
+        };
+        if (!response.ok || !payload.counts) {
+          throw new Error(payload.error || "시공 현황을 불러오지 못했습니다.");
+        }
+        if (active) setConstructionDashboardCounts(payload.counts);
+      })
+      .catch(() => {
+        if (active) setConstructionDashboardCountsFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [sessionStatus]);
 
   useEffect(() => {
     if (sessionStatus !== "approved" || view !== "dashboard") return;
@@ -15574,9 +15603,9 @@ export default function CrmApp({
                 <span>시공·납품 현황</span>
                 <small>일정표에 등록된 위즈업 수주</small>
                 <dl>
-                  <div><dt>예정</dt><dd>{constructionDashboardCounts.planned}</dd></div>
-                  <div><dt>진행</dt><dd>{constructionDashboardCounts.active}</dd></div>
-                  <div><dt>완료</dt><dd>{constructionDashboardCounts.completed}</dd></div>
+                  <div><dt>예정</dt><dd>{constructionDashboardCounts?.planned ?? (constructionDashboardCountsFailed ? "–" : "…")}</dd></div>
+                  <div><dt>진행</dt><dd>{constructionDashboardCounts?.active ?? (constructionDashboardCountsFailed ? "–" : "…")}</dd></div>
+                  <div><dt>완료</dt><dd>{constructionDashboardCounts?.completed ?? (constructionDashboardCountsFailed ? "–" : "…")}</dd></div>
                 </dl>
               </button>
           </nav>

@@ -70,6 +70,12 @@ export type ConstructionScheduleSaveResult = {
   syncIds: number[];
 };
 
+export type ConstructionDashboardCounts = {
+  planned: number;
+  active: number;
+  completed: number;
+};
+
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS organization_schedules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -540,6 +546,49 @@ export async function listConstructionScheduleBoard() {
       whizzupScopes.has(`${String(row.organization ?? "")}\u001f${Math.max(1, Number(row.business_round) || 1)}`),
     ).map(scheduleJson),
   };
+}
+
+export async function listConstructionScheduleSummary(
+  todayInput: unknown,
+): Promise<ConstructionDashboardCounts> {
+  const today = validDate(todayInput);
+  if (!today) throw new Error("시공 현황 기준일을 확인해 주세요.");
+  const d1 = await ensureOrganizationSchedulesReady();
+  const result = await d1.prepare(
+    `SELECT csp.completed,
+            COALESCE((
+              SELECT a.award_status
+              FROM activities a
+              WHERE a.organization = csp.organization
+                AND a.business_round = csp.business_round
+              ORDER BY a.activity_date DESC, a.id DESC
+              LIMIT 1
+            ), '') AS latest_award_status,
+            CASE WHEN EXISTS (
+              SELECT 1
+              FROM organization_schedules os
+              WHERE os.organization = csp.organization
+                AND os.business_round = csp.business_round
+                AND COALESCE(os.category, 'general') = 'construction'
+                AND TRIM(COALESCE(os.deleted_at, '')) = ''
+                AND os.completed = 0
+                AND TRIM(COALESCE(os.scheduled_date, '')) <> ''
+                AND os.scheduled_date <= ?
+            ) THEN 1 ELSE 0 END AS has_started
+     FROM construction_schedule_projects csp
+     WHERE TRIM(COALESCE(csp.hidden_at, '')) = ''`,
+  ).bind(today).all<Record<string, unknown>>();
+
+  return result.results.reduce<ConstructionDashboardCounts>(
+    (counts, row) => {
+      if (clean(row.latest_award_status) !== "위즈업 수주") return counts;
+      if (Number(row.completed) === 1) counts.completed += 1;
+      else if (Number(row.has_started) === 1) counts.active += 1;
+      else counts.planned += 1;
+      return counts;
+    },
+    { planned: 0, active: 0, completed: 0 },
+  );
 }
 
 export async function addConstructionScheduleProject(input: {
