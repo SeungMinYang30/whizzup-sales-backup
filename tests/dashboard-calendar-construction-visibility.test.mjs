@@ -70,6 +70,7 @@ test("대시보드 시공 현황은 경량 요약을 즉시 조회하고 전체 
   assert.doesNotMatch(crmApp, /scope=construction-board/);
   assert.match(crmApp, /onDashboardCounts=\{setConstructionDashboardCounts\}/);
   assert.match(crmApp, /constructionDashboardCounts\?\.planned/);
+  assert.match(constructionPage, /if \(!onDashboardCounts \|\| !boardLoaded\) return;/);
   assert.match(scheduleRoute, /scope"\) === "construction-summary"/);
   assert.match(scheduleRoute, /listConstructionScheduleSummary\(today\)/);
   assert.equal(
@@ -77,7 +78,7 @@ test("대시보드 시공 현황은 경량 요약을 즉시 조회하고 전체 
     1,
   );
   assert.match(constructionPage, /retries: 2/);
-  assert.match(constructionPage, /window\.setTimeout\(\(\) => void load\(\), 8_000\)/);
+  assert.match(constructionPage, /window\.setTimeout\(\(\) => void load\(\), embedded \? 8_000 : 0\)/);
   assert.match(constructionPage, /onDashboardCounts\(projects\.filter/);
 });
 

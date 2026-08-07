@@ -105,6 +105,7 @@ export default function ConstructionSchedulePage({
   const [start, setStart] = useState(today);
   const [projects, setProjects] = useState<ConstructionProject[]>([]);
   const [schedules, setSchedules] = useState<ConstructionSchedule[]>([]);
+  const [boardLoaded, setBoardLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -161,6 +162,7 @@ export default function ConstructionSchedulePage({
       if (!response.ok) throw new Error(payload.error || "일정표를 불러오지 못했습니다.");
       setProjects(payload.projects ?? []);
       setSchedules(payload.schedules ?? []);
+      setBoardLoaded(true);
       setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "일정표를 불러오지 못했습니다.");
@@ -170,15 +172,16 @@ export default function ConstructionSchedulePage({
   }
 
   useEffect(() => {
-    // Records and the visible calendar are the first dashboard priority.
-    // Start this larger board query after those requests have checked out and
-    // returned their pooled database connections.
-    const timer = window.setTimeout(() => void load(), 8_000);
+    // On the dashboard, let the smaller primary requests finish first. When
+    // the user opens the schedule page itself, request the board immediately.
+    const timer = window.setTimeout(() => void load(), embedded ? 8_000 : 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [embedded]);
 
   useEffect(() => {
-    if (!onDashboardCounts) return;
+    // The lightweight dashboard summary loads first. Do not overwrite it with
+    // the board's initial empty arrays before the delayed board request finishes.
+    if (!onDashboardCounts || !boardLoaded) return;
     const todayValue = localDate();
     const schedulesByProject = new Map<string, ConstructionSchedule[]>();
     schedules.forEach((schedule) => {
@@ -197,7 +200,7 @@ export default function ConstructionSchedulePage({
       },
       { planned: 0, active: 0, completed: 0 },
     ));
-  }, [onDashboardCounts, projects, schedules]);
+  }, [boardLoaded, onDashboardCounts, projects, schedules]);
 
   const schedulesByScope = useMemo(() => {
     const map = new Map<string, ConstructionSchedule[]>();
