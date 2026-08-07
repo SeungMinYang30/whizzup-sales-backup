@@ -40,99 +40,99 @@ export async function POST() {
                   p.actor_id,
                   CURRENT_TIMESTAMP
            FROM targets t CROSS JOIN params p
-           RETURNING original_member_id
+           RETURNING 1
          ),
          update_member_approvers AS (
            UPDATE members SET approved_by = (SELECT actor_id FROM params)
-           WHERE approved_by IN (SELECT id FROM targets) RETURNING id
+           WHERE approved_by IN (SELECT id FROM targets) RETURNING 1
          ),
          update_activity_authors AS (
            UPDATE activity_authors SET member_id = NULL
-           WHERE member_id IN (SELECT id FROM targets) RETURNING id
+           WHERE member_id IN (SELECT id FROM targets) RETURNING 1
          ),
          update_assignment_targets AS (
            UPDATE activity_assignment_history SET to_member_id = (SELECT actor_id FROM params)
-           WHERE to_member_id IN (SELECT id FROM targets) RETURNING id
+           WHERE to_member_id IN (SELECT id FROM targets) RETURNING 1
          ),
          update_assignment_actors AS (
            UPDATE activity_assignment_history SET changed_by_member_id = (SELECT actor_id FROM params)
-           WHERE changed_by_member_id IN (SELECT id FROM targets) RETURNING id
+           WHERE changed_by_member_id IN (SELECT id FROM targets) RETURNING 1
          ),
          update_batch_actors AS (
            UPDATE activity_change_batches SET actor_member_id = (SELECT actor_id FROM params)
-           WHERE actor_member_id IN (SELECT id FROM targets) RETURNING id
+           WHERE actor_member_id IN (SELECT id FROM targets) RETURNING 1
          ),
          update_batch_undo AS (
            UPDATE activity_change_batches SET undone_by_member_id = (SELECT actor_id FROM params)
-           WHERE undone_by_member_id IN (SELECT id FROM targets) RETURNING id
+           WHERE undone_by_member_id IN (SELECT id FROM targets) RETURNING 1
          ),
          update_item_undo AS (
            UPDATE activity_change_items SET undone_by_member_id = (SELECT actor_id FROM params)
-           WHERE undone_by_member_id IN (SELECT id FROM targets) RETURNING id
+           WHERE undone_by_member_id IN (SELECT id FROM targets) RETURNING 1
          ),
          update_ai AS (
            UPDATE ai_recommendations SET created_by = (SELECT actor_id FROM params)
-           WHERE created_by IN (SELECT id FROM targets) RETURNING id
+           WHERE created_by IN (SELECT id FROM targets) RETURNING 1
          ),
          update_oauth_clients AS (
            UPDATE oauth_clients SET created_by = (SELECT actor_id FROM params)
-           WHERE created_by IN (SELECT id FROM targets) RETURNING id
+           WHERE created_by IN (SELECT id FROM targets) RETURNING 1
          ),
          update_settings AS (
            UPDATE app_settings SET updated_by = (SELECT actor_id FROM params)
-           WHERE updated_by IN (SELECT id FROM targets) RETURNING key
+           WHERE updated_by IN (SELECT id FROM targets) RETURNING 1
          ),
          update_credentials AS (
            UPDATE api_credentials SET updated_by = (SELECT actor_id FROM params)
-           WHERE updated_by IN (SELECT id FROM targets) RETURNING id
+           WHERE updated_by IN (SELECT id FROM targets) RETURNING 1
          ),
          update_locations AS (
            UPDATE organization_locations SET updated_by = (SELECT actor_id FROM params)
-           WHERE updated_by IN (SELECT id FROM targets) RETURNING id
+           WHERE updated_by IN (SELECT id FROM targets) RETURNING 1
          ),
          update_campaigns AS (
            UPDATE sales_campaigns SET created_by = (SELECT actor_id FROM params)
-           WHERE created_by IN (SELECT id FROM targets) RETURNING id
+           WHERE created_by IN (SELECT id FROM targets) RETURNING 1
          ),
          clear_campaign_assignees AS (
            UPDATE sales_campaign_targets SET assigned_member_id = NULL
-           WHERE assigned_member_id IN (SELECT id FROM targets) RETURNING id
+           WHERE assigned_member_id IN (SELECT id FROM targets) RETURNING 1
          ),
          update_equipment_projects AS (
            UPDATE equipment_projects SET created_by = (SELECT actor_id FROM params)
-           WHERE created_by IN (SELECT id FROM targets) RETURNING id
+           WHERE created_by IN (SELECT id FROM targets) RETURNING 1
          ),
          clear_complex_managers AS (
            UPDATE complex_projects SET manager_member_id = NULL
-           WHERE manager_member_id IN (SELECT id FROM targets) RETURNING id
+           WHERE manager_member_id IN (SELECT id FROM targets) RETURNING 1
          ),
          update_complex_creators AS (
            UPDATE complex_projects SET created_by = (SELECT actor_id FROM params)
-           WHERE created_by IN (SELECT id FROM targets) RETURNING id
+           WHERE created_by IN (SELECT id FROM targets) RETURNING 1
          ),
          update_complex_editors AS (
            UPDATE complex_projects SET updated_by = (SELECT actor_id FROM params)
-           WHERE updated_by IN (SELECT id FROM targets) RETURNING id
+           WHERE updated_by IN (SELECT id FROM targets) RETURNING 1
          ),
          delete_alert_acks AS (
            DELETE FROM manager_alert_acknowledgements
-           WHERE member_id IN (SELECT id FROM targets) RETURNING member_id
+           WHERE member_id IN (SELECT id FROM targets) RETURNING 1
          ),
          delete_review_acks AS (
            DELETE FROM activity_review_acknowledgements
-           WHERE member_id IN (SELECT id FROM targets) RETURNING member_id
+           WHERE member_id IN (SELECT id FROM targets) RETURNING 1
          ),
          delete_codes AS (
-           DELETE FROM oauth_codes WHERE member_id IN (SELECT id FROM targets) RETURNING member_id
+           DELETE FROM oauth_codes WHERE member_id IN (SELECT id FROM targets) RETURNING 1
          ),
          delete_tokens AS (
-           DELETE FROM oauth_tokens WHERE member_id IN (SELECT id FROM targets) RETURNING member_id
+           DELETE FROM oauth_tokens WHERE member_id IN (SELECT id FROM targets) RETURNING 1
          ),
          delete_sessions AS (
-           DELETE FROM local_auth_sessions WHERE member_id IN (SELECT id FROM targets) RETURNING member_id
+           DELETE FROM local_auth_sessions WHERE member_id IN (SELECT id FROM targets) RETURNING 1
          ),
          deleted AS (
-           DELETE FROM members WHERE id IN (SELECT id FROM targets) RETURNING id
+           DELETE FROM members WHERE id IN (SELECT id FROM targets) RETURNING 1
          )
          SELECT COUNT(*)::integer AS deleted_count,
                 COALESCE(array_agg(COALESCE(display_name, email) ORDER BY id), ARRAY[]::text[]) AS names
