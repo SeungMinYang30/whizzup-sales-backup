@@ -45,12 +45,16 @@ test("대표 관리자 외 계정은 원본 보관 후 연결 이력을 보존�
   assert.match(cleanup, /freeyang30@gmail\.com/);
   assert.match(cleanup, /member_account_archives/);
   assert.match(cleanup, /activity_authors SET member_id = NULL/);
-  assert.match(cleanup, /DELETE FROM members WHERE id IN/);
-  assert.match(cleanup, /targets AS MATERIALIZED/);
-  assert.match(cleanup, /one database round trip/);
-  assert.match(cleanup, /to_jsonb\(t\) - 'password_hash'/);
+  assert.match(cleanup, /DELETE FROM members WHERE id = ANY/);
+  assert.match(cleanup, /DO \$cleanup\$/);
+  assert.match(cleanup, /ordered server-side block/);
+  assert.match(cleanup, /to_jsonb\(m\) - 'password_hash'/);
   assert.doesNotMatch(cleanup, /for \(const id of targetIds\)/);
   assert.doesNotMatch(cleanup, /tx\.batch/);
+  assert.ok(
+    cleanup.indexOf("UPDATE activity_assignment_history SET to_member_id") <
+      cleanup.indexOf("DELETE FROM members WHERE id = ANY"),
+  );
   assert.match(cleanup, /requirePrimaryOwner/);
 });
 
