@@ -111,9 +111,10 @@ test("운영 DB는 전체 스키마 대신 기준 버전 이후의 증분 스키
   assert.match(databaseSource, /baseSchemaIsReady[\s\S]*VERCEL_INCREMENTAL_SCHEMA_SQL[\s\S]*VERCEL_SCHEMA_SQL/);
 });
 
-test("Vercel 함수는 작은 연결 풀을 쓰고 연결 용량 오류를 자동 재시도하지 않는다", () => {
+test("Vercel 함수는 작은 연결 풀을 쓰고 유휴 연결을 자동 회수한다", () => {
+  assert.match(databaseSource, /attachDatabasePool\(pool\)/);
   assert.match(databaseSource, /max:\s*1/);
-  assert.match(databaseSource, /idle_timeout:\s*2/);
+  assert.match(databaseSource, /idleTimeoutMillis:\s*2_000/);
   assert.match(databaseSource, /DATABASE_LIVENESS_TIMEOUT_MS\s*=\s*2_500/);
   assert.match(databaseSource, /SELECT 1 AS alive/);
   assert.match(databaseSource, /DATABASE_SCHEMA_VERIFIED_VERSION/);

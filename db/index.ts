@@ -1,4 +1,5 @@
-import postgres from "postgres";
+import { attachDatabasePool } from "@vercel/functions";
+import { Pool, type PoolClient, type QueryResult } from "pg";
 import {
   VERCEL_BASE_SCHEMA_VERSION,
   VERCEL_INCREMENTAL_SCHEMA_SQL,
@@ -27,6 +28,11 @@ type PostgresResult<T extends QueryRow = QueryRow> = T[] & {
   count?: number;
 };
 
+type ManagedSqlClient = QueryExecutor & {
+  begin: <T>(operation: (executor: QueryExecutor) => Promise<T>) => Promise<T>;
+  end: () => Promise<void>;
+};
+
 export function isPostgresDatabase() {
   return true;
 }
@@ -43,10 +49,10 @@ function normalizeD1Row<T extends QueryRow>(row: T): T {
 }
 
 const globalDatabase = globalThis as typeof globalThis & {
-  whizzupPostgres?: ReturnType<typeof postgres>;
+  whizzupPostgres?: ManagedSqlClient;
   whizzupSchemaReady?: Promise<void>;
   whizzupLastDatabaseActivityAt?: number;
-  whizzupLivenessCheck?: Promise<ReturnType<typeof postgres>>;
+  whizzupLivenessCheck?: Promise<ManagedSqlClient>;
 };
 
 const DATABASE_QUERY_TIMEOUT_MS = 15_000;
@@ -99,12 +105,12 @@ function databaseRetryDelay(attempt: number) {
 }
 
 async function recycleSqlClient(
-  expectedClient: ReturnType<typeof postgres>,
+  expectedClient: ManagedSqlClient,
 ) {
   if (globalDatabase.whizzupPostgres !== expectedClient) return;
   globalDatabase.whizzupPostgres = undefined;
   globalDatabase.whizzupLastDatabaseActivityAt = undefined;
-  await expectedClient.end({ timeout: 1 }).catch(() => undefined);
+  await expectedClient.end().catch(() => undefined);
 }
 
 function databaseUrl() {
@@ -117,24 +123,65 @@ function databaseUrl() {
   return value;
 }
 
+function rowsWithCount<T extends QueryRow = QueryRow>(
+  result: QueryResult<T>,
+): PostgresResult<T> {
+  const rows = result.rows as PostgresResult<T>;
+  rows.count = Number(result.rowCount ?? rows.length ?? 0);
+  return rows;
+}
+
+function executorFor(client: Pool | PoolClient): QueryExecutor {
+  return {
+    unsafe: async (query, parameters = []) =>
+      rowsWithCount(
+        await client.query<QueryRow>(query, parameters as unknown[]),
+      ),
+  };
+}
+
+function createManagedSqlClient(): ManagedSqlClient {
+  const pool = new Pool({
+    connectionString: databaseUrl(),
+    ssl: { rejectUnauthorized: false },
+    // One connection per warm function is sufficient. attachDatabasePool
+    // releases idle sockets before Vercel suspends the function, preventing
+    // dormant Fluid Compute instances from exhausting Supavisor clients.
+    max: 1,
+    idleTimeoutMillis: 2_000,
+    connectionTimeoutMillis: 8_000,
+    maxLifetimeSeconds: 30,
+    statement_timeout: 12_000,
+    lock_timeout: 5_000,
+    idle_in_transaction_session_timeout: 15_000,
+    application_name: "whizzup-vercel",
+  });
+  attachDatabasePool(pool);
+  const poolExecutor = executorFor(pool);
+
+  return {
+    unsafe: poolExecutor.unsafe,
+    begin: async <T>(operation: (executor: QueryExecutor) => Promise<T>) => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const result = await operation(executorFor(client));
+        await client.query("COMMIT");
+        return result;
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    end: () => pool.end(),
+  };
+}
+
 function getSqlClient() {
   if (!globalDatabase.whizzupPostgres) {
-    globalDatabase.whizzupPostgres = postgres(databaseUrl(), {
-      prepare: false,
-      ssl: "require",
-      // Vercel can keep a separate warm instance for every API route. Holding
-      // three database connections per instance quickly exhausts Supabase's
-      // transaction pool, so each instance must share one short-lived client.
-      max: 1,
-      idle_timeout: 2,
-      connect_timeout: 8,
-      max_lifetime: 30,
-      connection: {
-        statement_timeout: 12000,
-        lock_timeout: 5000,
-        idle_in_transaction_session_timeout: 15000,
-      },
-    });
+    globalDatabase.whizzupPostgres = createManagedSqlClient();
   }
   return globalDatabase.whizzupPostgres;
 }
