@@ -8,6 +8,7 @@ import {
 } from "./organization-schedules";
 import {
   ensureRecordsReady,
+  koreaTodayValue,
   readCanonicalBusinessRoundBudgets,
 } from "./records-store";
 import { ensureMapReady } from "./map-store";
@@ -412,7 +413,7 @@ export async function listComplexProjects() {
   ]);
   const [projectResult, budgetResult, zoneResult, itemResult, deliveryResult, groupResult, memberResult, comparisonResult] = await d1.batch([
     d1.prepare(
-      `SELECT * FROM complex_projects WHERE active = 1
+      `SELECT * FROM complex_projects WHERE active = 1 AND source_type = 'whizzup'
        ORDER BY CASE status WHEN '진행' THEN 0 WHEN '준비' THEN 1 WHEN '완료' THEN 2 ELSE 3 END,
                 updated_at DESC, id DESC`,
     ),
@@ -749,21 +750,22 @@ export async function createComplexProject(payload: Record<string, unknown>, mem
   const d1 = await ensureComplexProjectsReady();
   const organization = clean(payload.organization, 120);
   const businessRound = Math.max(1, integer(payload.businessRound, 1));
-  const sourceType = clean(payload.sourceType, 30) === "external" ? "external" : "whizzup";
+  const sourceType = "whizzup";
+  const createAwardActivity = payload.createAwardActivity === true;
   if (!organization) throw new Error("공간재구조화 사업 기관을 선택해 주세요.");
-  const activity = sourceType === "whizzup" ? await d1.prepare(
+  const activity = await d1.prepare(
     `SELECT id, award_status FROM activities WHERE organization = ? AND business_round = ?
        AND award_status = '위즈업 수주'
      ORDER BY activity_date DESC, id DESC LIMIT 1`,
-  ).bind(organization, businessRound).first<{ id: number; award_status: string }>() : null;
-  if (sourceType === "whizzup" && !activity) {
+  ).bind(organization, businessRound).first<{ id: number; award_status: string }>();
+  if (!activity && !createAwardActivity) {
     throw new Error("위즈업 수주로 확정된 기관·사업 차수를 찾지 못했습니다.");
   }
   const existingSource = await d1.prepare(
     `SELECT id, source_type FROM complex_projects
      WHERE organization = ? AND business_round = ? LIMIT 1`,
   ).bind(organization, businessRound).first<{ id: number; source_type: string }>();
-  if (existingSource && clean(existingSource.source_type, 30) !== sourceType) {
+  if (existingSource && clean(existingSource.source_type, 30) !== sourceType && !createAwardActivity) {
     throw new Error("같은 기관·차수에 다른 출처의 공간재구조화 사업이 이미 있습니다. 기존 사업을 열어 확인해 주세요.");
   }
   const name = clean(payload.name, 160) || `${organization} 공간재구조화 사업`;
@@ -783,7 +785,65 @@ export async function createComplexProject(payload: Record<string, unknown>, mem
   }
   const managerName = requestedManager?.display_name || clean(payload.managerName, 120);
   let savedProjectId = 0;
+  let savedActivityId = Number(activity?.id ?? 0);
+  let createdActivity = false;
   await d1.transaction(async (transaction) => {
+    if (!savedActivityId) {
+      const totalBudget = nullableMoney(payload.totalBudget);
+      const activitySeedKey = `space-restructuring:${organization}:${businessRound}`.slice(0, 240);
+      const activityDate = koreaTodayValue();
+      const activityRecord = await transaction.prepare(
+        `INSERT INTO activities
+           (seed_key, activity_date, date_confidence, activity_type, category,
+            organization, business_round, budget_amount, budget_amount_mode,
+            budget_amount_override, topic, summary, status, status_manual,
+            award_status, award_company, execution_type, award_stage,
+            progress_manager, progress_manager_locked, follow_up_required,
+            source_chat, notes, updated_by_member_id, updated_by_name)
+         VALUES (?, ?, '확정', '기타', '공간재구조화', ?, ?, ?, 'manual', ?, ?, ?,
+                 '수주 전환', 1, '위즈업 수주', '위즈업', '직영', '일정 조율',
+                 ?, 0, 0, '공간재구조화 사업 직접 등록', ?, ?, ?)
+         ON CONFLICT(seed_key) DO UPDATE SET
+           activity_date = excluded.activity_date,
+           category = excluded.category,
+           budget_amount = CASE WHEN excluded.budget_amount <> '' THEN excluded.budget_amount ELSE activities.budget_amount END,
+           budget_amount_override = CASE WHEN excluded.budget_amount_override <> '' THEN excluded.budget_amount_override ELSE activities.budget_amount_override END,
+           topic = excluded.topic, summary = excluded.summary,
+           status = '수주 전환', status_manual = 1,
+           award_status = '위즈업 수주', award_company = '위즈업',
+           execution_type = '직영', award_stage = '일정 조율',
+           progress_manager = CASE WHEN excluded.progress_manager <> '' THEN excluded.progress_manager ELSE activities.progress_manager END,
+           source_chat = excluded.source_chat, notes = excluded.notes,
+           updated_by_member_id = excluded.updated_by_member_id,
+           updated_by_name = excluded.updated_by_name,
+           updated_at = CURRENT_TIMESTAMP
+         RETURNING id`,
+      ).bind(
+        activitySeedKey,
+        activityDate,
+        organization,
+        businessRound,
+        totalBudget === null ? "" : String(totalBudget),
+        totalBudget === null ? "" : String(totalBudget),
+        name,
+        "공간재구조화 사업 관리에서 위즈업 수주로 등록했습니다.",
+        managerName,
+        clean(payload.notes, 1000),
+        member.id,
+        member.displayName,
+      ).first<{ id: number }>();
+      savedActivityId = Number(activityRecord?.id ?? 0);
+      if (!savedActivityId) throw new Error("기관별 관리에 위즈업 수주 기록을 만들지 못했습니다.");
+      createdActivity = true;
+      await transaction.prepare(
+        `INSERT INTO activity_authors (activity_id, member_id, created_by_name, created_at)
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(activity_id) DO UPDATE SET
+           member_id = excluded.member_id,
+           created_by_name = excluded.created_by_name,
+           created_at = excluded.created_at`,
+      ).bind(savedActivityId, member.id, member.displayName).run();
+    }
     await transaction.prepare(
       `INSERT INTO complex_projects
          (organization, business_round, name, status, total_budget, source_type, source_award_status,
@@ -807,7 +867,7 @@ export async function createComplexProject(payload: Record<string, unknown>, mem
       clean(payload.status, 30) || "준비",
       nullableMoney(payload.totalBudget),
       sourceType,
-      sourceType === "whizzup" ? "위즈업 수주" : clean(payload.sourceAwardStatus, 40) || "외부 사업",
+      "위즈업 수주",
       requestedManager?.id ?? null,
       managerName,
       clean(payload.notes, 1000),
@@ -836,9 +896,16 @@ export async function createComplexProject(payload: Record<string, unknown>, mem
          hidden_at = '', updated_by = excluded.updated_by,
          updated_by_name = excluded.updated_by_name, updated_at = CURRENT_TIMESTAMP`,
     ).bind(organization, businessRound, name, member.id, member.displayName, member.id, member.displayName).run();
-    await writeEvent(transaction, project.id, "create_or_enable", { organization, businessRound, name, sourceType }, member);
+    await writeEvent(transaction, project.id, "create_or_enable", {
+      organization,
+      businessRound,
+      name,
+      sourceType,
+      activityId: savedActivityId,
+      createdActivity,
+    }, member);
   });
-  return { projectId: savedProjectId };
+  return { projectId: savedProjectId, activityId: savedActivityId, createdActivity };
 }
 
 export async function updateComplexProject(payload: Record<string, unknown>, member: Member) {

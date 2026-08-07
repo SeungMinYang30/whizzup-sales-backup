@@ -100,7 +100,7 @@ export default function ComplexProjectPage(props: {
   const [exportBusy, setExportBusy] = useState(false);
   const [comparisonMessage, setComparisonMessage] = useState("");
   const [candidateSearch, setCandidateSearch] = useState("");
-  const [createSourceType, setCreateSourceType] = useState<"whizzup" | "external">("whizzup");
+  const [createSourceType, setCreateSourceType] = useState<"existing" | "manual">("existing");
   const [candidates, setCandidates] = useState<Row[]>([]);
   const [candidateLoading, setCandidateLoading] = useState(false);
   const [selectedScope, setSelectedScope] = useState("");
@@ -176,7 +176,7 @@ export default function ComplexProjectPage(props: {
 
   useEffect(() => {
     const query = candidateSearch.trim();
-    if (!createOpen || createSourceType !== "whizzup" || query.replace(/\s+/g, "").length < 2) {
+    if (!createOpen || createSourceType !== "existing" || query.replace(/\s+/g, "").length < 2) {
       setCandidates([]);
       setCandidateLoading(false);
       return;
@@ -283,11 +283,11 @@ export default function ComplexProjectPage(props: {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const scope = selectedScope.split("\u001f");
-    const organization = createSourceType === "external"
-      ? String(form.get("externalOrganization") ?? "").trim()
+    const organization = createSourceType === "manual"
+      ? String(form.get("manualOrganization") ?? "").trim()
       : scope[0];
-    const businessRound = createSourceType === "external"
-      ? Math.max(1, Number(form.get("externalBusinessRound") || 1))
+    const businessRound = createSourceType === "manual"
+      ? Math.max(1, Number(form.get("manualBusinessRound") || 1))
       : Number(scope[1] || 1);
     if (!organization) {
       setMessage("검색 결과에서 기관과 사업 차수를 선택해 주세요.");
@@ -295,8 +295,8 @@ export default function ComplexProjectPage(props: {
     }
     const ok = await mutate({
       action: "create_project",
-      sourceType: createSourceType,
-      sourceAwardStatus: form.get("sourceAwardStatus"),
+      sourceType: "whizzup",
+      createAwardActivity: createSourceType === "manual",
       organization,
       businessRound,
       name: form.get("name"),
@@ -314,7 +314,7 @@ export default function ComplexProjectPage(props: {
       setCreateManagerId("");
       setCreateName("");
       setCreateTotalBudget("");
-      setCreateSourceType("whizzup");
+      setCreateSourceType("existing");
     }
   }
 
@@ -582,10 +582,10 @@ export default function ComplexProjectPage(props: {
         <form className="complex-inline-form" onSubmit={createProject}>
           <strong>기관의 공간재구조화 사업 활성화</strong>
           <div className="complex-source-switch wide" role="radiogroup" aria-label="공간재구조화 사업 출처">
-            <button type="button" role="radio" aria-checked={createSourceType === "whizzup"} className={createSourceType === "whizzup" ? "selected" : ""} onClick={() => { setCreateSourceType("whizzup"); setSelectedScope(""); setCreateName(""); setCreateTotalBudget(""); }}>위즈업 수주에서 선택</button>
-            <button type="button" role="radio" aria-checked={createSourceType === "external"} className={createSourceType === "external" ? "selected" : ""} onClick={() => { setCreateSourceType("external"); setSelectedScope(""); setCreateName(""); setCreateTotalBudget(""); setCandidates([]); }}>외부 사업 수기 등록</button>
+            <button type="button" role="radio" aria-checked={createSourceType === "existing"} className={createSourceType === "existing" ? "selected" : ""} onClick={() => { setCreateSourceType("existing"); setSelectedScope(""); setCreateName(""); setCreateTotalBudget(""); }}>기존 위즈업 수주에서 선택</button>
+            <button type="button" role="radio" aria-checked={createSourceType === "manual"} className={createSourceType === "manual" ? "selected" : ""} onClick={() => { setCreateSourceType("manual"); setSelectedScope(""); setCreateName(""); setCreateTotalBudget(""); setCandidates([]); }}>새 기관 위즈업 수주 등록</button>
           </div>
-          {createSourceType === "whizzup" ? <>
+          {createSourceType === "existing" ? <>
           <label className="wide">기관 검색
             <input
               value={candidateSearch}
@@ -625,10 +625,9 @@ export default function ComplexProjectPage(props: {
             {!candidateLoading && candidateSearch.replace(/\s+/g, "").length >= 2 && !candidates.length && <p>일치하는 기관·사업 차수가 없습니다.</p>}
           </div>
           </> : <>
-            <div className="complex-external-notice wide">협력사·타업체 수주를 위한 내부 일정·품목 관리입니다. 수금·수주 통계에는 포함되지 않습니다.</div>
-            <label>기관명<input name="externalOrganization" required placeholder="기관명" /></label>
-            <label>사업 차수<input name="externalBusinessRound" type="number" min="1" defaultValue="1" /></label>
-            <label>외부 수주 구분<select name="sourceAwardStatus" defaultValue="협력사 수주"><option>협력사 수주</option><option>타업체 수주</option><option>기타 외부 사업</option></select></label>
+            <div className="complex-external-notice wide">새 기관을 기관별 관리(수주 후)에 <b>위즈업 수주</b>로 함께 등록합니다. 수주·수금·회계·제품 통계의 동일 기관·사업 차수와 연결됩니다.</div>
+            <label>기관명<input name="manualOrganization" required placeholder="기관명" /></label>
+            <label>사업 차수<input name="manualBusinessRound" type="number" min="1" defaultValue="1" /></label>
           </>}
           <label>사업명<input name="name" value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="기관 선택 시 기존 사업 정보를 불러옵니다" /></label>
           <label>총 관리예산<input name="totalBudget" value={createTotalBudget} onChange={(event) => setCreateTotalBudget(event.target.value)} type="number" min="0" placeholder="기관 선택 시 기존 예산을 합산합니다" /></label>
@@ -639,7 +638,7 @@ export default function ComplexProjectPage(props: {
             </select>
           </label>
           <label className="wide">메모<textarea name="notes" rows={2} /></label>
-          <div className="complex-form-actions"><button type="button" onClick={() => setCreateOpen(false)}>취소</button><button className="primary" disabled={busy || (createSourceType === "whizzup" && !selectedScope)}>{busy ? "저장 중…" : "시작"}</button></div>
+          <div className="complex-form-actions"><button type="button" onClick={() => setCreateOpen(false)}>취소</button><button className="primary" disabled={busy || (createSourceType === "existing" && !selectedScope)}>{busy ? "저장 중…" : "시작"}</button></div>
         </form>
       )}
 

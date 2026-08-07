@@ -52,9 +52,13 @@ test("complex project activation uses searched institution rounds and approved s
   assert.match(store, /query\.replace\(\/\\s\+\/g, ""\)\.length < 2/);
   assert.match(store, /a\.award_status = '위즈업 수주'/);
   assert.doesNotMatch(store, /\)\s*\)\s*\), project_finance AS/);
-  assert.match(store, /clean\(payload\.sourceType, 30\) === "external"/);
-  assert.match(page, /외부 사업 수기 등록/);
-  assert.match(page, /수금·수주 통계에는 포함되지 않습니다/);
+  assert.match(store, /const sourceType = "whizzup"/);
+  assert.match(store, /INSERT INTO activities[\s\S]*'위즈업 수주'[\s\S]*'수주 전환'/);
+  assert.match(store, /ON CONFLICT\(seed_key\) DO UPDATE SET/);
+  assert.match(store, /INSERT INTO activity_authors/);
+  assert.match(page, /새 기관 위즈업 수주 등록/);
+  assert.match(page, /수주·수금·회계·제품 통계의 동일 기관·사업 차수와 연결됩니다/);
+  assert.doesNotMatch(page, /협력사·타업체 수주를 위한 내부 일정·품목 관리/);
   assert.match(store, /status = 'approved'/);
   assert.match(store, /is_sales = 1/);
   assert.match(store, /role = 'admin'/);
