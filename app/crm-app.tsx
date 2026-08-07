@@ -6356,6 +6356,8 @@ export default function CrmApp({
   const [sessionLoading, setSessionLoading] = useState(true);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [teamLoading, setTeamLoading] = useState(false);
+  const [cleanupMembersArmed, setCleanupMembersArmed] = useState(false);
+  const [cleanupMembersBusy, setCleanupMembersBusy] = useState(false);
   const [memberInviteEmail, setMemberInviteEmail] = useState("");
   const [memberInviteName, setMemberInviteName] = useState("");
   const [memberInviteSaving, setMemberInviteSaving] = useState(false);
@@ -12042,18 +12044,19 @@ export default function CrmApp({
   }
 
   async function cleanupLegacyMembers() {
-    const confirmed = window.confirm(
-      "대표 관리자(freeyang30@gmail.com)를 제외한 기존 로그인 계정을 모두 정리할까요?\n업무 기록의 작성자 이름은 보존되고 계정 원본은 복구용 보관함에 저장됩니다.",
-    );
-    if (!confirmed) return;
+    if (!cleanupMembersArmed || cleanupMembersBusy) return;
+    setCleanupMembersBusy(true);
     try {
       const response = await fetch("/api/members/cleanup", { method: "POST" });
       const payload = (await response.json()) as { deletedCount?: number; error?: string };
       if (!response.ok) throw new Error(payload.error || "기존 계정을 정리하지 못했습니다.");
       await Promise.all([loadTeam(), loadActivityReviewAssignees(), loadPresence()]);
+      setCleanupMembersArmed(false);
       setToast(`대표 관리자 외 기존 로그인 계정 ${Number(payload.deletedCount ?? 0)}개를 정리했습니다.`);
     } catch (caught) {
       setToast(caught instanceof Error ? caught.message : "기존 계정을 정리하지 못했습니다.");
+    } finally {
+      setCleanupMembersBusy(false);
     }
   }
 
@@ -16534,9 +16537,31 @@ export default function CrmApp({
                   </div>
                   <div className="member-header-actions">
                     {isOwner ? (
-                      <button className="cleanup-members" onClick={() => void cleanupLegacyMembers()}>
-                        기존 계정 정리
-                      </button>
+                      cleanupMembersArmed ? (
+                        <>
+                          <button
+                            className="cleanup-members"
+                            disabled={cleanupMembersBusy}
+                            onClick={() => void cleanupLegacyMembers()}
+                            title="업무 기록의 작성자 이름은 보존하고 로그인 계정만 정리합니다."
+                          >
+                            {cleanupMembersBusy ? "정리 중…" : "정말 정리"}
+                          </button>
+                          <button
+                            disabled={cleanupMembersBusy}
+                            onClick={() => setCleanupMembersArmed(false)}
+                          >
+                            취소
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="cleanup-members"
+                          onClick={() => setCleanupMembersArmed(true)}
+                        >
+                          기존 계정 정리
+                        </button>
+                      )
                     ) : null}
                     <button
                       onClick={() =>
