@@ -591,7 +591,7 @@ export default function ComplexProjectPage(props: {
                         <span className={`complex-state state-${String(item.schedule_state).replace(/\s/g, "-")}`}>{String(item.schedule_state)}</span>
                       </header>
                       <div className="complex-item-metrics">
-                        <span>기준 수량 <b>{numberValue(item.settlement_quantity).toLocaleString("ko-KR")}{String(item.unit)}</b>{numberValue(item.awarded_qty) < 1 && <small> · 원본 수량 미입력</small>}</span>
+                        <span>기준 수량 <b>{numberValue(item.settlement_quantity).toLocaleString("ko-KR")}{String(item.unit)}</b>{String(item.quantity_source) === "기본 수량" && <small> · 원본 수량 미입력</small>}</span>
                         <span>일정 배정 <b>{numberValue(item.planned_delivery_qty).toLocaleString("ko-KR")}{String(item.unit)}</b></span>
                         <span>완료 <b>{numberValue(item.completed_delivery_qty).toLocaleString("ko-KR")}{String(item.unit)}</b></span>
                         <span>금액 <b>{item.effective_unit_price === null ? "미입력" : money(item.item_amount)}</b>{item.unit_price_source === "제품 기준" && <small> · 제품 기준</small>}</span>

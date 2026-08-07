@@ -30,8 +30,11 @@ test("partial delivery changes stay linked to the schedule board and remain edit
   assert.match(store, /complex_delivery_id/);
   assert.match(store, /sync_status = 'pending', sync_operation = 'upsert'/);
   assert.match(store, /refreshOrganizationScheduleMirror/);
-  assert.match(store, /plannedQty < awardedQty[\s\S]*"수량 미배정"/);
-  assert.match(store, /plannedQty > awardedQty[\s\S]*"수량 초과"/);
+  assert.match(store, /plannedQty < settlementQuantity[\s\S]*"수량 미배정"/);
+  assert.match(store, /plannedQty > settlementQuantity[\s\S]*"수량 초과"/);
+  assert.match(store, /completedQty >= settlementQuantity[\s\S]*"납품 완료"/);
+  assert.match(store, /proposedQty > 0[\s\S]*"기관 품목 수량"[\s\S]*awardedQty > 0[\s\S]*"수주 수량"[\s\S]*installedQty > 0[\s\S]*"설치 수량"/);
+  assert.match(page, /String\(item\.quantity_source\) === "기본 수량"[\s\S]*원본 수량 미입력/);
   assert.match(store, /refreshDeliveredQuantity/);
   assert.match(page, /deliveryId: editDelivery\?\.id/);
   assert.match(page, />수정<\/button><button type="button" onClick=\{\(\) => void removeEntity\("delivery"/);

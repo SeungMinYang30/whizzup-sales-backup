@@ -498,11 +498,13 @@ export async function listComplexProjects() {
   const itemsByProject = new Map<number, Record<string, unknown>[]>();
   itemResult.results.forEach((row: Record<string, unknown>) => {
     const projectId = Number(row.complex_project_id);
+    const proposedQty = integer(row.proposed_qty);
     const awardedQty = integer(row.awarded_qty);
+    const installedQty = integer(row.installed_qty);
     const settlementQuantity = equipmentSettlementQuantity({
-      proposedQty: integer(row.proposed_qty),
+      proposedQty,
       awardedQty,
-      installedQty: integer(row.installed_qty),
+      installedQty,
     });
     const catalogId = clean(row.catalog_item_id, 160);
     const catalogProduct = catalogProducts.get(catalogId);
@@ -560,7 +562,14 @@ export async function listComplexProjects() {
       {
         ...row,
         settlement_quantity: settlementQuantity,
-        quantity_source: awardedQty > 0 ? "수주 수량" : "기존 품목 기본 수량",
+        quantity_source:
+          proposedQty > 0
+            ? "기관 품목 수량"
+            : awardedQty > 0
+              ? "수주 수량"
+              : installedQty > 0
+                ? "설치 수량"
+                : "기본 수량",
         effective_unit_price: effectiveUnitPrice,
         unit_price_source:
           storedUnitPrice !== null && (storedUnitPrice > 0 || keepsZeroPrice)
@@ -577,11 +586,11 @@ export async function listComplexProjects() {
         completed_delivery_qty: completedQty,
         schedule_state: !activeDeliveries.some((entry) => clean(entry.start_date))
           ? "일정 미정"
-          : plannedQty < awardedQty
+          : plannedQty < settlementQuantity
             ? "수량 미배정"
-            : plannedQty > awardedQty
+            : plannedQty > settlementQuantity
               ? "수량 초과"
-              : completedQty >= awardedQty && awardedQty > 0
+              : completedQty >= settlementQuantity
                 ? "납품 완료"
                 : "일정 등록",
       },
