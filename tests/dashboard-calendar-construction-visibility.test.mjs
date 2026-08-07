@@ -75,6 +75,8 @@ test("대시보드 시공 현황과 일정표는 같은 조회 결과를 공유�
     (constructionPage.match(/resilientFetch\("\/api\/schedules\?scope=construction-board"/g) ?? []).length,
     1,
   );
+  assert.match(constructionPage, /retries: 2/);
+  assert.match(constructionPage, /window\.setTimeout\(\(\) => void load\(\), 8_000\)/);
   assert.match(constructionPage, /onDashboardCounts\(projects\.filter/);
 });
 

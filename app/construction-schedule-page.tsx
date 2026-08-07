@@ -151,7 +151,7 @@ export default function ConstructionSchedulePage({
         // Supabase can need more than 15 seconds to wake a cold pooled
         // connection. Do not abort a healthy board response and show 0 rows.
         timeoutMs: 45_000,
-        retries: 0,
+        retries: 2,
       });
       const payload = (await response.json()) as {
         projects?: ConstructionProject[];
@@ -170,7 +170,11 @@ export default function ConstructionSchedulePage({
   }
 
   useEffect(() => {
-    void load();
+    // Records and the visible calendar are the first dashboard priority.
+    // Start this larger board query after those requests have checked out and
+    // returned their pooled database connections.
+    const timer = window.setTimeout(() => void load(), 8_000);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
