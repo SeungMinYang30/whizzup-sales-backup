@@ -140,6 +140,14 @@ async function schemaVersionExists(executor: QueryExecutor, version: string) {
   return current.length > 0;
 }
 
+async function schemaRelationExists(executor: QueryExecutor, relation: string) {
+  const rows = (await executor.unsafe(
+    "SELECT to_regclass($1)::text AS relation_name",
+    [relation],
+  )) as QueryRow[];
+  return Boolean(rows[0]?.relation_name);
+}
+
 function schemaVersionIsCurrent(executor: QueryExecutor) {
   return schemaVersionExists(executor, VERCEL_SCHEMA_VERSION);
 }
@@ -173,8 +181,12 @@ async function reconcileVercelSchema() {
               transaction as unknown as QueryExecutor,
               VERCEL_PREVIOUS_SCHEMA_VERSION,
             );
+            const complexProjectSchemaIsReady = await schemaRelationExists(
+              transaction as unknown as QueryExecutor,
+              "public.complex_projects",
+            );
             await transaction.unsafe(
-              previousSchemaIsReady
+              previousSchemaIsReady || complexProjectSchemaIsReady
                 ? VERCEL_LOCAL_AUTH_SCHEMA_SQL
                 : baseSchemaIsReady
                 ? VERCEL_INCREMENTAL_SCHEMA_SQL
