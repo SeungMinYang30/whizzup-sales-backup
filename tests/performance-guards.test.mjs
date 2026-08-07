@@ -115,6 +115,8 @@ test("Vercel 함수는 작은 연결 풀을 쓰고 연결 용량 오류를 자�
   assert.match(databaseSource, /max:\s*1/);
   assert.match(databaseSource, /idle_timeout:\s*2/);
   assert.match(databaseSource, /isDatabaseUnavailableError\(error\)[\s\S]*recycleSqlClient\(sql\)[\s\S]*throw error/);
+  assert.match(databaseSource, /pg_try_advisory_xact_lock/);
+  assert.match(databaseSource, /if \(!lock\[0\]\?\.acquired\) return/);
   assert.match(vercelSchemaSource, /complex_project_budget_backfill/);
 });
 

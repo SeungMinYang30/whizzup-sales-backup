@@ -168,7 +168,14 @@ async function reconcileVercelSchema() {
             return;
           }
           await sql.begin(async (transaction) => {
-            await transaction.unsafe("SELECT pg_advisory_xact_lock(7053990602)");
+            const lock = (await transaction.unsafe(
+              "SELECT pg_try_advisory_xact_lock(7053990602) AS acquired",
+            )) as QueryRow[];
+            // Every API route can cold-start at the same time after a deploy.
+            // Only one request should run the idempotent migration; the rest
+            // must keep serving against the already-compatible schema instead
+            // of occupying every Supabase transaction-pool connection.
+            if (!lock[0]?.acquired) return;
             if (
               await schemaVersionIsCurrent(
                 transaction as unknown as QueryExecutor,
