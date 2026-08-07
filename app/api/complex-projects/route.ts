@@ -57,7 +57,7 @@ export async function POST(request: Request) {
                   ? await deleteComplexEntity(payload, member)
                   : null;
     if (!result) {
-      return Response.json({ error: "복합사업 작업을 확인해 주세요." }, { status: 400 });
+      return Response.json({ error: "공간재구조화 사업 작업을 확인해 주세요." }, { status: 400 });
     }
     return Response.json({ ok: true, ...result });
   } catch (error) {

@@ -2,6 +2,7 @@
 
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { resilientFetch } from "./resilient-fetch";
+import { downloadComplexProjectWorkbook } from "./complex-project-xlsx";
 
 type Row = Record<string, unknown>;
 type ComplexProject = Row & {
@@ -96,6 +97,7 @@ export default function ComplexProjectPage(props: {
   const [comparisonItem, setComparisonItem] = useState<Row | null>(null);
   const [comparisonDocuments, setComparisonDocuments] = useState<ComparisonDocument[]>([]);
   const [comparisonBusy, setComparisonBusy] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
   const [comparisonMessage, setComparisonMessage] = useState("");
   const [candidateSearch, setCandidateSearch] = useState("");
   const [createSourceType, setCreateSourceType] = useState<"whizzup" | "external">("whizzup");
@@ -119,7 +121,7 @@ export default function ComplexProjectPage(props: {
         retries: 0,
       });
       const body = await readJson<Payload & { error?: string }>(response);
-      if (!response.ok) throw new Error(body.error || "복합사업을 불러오지 못했습니다.");
+      if (!response.ok) throw new Error(body.error || "공간재구조화 사업을 불러오지 못했습니다.");
       setData(body);
       setSelectedId((current) => {
         if (current && body.projects.some((project) => Number(project.id) === current)) return current;
@@ -127,7 +129,7 @@ export default function ComplexProjectPage(props: {
       });
       setMessage("");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "복합사업을 불러오지 못했습니다.");
+      setMessage(error instanceof Error ? error.message : "공간재구조화 사업을 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
@@ -169,7 +171,7 @@ export default function ComplexProjectPage(props: {
     setSelectedId(Number(existing.id));
     setCreateOpen(false);
     setDetailTarget(null);
-    setMessage("이미 활성화된 복합사업을 열었습니다.");
+    setMessage("이미 활성화된 공간재구조화 사업을 열었습니다.");
   }, [data.projects, detailTarget, loading]);
 
   useEffect(() => {
@@ -216,7 +218,7 @@ export default function ComplexProjectPage(props: {
   const applyCandidateDefaults = useCallback((candidate: Row) => {
     const scope = `${candidate.organization}\u001f${candidate.business_round}`;
     setSelectedScope(scope);
-    setCreateName(String(candidate.suggested_name || `${candidate.organization} 복합사업`));
+    setCreateName(String(candidate.suggested_name || `${candidate.organization} 공간재구조화 사업`));
     setCreateTotalBudget(numberValue(candidate.suggested_total_budget)
       ? String(numberValue(candidate.suggested_total_budget))
       : "");
@@ -302,7 +304,7 @@ export default function ComplexProjectPage(props: {
       totalBudget: form.get("totalBudget"),
       managerMemberId: createManagerId,
       notes: form.get("notes"),
-    }, "복합사업을 시작했습니다.");
+    }, "공간재구조화 사업을 시작했습니다.");
     if (ok) {
       if (numberValue(ok.projectId)) setSelectedId(numberValue(ok.projectId));
       setCreateOpen(false);
@@ -328,7 +330,7 @@ export default function ComplexProjectPage(props: {
       totalBudget: form.get("totalBudget"),
       managerMemberId: form.get("managerMemberId"),
       notes: form.get("notes"),
-    }, "복합사업 기본 정보를 저장했습니다.");
+    }, "공간재구조화 사업 기본 정보를 저장했습니다.");
   }
 
   async function addBudget(event: FormEvent<HTMLFormElement>) {
@@ -537,13 +539,28 @@ export default function ComplexProjectPage(props: {
   async function cancelProject() {
     if (!selected) return;
     const reason = window.prompt(
-      "복합사업 연결을 취소합니다. 기관 상세·예산·품목·수주 기록은 삭제되지 않습니다.\n취소 사유를 입력해 주세요.",
+      "공간재구조화 사업 연결을 취소합니다. 기관 상세·예산·품목·수주 기록은 삭제되지 않습니다.\n취소 사유를 입력해 주세요.",
       "",
     );
     if (reason === null) return;
-    if (!window.confirm("복합사업을 취소하시겠습니까? 원본 기관 기록과 회계·통계 자료는 그대로 유지됩니다.")) return;
-    const ok = await mutate({ action: "cancel_project", projectId: selected.id, reason }, "복합사업을 취소했습니다.");
+    if (!window.confirm("공간재구조화 사업을 취소하시겠습니까? 원본 기관 기록과 회계·통계 자료는 그대로 유지됩니다.")) return;
+    const ok = await mutate({ action: "cancel_project", projectId: selected.id, reason }, "공간재구조화 사업을 취소했습니다.");
     if (ok) setSelectedId(null);
+  }
+
+  async function exportProjectWorkbook() {
+    if (!selected || exportBusy) return;
+    setExportBusy(true);
+    setMessage("");
+    try {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      downloadComplexProjectWorkbook(selected);
+      setMessage("현재 기관 자료로 공간재구조화 사업 관리대장을 만들었습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "엑셀을 만들지 못했습니다.");
+    } finally {
+      setExportBusy(false);
+    }
   }
 
   return (
@@ -551,11 +568,11 @@ export default function ComplexProjectPage(props: {
       <header className="complex-page-header">
         <div>
           <span className="section-kicker">LARGE · COMPLEX PROJECT</span>
-          <h2>복합사업 관리</h2>
+          <h2>공간재구조화 사업 관리</h2>
           <p>큰 사업의 여러 예산·공간·품목·분할 납품·영업보호를 한 화면에서 관리합니다.</p>
         </div>
         <button type="button" className="primary" onClick={() => setCreateOpen((open) => !open)}>
-          + 복합사업 시작
+          + 공간재구조화 사업 시작
         </button>
       </header>
 
@@ -563,8 +580,8 @@ export default function ComplexProjectPage(props: {
 
       {createOpen && (
         <form className="complex-inline-form" onSubmit={createProject}>
-          <strong>기관의 복합사업 활성화</strong>
-          <div className="complex-source-switch wide" role="radiogroup" aria-label="복합사업 출처">
+          <strong>기관의 공간재구조화 사업 활성화</strong>
+          <div className="complex-source-switch wide" role="radiogroup" aria-label="공간재구조화 사업 출처">
             <button type="button" role="radio" aria-checked={createSourceType === "whizzup"} className={createSourceType === "whizzup" ? "selected" : ""} onClick={() => { setCreateSourceType("whizzup"); setSelectedScope(""); setCreateName(""); setCreateTotalBudget(""); }}>위즈업 수주에서 선택</button>
             <button type="button" role="radio" aria-checked={createSourceType === "external"} className={createSourceType === "external" ? "selected" : ""} onClick={() => { setCreateSourceType("external"); setSelectedScope(""); setCreateName(""); setCreateTotalBudget(""); setCandidates([]); }}>외부 사업 수기 등록</button>
           </div>
@@ -583,7 +600,7 @@ export default function ComplexProjectPage(props: {
             />
             <small>{candidateLoading ? "기관을 검색하는 중입니다." : candidateSearch.replace(/\s+/g, "").length < 2 ? "두 글자부터 검색합니다." : `${candidates.length}개 후보`}</small>
           </label>
-          <div className="complex-candidate-results wide" role="listbox" aria-label="복합사업 기관 검색 결과">
+          <div className="complex-candidate-results wide" role="listbox" aria-label="공간재구조화 사업 기관 검색 결과">
             {candidates.map((candidate) => {
               const scope = `${candidate.organization}\u001f${candidate.business_round}`;
               const active = numberValue(candidate.complex_project_id) > 0;
@@ -595,7 +612,7 @@ export default function ComplexProjectPage(props: {
                   if (active) {
                     setSelectedId(numberValue(candidate.complex_project_id));
                     setCreateOpen(false);
-                    setMessage("이미 활성화된 복합사업을 열었습니다.");
+                    setMessage("이미 활성화된 공간재구조화 사업을 열었습니다.");
                     return;
                   }
                   applyCandidateDefaults(candidate);
@@ -627,7 +644,7 @@ export default function ComplexProjectPage(props: {
       )}
 
       <div className="complex-workspace">
-        <aside className="complex-project-list" aria-label="복합사업 목록">
+        <aside className="complex-project-list" aria-label="공간재구조화 사업 목록">
           {data.projects.map((project) => (
             <button type="button" className={selectedId === Number(project.id) ? "active" : ""} key={project.id} onClick={() => setSelectedId(Number(project.id))}>
               <span><b>{project.name}</b><small>{project.organization} · {numberValue(project.business_round)}차</small><small>{project.source_type === "external" ? `${project.source_award_status} · 통계 제외` : "위즈업 수주 연결"}</small></span>
@@ -640,15 +657,15 @@ export default function ComplexProjectPage(props: {
               </span>
             </button>
           ))}
-          {!loading && data.projects.length === 0 && <p className="empty-state">아직 활성화한 복합사업이 없습니다.</p>}
+          {!loading && data.projects.length === 0 && <p className="empty-state">아직 활성화한 공간재구조화 사업이 없습니다.</p>}
         </aside>
 
         <div className="complex-project-detail">
-          {loading ? <div className="empty-state">복합사업을 불러오는 중입니다.</div> : selected ? (
+          {loading ? <div className="empty-state">공간재구조화 사업을 불러오는 중입니다.</div> : selected ? (
             <>
               <div className="complex-detail-heading">
                 <div><h3>{selected.name}</h3><p>{selected.organization} · {numberValue(selected.business_round)}차 사업 · {selected.source_type === "external" ? `${selected.source_award_status}(통계 제외)` : "위즈업 수주"}</p></div>
-                <div className="complex-heading-actions"><button type="button" onClick={() => props.onOpenOrganization?.(selected.organization, numberValue(selected.business_round))}>기관 상세 보기</button><button type="button" className="danger" onClick={() => void cancelProject()}>복합사업 취소</button></div>
+                <div className="complex-heading-actions"><button type="button" onClick={() => props.onOpenOrganization?.(selected.organization, numberValue(selected.business_round))}>기관 상세 보기</button><button type="button" disabled={exportBusy} onClick={() => void exportProjectWorkbook()}>{exportBusy ? "엑셀 생성 중…" : "엑셀 내보내기"}</button><button type="button" className="danger" onClick={() => void cancelProject()}>공간재구조화 사업 취소</button></div>
               </div>
 
               <div className="complex-summary-grid">
@@ -744,7 +761,7 @@ export default function ComplexProjectPage(props: {
                 </div>
               </section>
             </>
-          ) : <div className="empty-state">왼쪽에서 복합사업을 선택해 주세요.</div>}
+          ) : <div className="empty-state">왼쪽에서 공간재구조화 사업을 선택해 주세요.</div>}
         </div>
       </div>
 

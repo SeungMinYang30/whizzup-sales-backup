@@ -1619,7 +1619,7 @@ const emptyForm: FormState = {
 const navItems: { id: View; label: string; mark: string }[] = [
   { id: "dashboard", label: "대시보드", mark: "D" },
   { id: "budget-institutions", label: "예산별 기관", mark: "B" },
-  { id: "complex-projects", label: "복합사업 관리", mark: "X" },
+  { id: "complex-projects", label: "공간재구조화 사업 관리", mark: "X" },
   { id: "followup", label: "기관별 관리(수주 전)", mark: "F" },
   { id: "awards", label: "기관별 관리(수주 후)", mark: "W" },
   { id: "vendors", label: "협력사 관리", mark: "V" },
@@ -1630,7 +1630,7 @@ const navItems: { id: View; label: string; mark: string }[] = [
 const presenceViewLabels: Record<View, string> = {
   dashboard: "대시보드",
   "budget-institutions": "예산별 기관",
-  "complex-projects": "복합사업 관리",
+  "complex-projects": "공간재구조화 사업 관리",
   records: "영업 기록",
   followup: "기관별 관리(수주 전)",
   schedules: "일정",
@@ -15022,7 +15022,7 @@ export default function CrmApp({
       : view === "budget-institutions"
         ? "예산별 기관"
         : view === "complex-projects"
-          ? "복합사업 관리"
+          ? "공간재구조화 사업 관리"
         : view === "records"
         ? teamPeriodDays === "all"
           ? "팀 업무 현황"
@@ -19806,10 +19806,10 @@ export default function CrmApp({
                     void selectView("complex-projects");
                   }}
                 >
-                  복합사업으로 관리
+                  공간재구조화 사업으로 관리
                 </button>
                 <small>
-                  현재 기관의 {selectedDetailBusinessRound}차 사업을 활성화하거나 기존 복합사업을 엽니다.
+                  현재 기관의 {selectedDetailBusinessRound}차 사업을 활성화하거나 기존 공간재구조화 사업을 엽니다.
                 </small>
               </div>
               <JointProjectSummary

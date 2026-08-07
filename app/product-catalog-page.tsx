@@ -1803,7 +1803,7 @@ export default function ProductCatalogPage({
               <div>
                 <span className="section-kicker">PRODUCT COMPARISON</span>
                 <h3 id="product-comparison-title">물품 비교표</h3>
-                <p>{comparisonProduct.name}에 연결된 자료는 복합사업 품목에서도 함께 사용됩니다.</p>
+                <p>{comparisonProduct.name}에 연결된 자료는 공간재구조화 사업 품목에서도 함께 사용됩니다.</p>
               </div>
               <button
                 type="button"

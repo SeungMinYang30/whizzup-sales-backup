@@ -253,7 +253,7 @@ async function writeEvent(
 async function requireProject(d1: ReturnType<typeof getD1>, projectId: number) {
   const project = await d1.prepare("SELECT * FROM complex_projects WHERE id = ? AND active = 1")
     .bind(projectId).first<Record<string, unknown>>();
-  if (!project) throw new Error("복합사업을 찾지 못했습니다.");
+  if (!project) throw new Error("공간재구조화 사업을 찾지 못했습니다.");
   return project;
 }
 
@@ -733,7 +733,7 @@ export async function searchComplexProjectCandidates(value: unknown) {
       ? topic
       : budgetNames && !budgetNames.includes(" · ")
         ? `${organization} ${budgetNames} 사업`
-        : `${organization} 복합사업`;
+        : `${organization} 공간재구조화 사업`;
     return {
       ...row,
       suggested_name: suggestedName,
@@ -750,7 +750,7 @@ export async function createComplexProject(payload: Record<string, unknown>, mem
   const organization = clean(payload.organization, 120);
   const businessRound = Math.max(1, integer(payload.businessRound, 1));
   const sourceType = clean(payload.sourceType, 30) === "external" ? "external" : "whizzup";
-  if (!organization) throw new Error("복합사업 기관을 선택해 주세요.");
+  if (!organization) throw new Error("공간재구조화 사업 기관을 선택해 주세요.");
   const activity = sourceType === "whizzup" ? await d1.prepare(
     `SELECT id, award_status FROM activities WHERE organization = ? AND business_round = ?
        AND award_status = '위즈업 수주'
@@ -764,9 +764,9 @@ export async function createComplexProject(payload: Record<string, unknown>, mem
      WHERE organization = ? AND business_round = ? LIMIT 1`,
   ).bind(organization, businessRound).first<{ id: number; source_type: string }>();
   if (existingSource && clean(existingSource.source_type, 30) !== sourceType) {
-    throw new Error("같은 기관·차수에 다른 출처의 복합사업이 이미 있습니다. 기존 사업을 열어 확인해 주세요.");
+    throw new Error("같은 기관·차수에 다른 출처의 공간재구조화 사업이 이미 있습니다. 기존 사업을 열어 확인해 주세요.");
   }
-  const name = clean(payload.name, 160) || `${organization} 복합사업`;
+  const name = clean(payload.name, 160) || `${organization} 공간재구조화 사업`;
   const requestedManagerId = integer(payload.managerMemberId) || null;
   const requestedManager = requestedManagerId
     ? await d1.prepare(
@@ -819,7 +819,7 @@ export async function createComplexProject(payload: Record<string, unknown>, mem
     const project = await transaction.prepare(
       "SELECT id FROM complex_projects WHERE organization = ? AND business_round = ?",
     ).bind(organization, businessRound).first<{ id: number }>();
-    if (!project) throw new Error("복합사업을 저장하지 못했습니다.");
+    if (!project) throw new Error("공간재구조화 사업을 저장하지 못했습니다.");
     savedProjectId = Number(project.id);
     await syncBudgetLinks(transaction, project.id);
     await transaction.prepare(
@@ -1039,7 +1039,7 @@ export async function saveComplexItem(payload: Record<string, unknown>, member: 
        JOIN complex_project_budget_links link ON link.equipment_project_id = item.project_id
        WHERE item.id = ? AND link.complex_project_id = ?`,
     ).bind(itemId, projectId).first<{ equipment_item_id: number }>();
-    if (!linkedItem) throw new Error("수정할 복합사업 품목을 찾지 못했습니다.");
+    if (!linkedItem) throw new Error("수정할 공간재구조화 사업 품목을 찾지 못했습니다.");
     await transaction.prepare(
       `UPDATE equipment_items SET project_id = ?, product_name = ?, specification = ?, proposed_qty = ?, awarded_qty = ?,
        installed_qty = ?, unit = ?, status = ?, notes = ?, catalog_unit_price = ?, price_status = ?,

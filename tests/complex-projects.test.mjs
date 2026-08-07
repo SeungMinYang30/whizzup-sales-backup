@@ -17,7 +17,7 @@ test("complex projects reuse canonical budgets and items across accounting and a
   assert.match(store, /linkBudgetNameEntity/);
   assert.match(store, /INSERT OR IGNORE INTO complex_project_item_details[\s\S]*JOIN equipment_items item/);
   assert.match(page, /기존 표준 예산과 품목 카드를 그대로 사용해 통계·회계 이중 집계를 막습니다/);
-  assert.match(crm, /id: "complex-projects", label: "복합사업 관리"/);
+  assert.match(crm, /id: "complex-projects", label: "공간재구조화 사업 관리"/);
 });
 
 test("partial delivery changes stay linked to the schedule board and remain editable", async () => {
@@ -63,7 +63,7 @@ test("complex project activation uses searched institution rounds and approved s
   assert.match(store, /ELSE construction_schedule_projects\.work_summary/);
   assert.match(page, /두 글자부터 검색합니다/);
   assert.match(page, /whizzup\.complexProjectTarget/);
-  assert.match(crm, /복합사업으로 관리/);
+  assert.match(crm, /공간재구조화 사업으로 관리/);
   assert.match(crm, /operationScope: "pre_awards"/);
   assert.match(crm, /attempt <= 2/);
   assert.match(records, /existingActivityChangeItemIds/);
@@ -88,7 +88,7 @@ test("complex project activation carries existing budgets items and financial to
   assert.match(store, /supplier_display_name/);
   assert.match(page, /원본 수량 미입력/);
   assert.match(page, /제품 기준/);
-  assert.match(page, /복합사업 취소/);
+  assert.match(page, /공간재구조화 사업 취소/);
   assert.match(page, /연결 품목 금액/);
   assert.match(page, /연결 공사비/);
 });
@@ -161,6 +161,27 @@ test("complex project items always expose shared comparison-document management"
   assert.match(page, /uploadComparisonDocument/);
   assert.match(page, /deleteComparisonDocument/);
   assert.match(route, /PDF, Excel 또는 Word 비교표/);
+});
+
+test("space restructuring projects export the selected institution data to a styled workbook", async () => {
+  const [page, workbook] = await Promise.all([
+    read("../app/complex-project-page.tsx"),
+    read("../app/complex-project-xlsx.ts"),
+  ]);
+
+  assert.match(page, /downloadComplexProjectWorkbook\(selected\)/);
+  assert.match(page, /엑셀 내보내기/);
+  assert.match(workbook, /집행계획 총괄/);
+  assert.match(workbook, /예산별 집행/);
+  assert.match(workbook, /공간·품목/);
+  assert.match(workbook, /물품선정표/);
+  assert.match(workbook, /분할 납품 일정/);
+  assert.match(workbook, /영업보호 현황/);
+  assert.match(workbook, /fullCalcOnLoad="1"/);
+  assert.match(workbook, /Print_Area/);
+  assert.match(workbook, /fitToWidth="1"/);
+  assert.match(workbook, /project\.items\.flatMap/);
+  assert.match(workbook, /item\.deliveries/);
 });
 
 test("merge and full backup preserve every complex-project relation", async () => {

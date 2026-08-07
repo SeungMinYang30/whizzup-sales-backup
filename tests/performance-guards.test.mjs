@@ -130,7 +130,7 @@ test("사용자 접속 상태 확인은 중복 요청 없이 저빈도로 갱신
   assert.match(crmSource, /window\.setInterval\(refresh, 60_000\)/);
 });
 
-test("복합사업 출처 인덱스는 기존 테이블에 컬럼을 추가한 뒤 생성한다", () => {
+test("공간재구조화 사업 출처 인덱스는 기존 테이블에 컬럼을 추가한 뒤 생성한다", () => {
   const fullStart = vercelSchemaSource.indexOf("export const VERCEL_SCHEMA_SQL");
   const incrementalStart = vercelSchemaSource.indexOf("export const VERCEL_INCREMENTAL_SCHEMA_SQL");
   const blocks = [
