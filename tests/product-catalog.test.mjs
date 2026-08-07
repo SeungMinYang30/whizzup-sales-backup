@@ -161,10 +161,15 @@ test("product comparison documents are attached once and reused by complex proje
     new URL("../lib/complex-projects.ts", import.meta.url),
     "utf8",
   );
+  const styles = readFileSync(
+    new URL("../app/globals.css", import.meta.url),
+    "utf8",
+  );
   assert.match(route, /product_id, original_name, object_key/);
   assert.match(route, /PDF, Excel 또는 Word 비교표/);
   assert.match(catalog, /물품 비교표/);
   assert.match(catalog, /product-comparison-documents\?id=/);
   assert.match(complex, /comparisonDocumentCounts/);
   assert.match(complex, /comparison_document_key: comparisonDocumentKey/);
+  assert.match(styles, /\.product-edit-button,\s*\.product-comparison-button/);
 });

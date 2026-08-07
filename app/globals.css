@@ -6496,7 +6496,8 @@ tr:hover .row-actions { opacity: 1; }
 .product-order-buttons button:hover:not(:disabled) { border-color: #9eaded; background: #f5f7ff; color: #3652a4; }
 .product-order-buttons button:disabled { opacity: .35; cursor: default; }
 
-.product-edit-button {
+.product-edit-button,
+.product-comparison-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -6512,7 +6513,8 @@ tr:hover .row-actions { opacity: 1; }
   cursor: pointer;
 }
 
-.product-edit-button:hover {
+.product-edit-button:hover,
+.product-comparison-button:hover {
   border-color: #9eaded;
   background: #f5f7ff;
 }
