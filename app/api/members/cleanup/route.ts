@@ -18,65 +18,134 @@ export async function POST() {
       );
     }
     const d1 = await ensureCollaborationReady();
-    const result = await d1.transaction(async (tx) => {
-      const targets = await tx
-        .prepare(
-          `SELECT * FROM members
-           WHERE lower(email) <> lower(?) AND id <> ?
-           ORDER BY id`,
-        )
-        .bind(OWNER_EMAIL, actor.id)
-        .all<Record<string, unknown>>();
-      if (!targets.results.length) return { deletedCount: 0, names: [] as string[] };
-      const targetIds = targets.results.map((row) => Number(row.id));
-      for (const row of targets.results) {
-        const archivedRow = { ...row };
-        delete archivedRow.password_hash;
-        delete archivedRow.password_salt;
-        await tx
-          .prepare(
-            `INSERT INTO member_account_archives
+    // Keep this as one database round trip. The previous per-table batch held a
+    // scarce Supabase pool connection long enough for Vercel requests to time
+    // out when the site was busy.
+    const result = await d1
+      .prepare(
+        `WITH
+         params AS (
+           SELECT ?::bigint AS actor_id, lower(?)::text AS owner_email
+         ),
+         targets AS MATERIALIZED (
+           SELECT m.*
+           FROM members m, params p
+           WHERE lower(m.email) <> p.owner_email AND m.id <> p.actor_id
+         ),
+         archived AS (
+           INSERT INTO member_account_archives
              (original_member_id, member_json, archived_by, archived_at)
-             VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
-          )
-          .bind(Number(row.id), JSON.stringify(archivedRow), actor.id)
-          .run();
-      }
-      const placeholders = targetIds.map(() => "?").join(", ");
-      const withActor = [actor.id, ...targetIds];
-      const onlyTargets = [...targetIds];
-      await tx.batch([
-        tx.prepare(`UPDATE members SET approved_by = ? WHERE approved_by IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`UPDATE activity_authors SET member_id = NULL WHERE member_id IN (${placeholders})`).bind(...onlyTargets),
-        tx.prepare(`UPDATE activity_assignment_history SET to_member_id = ? WHERE to_member_id IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`UPDATE activity_assignment_history SET changed_by_member_id = ? WHERE changed_by_member_id IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`UPDATE activity_change_batches SET actor_member_id = ? WHERE actor_member_id IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`UPDATE activity_change_batches SET undone_by_member_id = ? WHERE undone_by_member_id IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`UPDATE activity_change_items SET undone_by_member_id = ? WHERE undone_by_member_id IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`UPDATE ai_recommendations SET created_by = ? WHERE created_by IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`UPDATE oauth_clients SET created_by = ? WHERE created_by IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`UPDATE app_settings SET updated_by = ? WHERE updated_by IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`UPDATE api_credentials SET updated_by = ? WHERE updated_by IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`UPDATE organization_locations SET updated_by = ? WHERE updated_by IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`UPDATE sales_campaigns SET created_by = ? WHERE created_by IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`UPDATE sales_campaign_targets SET assigned_member_id = NULL WHERE assigned_member_id IN (${placeholders})`).bind(...onlyTargets),
-        tx.prepare(`UPDATE equipment_projects SET created_by = ? WHERE created_by IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`UPDATE complex_projects SET manager_member_id = NULL WHERE manager_member_id IN (${placeholders})`).bind(...onlyTargets),
-        tx.prepare(`UPDATE complex_projects SET created_by = ? WHERE created_by IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`UPDATE complex_projects SET updated_by = ? WHERE updated_by IN (${placeholders})`).bind(...withActor),
-        tx.prepare(`DELETE FROM manager_alert_acknowledgements WHERE member_id IN (${placeholders})`).bind(...onlyTargets),
-        tx.prepare(`DELETE FROM activity_review_acknowledgements WHERE member_id IN (${placeholders})`).bind(...onlyTargets),
-        tx.prepare(`DELETE FROM oauth_codes WHERE member_id IN (${placeholders})`).bind(...onlyTargets),
-        tx.prepare(`DELETE FROM oauth_tokens WHERE member_id IN (${placeholders})`).bind(...onlyTargets),
-        tx.prepare(`DELETE FROM local_auth_sessions WHERE member_id IN (${placeholders})`).bind(...onlyTargets),
-        tx.prepare(`DELETE FROM members WHERE id IN (${placeholders})`).bind(...onlyTargets),
-      ]);
-      return {
-        deletedCount: targets.results.length,
-        names: targets.results.map((row) => String(row.display_name ?? row.email)),
-      };
+           SELECT t.id,
+                  ((to_jsonb(t) - 'password_hash') - 'password_salt')::text,
+                  p.actor_id,
+                  CURRENT_TIMESTAMP
+           FROM targets t CROSS JOIN params p
+           RETURNING original_member_id
+         ),
+         update_member_approvers AS (
+           UPDATE members SET approved_by = (SELECT actor_id FROM params)
+           WHERE approved_by IN (SELECT id FROM targets) RETURNING id
+         ),
+         update_activity_authors AS (
+           UPDATE activity_authors SET member_id = NULL
+           WHERE member_id IN (SELECT id FROM targets) RETURNING id
+         ),
+         update_assignment_targets AS (
+           UPDATE activity_assignment_history SET to_member_id = (SELECT actor_id FROM params)
+           WHERE to_member_id IN (SELECT id FROM targets) RETURNING id
+         ),
+         update_assignment_actors AS (
+           UPDATE activity_assignment_history SET changed_by_member_id = (SELECT actor_id FROM params)
+           WHERE changed_by_member_id IN (SELECT id FROM targets) RETURNING id
+         ),
+         update_batch_actors AS (
+           UPDATE activity_change_batches SET actor_member_id = (SELECT actor_id FROM params)
+           WHERE actor_member_id IN (SELECT id FROM targets) RETURNING id
+         ),
+         update_batch_undo AS (
+           UPDATE activity_change_batches SET undone_by_member_id = (SELECT actor_id FROM params)
+           WHERE undone_by_member_id IN (SELECT id FROM targets) RETURNING id
+         ),
+         update_item_undo AS (
+           UPDATE activity_change_items SET undone_by_member_id = (SELECT actor_id FROM params)
+           WHERE undone_by_member_id IN (SELECT id FROM targets) RETURNING id
+         ),
+         update_ai AS (
+           UPDATE ai_recommendations SET created_by = (SELECT actor_id FROM params)
+           WHERE created_by IN (SELECT id FROM targets) RETURNING id
+         ),
+         update_oauth_clients AS (
+           UPDATE oauth_clients SET created_by = (SELECT actor_id FROM params)
+           WHERE created_by IN (SELECT id FROM targets) RETURNING id
+         ),
+         update_settings AS (
+           UPDATE app_settings SET updated_by = (SELECT actor_id FROM params)
+           WHERE updated_by IN (SELECT id FROM targets) RETURNING key
+         ),
+         update_credentials AS (
+           UPDATE api_credentials SET updated_by = (SELECT actor_id FROM params)
+           WHERE updated_by IN (SELECT id FROM targets) RETURNING id
+         ),
+         update_locations AS (
+           UPDATE organization_locations SET updated_by = (SELECT actor_id FROM params)
+           WHERE updated_by IN (SELECT id FROM targets) RETURNING id
+         ),
+         update_campaigns AS (
+           UPDATE sales_campaigns SET created_by = (SELECT actor_id FROM params)
+           WHERE created_by IN (SELECT id FROM targets) RETURNING id
+         ),
+         clear_campaign_assignees AS (
+           UPDATE sales_campaign_targets SET assigned_member_id = NULL
+           WHERE assigned_member_id IN (SELECT id FROM targets) RETURNING id
+         ),
+         update_equipment_projects AS (
+           UPDATE equipment_projects SET created_by = (SELECT actor_id FROM params)
+           WHERE created_by IN (SELECT id FROM targets) RETURNING id
+         ),
+         clear_complex_managers AS (
+           UPDATE complex_projects SET manager_member_id = NULL
+           WHERE manager_member_id IN (SELECT id FROM targets) RETURNING id
+         ),
+         update_complex_creators AS (
+           UPDATE complex_projects SET created_by = (SELECT actor_id FROM params)
+           WHERE created_by IN (SELECT id FROM targets) RETURNING id
+         ),
+         update_complex_editors AS (
+           UPDATE complex_projects SET updated_by = (SELECT actor_id FROM params)
+           WHERE updated_by IN (SELECT id FROM targets) RETURNING id
+         ),
+         delete_alert_acks AS (
+           DELETE FROM manager_alert_acknowledgements
+           WHERE member_id IN (SELECT id FROM targets) RETURNING member_id
+         ),
+         delete_review_acks AS (
+           DELETE FROM activity_review_acknowledgements
+           WHERE member_id IN (SELECT id FROM targets) RETURNING member_id
+         ),
+         delete_codes AS (
+           DELETE FROM oauth_codes WHERE member_id IN (SELECT id FROM targets) RETURNING member_id
+         ),
+         delete_tokens AS (
+           DELETE FROM oauth_tokens WHERE member_id IN (SELECT id FROM targets) RETURNING member_id
+         ),
+         delete_sessions AS (
+           DELETE FROM local_auth_sessions WHERE member_id IN (SELECT id FROM targets) RETURNING member_id
+         ),
+         deleted AS (
+           DELETE FROM members WHERE id IN (SELECT id FROM targets) RETURNING id
+         )
+         SELECT COUNT(*)::integer AS deleted_count,
+                COALESCE(array_agg(COALESCE(display_name, email) ORDER BY id), ARRAY[]::text[]) AS names
+         FROM targets`,
+      )
+      .bind(actor.id, OWNER_EMAIL)
+      .first<{ deleted_count: number; names: string[] }>();
+    return Response.json({
+      ok: true,
+      deletedCount: Number(result?.deleted_count ?? 0),
+      names: result?.names ?? [],
+      ownerEmail: OWNER_EMAIL,
     });
-    return Response.json({ ok: true, ...result, ownerEmail: OWNER_EMAIL });
   } catch (error) {
     return accessErrorResponse(error);
   }
