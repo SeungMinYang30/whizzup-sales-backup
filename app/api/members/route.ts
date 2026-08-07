@@ -295,105 +295,117 @@ export async function DELETE(request: Request) {
 
     const d1 = await ensureCollaborationReady();
     const target = await d1
-      .prepare("SELECT id, display_name, role, status FROM members WHERE id = ?")
+      .prepare("SELECT * FROM members WHERE id = ?")
       .bind(id)
-      .first<{
-        id: number;
-        display_name: string;
-        role: string;
-        status: string;
-      }>();
+      .first<Record<string, unknown>>();
     if (!target) {
       return Response.json({ error: "사용자를 찾을 수 없습니다." }, { status: 404 });
     }
-    if (target.role === "admin") {
+    if (String(target.role) === "admin") {
       return Response.json(
         { error: "대표관리자 계정은 삭제할 수 없습니다." },
         { status: 400 },
       );
     }
-    if (target.status === "approved") {
-      return Response.json(
-        { error: "사용 중인 계정은 먼저 사용 중지한 뒤 삭제해 주세요." },
-        { status: 400 },
-      );
-    }
 
     await ensureActivityChangeLedgerReady();
-    await d1.batch([
-      d1
+    const archivedTarget = { ...target };
+    delete archivedTarget.password_hash;
+    delete archivedTarget.password_salt;
+    await d1.transaction(async (tx) => {
+      await tx
+        .prepare(
+          `INSERT INTO member_account_archives
+           (original_member_id, member_json, archived_by, archived_at)
+           VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+        )
+        .bind(id, JSON.stringify(archivedTarget), actor.id)
+        .run();
+      await tx.batch([
+        tx
         .prepare("UPDATE members SET approved_by = ? WHERE approved_by = ?")
         .bind(actor.id, id),
-      d1
+        tx
         .prepare("UPDATE activity_authors SET member_id = NULL WHERE member_id = ?")
         .bind(id),
-      d1
+        tx
         .prepare(
           "UPDATE activity_assignment_history SET to_member_id = ? WHERE to_member_id = ?",
         )
         .bind(actor.id, id),
-      d1
+        tx
         .prepare(
           "UPDATE activity_assignment_history SET changed_by_member_id = ? WHERE changed_by_member_id = ?",
         )
         .bind(actor.id, id),
-      d1
+        tx
         .prepare(
           "UPDATE activity_change_batches SET actor_member_id = ? WHERE actor_member_id = ?",
         )
         .bind(actor.id, id),
-      d1
+        tx
         .prepare(
           "UPDATE activity_change_batches SET undone_by_member_id = ? WHERE undone_by_member_id = ?",
         )
         .bind(actor.id, id),
-      d1
+        tx
         .prepare(
           "UPDATE activity_change_items SET undone_by_member_id = ? WHERE undone_by_member_id = ?",
         )
         .bind(actor.id, id),
-      d1
+        tx
         .prepare("DELETE FROM manager_alert_acknowledgements WHERE member_id = ?")
         .bind(id),
-      d1
+        tx
         .prepare("DELETE FROM activity_review_acknowledgements WHERE member_id = ?")
         .bind(id),
-      d1
+        tx
         .prepare("UPDATE ai_recommendations SET created_by = ? WHERE created_by = ?")
         .bind(actor.id, id),
-      d1
+        tx
         .prepare("UPDATE oauth_clients SET created_by = ? WHERE created_by = ?")
         .bind(actor.id, id),
-      d1.prepare("DELETE FROM oauth_codes WHERE member_id = ?").bind(id),
-      d1.prepare("DELETE FROM oauth_tokens WHERE member_id = ?").bind(id),
-      d1
+        tx.prepare("DELETE FROM oauth_codes WHERE member_id = ?").bind(id),
+        tx.prepare("DELETE FROM oauth_tokens WHERE member_id = ?").bind(id),
+        tx.prepare("DELETE FROM local_auth_sessions WHERE member_id = ?").bind(id),
+        tx
         .prepare("UPDATE app_settings SET updated_by = ? WHERE updated_by = ?")
         .bind(actor.id, id),
-      d1
+        tx
         .prepare("UPDATE api_credentials SET updated_by = ? WHERE updated_by = ?")
         .bind(actor.id, id),
-      d1
+        tx
         .prepare(
           "UPDATE organization_locations SET updated_by = ? WHERE updated_by = ?",
         )
         .bind(actor.id, id),
-      d1
+        tx
         .prepare("UPDATE sales_campaigns SET created_by = ? WHERE created_by = ?")
         .bind(actor.id, id),
-      d1
+        tx
         .prepare(
           "UPDATE sales_campaign_targets SET assigned_member_id = NULL WHERE assigned_member_id = ?",
         )
         .bind(id),
-      d1
+        tx
         .prepare("UPDATE equipment_projects SET created_by = ? WHERE created_by = ?")
         .bind(actor.id, id),
-      d1.prepare("DELETE FROM members WHERE id = ?").bind(id),
-    ]);
+        tx
+          .prepare("UPDATE complex_projects SET manager_member_id = NULL WHERE manager_member_id = ?")
+          .bind(id),
+        tx
+          .prepare("UPDATE complex_projects SET created_by = ? WHERE created_by = ?")
+          .bind(actor.id, id),
+        tx
+          .prepare("UPDATE complex_projects SET updated_by = ? WHERE updated_by = ?")
+          .bind(actor.id, id),
+        tx.prepare("DELETE FROM members WHERE id = ?").bind(id),
+      ]);
+    });
 
     return Response.json({
       ok: true,
-      deleted: { id: target.id, displayName: target.display_name },
+      deleted: { id: Number(target.id), displayName: String(target.display_name) },
     });
   } catch (error) {
     return accessErrorResponse(error);

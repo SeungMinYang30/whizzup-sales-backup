@@ -35,6 +35,8 @@ test("standby sync is one-way, authenticated, bounded, and uncached", () => {
   assert.match(syncRoute, /replicaContentChecksum/);
   assert.match(syncRoute, /validateFullBackup/);
   assert.doesNotMatch(syncRoute, /fetch\([^)]*supabase/i);
+  assert.match(syncRoute, /AUTOMATIC_STANDBY_SYNC_ENABLED/);
+  assert.match(syncRoute, /Automatic full-database synchronization is disabled/);
 });
 
 test("replica restore validates the signed backup before replacement", () => {
@@ -67,8 +69,9 @@ test("replication state is private from browser database roles", () => {
   );
 });
 
-test("Supabase schedules a signed sync every ten minutes", () => {
+test("Supabase sync can only be scheduled after an explicit server-side opt in", () => {
   assert.match(syncRoute, /export async function PUT/);
+  assert.match(syncRoute, /if \(!automaticSyncEnabled\(\)\)/);
   assert.match(syncRoute, /configureStandbySchedule/);
   assert.match(scheduler, /CREATE EXTENSION IF NOT EXISTS pg_cron/);
   assert.match(scheduler, /CREATE EXTENSION IF NOT EXISTS pg_net/);

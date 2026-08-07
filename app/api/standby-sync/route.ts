@@ -55,6 +55,10 @@ function standbyOrigin() {
   ).replace(/\/+$/, "");
 }
 
+function automaticSyncEnabled() {
+  return serverValue("AUTOMATIC_STANDBY_SYNC_ENABLED").toLowerCase() === "true";
+}
+
 async function fetchPrimaryBackup(origin: string) {
   const exportSecret = serverValue("PRIMARY_EXPORT_SECRET");
   if (!exportSecret) {
@@ -100,6 +104,16 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   if (!authorized(request)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!automaticSyncEnabled()) {
+    return Response.json(
+      {
+        ok: false,
+        disabled: true,
+        error: "Automatic full-database synchronization is disabled",
+      },
+      { status: 409 },
+    );
   }
 
   const startedAt = Date.now();
@@ -171,6 +185,16 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   if (!authorized(request)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!automaticSyncEnabled()) {
+    return Response.json(
+      {
+        ok: false,
+        disabled: true,
+        error: "Set AUTOMATIC_STANDBY_SYNC_ENABLED=true before scheduling",
+      },
+      { status: 409 },
+    );
   }
 
   const syncSecret = serverValue("STANDBY_SYNC_SECRET");

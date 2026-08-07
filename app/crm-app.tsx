@@ -16720,12 +16720,22 @@ export default function CrmApp({
                               )}
                             </>
                           ) : member.status === "approved" ? (
-                            <button
-                              className="suspend"
-                              onClick={() => void updateMember(member, "suspended")}
-                            >
-                              사용 중지
-                            </button>
+                            <>
+                              <button
+                                className="suspend"
+                                onClick={() => void updateMember(member, "suspended")}
+                              >
+                                사용 중지
+                              </button>
+                              {isOwner && (
+                                <button
+                                  className="delete-member"
+                                  onClick={() => void deleteMember(member)}
+                                >
+                                  영구 삭제
+                                </button>
+                              )}
+                            </>
                           ) : (
                             <>
                               <button

@@ -48,3 +48,15 @@ test("대표 관리자 외 계정은 원본 보관 후 연결 이력을 보존�
   assert.match(cleanup, /DELETE FROM members WHERE id = \?/);
   assert.match(cleanup, /requirePrimaryOwner/);
 });
+
+test("대표 관리자는 사용 중 계정도 기록을 보존하며 바로 삭제할 수 있다", async () => {
+  const [members, app] = await Promise.all([
+    read("app/api/members/route.ts"),
+    read("app/crm-app.tsx"),
+  ]);
+  assert.doesNotMatch(members, /사용 중인 계정은 먼저 사용 중지한 뒤 삭제/);
+  assert.match(members, /member_account_archives/);
+  assert.match(members, /DELETE FROM local_auth_sessions WHERE member_id = \?/);
+  assert.match(members, /UPDATE activity_authors SET member_id = NULL/);
+  assert.match(app, /member\.status === "approved"[\s\S]*deleteMember\(member\)/);
+});
