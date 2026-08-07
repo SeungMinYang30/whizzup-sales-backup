@@ -6830,19 +6830,27 @@ export default function CrmApp({
             recordsFullyLoadedRef.current = false;
             setRecordsFullyLoaded(false);
           }
-          deferDashboardTask(250, () => {
+          deferDashboardTask(2_500, () => {
             void ensureBudgetReviewCatalog();
+          });
+          deferDashboardTask(4_000, () => {
             void loadActivityReviewAssignees();
           });
-          deferDashboardTask(750, () => {
+          deferDashboardTask(5_500, () => {
             void loadEquipmentQuoteSummaries();
+          });
+          deferDashboardTask(7_000, () => {
             if (memberCan(nextSession.member, "records:manage")) {
               void loadManagerAlerts();
             }
+          });
+          deferDashboardTask(8_500, () => {
             void loadActivityReviews();
           });
-          deferDashboardTask(1_250, () => {
+          deferDashboardTask(10_000, () => {
             void loadProtectionReviews();
+          });
+          deferDashboardTask(11_500, () => {
             void loadCorrectionRequests();
           });
         }
@@ -6900,7 +6908,7 @@ export default function CrmApp({
           );
         })
         .catch(() => undefined);
-    }, 1_500);
+    }, 13_000);
     return () => window.clearTimeout(timer);
   }, [sessionStatus]);
 
@@ -6924,7 +6932,7 @@ export default function CrmApp({
           inFlight = false;
         });
     };
-    const firstHeartbeat = window.setTimeout(heartbeat, 2_000);
+    const firstHeartbeat = window.setTimeout(heartbeat, 15_000);
     const timer = window.setInterval(heartbeat, 60_000);
     const handleVisibility = () => {
       if (!document.hidden) heartbeat();
@@ -6958,7 +6966,7 @@ export default function CrmApp({
         .finally(() => {
           if (active) setScheduleRemindersLoading(false);
         });
-    }, 600);
+    }, 4_500);
     return () => {
       active = false;
       window.clearTimeout(timer);

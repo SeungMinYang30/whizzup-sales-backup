@@ -85,7 +85,13 @@ export function isDatabaseUnavailableError(error: unknown) {
 
 function isRetryableConnectionReset(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? "");
-  return /socket|terminated|closed|reset|econn/i.test(message);
+  return /socket|terminated|closed|reset|destroyed|econn/i.test(message);
+}
+
+function databaseRetryDelay(attempt: number) {
+  return new Promise((resolve) =>
+    setTimeout(resolve, 180 + attempt * 120 + Math.floor(Math.random() * 180)),
+  );
 }
 
 async function recycleSqlClient(
@@ -210,6 +216,10 @@ async function reconcileVercelSchema() {
     } catch (error) {
       if (isDatabaseUnavailableError(error)) {
         await recycleSqlClient(sql);
+        if (attempt === 0) {
+          await databaseRetryDelay(attempt);
+          continue;
+        }
         throw error;
       }
       if (attempt === 0 && isRetryableConnectionReset(error)) {
@@ -247,6 +257,10 @@ async function executeDirectQuery<T extends QueryRow>(
     } catch (error) {
       if (isDatabaseUnavailableError(error)) {
         await recycleSqlClient(sql);
+        if (canRetry && attempt === 0) {
+          await databaseRetryDelay(attempt);
+          continue;
+        }
         throw error;
       }
       if (isRetryableConnectionReset(error)) {
