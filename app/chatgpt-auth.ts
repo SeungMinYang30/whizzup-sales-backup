@@ -1,14 +1,30 @@
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "../lib/supabase/server";
+import { getLocalAuthIdentity } from "../lib/local-auth";
 
 export type ChatGPTUser = {
-  authUserId: string;
+  authUserId: string | null;
+  memberId: number | null;
+  username: string;
+  provider: "google" | "local";
   displayName: string;
   email: string;
   fullName: string | null;
 };
 
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
+  const localIdentity = await getLocalAuthIdentity();
+  if (localIdentity) {
+    return {
+      authUserId: null,
+      memberId: localIdentity.memberId,
+      username: localIdentity.username,
+      provider: "local",
+      displayName: localIdentity.displayName,
+      email: localIdentity.email,
+      fullName: localIdentity.displayName,
+    };
+  }
   const supabase = await createServerSupabaseClient();
   const {
     data: { user },
@@ -26,6 +42,9 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
 
   return {
     authUserId: user.id,
+    memberId: null,
+    username: "",
+    provider: "google",
     displayName: fullName ?? user.email,
     email: user.email,
     fullName,

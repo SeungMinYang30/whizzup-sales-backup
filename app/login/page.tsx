@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getChatGPTUser, safeRelativeReturnPath } from "../chatgpt-auth";
 import { redirect } from "next/navigation";
+import LocalLoginForm from "./local-login-form";
 
 export const dynamic = "force-dynamic";
 
@@ -33,22 +34,22 @@ export default async function LoginPage({
           </div>
         </div>
         <p className="oauth-kicker">SECURE SIGN IN</p>
-        <h1>Google 계정으로 로그인</h1>
+        <h1>WHIZZUP 로그인</h1>
         <p>
-          회사 구성원 확인과 기록 작성자 표시를 위해 Google 계정으로
-          로그인합니다. 기존 WHIZZUP 승인 구성원은 같은 이메일로 로그인하면
-          기존 역할과 권한이 그대로 연결됩니다.
+          직원은 사용할 아이디와 비밀번호로 가입을 신청하고, 관리자 승인 후
+          같은 정보로 로그인합니다.
         </p>
         {errorMessage ? <p className="oauth-error">{errorMessage}</p> : null}
+        <LocalLoginForm returnTo={returnTo} />
+        <div className="owner-google-login">
+          <span>대표 관리자 비상 로그인</span>
         <Link
           className="google-signin-button"
           href={`/auth/google?return_to=${encodeURIComponent(returnTo)}`}
         >
-          Google로 계속하기
+          Google 계정으로 로그인
         </Link>
-        <p className="oauth-footnote">
-          신규 이메일만 관리자 승인 절차가 필요합니다.
-        </p>
+        </div>
       </section>
     </main>
   );

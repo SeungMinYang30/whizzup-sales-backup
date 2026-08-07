@@ -1131,6 +1131,7 @@ type AiOrganizePayload = {
 type TeamMember = {
   id: number;
   email: string;
+  username: string;
   displayName: string;
   role: "admin" | "assistant" | "member";
   permissions: MemberPermission[];
@@ -6128,7 +6129,7 @@ export default function CrmApp({
   identity,
   signOutPath,
 }: {
-  identity: { email: string; displayName: string };
+  identity: { email: string; displayName: string; username?: string };
   signOutPath: string;
 }) {
   const [records, setRecords] = useState<Activity[]>([]);
@@ -11101,6 +11102,7 @@ export default function CrmApp({
         (payload.members ?? []).map((member) => ({
           id: Number(member.id),
           email: String(member.email),
+          username: String(member.username ?? ""),
           displayName: String(member.display_name),
           role:
             String(member.role) === "admin"
@@ -12017,6 +12019,22 @@ export default function CrmApp({
       setToast(
         caught instanceof Error ? caught.message : "계정을 삭제하지 못했습니다.",
       );
+    }
+  }
+
+  async function cleanupLegacyMembers() {
+    const confirmed = window.confirm(
+      "대표 관리자(freeyang30@gmail.com)를 제외한 기존 로그인 계정을 모두 정리할까요?\n업무 기록의 작성자 이름은 보존되고 계정 원본은 복구용 보관함에 저장됩니다.",
+    );
+    if (!confirmed) return;
+    try {
+      const response = await fetch("/api/members/cleanup", { method: "POST" });
+      const payload = (await response.json()) as { deletedCount?: number; error?: string };
+      if (!response.ok) throw new Error(payload.error || "기존 계정을 정리하지 못했습니다.");
+      await Promise.all([loadTeam(), loadActivityReviewAssignees(), loadPresence()]);
+      setToast(`대표 관리자 외 기존 로그인 계정 ${Number(payload.deletedCount ?? 0)}개를 정리했습니다.`);
+    } catch (caught) {
+      setToast(caught instanceof Error ? caught.message : "기존 계정을 정리하지 못했습니다.");
     }
   }
 
@@ -15049,7 +15067,7 @@ export default function CrmApp({
           <p>
             <strong>{identity.displayName}</strong>
             <br />
-            {identity.email}
+            {identity.username ? `아이디 ${identity.username}` : identity.email}
           </p>
           <div className="pending-note">
             관리자가 승인하면 같은 링크로 다시 접속해 공동 관리표를 사용할 수
@@ -16473,7 +16491,7 @@ export default function CrmApp({
                 </div>
                 <div className="invite-flow">
                   <div><b>01</b><strong>링크 전달</strong><p>현재 관리사이트 주소를 동료에게 보냅니다.</p></div>
-                  <div><b>02</b><strong>ChatGPT 로그인</strong><p>동료가 자기 ChatGPT 계정으로 처음 접속합니다.</p></div>
+                  <div><b>02</b><strong>가입 신청</strong><p>동료가 이름·아이디·비밀번호로 신청합니다.</p></div>
                   <div><b>03</b><strong>대표 승인</strong><p>아래 승인 대기 목록에서 사용을 허용합니다.</p></div>
                 </div>
                 <button
@@ -16495,54 +16513,34 @@ export default function CrmApp({
                     <span className="section-kicker">TEAM ACCESS</span>
                     <h2>승인·권한 관리</h2>
                   </div>
-                  <button
-                    onClick={() =>
-                      void Promise.all([
-                        loadTeam(),
-                        loadActivityReviewAssignees(),
-                        loadPresence(),
-                      ])
-                    }
-                  >
-                    새로고침
-                  </button>
+                  <div className="member-header-actions">
+                    {isOwner ? (
+                      <button className="cleanup-members" onClick={() => void cleanupLegacyMembers()}>
+                        기존 계정 정리
+                      </button>
+                    ) : null}
+                    <button
+                      onClick={() =>
+                        void Promise.all([
+                          loadTeam(),
+                          loadActivityReviewAssignees(),
+                          loadPresence(),
+                        ])
+                      }
+                    >
+                      새로고침
+                    </button>
+                  </div>
                 </div>
-                <form
-                  className="member-email-register"
-                  onSubmit={(event) => void registerMemberByEmail(event)}
-                >
+                <div className="member-signup-guide">
                   <div>
-                    <strong>이메일로 구성원 바로 등록</strong>
+                    <strong>아이디 가입 신청</strong>
                     <span>
-                      로그인 전에 미리 승인합니다. 등록 후 아래에서 역할·권한을 조정할 수 있습니다.
+                      직원이 로그인 화면에서 이름·아이디·비밀번호로 신청하면 아래 목록 맨 위에 표시됩니다.
                     </span>
                   </div>
-                  <input
-                    type="email"
-                    value={memberInviteEmail}
-                    onChange={(event) => setMemberInviteEmail(event.target.value)}
-                    placeholder="예: teammate@gmail.com"
-                    aria-label="등록할 구성원 이메일"
-                    required
-                  />
-                  <input
-                    value={memberInviteName}
-                    onChange={(event) => setMemberInviteName(event.target.value)}
-                    placeholder="이름"
-                    aria-label="등록할 구성원 이름"
-                    required
-                  />
-                  <button
-                    type="submit"
-                    disabled={
-                      memberInviteSaving ||
-                      !memberInviteEmail.trim() ||
-                      !memberInviteName.trim()
-                    }
-                  >
-                    {memberInviteSaving ? "등록 중" : "승인 등록"}
-                  </button>
-                </form>
+                  <b>승인 대기 → 승인 → 역할·권한 설정</b>
+                </div>
                 {session.canViewPresence && (
                   <div className="member-presence-overview">
                     <div>
@@ -16626,7 +16624,7 @@ export default function CrmApp({
                               이름 저장
                             </button>
                           </div>
-                          <small>{member.email}</small>
+                          <small>{member.username ? `아이디 ${member.username}` : member.email}</small>
                           {session.canViewPresence && member.status === "approved" && (
                             <span
                               className={`member-presence-badge ${

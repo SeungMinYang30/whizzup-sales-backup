@@ -13,6 +13,7 @@ export default async function Home() {
       identity={{
         email: identity.email,
         displayName: identity.displayName,
+        username: identity.username,
       }}
       signOutPath={chatGPTSignOutPath("/")}
     />

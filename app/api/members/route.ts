@@ -31,7 +31,7 @@ export async function GET(request: Request) {
     const result = await d1
       .prepare(`
         SELECT
-          id, email, display_name, role, permissions, status, is_sales, created_at,
+          id, email, username, display_name, role, permissions, status, is_sales, created_at,
           approved_at, approved_by, last_seen_at
         FROM members
         ORDER BY

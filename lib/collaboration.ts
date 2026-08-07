@@ -20,6 +20,7 @@ export type MemberPermission = (typeof MEMBER_PERMISSIONS)[number];
 export type Member = {
   id: number;
   email: string;
+  username: string;
   displayName: string;
   role: "admin" | "assistant" | "member";
   permissions: MemberPermission[];
@@ -157,6 +158,7 @@ function mapMember(row: Record<string, unknown>): Member {
   return {
     id: Number(row.id),
     email: String(row.email),
+    username: String(row.username ?? ""),
     displayName: String(row.display_name),
     role,
     permissions: normalizeMemberPermissions(row.permissions),
@@ -185,14 +187,19 @@ export async function getOrCreateMember(
   const isBootstrapAdmin = Boolean(
     bootstrapAdminEmail && bootstrapAdminEmail === email,
   );
-  let row = await d1
-    .prepare(
-      "SELECT * FROM members WHERE auth_user_id = ? OR lower(email) = lower(?) LIMIT 1",
-    )
-    .bind(identity.authUserId, email)
-    .first<Record<string, unknown>>();
+  let row = identity.memberId
+    ? await d1
+        .prepare("SELECT * FROM members WHERE id = ? LIMIT 1")
+        .bind(identity.memberId)
+        .first<Record<string, unknown>>()
+    : await d1
+        .prepare(
+          "SELECT * FROM members WHERE auth_user_id = ? OR lower(email) = lower(?) LIMIT 1",
+        )
+        .bind(identity.authUserId, email)
+        .first<Record<string, unknown>>();
 
-  if (!row) {
+  if (!row && identity.provider === "google") {
     await d1
       .prepare(`
         INSERT INTO members (
@@ -209,7 +216,7 @@ export async function getOrCreateMember(
       .first<Record<string, unknown>>();
   }
 
-  if (row) {
+  if (row && identity.provider === "google") {
     await d1
       .prepare(`
         UPDATE members
