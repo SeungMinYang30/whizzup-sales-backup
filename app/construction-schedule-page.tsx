@@ -174,7 +174,7 @@ export default function ConstructionSchedulePage({
   useEffect(() => {
     // On the dashboard, let the smaller primary requests finish first. When
     // the user opens the schedule page itself, request the board immediately.
-    const timer = window.setTimeout(() => void load(), embedded ? 8_000 : 0);
+    const timer = window.setTimeout(() => void load(), embedded ? 500 : 0);
     return () => window.clearTimeout(timer);
   }, [embedded]);
 

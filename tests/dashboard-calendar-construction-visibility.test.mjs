@@ -78,7 +78,7 @@ test("대시보드 시공 현황은 경량 요약을 즉시 조회하고 전체 
     1,
   );
   assert.match(constructionPage, /retries: 2/);
-  assert.match(constructionPage, /window\.setTimeout\(\(\) => void load\(\), embedded \? 8_000 : 0\)/);
+  assert.match(constructionPage, /window\.setTimeout\(\(\) => void load\(\), embedded \? 500 : 0\)/);
   assert.match(constructionPage, /onDashboardCounts\(projects\.filter/);
 });
 
