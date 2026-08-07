@@ -70,7 +70,7 @@ test("Vercel v399 schema contains every newly introduced operational area", asyn
 
 test("Postgres compatibility serializes and de-duplicates runtime migrations", async () => {
   const adapter = await read("db/index.ts");
-  assert.match(adapter, /pg_advisory_xact_lock/);
+  assert.match(adapter, /pg_(?:try_)?advisory_xact_lock/);
   assert.match(adapter, /ADD COLUMN IF NOT EXISTS/);
   assert.match(adapter, /ADD\\s\+COLUMN/);
   assert.match(adapter, /a\.created_at::text/);

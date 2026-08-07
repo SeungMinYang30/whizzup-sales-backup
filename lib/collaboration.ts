@@ -366,7 +366,7 @@ export async function isPrimaryOwner(
 export async function requirePrimaryOwner() {
   const member = await requireApprovedMember();
   if (!(await isPrimaryOwner(member))) {
-    throw new AccessError("대표관리자 본인만 접속 현황을 확인할 수 있습니다.", 403);
+    throw new AccessError("운영관리자 본인만 접속 현황을 확인할 수 있습니다.", 403);
   }
   return member;
 }

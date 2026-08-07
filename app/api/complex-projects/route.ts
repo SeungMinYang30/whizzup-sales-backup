@@ -6,6 +6,7 @@ import {
 import { isDatabaseUnavailableError } from "../../../db";
 import {
   addComplexBudget,
+  cancelComplexProject,
   createComplexProject,
   deleteComplexEntity,
   listComplexProjects,
@@ -40,6 +41,8 @@ export async function POST(request: Request) {
     const action = String(payload.action ?? "");
     const result = action === "create_project"
       ? await createComplexProject(payload, member)
+      : action === "cancel_project"
+        ? await cancelComplexProject(payload, member)
       : action === "update_project"
         ? await updateComplexProject(payload, member)
         : action === "add_budget"

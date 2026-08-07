@@ -140,7 +140,7 @@ export async function PUT(request: Request) {
     }
     if (target.role === "admin") {
       return Response.json(
-        { error: "대표관리자 계정은 변경할 수 없습니다." },
+        { error: "운영관리자 계정은 변경할 수 없습니다." },
         { status: 400 },
       );
     }
@@ -222,7 +222,7 @@ export async function PATCH(request: Request) {
     if (typeof payload.isSales === "boolean") {
       if (actor.role !== "admin") {
         return Response.json(
-          { error: "영업 담당자 지정은 대표관리자만 할 수 있습니다." },
+          { error: "영업 담당자 지정은 운영관리자만 할 수 있습니다." },
           { status: 403 },
         );
       }
@@ -279,7 +279,7 @@ export async function DELETE(request: Request) {
     const actor = await requireMemberPermission("members:manage");
     if (actor.role !== "admin") {
       return Response.json(
-        { error: "계정 영구 삭제는 대표관리자만 할 수 있습니다." },
+        { error: "계정 영구 삭제는 운영관리자만 할 수 있습니다." },
         { status: 403 },
       );
     }
@@ -303,7 +303,7 @@ export async function DELETE(request: Request) {
     }
     if (String(target.role) === "admin") {
       return Response.json(
-        { error: "대표관리자 계정은 삭제할 수 없습니다." },
+        { error: "운영관리자 계정은 삭제할 수 없습니다." },
         { status: 400 },
       );
     }

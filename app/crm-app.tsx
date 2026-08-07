@@ -12068,7 +12068,7 @@ export default function CrmApp({
       if (!response.ok) throw new Error(payload.error || "기존 계정을 정리하지 못했습니다.");
       await Promise.all([loadTeam(), loadActivityReviewAssignees(), loadPresence()]);
       setCleanupMembersArmed(false);
-      setToast(`대표 관리자 외 기존 로그인 계정 ${Number(payload.deletedCount ?? 0)}개를 정리했습니다.`);
+      setToast(`운영관리자 외 기존 로그인 계정 ${Number(payload.deletedCount ?? 0)}개를 정리했습니다.`);
     } catch (caught) {
       setToast(caught instanceof Error ? caught.message : "기존 계정을 정리하지 못했습니다.");
     } finally {
@@ -15327,7 +15327,7 @@ export default function CrmApp({
             <div className="admin-nav-group">
               <p>
                 운영 도구
-                <span>{isOwner ? "대표관리자" : "보조관리자"}</span>
+                <span>{isOwner ? "운영관리자" : "보조 운영자"}</span>
               </p>
               {orderedManagementNavItems.map((item, index) => (
                 <div
@@ -15358,7 +15358,7 @@ export default function CrmApp({
                       managerOrganizations.length > 0 && (
                         <em>{managerOrganizations.length}</em>
                       )}
-                    <small>{isOwner ? "대표" : "보조"}</small>
+                    <small>{isOwner ? "운영" : "보조"}</small>
                   </button>
                   {menuOrderEditing && (
                     <button
@@ -15443,9 +15443,9 @@ export default function CrmApp({
                 <strong>{session.member.displayName}</strong>
                 <span>
                   {session.member.role === "admin"
-                    ? "대표관리자"
+                    ? "운영관리자"
                     : session.member.role === "assistant"
-                      ? "보조관리자"
+                      ? "보조 운영자"
                       : "구성원"}
                 </span>
               </span>
@@ -15508,7 +15508,7 @@ export default function CrmApp({
       {mobileNav && <button className="nav-scrim" aria-label="메뉴 닫기" onClick={() => setMobileNav(false)} />}
 
       <section className="workspace">
-        <header className={`topbar${view === "dashboard" ? " has-dashboard-status" : ""}`}>
+        <header className="topbar has-dashboard-status">
           <button className="menu-button" onClick={() => setMobileNav(true)} aria-label="메뉴 열기">
             ☰
           </button>
@@ -15539,8 +15539,7 @@ export default function CrmApp({
               <kbd>⌘ K</kbd>
             </div>
           )}
-          {view === "dashboard" ? (
-            <nav className="dashboard-status-strip" aria-label="업무 현황 바로가기">
+          <nav className="dashboard-status-strip" aria-label="업무 현황 바로가기">
               <button
                 type="button"
                 className="dashboard-status-card sales"
@@ -15580,8 +15579,7 @@ export default function CrmApp({
                   <div><dt>완료</dt><dd>{constructionDashboardCounts.completed}</dd></div>
                 </dl>
               </button>
-            </nav>
-          ) : null}
+          </nav>
           <div className="top-actions">
             <button className="ai-button" onClick={openAiRecorder}>
               <span>●</span> AI로 기록
@@ -15607,7 +15605,7 @@ export default function CrmApp({
                   : view === "analytics"
                     ? "회계 확인 기준의 월간·연간 수주와 제품 흐름을 확인합니다."
                   : view === "owner-performance"
-                    ? "대표관리자 본인만 담당자별 수주·마진·판매 실적을 확인할 수 있습니다."
+                    ? "운영관리자 본인만 담당자별 수주·마진·판매 실적을 확인할 수 있습니다."
                   : view === "inventory"
                     ? "보유 장비의 현재 수량과 입고·출고·조정 이력을 한곳에서 관리합니다."
                    : view === "integration"
@@ -16530,7 +16528,7 @@ export default function CrmApp({
                 <div className="invite-flow">
                   <div><b>01</b><strong>링크 전달</strong><p>현재 관리사이트 주소를 동료에게 보냅니다.</p></div>
                   <div><b>02</b><strong>가입 신청</strong><p>동료가 이름·아이디·비밀번호로 신청합니다.</p></div>
-                  <div><b>03</b><strong>대표 승인</strong><p>아래 승인 대기 목록에서 사용을 허용합니다.</p></div>
+                  <div><b>03</b><strong>운영자 승인</strong><p>아래 승인 대기 목록에서 사용을 허용합니다.</p></div>
                 </div>
                 <button
                   className="copy-invite"
@@ -16725,7 +16723,7 @@ export default function CrmApp({
                           </span>
                           <small>
                             {member.role === "admin"
-                              ? "대표관리자"
+                              ? "운영관리자"
                               : memberAccessPresetLabels[
                                   memberAccessPreset(member)
                                 ]}
@@ -16742,7 +16740,7 @@ export default function CrmApp({
                           {member.id === session.member.id ? (
                             <span>현재 계정</span>
                           ) : !isOwner && member.role !== "member" ? (
-                            <span>대표관리자만 변경</span>
+                            <span>운영관리자만 변경</span>
                           ) : member.status === "pending" ? (
                             <>
                               <button
@@ -17010,7 +17008,7 @@ export default function CrmApp({
                             )}
                             <p className="owner-only-access-note">
                               선택한 운영 도구 메뉴만 왼쪽 메뉴에 표시됩니다.
-                              대표관리자 권한 변경은 대표관리자만 가능합니다.
+                              운영관리자 권한 변경은 운영관리자만 가능합니다.
                             </p>
                             <button
                               type="button"
@@ -17176,7 +17174,7 @@ export default function CrmApp({
                 )}
                 <p className="openai-security-note">
                   API 키 원문은 화면에 다시 노출되지 않고 전체 DB 백업에도
-                  포함되지 않습니다. 이 설정과 전체 DB 복원은 대표관리자만
+                  포함되지 않습니다. 이 설정과 전체 DB 복원은 운영관리자만
                   사용할 수 있습니다.
                 </p>
               </article>

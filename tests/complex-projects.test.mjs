@@ -51,7 +51,9 @@ test("complex project activation uses searched institution rounds and approved s
   assert.match(store, /clean\(payload\.sourceType, 30\) === "external"/);
   assert.match(page, /외부 사업 수기 등록/);
   assert.match(page, /수금·수주 통계에는 포함되지 않습니다/);
-  assert.match(store, /status = 'approved' AND is_sales = 1/);
+  assert.match(store, /status = 'approved'/);
+  assert.match(store, /is_sales = 1/);
+  assert.match(store, /role = 'admin'/);
   assert.match(store, /manager_member_id = COALESCE\(excluded\.manager_member_id, complex_projects\.manager_member_id\)/);
   assert.match(store, /TRIM\(construction_schedule_projects\.work_summary\)/);
   assert.match(store, /ELSE construction_schedule_projects\.work_summary/);
@@ -61,6 +63,23 @@ test("complex project activation uses searched institution rounds and approved s
   assert.match(crm, /operationScope: "pre_awards"/);
   assert.match(crm, /attempt <= 2/);
   assert.match(records, /existingActivityChangeItemIds/);
+});
+
+test("complex project activation carries existing budgets items and financial totals without duplicating them", async () => {
+  const [store, page] = await Promise.all([
+    read("../lib/complex-projects.ts"),
+    read("../app/complex-project-page.tsx"),
+  ]);
+  assert.match(store, /readCanonicalBusinessRoundBudgets/);
+  assert.match(store, /activityBudgetsFromRecord/);
+  assert.match(store, /INSERT INTO complex_project_budget_links/);
+  assert.match(store, /ON CONFLICT\(complex_project_id, equipment_project_id\) DO NOTHING/);
+  assert.match(store, /item_quote_amount/);
+  assert.match(store, /construction_amount/);
+  assert.match(store, /export async function cancelComplexProject/);
+  assert.match(page, /복합사업 취소/);
+  assert.match(page, /연결 품목 금액/);
+  assert.match(page, /연결 공사비/);
 });
 
 test("complex project writes are atomic and refresh failures cannot be mistaken for failed writes", async () => {

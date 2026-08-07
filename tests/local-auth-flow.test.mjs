@@ -28,19 +28,20 @@ test("비밀번호는 강한 해시와 로그인 잠금으로 보호한다", asy
   assert.match(login, /failures >= 5/);
 });
 
-test("대표는 현재 승인된 계정에 이메일 아이디 로그인을 안전하게 연결한다", async () => {
+test("운영자는 현재 승인된 계정에 별도 아이디 로그인을 안전하게 연결한다", async () => {
   const [ownerRoute, ownerSetup] = await Promise.all([
     read("app/api/local-auth/owner-credentials/route.ts"),
     read("app/owner-local-login-setup.tsx"),
   ]);
   assert.match(ownerRoute, /requirePrimaryOwner/);
-  assert.match(ownerRoute, /username = owner\.email\.trim\(\)\.toLowerCase\(\)/);
+  assert.match(ownerRoute, /normalizeUsername\(payload\.username \|\| owner\.email\.split\("@"\)\[0\]\)/);
+  assert.match(ownerRoute, /SELECT id FROM members WHERE lower\(username\) = lower\(\?\) AND id <> \?/);
   assert.match(ownerRoute, /WHERE id = \? AND role = 'admin' AND status = 'approved'/);
   assert.match(ownerSetup, /Google 로그인도 계속 사용할 수 있습니다/);
   assert.match(ownerSetup, /\/api\/local-auth\/owner-credentials/);
 });
 
-test("대표 관리자 외 계정은 원본 보관 후 연결 이력을 보존하며 정리한다", async () => {
+test("운영관리자 외 계정은 원본 보관 후 연결 이력을 보존하며 정리한다", async () => {
   const cleanup = await read("app/api/members/cleanup/route.ts");
   assert.match(cleanup, /freeyang30@gmail\.com/);
   assert.match(cleanup, /member_account_archives/);
@@ -58,7 +59,7 @@ test("대표 관리자 외 계정은 원본 보관 후 연결 이력을 보존�
   assert.match(cleanup, /requirePrimaryOwner/);
 });
 
-test("대표 관리자는 사용 중 계정도 기록을 보존하며 바로 삭제할 수 있다", async () => {
+test("운영관리자는 사용 중 계정도 기록을 보존하며 바로 삭제할 수 있다", async () => {
   const [members, app] = await Promise.all([
     read("app/api/members/route.ts"),
     read("app/crm-app.tsx"),

@@ -6,8 +6,16 @@ import {
   ensureOrganizationSchedulesReady,
   refreshOrganizationScheduleMirror,
 } from "./organization-schedules";
-import { ensureRecordsReady } from "./records-store";
+import {
+  ensureRecordsReady,
+  readCanonicalBusinessRoundBudgets,
+} from "./records-store";
 import { ensureMapReady } from "./map-store";
+import {
+  activityBudgetsFromRecord,
+  parseStoredActivityBudgetMoney,
+} from "./activity-budgets";
+import { ensureProductComparisonDocumentsReady } from "./product-comparison-documents";
 
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS complex_projects (
@@ -243,6 +251,59 @@ async function requireProject(d1: ReturnType<typeof getD1>, projectId: number) {
 async function syncBudgetLinks(d1: ReturnType<typeof getD1>, projectId: number) {
   const project = await requireProject(d1, projectId);
   if (clean(project.source_type, 30) !== "whizzup") return;
+  const organization = String(project.organization);
+  const businessRound = Number(project.business_round);
+  const latestActivity = await d1.prepare(
+    `SELECT id FROM activities
+     WHERE organization = ? AND business_round = ? AND award_status = '위즈업 수주'
+     ORDER BY activity_date DESC, id DESC LIMIT 1`,
+  ).bind(organization, businessRound).first<{ id: number }>();
+  const canonicalBudgets = await readCanonicalBusinessRoundBudgets(
+    d1,
+    organization,
+    businessRound,
+  );
+  for (const budget of canonicalBudgets) {
+    const budgetName = clean(budget.budgetOriginalName || budget.budgetType, 160);
+    if (!budgetName) continue;
+    const existing = await d1.prepare(
+      `SELECT id FROM equipment_projects
+       WHERE organization = ? AND business_round = ?
+         AND (
+           (? > 0 AND budget_group_id = ?)
+           OR (? = 0 AND LOWER(TRIM(COALESCE(NULLIF(budget_original_name, ''), NULLIF(budget_type, ''), name))) = LOWER(TRIM(?)))
+         )
+       ORDER BY id LIMIT 1`,
+    ).bind(
+      organization,
+      businessRound,
+      Number(budget.budgetGroupId ?? 0),
+      Number(budget.budgetGroupId ?? 0),
+      Number(budget.budgetGroupId ?? 0),
+      budgetName,
+    ).first<{ id: number }>();
+    if (!existing) {
+      await d1.prepare(
+        `INSERT INTO equipment_projects
+          (organization, business_round, name, status, budget_type, budget_original_name,
+           budget_group_id, budget_match_status, budget_match_method, budget_kind, notes,
+           activity_id, created_by)
+         VALUES (?, ?, ?, '수주', ?, ?, ?, ?, ?, ?, '', ?, ?)`,
+      ).bind(
+        organization,
+        businessRound,
+        budgetName,
+        budget.budgetType || budgetName,
+        budgetName,
+        budget.budgetGroupId,
+        budget.budgetMatchStatus || (budget.budgetGroupId ? "auto" : "unclassified"),
+        budget.budgetMatchMethod || "complex-project",
+        budget.budgetKind || "unclassified",
+        latestActivity?.id ?? null,
+        Number(project.created_by) || Number(project.updated_by) || 0,
+      ).run();
+    }
+  }
   await d1.prepare(
     `INSERT INTO complex_project_budget_links
        (complex_project_id, equipment_project_id, sort_order)
@@ -261,10 +322,41 @@ async function syncBudgetLinks(d1: ReturnType<typeof getD1>, projectId: number) 
   ).bind(
     projectId,
     projectId,
-    String(project.organization),
-    Number(project.business_round),
+    organization,
+    businessRound,
     projectId,
   ).run();
+  for (const budget of canonicalBudgets) {
+    const budgetName = clean(budget.budgetOriginalName || budget.budgetType, 160);
+    const allocatedAmount = parseStoredActivityBudgetMoney(
+      budget.budgetAmountOverride ||
+      budget.budgetInstitutionAmount ||
+      budget.budgetAmount,
+    );
+    if (!budgetName || !allocatedAmount) continue;
+    await d1.prepare(
+      `UPDATE complex_project_budget_links
+       SET allocated_amount = COALESCE(allocated_amount, ?), updated_at = CURRENT_TIMESTAMP
+       WHERE complex_project_id = ?
+         AND equipment_project_id IN (
+           SELECT id FROM equipment_projects
+           WHERE organization = ? AND business_round = ?
+             AND (
+               (? > 0 AND budget_group_id = ?)
+               OR (? = 0 AND LOWER(TRIM(COALESCE(NULLIF(budget_original_name, ''), NULLIF(budget_type, ''), name))) = LOWER(TRIM(?)))
+             )
+         )`,
+    ).bind(
+      allocatedAmount,
+      projectId,
+      organization,
+      businessRound,
+      Number(budget.budgetGroupId ?? 0),
+      Number(budget.budgetGroupId ?? 0),
+      Number(budget.budgetGroupId ?? 0),
+      budgetName,
+    ).run();
+  }
   await d1.prepare(
     `INSERT OR IGNORE INTO complex_project_item_details
        (equipment_item_id, complex_project_id, item_category, updated_by_name)
@@ -277,6 +369,7 @@ async function syncBudgetLinks(d1: ReturnType<typeof getD1>, projectId: number) 
 
 export async function listComplexProjects() {
   const d1 = await ensureComplexProjectsReady();
+  await ensureProductComparisonDocumentsReady();
   const [projectResult, budgetResult, zoneResult, itemResult, deliveryResult, groupResult, memberResult] = await d1.batch([
     d1.prepare(
       `SELECT * FROM complex_projects WHERE active = 1
@@ -310,9 +403,11 @@ export async function listComplexProjects() {
               detail.updated_by, detail.updated_by_name, detail.updated_at,
               item.project_id, item.product_name, item.specification,
               item.proposed_qty, item.awarded_qty, item.installed_qty, item.unit,
-              item.status, item.notes, item.catalog_unit_price, item.price_status,
+              item.status, item.notes, item.catalog_item_id, item.catalog_unit_price, item.price_status,
               item.supplier_vendor_name, item.protection_status,
-              ep.name AS budget_name, ep.budget_group_id
+              ep.name AS budget_name, ep.budget_group_id,
+              (SELECT COUNT(*) FROM product_comparison_documents comparison
+               WHERE comparison.product_id = item.catalog_item_id) AS comparison_document_count
        FROM complex_project_budget_links link
        JOIN equipment_items item ON item.project_id = link.equipment_project_id
        LEFT JOIN complex_project_item_details detail ON detail.equipment_item_id = item.id
@@ -328,7 +423,16 @@ export async function listComplexProjects() {
     d1.prepare(
       `SELECT id, display_name, email
        FROM members
-       WHERE status = 'approved' AND is_sales = 1
+       WHERE status = 'approved'
+         AND TRIM(COALESCE(display_name, '')) <> ''
+         AND (
+           is_sales = 1
+           OR role = 'admin'
+           OR EXISTS (
+             SELECT 1 FROM activities activity
+             WHERE TRIM(activity.progress_manager) = TRIM(members.display_name)
+           )
+         )
        ORDER BY display_name COLLATE NOCASE, id`,
     ),
   ]);
@@ -382,8 +486,9 @@ export async function listComplexProjects() {
       const budgets = budgetsByProject.get(id) ?? [];
       const items = itemsByProject.get(id) ?? [];
       const allocated = budgets.reduce((sum, row) => sum + integer(row.allocated_amount), 0);
-      const quoted = items.reduce((sum, row) => sum + integer(row.awarded_qty) * integer(row.catalog_unit_price), 0)
-        + budgets.reduce((sum, row) => sum + integer(row.construction_amount), 0);
+      const itemQuoted = items.reduce((sum, row) => sum + integer(row.awarded_qty) * integer(row.catalog_unit_price), 0);
+      const constructionAmount = budgets.reduce((sum, row) => sum + integer(row.construction_amount), 0);
+      const quoted = itemQuoted + constructionAmount;
       return {
         ...project,
         budgets,
@@ -392,6 +497,8 @@ export async function listComplexProjects() {
         summary: {
           allocated_amount: allocated,
           quote_amount: quoted,
+          item_quote_amount: itemQuoted,
+          construction_amount: constructionAmount,
           item_count: items.length,
           unscheduled_count: items.filter((row) => row.schedule_state === "일정 미정" || row.schedule_state === "수량 미배정").length,
           protection_needed_count: items.filter((row) => {
@@ -438,11 +545,32 @@ export async function searchComplexProjectCandidates(value: unknown) {
            OR LOWER(COALESCE(a.region, '')) LIKE ?
          )
      )
+     ), project_finance AS (
+       SELECT ep.organization, ep.business_round,
+              COALESCE(SUM(COALESCE(ep.construction_amount, 0)), 0) AS construction_amount,
+              COALESCE(SUM(COALESCE(item.item_amount, 0)), 0) AS item_amount,
+              STRING_AGG(DISTINCT NULLIF(TRIM(ep.name), ''), ' · ') AS budget_names
+       FROM equipment_projects ep
+       JOIN activities source_activity ON source_activity.id = ep.activity_id
+       LEFT JOIN (
+         SELECT project_id,
+                SUM(COALESCE(awarded_qty, 0) * COALESCE(catalog_unit_price, 0)) AS item_amount
+         FROM equipment_items
+         GROUP BY project_id
+       ) item ON item.project_id = ep.id
+       WHERE source_activity.award_status = '위즈업 수주'
+       GROUP BY ep.organization, ep.business_round
+     )
      SELECT latest.organization, latest.business_round, latest.region,
-            latest.progress_manager,
+            latest.progress_manager, latest.topic, latest.summary,
+            latest.budget_type, latest.budget_amount,
+            latest.budget_amount_override, latest.budgets_json,
             CASE WHEN latest.award_status = '위즈업 수주' THEN 1 ELSE 0 END AS whizzup_award,
             latest.award_status, latest.activity_date AS latest_date,
             COALESCE(location.road_address, location.address, '') AS address,
+            COALESCE(project_finance.item_amount, 0) AS item_amount,
+            COALESCE(project_finance.construction_amount, 0) AS construction_amount,
+            COALESCE(project_finance.budget_names, '') AS budget_names,
             existing.id AS complex_project_id,
             existing.name AS complex_project_name
      FROM latest
@@ -452,11 +580,38 @@ export async function searchComplexProjectCandidates(value: unknown) {
        ON existing.organization = latest.organization
       AND existing.business_round = latest.business_round
       AND existing.active = 1
+     LEFT JOIN project_finance
+       ON project_finance.organization = latest.organization
+      AND project_finance.business_round = latest.business_round
      WHERE latest.row_number = 1
      ORDER BY latest.activity_date DESC, latest.organization COLLATE NOCASE
      LIMIT 30`,
   ).bind(like, like).all<Record<string, unknown>>();
-  return result.results;
+  return result.results.map((row) => {
+    const budgets = activityBudgetsFromRecord(row);
+    const budgetTotal = budgets.reduce((sum, budget) => sum + parseStoredActivityBudgetMoney(
+      budget.budgetAmountOverride || budget.budgetInstitutionAmount || budget.budgetAmount,
+    ), 0);
+    const itemAmount = integer(row.item_amount);
+    const constructionAmount = integer(row.construction_amount);
+    const equipmentTotal = itemAmount + constructionAmount;
+    const budgetNames = clean(row.budget_names, 500);
+    const topic = clean(row.topic, 160);
+    const organization = clean(row.organization, 120);
+    const suggestedName = /사업|공간|구축|조성|교실|센터/.test(topic)
+      ? topic
+      : budgetNames && !budgetNames.includes(" · ")
+        ? `${organization} ${budgetNames} 사업`
+        : `${organization} 복합사업`;
+    return {
+      ...row,
+      suggested_name: suggestedName,
+      suggested_total_budget: budgetTotal || equipmentTotal || null,
+      linked_item_amount: itemAmount,
+      linked_construction_amount: constructionAmount,
+      linked_budget_count: budgets.length,
+    };
+  });
 }
 
 export async function createComplexProject(payload: Record<string, unknown>, member: Member) {
@@ -485,7 +640,11 @@ export async function createComplexProject(payload: Record<string, unknown>, mem
   const requestedManager = requestedManagerId
     ? await d1.prepare(
         `SELECT id, display_name FROM members
-         WHERE id = ? AND status = 'approved' AND is_sales = 1`,
+         WHERE id = ? AND status = 'approved'
+           AND (is_sales = 1 OR role = 'admin' OR EXISTS (
+             SELECT 1 FROM activities activity
+             WHERE TRIM(activity.progress_manager) = TRIM(members.display_name)
+           ))`,
       ).bind(requestedManagerId).first<{ id: number; display_name: string }>()
     : null;
   if (requestedManagerId && !requestedManager) {
@@ -560,7 +719,11 @@ export async function updateComplexProject(payload: Record<string, unknown>, mem
     const requestedManager = requestedManagerId
       ? await transaction.prepare(
           `SELECT id, display_name FROM members
-           WHERE id = ? AND status = 'approved' AND is_sales = 1`,
+           WHERE id = ? AND status = 'approved'
+             AND (is_sales = 1 OR role = 'admin' OR EXISTS (
+               SELECT 1 FROM activities activity
+               WHERE TRIM(activity.progress_manager) = TRIM(members.display_name)
+             ))`,
         ).bind(requestedManagerId).first<{ id: number; display_name: string }>()
       : null;
     if (requestedManagerId && !requestedManager) throw new Error("승인된 영업담당자를 선택해 주세요.");
@@ -576,6 +739,40 @@ export async function updateComplexProject(payload: Record<string, unknown>, mem
     await writeEvent(transaction, projectId, "update_project", payload, member);
   });
   return { projectId };
+}
+
+export async function cancelComplexProject(payload: Record<string, unknown>, member: Member) {
+  const d1 = await ensureComplexProjectsReady();
+  const projectId = integer(payload.projectId);
+  const reason = clean(payload.reason, 500);
+  await d1.transaction(async (transaction) => {
+    const project = await requireProject(transaction, projectId);
+    await transaction.prepare(
+      `UPDATE complex_projects
+       SET status = '취소', active = 0,
+           notes = CASE
+             WHEN ? = '' THEN notes
+             WHEN TRIM(notes) = '' THEN ?
+             ELSE notes || CHAR(10) || ?
+           END,
+           updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+    ).bind(
+      reason,
+      reason ? `취소 사유: ${reason}` : "",
+      reason ? `취소 사유: ${reason}` : "",
+      member.id,
+      member.displayName,
+      projectId,
+    ).run();
+    await writeEvent(transaction, projectId, "cancel_project", {
+      organization: project.organization,
+      businessRound: project.business_round,
+      reason,
+      preservedOriginalRecords: true,
+    }, member);
+  });
+  return { projectId, cancelled: true };
 }
 
 export async function addComplexBudget(payload: Record<string, unknown>, member: Member) {

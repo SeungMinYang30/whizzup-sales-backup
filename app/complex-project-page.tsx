@@ -21,6 +21,8 @@ type ComplexProject = Row & {
   summary: {
     allocated_amount: number;
     quote_amount: number;
+    item_quote_amount: number;
+    construction_amount: number;
     item_count: number;
     unscheduled_count: number;
     protection_needed_count: number;
@@ -87,6 +89,8 @@ export default function ComplexProjectPage(props: {
   const [candidateLoading, setCandidateLoading] = useState(false);
   const [selectedScope, setSelectedScope] = useState("");
   const [createManagerId, setCreateManagerId] = useState("");
+  const [createName, setCreateName] = useState("");
+  const [createTotalBudget, setCreateTotalBudget] = useState("");
   const [detailTarget, setDetailTarget] = useState<{
     organization: string;
     businessRound: number;
@@ -195,6 +199,29 @@ export default function ComplexProjectPage(props: {
     [data.projects, selectedId],
   );
 
+  const applyCandidateDefaults = useCallback((candidate: Row) => {
+    const scope = `${candidate.organization}\u001f${candidate.business_round}`;
+    setSelectedScope(scope);
+    setCreateName(String(candidate.suggested_name || `${candidate.organization} 복합사업`));
+    setCreateTotalBudget(numberValue(candidate.suggested_total_budget)
+      ? String(numberValue(candidate.suggested_total_budget))
+      : "");
+    const normalizedManager = String(candidate.progress_manager || "").replace(/\s+/g, "").toLocaleLowerCase("ko-KR");
+    const matched = data.members.find((member) =>
+      String(member.display_name || "").replace(/\s+/g, "").toLocaleLowerCase("ko-KR") === normalizedManager,
+    );
+    setCreateManagerId(matched ? String(matched.id) : "");
+  }, [data.members]);
+
+  useEffect(() => {
+    if (!detailTarget || !candidates.length || createName || createTotalBudget) return;
+    const candidate = candidates.find((entry) =>
+      String(entry.organization) === detailTarget.organization
+      && numberValue(entry.business_round) === detailTarget.businessRound,
+    );
+    if (candidate) applyCandidateDefaults(candidate);
+  }, [applyCandidateDefaults, candidates, createName, createTotalBudget, detailTarget]);
+
   async function mutate(payload: Record<string, unknown>, success: string) {
     if (busy) return false;
     setBusy(true);
@@ -269,6 +296,8 @@ export default function ComplexProjectPage(props: {
       setCandidates([]);
       setSelectedScope("");
       setCreateManagerId("");
+      setCreateName("");
+      setCreateTotalBudget("");
       setCreateSourceType("whizzup");
     }
   }
@@ -386,6 +415,18 @@ export default function ComplexProjectPage(props: {
     await mutate({ action: "delete_entity", projectId: selected.id, entity, id }, "항목을 삭제했습니다.");
   }
 
+  async function cancelProject() {
+    if (!selected) return;
+    const reason = window.prompt(
+      "복합사업 연결을 취소합니다. 기관 상세·예산·품목·수주 기록은 삭제되지 않습니다.\n취소 사유를 입력해 주세요.",
+      "",
+    );
+    if (reason === null) return;
+    if (!window.confirm("복합사업을 취소하시겠습니까? 원본 기관 기록과 회계·통계 자료는 그대로 유지됩니다.")) return;
+    const ok = await mutate({ action: "cancel_project", projectId: selected.id, reason }, "복합사업을 취소했습니다.");
+    if (ok) setSelectedId(null);
+  }
+
   return (
     <section className="complex-project-page">
       <header className="complex-page-header">
@@ -405,8 +446,8 @@ export default function ComplexProjectPage(props: {
         <form className="complex-inline-form" onSubmit={createProject}>
           <strong>기관의 복합사업 활성화</strong>
           <div className="complex-source-switch wide" role="radiogroup" aria-label="복합사업 출처">
-            <button type="button" role="radio" aria-checked={createSourceType === "whizzup"} className={createSourceType === "whizzup" ? "selected" : ""} onClick={() => { setCreateSourceType("whizzup"); setSelectedScope(""); }}>위즈업 수주에서 선택</button>
-            <button type="button" role="radio" aria-checked={createSourceType === "external"} className={createSourceType === "external" ? "selected" : ""} onClick={() => { setCreateSourceType("external"); setSelectedScope(""); setCandidates([]); }}>외부 사업 수기 등록</button>
+            <button type="button" role="radio" aria-checked={createSourceType === "whizzup"} className={createSourceType === "whizzup" ? "selected" : ""} onClick={() => { setCreateSourceType("whizzup"); setSelectedScope(""); setCreateName(""); setCreateTotalBudget(""); }}>위즈업 수주에서 선택</button>
+            <button type="button" role="radio" aria-checked={createSourceType === "external"} className={createSourceType === "external" ? "selected" : ""} onClick={() => { setCreateSourceType("external"); setSelectedScope(""); setCreateName(""); setCreateTotalBudget(""); setCandidates([]); }}>외부 사업 수기 등록</button>
           </div>
           {createSourceType === "whizzup" ? <>
           <label className="wide">기관 검색
@@ -415,6 +456,8 @@ export default function ComplexProjectPage(props: {
               onChange={(event) => {
                 setCandidateSearch(event.target.value);
                 setSelectedScope("");
+                setCreateName("");
+                setCreateTotalBudget("");
               }}
               placeholder="기관명 또는 지역을 두 글자 이상 입력"
               autoComplete="off"
@@ -436,12 +479,10 @@ export default function ComplexProjectPage(props: {
                     setMessage("이미 활성화된 복합사업을 열었습니다.");
                     return;
                   }
-                  setSelectedScope(scope);
-                  const matched = data.members.find((member) => String(member.display_name) === String(candidate.progress_manager));
-                  setCreateManagerId(matched ? String(matched.id) : "");
+                  applyCandidateDefaults(candidate);
                 }}
               >
-                <span><b>{String(candidate.organization)}</b><small>{String(candidate.region || "지역 미입력")} · {numberValue(candidate.business_round)}차 · {String(candidate.award_status || "수주 미정")}</small><small>{String(candidate.address || "주소 미입력")}</small></span>
+                <span><b>{String(candidate.organization)}</b><small>{String(candidate.region || "지역 미입력")} · {numberValue(candidate.business_round)}차 · {String(candidate.award_status || "수주 미정")}</small><small>{String(candidate.address || "주소 미입력")}</small><small>{numberValue(candidate.linked_budget_count)}개 예산 · 품목 {money(candidate.linked_item_amount)} · 공사 {money(candidate.linked_construction_amount)}</small></span>
                 <em>{active ? "관리 중" : numberValue(candidate.whizzup_award) ? "위즈업 수주" : "선택"}</em>
               </button>;
             })}
@@ -453,8 +494,8 @@ export default function ComplexProjectPage(props: {
             <label>사업 차수<input name="externalBusinessRound" type="number" min="1" defaultValue="1" /></label>
             <label>외부 수주 구분<select name="sourceAwardStatus" defaultValue="협력사 수주"><option>협력사 수주</option><option>타업체 수주</option><option>기타 외부 사업</option></select></label>
           </>}
-          <label>사업명<input name="name" placeholder="예: 일산초 공간재구조화 사업" /></label>
-          <label>총 관리예산<input name="totalBudget" type="number" min="0" placeholder="예: 1279228000" /></label>
+          <label>사업명<input name="name" value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="기관 선택 시 기존 사업 정보를 불러옵니다" /></label>
+          <label>총 관리예산<input name="totalBudget" value={createTotalBudget} onChange={(event) => setCreateTotalBudget(event.target.value)} type="number" min="0" placeholder="기관 선택 시 기존 예산을 합산합니다" /></label>
           <label>진행 담당자
             <select value={createManagerId} onChange={(event) => setCreateManagerId(event.target.value)}>
               <option value="">담당자 미지정</option>
@@ -488,13 +529,15 @@ export default function ComplexProjectPage(props: {
             <>
               <div className="complex-detail-heading">
                 <div><h3>{selected.name}</h3><p>{selected.organization} · {numberValue(selected.business_round)}차 사업 · {selected.source_type === "external" ? `${selected.source_award_status}(통계 제외)` : "위즈업 수주"}</p></div>
-                <button type="button" onClick={() => props.onOpenOrganization?.(selected.organization, numberValue(selected.business_round))}>기관 상세 보기</button>
+                <div className="complex-heading-actions"><button type="button" onClick={() => props.onOpenOrganization?.(selected.organization, numberValue(selected.business_round))}>기관 상세 보기</button><button type="button" className="danger" onClick={() => void cancelProject()}>복합사업 취소</button></div>
               </div>
 
               <div className="complex-summary-grid">
                 <article><small>총 관리예산</small><b>{money(selected.total_budget)}</b></article>
                 <article><small>예산 배정 합계</small><b>{money(selected.summary.allocated_amount)}</b></article>
-                <article><small>등록 견적·공사비</small><b>{money(selected.summary.quote_amount)}</b></article>
+                <article><small>연결 품목 금액</small><b>{money(selected.summary.item_quote_amount)}</b></article>
+                <article><small>연결 공사비</small><b>{money(selected.summary.construction_amount)}</b></article>
+                <article><small>품목·공사비 합계</small><b>{money(selected.summary.quote_amount)}</b></article>
                 <article className={selected.summary.remaining_budget !== null && selected.summary.remaining_budget < 0 ? "danger" : ""}><small>{selected.summary.remaining_budget !== null && selected.summary.remaining_budget < 0 ? "관리예산 초과" : "관리예산 잔액"}</small><b>{selected.summary.remaining_budget === null ? "예산 미입력" : money(Math.abs(selected.summary.remaining_budget))}</b></article>
                 <article className={selected.summary.unscheduled_count ? "warning" : ""}><small>일정 미정 품목</small><b>{selected.summary.unscheduled_count}건</b></article>
                 <article className={selected.summary.protection_needed_count ? "warning" : ""}><small>영업보호 필요</small><b>{selected.summary.protection_needed_count}건</b></article>
@@ -566,7 +609,13 @@ export default function ComplexProjectPage(props: {
                       <div className="complex-delivery-list">
                         {(item.deliveries ?? []).map((delivery) => <span key={String(delivery.id)}><b>{String(delivery.kind)}</b><small>{String(delivery.start_date || "일정 미정")}{delivery.end_date && delivery.end_date !== delivery.start_date ? ` ~ ${delivery.end_date}` : ""}</small><small>{numberValue(delivery.planned_qty)}{String(item.unit)} · {String(delivery.status)}</small><button type="button" onClick={() => { setDeliveryItemId(itemId); setEditDelivery(delivery); }}>수정</button><button type="button" onClick={() => void removeEntity("delivery", numberValue(delivery.id))}>삭제</button></span>)}
                       </div>
-                      <footer><button type="button" onClick={() => { setEditItem(item); setItemOpen(true); }}>품목 수정</button><button type="button" className="primary" onClick={() => { setDeliveryItemId(itemId); setEditDelivery(null); }}>+ 분할 일정</button></footer>
+                      <footer>
+                        {numberValue(item.comparison_document_count) > 0 && Boolean(item.catalog_item_id) && (
+                          <a href={`/api/product-comparison-documents?productId=${encodeURIComponent(String(item.catalog_item_id))}&latest=1`} target="_blank" rel="noreferrer">비교표 내려받기</a>
+                        )}
+                        <button type="button" onClick={() => { setEditItem(item); setItemOpen(true); }}>품목 수정</button>
+                        <button type="button" className="primary" onClick={() => { setDeliveryItemId(itemId); setEditDelivery(null); }}>+ 분할 일정</button>
+                      </footer>
                       {deliveryItemId === itemId && <DeliveryForm item={item} delivery={editDelivery} busy={busy} onSubmit={saveDelivery} onCancel={() => { setDeliveryItemId(null); setEditDelivery(null); }} />}
                     </article>;
                   })}

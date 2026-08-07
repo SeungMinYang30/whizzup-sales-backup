@@ -527,7 +527,7 @@ export default function DataBackupPage({
               인터넷 없이 최신 업무 자료를 열 수 있는 관리자 전용 패키지입니다.
             </p>
           </div>
-          <span className="backup-owner-badge">대표관리자 전용</span>
+          <span className="backup-owner-badge">운영관리자 전용</span>
         </div>
 
         <div className="backup-portability-grid">

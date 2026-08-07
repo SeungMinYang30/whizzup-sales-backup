@@ -13,14 +13,14 @@ export async function POST() {
     const actor = await requirePrimaryOwner();
     if (actor.email.trim().toLowerCase() !== OWNER_EMAIL) {
       return Response.json(
-        { error: "지정된 대표 관리자 계정에서만 정리할 수 있습니다." },
+        { error: "지정된 운영관리자 계정에서만 정리할 수 있습니다." },
         { status: 403 },
       );
     }
 
     const actorId = Number(actor.id);
     if (!Number.isSafeInteger(actorId) || actorId <= 0) {
-      return Response.json({ error: "대표 관리자 정보를 확인하지 못했습니다." }, { status: 400 });
+      return Response.json({ error: "운영관리자 정보를 확인하지 못했습니다." }, { status: 400 });
     }
 
     const d1 = await ensureCollaborationReady();

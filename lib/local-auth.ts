@@ -193,7 +193,6 @@ export async function getLocalAuthIdentity() {
     throw error;
   }
   if (!row) {
-    (await cookies()).delete(LOCAL_AUTH_COOKIE);
     return null;
   }
   await d1

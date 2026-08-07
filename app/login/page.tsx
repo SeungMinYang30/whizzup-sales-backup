@@ -42,7 +42,7 @@ export default async function LoginPage({
         {errorMessage ? <p className="oauth-error">{errorMessage}</p> : null}
         <LocalLoginForm returnTo={returnTo} />
         <div className="owner-google-login">
-          <span>대표 관리자 비상 로그인</span>
+          <span>운영관리자 비상 로그인</span>
         <Link
           className="google-signin-button"
           href={`/auth/google?return_to=${encodeURIComponent(returnTo)}`}
