@@ -199,6 +199,7 @@ test("dashboard scope remains bounded after records exceed 500", async () => {
   assert.ok(indexes.has("activities_organization_date_idx"));
   assert.ok(indexes.has("activities_date_idx"));
   assert.ok(indexes.has("activities_manager_created_idx"));
+  assert.ok(indexes.has("activities_progress_schedule_idx"));
 
   const route = await readFile(
     new URL("app/api/records/route.ts", projectUrl),

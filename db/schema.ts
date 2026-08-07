@@ -105,6 +105,9 @@ export const activities = sqliteTable(
       table.id,
     ),
     index("activities_budget_request_idx").on(table.budgetRequestId, table.id),
+    index("activities_progress_schedule_idx")
+      .on(table.organization, table.activityDate, table.id)
+      .where(sql`TRIM(COALESCE(${table.progressSchedule}, '')) <> ''`),
   ],
 );
 

@@ -1128,6 +1128,35 @@ export function resolveAwardManagement(payload: Record<string, unknown>) {
 }
 
 let recordsReadyPromise: Promise<ReturnType<typeof getD1>> | null = null;
+const recordsRuntimeReadyKey = "records_runtime_ready_v75";
+
+async function isRecordsRuntimeReady(d1: ReturnType<typeof getD1>) {
+  try {
+    const row = await d1
+      .prepare("SELECT value FROM app_settings WHERE key = ? LIMIT 1")
+      .bind(recordsRuntimeReadyKey)
+      .first<{ value: string }>();
+    return row?.value === "completed";
+  } catch {
+    // Older or partially restored databases may not have app_settings yet.
+    // In that case the compatibility initialization below remains the fallback.
+    return false;
+  }
+}
+
+async function markRecordsRuntimeReady(d1: ReturnType<typeof getD1>) {
+  await d1
+    .prepare(
+      `INSERT INTO app_settings (key, value, updated_by, updated_at)
+       VALUES (?, 'completed', NULL, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET
+         value = excluded.value,
+         updated_by = NULL,
+         updated_at = CURRENT_TIMESTAMP`,
+    )
+    .bind(recordsRuntimeReadyKey)
+    .run();
+}
 
 async function initializeRecords() {
   const d1 = getD1();
@@ -1135,6 +1164,7 @@ async function initializeRecords() {
     await d1.prepare("SELECT 1").all();
     return d1;
   }
+  if (await isRecordsRuntimeReady(d1)) return d1;
   await ensureCollaborationReady();
   await d1.batch([
     d1.prepare(createTableSql),
@@ -1359,6 +1389,7 @@ async function initializeRecords() {
     await backfillHistoricalProgressManagersFromLatestAuthors(d1);
     await repairAutoBackfilledOwnerProgressManagers(d1);
   }
+  await markRecordsRuntimeReady(d1);
 
   return d1;
 }

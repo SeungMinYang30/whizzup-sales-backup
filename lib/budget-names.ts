@@ -281,6 +281,33 @@ const virtualSportsBudgetMigrationAction =
 const virtualSportsCanonicalName = "가상현실스포츠실";
 const virtualSportsAliasNames = [virtualSportsCanonicalName, "문체부"];
 let budgetNamesReadyPromise: Promise<D1Database> | null = null;
+const budgetNamesRuntimeReadyKey = "budget_names_runtime_ready_v75";
+
+async function isBudgetNamesRuntimeReady(d1: D1Database) {
+  try {
+    const row = await d1
+      .prepare("SELECT value FROM app_settings WHERE key = ? LIMIT 1")
+      .bind(budgetNamesRuntimeReadyKey)
+      .first<{ value: string }>();
+    return row?.value === "completed";
+  } catch {
+    return false;
+  }
+}
+
+async function markBudgetNamesRuntimeReady(d1: D1Database) {
+  await d1
+    .prepare(
+      `INSERT INTO app_settings (key, value, updated_by, updated_at)
+       VALUES (?, 'completed', NULL, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET
+         value = excluded.value,
+         updated_by = NULL,
+         updated_at = CURRENT_TIMESTAMP`,
+    )
+    .bind(budgetNamesRuntimeReadyKey)
+    .run();
+}
 
 export function normalizeBudgetNameKey(value: unknown) {
   return normalizeBudgetSearchKey(value);
@@ -924,6 +951,7 @@ async function initializeBudgetNames() {
     await d1.prepare("SELECT 1").all();
     return d1;
   }
+  if (await isBudgetNamesRuntimeReady(d1)) return d1;
   await d1.batch(schemaStatements.map((statement) => d1.prepare(statement)));
   await ensureAdditiveBudgetSchema(d1);
   // The standby PostgreSQL database receives already-normalized rows from the
@@ -961,6 +989,7 @@ async function initializeBudgetNames() {
          )`,
     )
     .run();
+  await markBudgetNamesRuntimeReady(d1);
   return d1;
 }
 

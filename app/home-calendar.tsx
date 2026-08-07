@@ -236,9 +236,9 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
         applyPayload(await requestCalendar(false));
         if (!active) return;
         setLoading(false);
-        // Let the visible dashboard records and stored calendar settle before
-        // the slower Google reconciliation uses DB and external connections.
-        await new Promise((resolve) => window.setTimeout(resolve, 3_500));
+        // Give the primary dashboard request a brief head start, then reconcile
+        // Google without making the calendar appear idle for several seconds.
+        await new Promise((resolve) => window.setTimeout(resolve, 900));
         if (!active) return;
         setGoogleRefreshing(true);
         try {
