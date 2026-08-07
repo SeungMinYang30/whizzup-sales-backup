@@ -45,7 +45,9 @@ test("대표 관리자 외 계정은 원본 보관 후 연결 이력을 보존�
   assert.match(cleanup, /freeyang30@gmail\.com/);
   assert.match(cleanup, /member_account_archives/);
   assert.match(cleanup, /activity_authors SET member_id = NULL/);
-  assert.match(cleanup, /DELETE FROM members WHERE id = \?/);
+  assert.match(cleanup, /DELETE FROM members WHERE id IN/);
+  assert.match(cleanup, /const placeholders = targetIds\.map/);
+  assert.doesNotMatch(cleanup, /for \(const id of targetIds\)/);
   assert.match(cleanup, /requirePrimaryOwner/);
 });
 

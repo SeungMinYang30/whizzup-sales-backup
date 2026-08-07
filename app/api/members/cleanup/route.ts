@@ -42,32 +42,35 @@ export async function POST() {
           .bind(Number(row.id), JSON.stringify(archivedRow), actor.id)
           .run();
       }
-      for (const id of targetIds) {
-        await tx.prepare("UPDATE members SET approved_by = ? WHERE approved_by = ?").bind(actor.id, id).run();
-        await tx.prepare("UPDATE activity_authors SET member_id = NULL WHERE member_id = ?").bind(id).run();
-        await tx.prepare("UPDATE activity_assignment_history SET to_member_id = ? WHERE to_member_id = ?").bind(actor.id, id).run();
-        await tx.prepare("UPDATE activity_assignment_history SET changed_by_member_id = ? WHERE changed_by_member_id = ?").bind(actor.id, id).run();
-        await tx.prepare("UPDATE activity_change_batches SET actor_member_id = ? WHERE actor_member_id = ?").bind(actor.id, id).run();
-        await tx.prepare("UPDATE activity_change_batches SET undone_by_member_id = ? WHERE undone_by_member_id = ?").bind(actor.id, id).run();
-        await tx.prepare("UPDATE activity_change_items SET undone_by_member_id = ? WHERE undone_by_member_id = ?").bind(actor.id, id).run();
-        await tx.prepare("UPDATE ai_recommendations SET created_by = ? WHERE created_by = ?").bind(actor.id, id).run();
-        await tx.prepare("UPDATE oauth_clients SET created_by = ? WHERE created_by = ?").bind(actor.id, id).run();
-        await tx.prepare("UPDATE app_settings SET updated_by = ? WHERE updated_by = ?").bind(actor.id, id).run();
-        await tx.prepare("UPDATE api_credentials SET updated_by = ? WHERE updated_by = ?").bind(actor.id, id).run();
-        await tx.prepare("UPDATE organization_locations SET updated_by = ? WHERE updated_by = ?").bind(actor.id, id).run();
-        await tx.prepare("UPDATE sales_campaigns SET created_by = ? WHERE created_by = ?").bind(actor.id, id).run();
-        await tx.prepare("UPDATE sales_campaign_targets SET assigned_member_id = NULL WHERE assigned_member_id = ?").bind(id).run();
-        await tx.prepare("UPDATE equipment_projects SET created_by = ? WHERE created_by = ?").bind(actor.id, id).run();
-        await tx.prepare("UPDATE complex_projects SET manager_member_id = NULL WHERE manager_member_id = ?").bind(id).run();
-        await tx.prepare("UPDATE complex_projects SET created_by = ? WHERE created_by = ?").bind(actor.id, id).run();
-        await tx.prepare("UPDATE complex_projects SET updated_by = ? WHERE updated_by = ?").bind(actor.id, id).run();
-        await tx.prepare("DELETE FROM manager_alert_acknowledgements WHERE member_id = ?").bind(id).run();
-        await tx.prepare("DELETE FROM activity_review_acknowledgements WHERE member_id = ?").bind(id).run();
-        await tx.prepare("DELETE FROM oauth_codes WHERE member_id = ?").bind(id).run();
-        await tx.prepare("DELETE FROM oauth_tokens WHERE member_id = ?").bind(id).run();
-        await tx.prepare("DELETE FROM local_auth_sessions WHERE member_id = ?").bind(id).run();
-        await tx.prepare("DELETE FROM members WHERE id = ?").bind(id).run();
-      }
+      const placeholders = targetIds.map(() => "?").join(", ");
+      const withActor = [actor.id, ...targetIds];
+      const onlyTargets = [...targetIds];
+      await tx.batch([
+        tx.prepare(`UPDATE members SET approved_by = ? WHERE approved_by IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`UPDATE activity_authors SET member_id = NULL WHERE member_id IN (${placeholders})`).bind(...onlyTargets),
+        tx.prepare(`UPDATE activity_assignment_history SET to_member_id = ? WHERE to_member_id IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`UPDATE activity_assignment_history SET changed_by_member_id = ? WHERE changed_by_member_id IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`UPDATE activity_change_batches SET actor_member_id = ? WHERE actor_member_id IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`UPDATE activity_change_batches SET undone_by_member_id = ? WHERE undone_by_member_id IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`UPDATE activity_change_items SET undone_by_member_id = ? WHERE undone_by_member_id IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`UPDATE ai_recommendations SET created_by = ? WHERE created_by IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`UPDATE oauth_clients SET created_by = ? WHERE created_by IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`UPDATE app_settings SET updated_by = ? WHERE updated_by IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`UPDATE api_credentials SET updated_by = ? WHERE updated_by IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`UPDATE organization_locations SET updated_by = ? WHERE updated_by IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`UPDATE sales_campaigns SET created_by = ? WHERE created_by IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`UPDATE sales_campaign_targets SET assigned_member_id = NULL WHERE assigned_member_id IN (${placeholders})`).bind(...onlyTargets),
+        tx.prepare(`UPDATE equipment_projects SET created_by = ? WHERE created_by IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`UPDATE complex_projects SET manager_member_id = NULL WHERE manager_member_id IN (${placeholders})`).bind(...onlyTargets),
+        tx.prepare(`UPDATE complex_projects SET created_by = ? WHERE created_by IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`UPDATE complex_projects SET updated_by = ? WHERE updated_by IN (${placeholders})`).bind(...withActor),
+        tx.prepare(`DELETE FROM manager_alert_acknowledgements WHERE member_id IN (${placeholders})`).bind(...onlyTargets),
+        tx.prepare(`DELETE FROM activity_review_acknowledgements WHERE member_id IN (${placeholders})`).bind(...onlyTargets),
+        tx.prepare(`DELETE FROM oauth_codes WHERE member_id IN (${placeholders})`).bind(...onlyTargets),
+        tx.prepare(`DELETE FROM oauth_tokens WHERE member_id IN (${placeholders})`).bind(...onlyTargets),
+        tx.prepare(`DELETE FROM local_auth_sessions WHERE member_id IN (${placeholders})`).bind(...onlyTargets),
+        tx.prepare(`DELETE FROM members WHERE id IN (${placeholders})`).bind(...onlyTargets),
+      ]);
       return {
         deletedCount: targets.results.length,
         names: targets.results.map((row) => String(row.display_name ?? row.email)),
