@@ -45,19 +45,16 @@ test("대시보드는 저장된 일정을 먼저 표시하고 Google 확인은 �
   assert.match(calendar, /Google 일정 확인 중/);
 });
 
-test("초기 대시보드는 핵심 기록을 먼저 받고 후순위 자료를 단계적으로 불러온다", () => {
+test("초기 대시보드는 핵심 기록만 받고 관리 자료는 화면을 열 때 불러온다", () => {
   const initialLoad = crmApp.slice(
     crmApp.indexOf("void requestSession()"),
     crmApp.indexOf('if (sessionStatus !== "approved") return;', crmApp.indexOf("void requestSession()")),
   );
-  assert.ok(initialLoad.indexOf('requestRecords("dashboard")') < initialLoad.indexOf("ensureBudgetReviewCatalog()"));
-  assert.match(initialLoad, /deferDashboardTask\(2_500/);
-  assert.match(initialLoad, /deferDashboardTask\(5_500/);
-  assert.match(initialLoad, /deferDashboardTask\(11_500/);
   assert.match(crmApp, /dashboardRecordsRequest = requestRecords\("dashboard"\)/);
   assert.match(initialLoad, /prefetchedRecords\.error[\s\S]*?requestRecords\("dashboard"\)/);
-  assert.match(crmApp, /fetch\("\/api\/award-vendors"[\s\S]*?\}, 13_000\)/);
+  assert.doesNotMatch(initialLoad, /ensureBudgetReviewCatalog|loadManagerAlerts|loadEquipmentQuoteSummaries|loadActivityReviews|loadProtectionReviews|loadCorrectionRequests/);
   assert.match(crmApp, /const firstHeartbeat = window\.setTimeout\(heartbeat, 15_000\)/);
+  assert.match(crmApp, /whizzup-presence-heartbeat-leader/);
   assert.match(crmApp, /requestScheduleReminders\(\)[\s\S]*?\}, 4_500\)/);
   assert.match(calendar, /if \(!editorOpen \|\| members\.length\) return;[\s\S]*?\/api\/members\?scope=assignees/);
 });

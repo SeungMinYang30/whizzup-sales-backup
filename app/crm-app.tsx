@@ -6332,6 +6332,7 @@ export default function CrmApp({
     useState(false);
   const [partnerCompanySearch, setPartnerCompanySearch] = useState("");
   const [awardVendors, setAwardVendors] = useState<PartnerCompany[]>([]);
+  const awardVendorsLoadedRef = useRef(false);
   const [editingPartnerCompanyId, setEditingPartnerCompanyId] =
     useState<number | null>(null);
   const [partnerCompanySaving, setPartnerCompanySaving] = useState(false);
@@ -6798,12 +6799,6 @@ export default function CrmApp({
 
   useEffect(() => {
     let active = true;
-    const deferredTimers: number[] = [];
-    const deferDashboardTask = (delay: number, task: () => void) => {
-      deferredTimers.push(window.setTimeout(() => {
-        if (active) task();
-      }, delay));
-    };
     // Approved returning users can load their dashboard rows while the
     // session endpoint confirms permissions. If the parallel request is too
     // early for a first-time user, retry once after the session is known.
@@ -6817,9 +6812,9 @@ export default function CrmApp({
         setSessionLoading(false);
         if (nextSession.member.status === "approved") {
           // The dashboard only needs the latest institution, award, and
-          // schedule rows. Load the complete history lazily when a detailed
-          // management view is opened. Keep optional dashboard requests out
-          // of this critical path so they do not compete for DB connections.
+          // schedule rows. Optional management data is loaded only when the
+          // user opens the relevant screen so it cannot exhaust the database
+          // connection pool during startup.
           const prefetchedRecords = await dashboardRecordsRequest;
           const nextRecords = prefetchedRecords.error
             ? await requestRecords("dashboard")
@@ -6830,29 +6825,6 @@ export default function CrmApp({
             recordsFullyLoadedRef.current = false;
             setRecordsFullyLoaded(false);
           }
-          deferDashboardTask(2_500, () => {
-            void ensureBudgetReviewCatalog();
-          });
-          deferDashboardTask(4_000, () => {
-            void loadActivityReviewAssignees();
-          });
-          deferDashboardTask(5_500, () => {
-            void loadEquipmentQuoteSummaries();
-          });
-          deferDashboardTask(7_000, () => {
-            if (memberCan(nextSession.member, "records:manage")) {
-              void loadManagerAlerts();
-            }
-          });
-          deferDashboardTask(8_500, () => {
-            void loadActivityReviews();
-          });
-          deferDashboardTask(10_000, () => {
-            void loadProtectionReviews();
-          });
-          deferDashboardTask(11_500, () => {
-            void loadCorrectionRequests();
-          });
         }
         setError("");
       })
@@ -6869,54 +6841,38 @@ export default function CrmApp({
       });
     return () => {
       active = false;
-      deferredTimers.forEach((timer) => window.clearTimeout(timer));
     };
   }, []);
 
   useEffect(() => {
     if (sessionStatus !== "approved") return;
-    const timer = window.setTimeout(() => {
-      void fetch("/api/award-vendors", { cache: "no-store" })
-        .then(async (response) => {
-          if (!response.ok) return;
-          const payload = await response.json() as {
-            vendors?: Array<{
-              id?: number;
-              companyName?: string;
-              contactName?: string;
-              contactPhone?: string;
-              contactEmail?: string;
-              notes?: string;
-            }>;
-          };
-          setAwardVendors(
-            (payload.vendors ?? [])
-              .map((vendor) => ({
-                id: Number(vendor.id),
-                organization: String(vendor.companyName ?? "").trim(),
-                contactName: String(vendor.contactName ?? "").trim(),
-                contactPhone: String(vendor.contactPhone ?? "").trim(),
-                contactEmail: String(vendor.contactEmail ?? "").trim(),
-                notes: String(vendor.notes ?? "").trim(),
-              }))
-              .filter(
-                (vendor) =>
-                  Number.isSafeInteger(vendor.id) &&
-                  vendor.id > 0 &&
-                  Boolean(vendor.organization),
-              ),
-          );
-        })
-        .catch(() => undefined);
-    }, 13_000);
-    return () => window.clearTimeout(timer);
-  }, [sessionStatus]);
-
-  useEffect(() => {
-    if (sessionStatus !== "approved") return;
     let inFlight = false;
+    const tabId = crypto.randomUUID();
+    const leaseKey = "whizzup-presence-heartbeat-leader";
+    const claimHeartbeatLease = () => {
+      const now = Date.now();
+      try {
+        const current = JSON.parse(
+          window.localStorage.getItem(leaseKey) || "null",
+        ) as { tabId?: string; expiresAt?: number } | null;
+        if (
+          current?.tabId &&
+          current.tabId !== tabId &&
+          Number(current.expiresAt) > now
+        ) {
+          return false;
+        }
+        window.localStorage.setItem(
+          leaseKey,
+          JSON.stringify({ tabId, expiresAt: now + 75_000 }),
+        );
+        return true;
+      } catch {
+        return true;
+      }
+    };
     const heartbeat = () => {
-      if (document.hidden || inFlight) return;
+      if (document.hidden || inFlight || !claimHeartbeatLease()) return;
       inFlight = true;
       void fetch("/api/presence", {
         method: "POST",
@@ -6942,6 +6898,14 @@ export default function CrmApp({
       window.clearTimeout(firstHeartbeat);
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", handleVisibility);
+      try {
+        const current = JSON.parse(
+          window.localStorage.getItem(leaseKey) || "null",
+        ) as { tabId?: string } | null;
+        if (current?.tabId === tabId) window.localStorage.removeItem(leaseKey);
+      } catch {
+        // Ignore malformed storage left by older builds.
+      }
     };
   }, [sessionStatus, view]);
 
@@ -9562,6 +9526,7 @@ export default function CrmApp({
   }
 
   function openNew() {
+    if (!awardVendorsLoadedRef.current) void loadAwardVendors();
     setEditingId(null);
     setCreatingAward(false);
     formOrganizationSourceRef.current = "";
@@ -9581,6 +9546,7 @@ export default function CrmApp({
   }
 
   function openNewForOrganization(record: Activity, businessRound = record.businessRound) {
+    if (!awardVendorsLoadedRef.current) void loadAwardVendors();
     setEditingId(null);
     setCreatingAward(false);
     formOrganizationSourceRef.current = "";
@@ -9623,6 +9589,7 @@ export default function CrmApp({
   }
 
   function openNewAward() {
+    if (!awardVendorsLoadedRef.current) void loadAwardVendors();
     setEditingId(null);
     setCreatingAward(true);
     formOrganizationSourceRef.current = "";
@@ -10135,6 +10102,44 @@ export default function CrmApp({
       notes: "",
     });
     setPartnerCompanyManagerOpen(true);
+    if (!awardVendorsLoadedRef.current) void loadAwardVendors();
+  }
+
+  async function loadAwardVendors() {
+    if (awardVendorsLoadedRef.current) return;
+    const response = await resilientFetch("/api/award-vendors", {
+      cache: "no-store",
+      retries: 2,
+    });
+    if (!response.ok) return;
+    const payload = await response.json() as {
+      vendors?: Array<{
+        id?: number;
+        companyName?: string;
+        contactName?: string;
+        contactPhone?: string;
+        contactEmail?: string;
+        notes?: string;
+      }>;
+    };
+    setAwardVendors(
+      (payload.vendors ?? [])
+        .map((vendor) => ({
+          id: Number(vendor.id),
+          organization: String(vendor.companyName ?? "").trim(),
+          contactName: String(vendor.contactName ?? "").trim(),
+          contactPhone: String(vendor.contactPhone ?? "").trim(),
+          contactEmail: String(vendor.contactEmail ?? "").trim(),
+          notes: String(vendor.notes ?? "").trim(),
+        }))
+        .filter(
+          (vendor) =>
+            Number.isSafeInteger(vendor.id) &&
+            vendor.id > 0 &&
+            Boolean(vendor.organization),
+        ),
+    );
+    awardVendorsLoadedRef.current = true;
   }
 
   async function savePartnerCompany(event: FormEvent) {
@@ -11733,6 +11738,9 @@ export default function CrmApp({
     setMobileNav(false);
     if (nextView === "records") {
       await loadActivityReviewAssignees();
+    }
+    if (["awards", "vendors", "products"].includes(nextView)) {
+      await loadAwardVendors();
     }
     if (nextView === "team" && canManageMembers) {
       await Promise.all([loadTeam(), loadActivityReviewAssignees()]);

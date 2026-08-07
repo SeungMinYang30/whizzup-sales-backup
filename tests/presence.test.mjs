@@ -15,7 +15,8 @@ test("limits live presence to the primary owner and refreshes it in near real ti
   assert.match(route, /last_seen_at = CURRENT_TIMESTAMP/);
   assert.match(collaboration, /ORDER BY id ASC/);
   assert.match(session, /canViewPresence/);
-  assert.match(crm, /setInterval\(heartbeat, 15_000\)/);
+  assert.match(crm, /setInterval\(heartbeat, 60_000\)/);
+  assert.match(crm, /whizzup-presence-heartbeat-leader/);
   assert.match(crm, /접속 중만 보기/);
   assert.match(crm, /구성원 관리/);
 });

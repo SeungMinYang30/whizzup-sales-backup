@@ -45,10 +45,14 @@ function normalizeD1Row<T extends QueryRow>(row: T): T {
 const globalDatabase = globalThis as typeof globalThis & {
   whizzupPostgres?: ReturnType<typeof postgres>;
   whizzupSchemaReady?: Promise<void>;
+  whizzupLastDatabaseActivityAt?: number;
+  whizzupLivenessCheck?: Promise<ReturnType<typeof postgres>>;
 };
 
 const DATABASE_QUERY_TIMEOUT_MS = 15_000;
 const DATABASE_SCHEMA_TIMEOUT_MS = 25_000;
+const DATABASE_LIVENESS_TIMEOUT_MS = 2_500;
+const DATABASE_LIVENESS_IDLE_MS = 5_000;
 
 export class DatabaseConnectionTimeoutError extends Error {
   constructor(message = "데이터베이스 응답 시간이 초과되었습니다.") {
@@ -99,6 +103,7 @@ async function recycleSqlClient(
 ) {
   if (globalDatabase.whizzupPostgres !== expectedClient) return;
   globalDatabase.whizzupPostgres = undefined;
+  globalDatabase.whizzupLastDatabaseActivityAt = undefined;
   await expectedClient.end({ timeout: 1 }).catch(() => undefined);
 }
 
@@ -132,6 +137,32 @@ function getSqlClient() {
     });
   }
   return globalDatabase.whizzupPostgres;
+}
+
+async function getLiveSqlClient() {
+  const existing = getSqlClient();
+  const lastActivityAt = globalDatabase.whizzupLastDatabaseActivityAt ?? 0;
+  if (Date.now() - lastActivityAt < DATABASE_LIVENESS_IDLE_MS) {
+    return existing;
+  }
+  if (!globalDatabase.whizzupLivenessCheck) {
+    globalDatabase.whizzupLivenessCheck = (async () => {
+      try {
+        await withDatabaseTimeout(
+          existing.unsafe("SELECT 1 AS alive"),
+          DATABASE_LIVENESS_TIMEOUT_MS,
+        );
+        globalDatabase.whizzupLastDatabaseActivityAt = Date.now();
+        return existing;
+      } catch {
+        await recycleSqlClient(existing);
+        return getSqlClient();
+      } finally {
+        globalDatabase.whizzupLivenessCheck = undefined;
+      }
+    })();
+  }
+  return globalDatabase.whizzupLivenessCheck;
 }
 
 async function schemaVersionExists(executor: QueryExecutor, version: string) {
@@ -232,6 +263,12 @@ async function reconcileVercelSchema() {
 }
 
 function ensureVercelSchemaReady() {
+  if (
+    process.env.DATABASE_SCHEMA_VERIFIED_VERSION?.trim() ===
+    VERCEL_SCHEMA_VERSION
+  ) {
+    return Promise.resolve();
+  }
   if (!globalDatabase.whizzupSchemaReady) {
     globalDatabase.whizzupSchemaReady = reconcileVercelSchema()
       .catch((error) => {
@@ -248,12 +285,14 @@ async function executeDirectQuery<T extends QueryRow>(
   canRetry: boolean,
 ) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const sql = getSqlClient();
+    const sql = await getLiveSqlClient();
     try {
-      return (await withDatabaseTimeout(
+      const rows = (await withDatabaseTimeout(
         sql.unsafe(query, parameters as never[]),
         DATABASE_QUERY_TIMEOUT_MS,
       )) as PostgresResult<T>;
+      globalDatabase.whizzupLastDatabaseActivityAt = Date.now();
+      return rows;
     } catch (error) {
       if (isDatabaseUnavailableError(error)) {
         await recycleSqlClient(sql);
