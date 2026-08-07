@@ -1,10 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import {
+  buildMemberDisplayName,
+  MEMBER_JOB_TITLE_SUGGESTIONS,
+} from "../../lib/member-display-name";
 
 export default function LocalLoginForm({ returnTo }: { returnTo: string }) {
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [displayName, setDisplayName] = useState("");
+  const [name, setName] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -22,13 +27,15 @@ export default function LocalLoginForm({ returnTo }: { returnTo: string }) {
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ displayName, username, password }),
+        body: JSON.stringify({ name, jobTitle, username, password }),
       });
       const payload = (await response.json()) as { error?: string; message?: string };
       if (!response.ok) throw new Error(payload.error || "요청을 처리하지 못했습니다.");
       if (mode === "signup") {
         setMessage(payload.message || "가입 신청이 접수되었습니다.");
         setMode("login");
+        setName("");
+        setJobTitle("");
         setPassword("");
       } else {
         window.location.assign(returnTo);
@@ -48,11 +55,21 @@ export default function LocalLoginForm({ returnTo }: { returnTo: string }) {
       </div>
       <form className="local-auth-form" onSubmit={submit}>
         {mode === "signup" ? (
-          <label><span>이름</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={40} autoComplete="name" required /></label>
+          <>
+            <label><span>이름</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength={40} autoComplete="name" placeholder="예: 양승민" required /></label>
+            <label>
+              <span>직책</span>
+              <input value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} list="member-job-title-suggestions" maxLength={20} placeholder="예: 이사, 대표" required />
+              <datalist id="member-job-title-suggestions">
+                {MEMBER_JOB_TITLE_SUGGESTIONS.map((title) => <option key={title} value={title} />)}
+              </datalist>
+            </label>
+            {name.trim() && jobTitle.trim() ? <small className="local-auth-display-preview">표시 이름: {buildMemberDisplayName(name, jobTitle)}</small> : null}
+          </>
         ) : null}
         <label><span>{mode === "login" ? "아이디 또는 운영자 이메일" : "아이디"}</span><input value={username} onChange={(event) => setUsername(event.target.value.toLowerCase())} minLength={4} maxLength={30} autoCapitalize="none" autoComplete="username" required /></label>
         <label><span>비밀번호</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} maxLength={72} autoComplete={mode === "login" ? "current-password" : "new-password"} required /></label>
-        {mode === "signup" ? <small>아이디는 영문 소문자·숫자 4자 이상, 비밀번호는 영문과 숫자를 포함해 8자 이상 입력해 주세요.</small> : null}
+        {mode === "signup" ? <small>직책에 대표를 입력하면 대표님으로 표시됩니다. 아이디는 영문 소문자·숫자 4자 이상, 비밀번호는 영문과 숫자를 포함해 8자 이상 입력해 주세요.</small> : null}
         {message ? <p className="local-auth-success">{message}</p> : null}
         {error ? <p className="oauth-error">{error}</p> : null}
         <button className="local-auth-submit" type="submit" disabled={saving}>{saving ? "처리 중…" : mode === "login" ? "로그인" : "가입 신청하기"}</button>

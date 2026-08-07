@@ -1,19 +1,34 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import {
+  buildMemberDisplayName,
+  normalizeMemberJobTitle,
+} from "../lib/member-display-name.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("직원은 이메일 없이 아이디와 비밀번호로 가입 신청한다", async () => {
-  const [signup, loginPage] = await Promise.all([
+  const [signup, loginPage, loginForm] = await Promise.all([
     read("app/api/local-auth/signup/route.ts"),
     read("app/login/page.tsx"),
+    read("app/login/local-login-form.tsx"),
   ]);
   assert.match(signup, /status, is_sales, last_seen_at/);
   assert.match(signup, /'pending'/);
   assert.match(signup, /localMemberEmail\(username\)/);
+  assert.match(signup, /buildMemberDisplayName\(name, jobTitle\)/);
   assert.match(loginPage, /가입을 신청하고, 관리자 승인 후/);
+  assert.match(loginForm, /<span>직책<\/span>/);
+  assert.match(loginForm, /member-job-title-suggestions/);
+});
+
+test("직책 대표는 대표님으로 표시하고 다른 직책은 그대로 유지한다", () => {
+  assert.equal(normalizeMemberJobTitle("대표"), "대표님");
+  assert.equal(normalizeMemberJobTitle("대표님"), "대표님");
+  assert.equal(buildMemberDisplayName("박원석", "대표"), "박원석 대표님");
+  assert.equal(buildMemberDisplayName("양승민", "이사"), "양승민 이사");
 });
 
 test("비밀번호는 강한 해시와 로그인 잠금으로 보호한다", async () => {

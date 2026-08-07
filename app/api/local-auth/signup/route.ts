@@ -7,22 +7,34 @@ import {
   validatePassword,
   validateUsername,
 } from "../../../../lib/local-auth";
+import { buildMemberDisplayName } from "../../../../lib/member-display-name";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as {
+      name?: string;
+      jobTitle?: string;
       displayName?: string;
       username?: string;
       password?: string;
     };
-    const displayName = String(payload.displayName ?? "").trim();
+    const structuredSignup = payload.name !== undefined || payload.jobTitle !== undefined;
+    const name = String(payload.name ?? payload.displayName ?? "").replace(/\s+/g, " ").trim();
+    const jobTitle = String(payload.jobTitle ?? "").replace(/\s+/g, " ").trim();
+    const displayName = structuredSignup ? buildMemberDisplayName(name, jobTitle) : name;
     const username = normalizeUsername(payload.username);
     const password = String(payload.password ?? "");
-    if (displayName.length < 2 || displayName.length > 40) {
+    if (name.length < 2 || name.length > 40) {
       return Response.json(
         { error: "이름은 2~40자로 입력해 주세요." },
+        { status: 400 },
+      );
+    }
+    if (structuredSignup && (jobTitle.length < 1 || jobTitle.length > 20)) {
+      return Response.json(
+        { error: "직책은 1~20자로 입력해 주세요." },
         { status: 400 },
       );
     }

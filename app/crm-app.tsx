@@ -16527,7 +16527,7 @@ export default function CrmApp({
                 </div>
                 <div className="invite-flow">
                   <div><b>01</b><strong>링크 전달</strong><p>현재 관리사이트 주소를 동료에게 보냅니다.</p></div>
-                  <div><b>02</b><strong>가입 신청</strong><p>동료가 이름·아이디·비밀번호로 신청합니다.</p></div>
+                  <div><b>02</b><strong>가입 신청</strong><p>동료가 이름·직책·아이디·비밀번호로 신청합니다.</p></div>
                   <div><b>03</b><strong>운영자 승인</strong><p>아래 승인 대기 목록에서 사용을 허용합니다.</p></div>
                 </div>
                 <button
@@ -16594,7 +16594,7 @@ export default function CrmApp({
                   <div>
                     <strong>아이디 가입 신청</strong>
                     <span>
-                      직원이 로그인 화면에서 이름·아이디·비밀번호로 신청하면 아래 목록 맨 위에 표시됩니다.
+                      직원이 로그인 화면에서 이름·직책·아이디·비밀번호로 신청하면 아래 목록 맨 위에 표시됩니다.
                     </span>
                   </div>
                   <b>승인 대기 → 승인 → 역할·권한 설정</b>
