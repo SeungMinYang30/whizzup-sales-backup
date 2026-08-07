@@ -111,6 +111,21 @@ test("운영 DB는 전체 스키마 대신 기준 버전 이후의 증분 스키
   assert.match(databaseSource, /baseSchemaIsReady[\s\S]*VERCEL_INCREMENTAL_SCHEMA_SQL[\s\S]*VERCEL_SCHEMA_SQL/);
 });
 
+test("복합사업 출처 인덱스는 기존 테이블에 컬럼을 추가한 뒤 생성한다", () => {
+  const fullStart = vercelSchemaSource.indexOf("export const VERCEL_SCHEMA_SQL");
+  const incrementalStart = vercelSchemaSource.indexOf("export const VERCEL_INCREMENTAL_SCHEMA_SQL");
+  const blocks = [
+    vercelSchemaSource.slice(fullStart, incrementalStart),
+    vercelSchemaSource.slice(incrementalStart),
+  ];
+  for (const block of blocks) {
+    const addColumn = block.indexOf("ADD COLUMN IF NOT EXISTS source_type");
+    const createIndex = block.indexOf("CREATE INDEX IF NOT EXISTS complex_projects_source_idx");
+    assert.ok(addColumn >= 0, "source_type migration must exist");
+    assert.ok(createIndex > addColumn, "source index must be created after the column migration");
+  }
+});
+
 test("전체 기관 검색은 입력을 막지 않고 짧게 지연한 결과를 재사용한다", () => {
   assert.match(globalSearchSource, /cacheRef\.current\.get\(normalizedQuery\)/);
   assert.match(globalSearchSource, /setTimeout\(\(\) => \{[\s\S]*\}, 120\)/);
