@@ -99,6 +99,14 @@ test("제품 저장은 제품·공급 설정·협력사 연결을 같은 D1 배�
   );
 });
 
+test("제품·협력사 통합 조회는 PostgreSQL UNION의 숫자 마진형을 명시한다", async () => {
+  const sourceText = await source("../lib/product-vendor-links.ts");
+  assert.equal(
+    (sourceText.match(/CAST\(NULL AS REAL\) AS margin_rate/g) ?? []).length,
+    2,
+  );
+});
+
 test("기관 품목 API는 공급 구분과 마진율 스냅샷을 저장한다", async () => {
   const route = await source("../app/api/equipment/route.ts");
   const postItemStart = route.indexOf('if (kind === "item")');

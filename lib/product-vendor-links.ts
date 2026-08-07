@@ -246,7 +246,7 @@ export async function readProductCatalogRelations(): Promise<ProductCatalogRelat
          vendor.id AS vendor_id,
          vendor.company_name AS vendor_name,
          NULL AS supply_type,
-         NULL AS margin_rate
+         CAST(NULL AS REAL) AS margin_rate
        FROM award_vendors vendor
        WHERE vendor.is_active = 1
        UNION ALL
@@ -257,7 +257,7 @@ export async function readProductCatalogRelations(): Promise<ProductCatalogRelat
          COALESCE(NULLIF(vendor.company_name, ''), links.vendor_name_snapshot)
            AS vendor_name,
          NULL AS supply_type,
-         NULL AS margin_rate
+         CAST(NULL AS REAL) AS margin_rate
        FROM product_vendor_links links
        LEFT JOIN award_vendors vendor
          ON vendor.id = links.vendor_id AND vendor.is_active = 1
