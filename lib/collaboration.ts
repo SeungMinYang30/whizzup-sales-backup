@@ -1,4 +1,4 @@
-import { getD1 } from "../db";
+import { getD1, isDatabaseUnavailableError } from "../db";
 import { getChatGPTUser, type ChatGPTUser } from "../app/chatgpt-auth";
 
 export const MEMBER_PERMISSIONS = [
@@ -435,6 +435,16 @@ export function accessErrorResponse(error: unknown) {
     error.status < 500
   ) {
     return Response.json({ error: error.message }, { status: error.status });
+  }
+  if (isDatabaseUnavailableError(error)) {
+    console.error("Temporary database capacity error", error);
+    return Response.json(
+      {
+        error:
+          "데이터베이스 연결이 혼잡합니다. 입력 내용은 그대로 두고 잠시 후 다시 시도해 주세요.",
+      },
+      { status: 503 },
+    );
   }
   console.error("Unhandled collaboration request error", error);
   return Response.json(

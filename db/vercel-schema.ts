@@ -1,8 +1,29 @@
 export const VERCEL_SCHEMA_VERSION =
-  "202608070004_complex_project_sources";
+  "202608070005_complex_project_budget_backfill";
 export const VERCEL_PREVIOUS_SCHEMA_VERSION =
   "202608070004_complex_project_sources";
 export const VERCEL_BASE_SCHEMA_VERSION = "202608060007_full_backup_columns";
+
+const COMPLEX_PROJECT_BACKFILL_SQL = `
+INSERT INTO public.complex_project_budget_links
+  (complex_project_id, equipment_project_id, sort_order)
+SELECT project.id, equipment.id, equipment.id
+FROM public.complex_projects project
+JOIN public.equipment_projects equipment
+  ON equipment.organization = project.organization
+ AND equipment.business_round = project.business_round
+JOIN public.activities activity ON activity.id = equipment.activity_id
+WHERE project.active = 1
+  AND project.source_type = 'whizzup'
+  AND activity.award_status = '위즈업 수주'
+ON CONFLICT (complex_project_id, equipment_project_id) DO NOTHING;
+INSERT INTO public.complex_project_item_details
+  (equipment_item_id, complex_project_id, item_category, updated_by_name)
+SELECT item.id, link.complex_project_id, '기자재', ''
+FROM public.complex_project_budget_links link
+JOIN public.equipment_items item ON item.project_id = link.equipment_project_id
+ON CONFLICT (equipment_item_id) DO NOTHING;
+`;
 
 export const VERCEL_LOCAL_AUTH_SCHEMA_SQL = `
 ALTER TABLE public.members ADD COLUMN IF NOT EXISTS username text;
@@ -33,6 +54,7 @@ CREATE TABLE IF NOT EXISTS public.member_account_archives (
 );
 REVOKE ALL ON public.local_auth_sessions FROM anon, authenticated;
 REVOKE ALL ON public.member_account_archives FROM anon, authenticated;
+${COMPLEX_PROJECT_BACKFILL_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
@@ -955,6 +977,7 @@ WHERE status IN ('제안 예정', '제안', '견적')
     WHERE supply_type = 'direct'
   );
 
+${COMPLEX_PROJECT_BACKFILL_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
@@ -1215,6 +1238,7 @@ WHERE status IN ('제안 예정', '제안', '견적')
     WHERE supply_type = 'direct'
   );
 
+${COMPLEX_PROJECT_BACKFILL_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;

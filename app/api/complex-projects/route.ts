@@ -1,7 +1,9 @@
 import {
+  AccessError,
   accessErrorResponse,
   requireApprovedMember,
 } from "../../../lib/collaboration";
+import { isDatabaseUnavailableError } from "../../../db";
 import {
   addComplexBudget,
   createComplexProject,
@@ -56,6 +58,9 @@ export async function POST(request: Request) {
     }
     return Response.json({ ok: true, ...result });
   } catch (error) {
+    if (error instanceof AccessError || isDatabaseUnavailableError(error)) {
+      return accessErrorResponse(error);
+    }
     if (error instanceof Error) {
       return Response.json({ error: error.message }, { status: 400 });
     }

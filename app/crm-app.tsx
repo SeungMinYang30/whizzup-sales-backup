@@ -6904,7 +6904,10 @@ export default function CrmApp({
 
   useEffect(() => {
     if (sessionStatus !== "approved") return;
+    let inFlight = false;
     const heartbeat = () => {
+      if (document.hidden || inFlight) return;
+      inFlight = true;
       void fetch("/api/presence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -6913,13 +6916,22 @@ export default function CrmApp({
         }),
         cache: "no-store",
         keepalive: true,
-      }).catch(() => undefined);
+      })
+        .catch(() => undefined)
+        .finally(() => {
+          inFlight = false;
+        });
     };
     const firstHeartbeat = window.setTimeout(heartbeat, 2_000);
-    const timer = window.setInterval(heartbeat, 15_000);
+    const timer = window.setInterval(heartbeat, 60_000);
+    const handleVisibility = () => {
+      if (!document.hidden) heartbeat();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       window.clearTimeout(firstHeartbeat);
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [sessionStatus, view]);
 
@@ -6982,17 +6994,23 @@ export default function CrmApp({
   useEffect(() => {
     if (view !== "team" || !session?.canViewPresence) return;
     let active = true;
+    let inFlight = false;
     const refresh = () => {
+      if (document.hidden || inFlight) return;
+      inFlight = true;
       void requestMemberPresence()
         .then((result) => {
           if (!active) return;
           setMemberPresence(result.members);
           setPresenceUpdatedAt(result.serverTime);
         })
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .finally(() => {
+          inFlight = false;
+        });
     };
     refresh();
-    const timer = window.setInterval(refresh, 15_000);
+    const timer = window.setInterval(refresh, 60_000);
     return () => {
       active = false;
       window.clearInterval(timer);

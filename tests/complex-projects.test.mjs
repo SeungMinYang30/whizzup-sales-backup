@@ -63,6 +63,36 @@ test("complex project activation uses searched institution rounds and approved s
   assert.match(records, /existingActivityChangeItemIds/);
 });
 
+test("complex project writes are atomic and refresh failures cannot be mistaken for failed writes", async () => {
+  const [store, page, route] = await Promise.all([
+    read("../lib/complex-projects.ts"),
+    read("../app/complex-project-page.tsx"),
+    read("../app/api/complex-projects/route.ts"),
+  ]);
+
+  for (const action of [
+    "createComplexProject",
+    "updateComplexProject",
+    "addComplexBudget",
+    "saveComplexZone",
+    "saveComplexItem",
+    "saveComplexDelivery",
+    "deleteComplexEntity",
+  ]) {
+    const start = store.indexOf(`export async function ${action}`);
+    assert.ok(start >= 0, `${action} must exist`);
+    const end = store.indexOf("\nexport async function ", start + 1);
+    const block = store.slice(start, end >= 0 ? end : undefined);
+    assert.match(block, /\.transaction\(async \(transaction\) =>/);
+    assert.doesNotMatch(block, /return listComplexProjects\(\)/);
+  }
+  assert.match(store, /const \[projectResult,[\s\S]*= await d1\.batch\(/);
+  assert.doesNotMatch(store, /syncAllWhizzupBudgetLinks/);
+  assert.match(page, /resilientFetch\("\/api\/complex-projects"/);
+  assert.match(page, /최신 화면 갱신이 지연되고 있어/);
+  assert.match(route, /isDatabaseUnavailableError/);
+});
+
 test("complex project items preserve selection protection and site requirements", async () => {
   const [store, page, schema] = await Promise.all([
     read("../lib/complex-projects.ts"),

@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 const allowedPresenceViews = new Set([
   "dashboard",
   "budget-institutions",
+  "complex-projects",
   "records",
   "followup",
   "schedules",

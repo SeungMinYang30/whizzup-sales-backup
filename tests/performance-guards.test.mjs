@@ -111,6 +111,19 @@ test("운영 DB는 전체 스키마 대신 기준 버전 이후의 증분 스키
   assert.match(databaseSource, /baseSchemaIsReady[\s\S]*VERCEL_INCREMENTAL_SCHEMA_SQL[\s\S]*VERCEL_SCHEMA_SQL/);
 });
 
+test("Vercel 함수는 작은 연결 풀을 쓰고 연결 용량 오류를 자동 재시도하지 않는다", () => {
+  assert.match(databaseSource, /max:\s*1/);
+  assert.match(databaseSource, /idle_timeout:\s*2/);
+  assert.match(databaseSource, /isDatabaseUnavailableError\(error\)[\s\S]*recycleSqlClient\(sql\)[\s\S]*throw error/);
+  assert.match(vercelSchemaSource, /complex_project_budget_backfill/);
+});
+
+test("사용자 접속 상태 확인은 중복 요청 없이 저빈도로 갱신한다", () => {
+  assert.match(crmSource, /if \(document\.hidden \|\| inFlight\) return/);
+  assert.match(crmSource, /window\.setInterval\(heartbeat, 60_000\)/);
+  assert.match(crmSource, /window\.setInterval\(refresh, 60_000\)/);
+});
+
 test("복합사업 출처 인덱스는 기존 테이블에 컬럼을 추가한 뒤 생성한다", () => {
   const fullStart = vercelSchemaSource.indexOf("export const VERCEL_SCHEMA_SQL");
   const incrementalStart = vercelSchemaSource.indexOf("export const VERCEL_INCREMENTAL_SCHEMA_SQL");

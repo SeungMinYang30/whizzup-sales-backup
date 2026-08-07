@@ -50,7 +50,7 @@ const globalDatabase = globalThis as typeof globalThis & {
 const DATABASE_QUERY_TIMEOUT_MS = 15_000;
 const DATABASE_SCHEMA_TIMEOUT_MS = 25_000;
 
-class DatabaseConnectionTimeoutError extends Error {
+export class DatabaseConnectionTimeoutError extends Error {
   constructor(message = "데이터베이스 응답 시간이 초과되었습니다.") {
     super(message);
     this.name = "DatabaseConnectionTimeoutError";
@@ -77,20 +77,23 @@ async function withDatabaseTimeout<T>(
   }
 }
 
-function isRetryableConnectionError(error: unknown) {
+export function isDatabaseUnavailableError(error: unknown) {
   if (error instanceof DatabaseConnectionTimeoutError) return true;
   const message = error instanceof Error ? error.message : String(error ?? "");
-  return /connection|socket|timeout|timed out|terminated|closed|reset|econn/i.test(
-    message,
-  );
+  return /ECHECKOUTTIMEOUT|unable to check out connection|connection.*(?:timeout|timed out)|database.*(?:timeout|timed out)/i.test(message);
 }
 
-async function recycleSqlClient() {
-  // Concurrent requests in the same warm Vercel instance share this client.
-  // Ending it here would destroy healthy in-flight queries owned by another
-  // request. Detach it instead; postgres.js closes the old pool after the
-  // short idle timeout while the retry receives a fresh client.
+function isRetryableConnectionReset(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /socket|terminated|closed|reset|econn/i.test(message);
+}
+
+async function recycleSqlClient(
+  expectedClient: ReturnType<typeof postgres>,
+) {
+  if (globalDatabase.whizzupPostgres !== expectedClient) return;
   globalDatabase.whizzupPostgres = undefined;
+  await expectedClient.end({ timeout: 1 }).catch(() => undefined);
 }
 
 function databaseUrl() {
@@ -108,13 +111,13 @@ function getSqlClient() {
     globalDatabase.whizzupPostgres = postgres(databaseUrl(), {
       prepare: false,
       ssl: "require",
-      // A dashboard loads several independent APIs concurrently. Three short-
-      // lived connections prevent one slow query from blocking every request
-      // while staying well below the Supabase transaction-pool limit.
-      max: 3,
-      idle_timeout: 5,
-      connect_timeout: 15,
-      max_lifetime: 60,
+      // Vercel can keep a separate warm instance for every API route. Holding
+      // three database connections per instance quickly exhausts Supabase's
+      // transaction pool, so each instance must share one short-lived client.
+      max: 1,
+      idle_timeout: 2,
+      connect_timeout: 8,
+      max_lifetime: 30,
       connection: {
         statement_timeout: 12000,
         lock_timeout: 5000,
@@ -198,8 +201,12 @@ async function reconcileVercelSchema() {
       );
       return;
     } catch (error) {
-      if (attempt === 0 && isRetryableConnectionError(error)) {
-        await recycleSqlClient();
+      if (isDatabaseUnavailableError(error)) {
+        await recycleSqlClient(sql);
+        throw error;
+      }
+      if (attempt === 0 && isRetryableConnectionReset(error)) {
+        await recycleSqlClient(sql);
         continue;
       }
       throw error;
@@ -224,14 +231,19 @@ async function executeDirectQuery<T extends QueryRow>(
   canRetry: boolean,
 ) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    const sql = getSqlClient();
     try {
       return (await withDatabaseTimeout(
-        getSqlClient().unsafe(query, parameters),
+        sql.unsafe(query, parameters as never[]),
         DATABASE_QUERY_TIMEOUT_MS,
       )) as PostgresResult<T>;
     } catch (error) {
-      if (isRetryableConnectionError(error)) {
-        await recycleSqlClient();
+      if (isDatabaseUnavailableError(error)) {
+        await recycleSqlClient(sql);
+        throw error;
+      }
+      if (isRetryableConnectionReset(error)) {
+        await recycleSqlClient(sql);
         if (canRetry && attempt === 0) continue;
       }
       throw error;

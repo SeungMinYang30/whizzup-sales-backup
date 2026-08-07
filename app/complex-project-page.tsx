@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { resilientFetch } from "./resilient-fetch";
 
 type Row = Record<string, unknown>;
 type ComplexProject = Row & {
@@ -55,6 +56,16 @@ function readError(value: unknown) {
     : "요청을 처리하지 못했습니다.";
 }
 
+async function readJson<T>(response: Response) {
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new Error(response.ok
+      ? "서버 응답을 확인하지 못했습니다. 다시 시도해 주세요."
+      : "서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.");
+  }
+}
+
 export default function ComplexProjectPage(props: {
   onOpenOrganization?: (organization: string, businessRound: number) => void;
 }) {
@@ -84,8 +95,12 @@ export default function ComplexProjectPage(props: {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/complex-projects", { cache: "no-store" });
-      const body = (await response.json()) as Payload & { error?: string };
+      const response = await resilientFetch("/api/complex-projects", {
+        cache: "no-store",
+        timeoutMs: 20_000,
+        retries: 0,
+      });
+      const body = await readJson<Payload & { error?: string }>(response);
       if (!response.ok) throw new Error(body.error || "복합사업을 불러오지 못했습니다.");
       setData(body);
       setSelectedId((current) => {
@@ -149,12 +164,14 @@ export default function ComplexProjectPage(props: {
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setCandidateLoading(true);
-      void fetch(`/api/complex-projects?candidateQuery=${encodeURIComponent(query)}`, {
+      void resilientFetch(`/api/complex-projects?candidateQuery=${encodeURIComponent(query)}`, {
         cache: "no-store",
         signal: controller.signal,
+        timeoutMs: 12_000,
+        retries: 0,
       })
         .then(async (response) => {
-          const body = (await response.json()) as { candidates?: Row[]; error?: string };
+          const body = await readJson<{ candidates?: Row[]; error?: string }>(response);
           if (!response.ok) throw new Error(body.error || "기관을 검색하지 못했습니다.");
           setCandidates(Array.isArray(body.candidates) ? body.candidates : []);
         })
@@ -183,15 +200,33 @@ export default function ComplexProjectPage(props: {
     setBusy(true);
     setMessage("");
     try {
-      const response = await fetch("/api/complex-projects", {
+      const response = await resilientFetch("/api/complex-projects", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
+        timeoutMs: 20_000,
+        retries: 0,
       });
-      const body = (await response.json()) as Payload & { error?: string };
+      const body = await readJson<Record<string, unknown> & { error?: string }>(response);
       if (!response.ok) throw new Error(readError(body));
-      setData(body);
       setMessage(success);
+      try {
+        const refreshResponse = await resilientFetch("/api/complex-projects", {
+          cache: "no-store",
+          timeoutMs: 20_000,
+          retries: 0,
+        });
+        const refreshed = await readJson<Payload & { error?: string }>(refreshResponse);
+        if (!refreshResponse.ok) throw new Error(readError(refreshed));
+        setData(refreshed);
+        setSelectedId((current) => {
+          const requested = numberValue(body.projectId) || current;
+          if (requested && refreshed.projects.some((project) => Number(project.id) === requested)) return requested;
+          return refreshed.projects[0] ? Number(refreshed.projects[0].id) : null;
+        });
+      } catch {
+        setMessage(`${success} 최신 화면 갱신이 지연되고 있어 잠시 후 새로고침해 주세요.`);
+      }
       return body;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장하지 못했습니다.");
@@ -228,10 +263,7 @@ export default function ComplexProjectPage(props: {
       notes: form.get("notes"),
     }, "복합사업을 시작했습니다.");
     if (ok) {
-      const created = ok.projects.find(
-        (project) => project.organization === organization && numberValue(project.business_round) === businessRound,
-      );
-      if (created) setSelectedId(Number(created.id));
+      if (numberValue(ok.projectId)) setSelectedId(numberValue(ok.projectId));
       setCreateOpen(false);
       setCandidateSearch("");
       setCandidates([]);
