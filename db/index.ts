@@ -458,11 +458,24 @@ class PostgresDatabase {
 
     await ensureVercelSchemaReady();
     const sql = getSqlClient();
-    return sql.begin(async (transaction) =>
-      operation(
-        new PostgresDatabase(transaction as unknown as QueryExecutor),
-      ),
-    ) as Promise<T>;
+    try {
+      return (await withDatabaseTimeout(
+        sql.begin(async (transaction) =>
+          operation(
+            new PostgresDatabase(transaction as unknown as QueryExecutor),
+          ),
+        ) as Promise<T>,
+        DATABASE_QUERY_TIMEOUT_MS,
+      )) as T;
+    } catch (error) {
+      if (
+        isDatabaseUnavailableError(error) ||
+        isRetryableConnectionReset(error)
+      ) {
+        await recycleSqlClient(sql);
+      }
+      throw error;
+    }
   }
 }
 
