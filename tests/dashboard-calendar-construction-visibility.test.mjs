@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [crmApp, calendar, constructionPage, schedules, scheduleRoute, styles, backupStore] = await Promise.all([
+const [crmApp, calendar, constructionPage, schedules, scheduleRoute, recordsRoute, styles, backupStore] = await Promise.all([
   readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/home-calendar.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/construction-schedule-page.tsx", import.meta.url), "utf8"),
   readFile(new URL("../lib/organization-schedules.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/schedules/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/records/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   readFile(new URL("../lib/backup-store.ts", import.meta.url), "utf8"),
 ]);
@@ -59,6 +60,12 @@ test("초기 대시보드는 핵심 기록을 먼저 받고 후순위 자료를 
   assert.match(crmApp, /const firstHeartbeat = window\.setTimeout\(heartbeat, 15_000\)/);
   assert.match(crmApp, /requestScheduleReminders\(\)[\s\S]*?\}, 4_500\)/);
   assert.match(calendar, /if \(!editorOpen \|\| members\.length\) return;[\s\S]*?\/api\/members\?scope=assignees/);
+});
+
+test("대시보드 기록은 기관 사업별 최신 수주와 화면 대상 공동사업만 조회한다", () => {
+  assert.match(crmApp, /requestRecords\("dashboard"\)/);
+  assert.match(recordsRoute, /award_records AS \([\s\S]*?SELECT DISTINCT ON \(organization, business_round\)/);
+  assert.match(recordsRoute, /WHERE source_activity\.id IN \(SELECT id FROM dashboard_ids\)/);
 });
 
 test("대시보드 시공 현황과 일정표는 같은 조회 결과를 공유한다", () => {

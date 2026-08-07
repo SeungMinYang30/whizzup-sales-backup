@@ -406,11 +406,12 @@ export async function GET(request: Request) {
             )
         ),
         award_records AS (
-          SELECT
+          SELECT DISTINCT ON (organization, business_round)
             id
           FROM activities
           WHERE TRIM(COALESCE(organization, '')) <> ''
             AND COALESCE(award_status, '미정') <> '미정'
+          ORDER BY organization, business_round, activity_date DESC, id DESC
         ),
         ranked_schedules AS (
           SELECT
@@ -463,6 +464,7 @@ export async function GET(request: Request) {
           JOIN joint_projects linked_project
             ON linked_project.id = linked.project_id
            AND linked_project.status = 'active'
+          WHERE source_activity.id IN (SELECT id FROM dashboard_ids)
         )
         SELECT
           a.*,
