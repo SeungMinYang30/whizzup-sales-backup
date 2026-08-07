@@ -2,6 +2,8 @@ import postgres from "postgres";
 import {
   VERCEL_BASE_SCHEMA_VERSION,
   VERCEL_INCREMENTAL_SCHEMA_SQL,
+  VERCEL_LOCAL_AUTH_SCHEMA_SQL,
+  VERCEL_PREVIOUS_SCHEMA_VERSION,
   VERCEL_SCHEMA_SQL,
   VERCEL_SCHEMA_VERSION,
 } from "./vercel-schema";
@@ -167,8 +169,14 @@ async function reconcileVercelSchema() {
               transaction as unknown as QueryExecutor,
               VERCEL_BASE_SCHEMA_VERSION,
             );
+            const previousSchemaIsReady = await schemaVersionExists(
+              transaction as unknown as QueryExecutor,
+              VERCEL_PREVIOUS_SCHEMA_VERSION,
+            );
             await transaction.unsafe(
-              baseSchemaIsReady
+              previousSchemaIsReady
+                ? VERCEL_LOCAL_AUTH_SCHEMA_SQL
+                : baseSchemaIsReady
                 ? VERCEL_INCREMENTAL_SCHEMA_SQL
                 : VERCEL_SCHEMA_SQL,
             );
