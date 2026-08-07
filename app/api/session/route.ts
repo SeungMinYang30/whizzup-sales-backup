@@ -6,11 +6,13 @@ import {
   requireMember,
 } from "../../../lib/collaboration";
 import { getOpenAIConfig } from "../../../lib/openai-config";
+import { ensureLocalAuthSchema } from "../../../lib/local-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    await ensureLocalAuthSchema();
     const member = await requireMember(true);
     if (member.status !== "approved") {
       return Response.json({

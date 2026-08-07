@@ -1,6 +1,7 @@
 import { getD1 } from "../../../../db";
 import {
   hashPassword,
+  ensureLocalAuthSchema,
   localMemberEmail,
   normalizeUsername,
   validatePassword,
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
       );
     }
 
+    await ensureLocalAuthSchema();
     const d1 = getD1();
     const existing = await d1
       .prepare("SELECT id FROM members WHERE lower(username) = lower(?) LIMIT 1")

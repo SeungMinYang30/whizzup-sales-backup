@@ -1,5 +1,5 @@
 export const VERCEL_SCHEMA_VERSION =
-  "202608070005_local_member_auth";
+  "202608070004_complex_project_sources";
 export const VERCEL_PREVIOUS_SCHEMA_VERSION =
   "202608070004_complex_project_sources";
 export const VERCEL_BASE_SCHEMA_VERSION = "202608060007_full_backup_columns";

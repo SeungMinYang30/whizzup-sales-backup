@@ -1,6 +1,7 @@
 import { getD1 } from "../../../../db";
 import {
   createLocalSession,
+  ensureLocalAuthSchema,
   normalizeUsername,
   verifyPassword,
 } from "../../../../lib/local-auth";
@@ -15,6 +16,7 @@ export async function POST(request: Request) {
     };
     const username = normalizeUsername(payload.username);
     const password = String(payload.password ?? "");
+    await ensureLocalAuthSchema();
     const d1 = getD1();
     const member = await d1
       .prepare(
