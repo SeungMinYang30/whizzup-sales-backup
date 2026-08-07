@@ -51,6 +51,7 @@ test("complex project activation uses searched institution rounds and approved s
 
   assert.match(store, /query\.replace\(\/\\s\+\/g, ""\)\.length < 2/);
   assert.match(store, /a\.award_status = '위즈업 수주'/);
+  assert.doesNotMatch(store, /\)\s*\)\s*\), project_finance AS/);
   assert.match(store, /clean\(payload\.sourceType, 30\) === "external"/);
   assert.match(page, /외부 사업 수기 등록/);
   assert.match(page, /수금·수주 통계에는 포함되지 않습니다/);

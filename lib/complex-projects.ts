@@ -676,7 +676,6 @@ export async function searchComplexProjectCandidates(value: unknown) {
            LOWER(a.organization) LIKE ?
            OR LOWER(COALESCE(a.region, '')) LIKE ?
          )
-     )
      ), project_finance AS (
        SELECT ep.organization, ep.business_round,
               COALESCE(SUM(COALESCE(ep.construction_amount, 0)), 0) AS construction_amount,
