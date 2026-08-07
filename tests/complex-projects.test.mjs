@@ -77,6 +77,13 @@ test("complex project activation carries existing budgets items and financial to
   assert.match(store, /item_quote_amount/);
   assert.match(store, /construction_amount/);
   assert.match(store, /export async function cancelComplexProject/);
+  assert.match(store, /const updatedNotes = \[previousNotes, reasonLine\]\.filter\(Boolean\)\.join\("\\n"\)/);
+  assert.doesNotMatch(store, /notes \|\| CHAR\(10\) \|\|/);
+  assert.match(store, /equipmentSettlementQuantity/);
+  assert.match(store, /calculateEquipmentFinance/);
+  assert.match(store, /supplier_display_name/);
+  assert.match(page, /원본 수량 미입력/);
+  assert.match(page, /제품 기준/);
   assert.match(page, /복합사업 취소/);
   assert.match(page, /연결 품목 금액/);
   assert.match(page, /연결 공사비/);

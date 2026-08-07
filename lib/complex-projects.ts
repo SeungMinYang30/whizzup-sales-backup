@@ -16,6 +16,15 @@ import {
   parseStoredActivityBudgetMoney,
 } from "./activity-budgets";
 import { ensureProductComparisonDocumentsReady } from "./product-comparison-documents";
+import {
+  calculateEquipmentFinance,
+  equipmentSettlementQuantity,
+} from "./equipment-finance";
+import {
+  PRODUCT_CATALOG,
+  type ProductCatalogItem,
+} from "./product-catalog";
+import { readProductCatalogRelations } from "./product-vendor-links";
 
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS complex_projects (
@@ -367,9 +376,40 @@ async function syncBudgetLinks(d1: ReturnType<typeof getD1>, projectId: number) 
   ).bind(projectId, projectId).run();
 }
 
+async function readCurrentProductCatalogMap(
+  d1: ReturnType<typeof getD1>,
+) {
+  let products: ProductCatalogItem[] = PRODUCT_CATALOG;
+  try {
+    const row = await d1
+      .prepare("SELECT value FROM app_settings WHERE key = 'product_catalog_v1'")
+      .first<{ value: string }>();
+    const stored = row?.value ? JSON.parse(row.value) : null;
+    if (Array.isArray(stored) && stored.length) {
+      const normalized = stored.filter(
+        (item): item is ProductCatalogItem =>
+          Boolean(
+            item &&
+              typeof item === "object" &&
+              clean((item as Record<string, unknown>).id) &&
+              clean((item as Record<string, unknown>).name),
+          ),
+      );
+      if (normalized.length) products = normalized;
+    }
+  } catch {
+    products = PRODUCT_CATALOG;
+  }
+  return new Map(products.map((product) => [product.id, product]));
+}
+
 export async function listComplexProjects() {
   const d1 = await ensureComplexProjectsReady();
   await ensureProductComparisonDocumentsReady();
+  const [catalogProducts, catalogRelations] = await Promise.all([
+    readCurrentProductCatalogMap(d1),
+    readProductCatalogRelations(),
+  ]);
   const [projectResult, budgetResult, zoneResult, itemResult, deliveryResult, groupResult, memberResult] = await d1.batch([
     d1.prepare(
       `SELECT * FROM complex_projects WHERE active = 1
@@ -404,7 +444,10 @@ export async function listComplexProjects() {
               item.project_id, item.product_name, item.specification,
               item.proposed_qty, item.awarded_qty, item.installed_qty, item.unit,
               item.status, item.notes, item.catalog_item_id, item.catalog_unit_price, item.price_status,
-              item.supplier_vendor_name, item.protection_status,
+              item.execution_type, item.commission_input_type, item.commission_rate,
+              item.supply_type, item.margin_rate, item.procurement_fee_rate,
+              item.consortium_commission_rate, item.consortium_payment_amount,
+              item.supplier_vendor_id, item.supplier_vendor_name, item.protection_status,
               ep.name AS budget_name, ep.budget_group_id,
               (SELECT COUNT(*) FROM product_comparison_documents comparison
                WHERE comparison.product_id = item.catalog_item_id) AS comparison_document_count
@@ -456,6 +499,58 @@ export async function listComplexProjects() {
   itemResult.results.forEach((row: Record<string, unknown>) => {
     const projectId = Number(row.complex_project_id);
     const awardedQty = integer(row.awarded_qty);
+    const settlementQuantity = equipmentSettlementQuantity({
+      proposedQty: integer(row.proposed_qty),
+      awardedQty,
+      installedQty: integer(row.installed_qty),
+    });
+    const catalogId = clean(row.catalog_item_id, 160);
+    const catalogProduct = catalogProducts.get(catalogId);
+    const storedUnitPrice = nullableMoney(row.catalog_unit_price);
+    const keepsZeroPrice = [
+      "무상 제공",
+      "계약금액에 포함",
+      "서비스 품목",
+    ].includes(clean(row.price_status, 40));
+    const effectiveUnitPrice =
+      storedUnitPrice !== null && (storedUnitPrice > 0 || keepsZeroPrice)
+        ? storedUnitPrice
+        : catalogProduct?.unitPrice ?? storedUnitPrice;
+    const supplySetting = catalogRelations.supplyMap.get(catalogId);
+    const supplyType =
+      clean(row.supply_type, 30) === "direct" ||
+      supplySetting?.supplyType === "direct"
+        ? "direct"
+        : "partner";
+    const vendorLink = catalogRelations.linkMap.get(catalogId);
+    const supplierDisplayName =
+      clean(row.supplier_vendor_name, 300) ||
+      (supplyType === "direct"
+        ? "위즈업 직접 공급"
+        : clean(vendorLink?.supplierVendorName, 300));
+    const finance = calculateEquipmentFinance({
+      unitPrice: effectiveUnitPrice,
+      quantity: settlementQuantity,
+      executionType: clean(row.execution_type, 30),
+      commissionInputType: clean(row.commission_input_type, 30),
+      commissionRate:
+        row.commission_rate === null ? catalogProduct?.commissionRate ?? null : Number(row.commission_rate),
+      supplyType,
+      marginRate:
+        row.margin_rate === null
+          ? supplySetting?.marginRate ?? catalogProduct?.marginRate ?? null
+          : Number(row.margin_rate),
+      procurementFeeRate:
+        row.procurement_fee_rate === null ? null : Number(row.procurement_fee_rate),
+      consortiumCommissionRate:
+        row.consortium_commission_rate === null
+          ? null
+          : Number(row.consortium_commission_rate),
+      consortiumPaymentAmount:
+        row.consortium_payment_amount === null
+          ? null
+          : Number(row.consortium_payment_amount),
+    });
     const deliveries = deliveriesByItem.get(Number(row.equipment_item_id)) ?? [];
     const activeDeliveries = deliveries.filter((entry) => String(entry.status) !== "취소");
     const plannedQty = activeDeliveries.reduce((sum, entry) => sum + integer(entry.planned_qty), 0);
@@ -464,6 +559,19 @@ export async function listComplexProjects() {
       ...(itemsByProject.get(projectId) ?? []),
       {
         ...row,
+        settlement_quantity: settlementQuantity,
+        quantity_source: awardedQty > 0 ? "수주 수량" : "기존 품목 기본 수량",
+        effective_unit_price: effectiveUnitPrice,
+        unit_price_source:
+          storedUnitPrice !== null && (storedUnitPrice > 0 || keepsZeroPrice)
+            ? "기관 품목"
+            : effectiveUnitPrice !== null
+              ? "제품 기준"
+              : "미입력",
+        item_amount: finance.totalAmount,
+        quotation_amount: finance.quotationAmount,
+        supplier_display_name: supplierDisplayName,
+        supply_type: supplyType,
         deliveries,
         planned_delivery_qty: plannedQty,
         completed_delivery_qty: completedQty,
@@ -486,7 +594,7 @@ export async function listComplexProjects() {
       const budgets = budgetsByProject.get(id) ?? [];
       const items = itemsByProject.get(id) ?? [];
       const allocated = budgets.reduce((sum, row) => sum + integer(row.allocated_amount), 0);
-      const itemQuoted = items.reduce((sum, row) => sum + integer(row.awarded_qty) * integer(row.catalog_unit_price), 0);
+      const itemQuoted = items.reduce((sum, row) => sum + integer(row.item_amount), 0);
       const constructionAmount = budgets.reduce((sum, row) => sum + integer(row.construction_amount), 0);
       const quoted = itemQuoted + constructionAmount;
       return {
@@ -506,7 +614,7 @@ export async function listComplexProjects() {
             return !["신청 완료", "승인", "보호 중", "해당 없음"].includes(state);
           }).length,
           quantity_issue_count: items.filter((row) => row.schedule_state === "수량 초과").length,
-          price_missing_count: items.filter((row) => row.catalog_unit_price === null || row.catalog_unit_price === undefined).length,
+          price_missing_count: items.filter((row) => row.effective_unit_price === null || row.effective_unit_price === undefined).length,
           selection_pending_count: items.filter((row) => {
             const status = clean(row.selection_status);
             return Boolean(status) && !["선정 완료", "확정"].includes(status);
@@ -747,20 +855,17 @@ export async function cancelComplexProject(payload: Record<string, unknown>, mem
   const reason = clean(payload.reason, 500);
   await d1.transaction(async (transaction) => {
     const project = await requireProject(transaction, projectId);
+    const previousNotes = String(project.notes ?? "").trim();
+    const reasonLine = reason ? `취소 사유: ${reason}` : "";
+    const updatedNotes = [previousNotes, reasonLine].filter(Boolean).join("\n");
     await transaction.prepare(
       `UPDATE complex_projects
        SET status = '취소', active = 0,
-           notes = CASE
-             WHEN ? = '' THEN notes
-             WHEN TRIM(notes) = '' THEN ?
-             ELSE notes || CHAR(10) || ?
-           END,
+           notes = ?,
            updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
     ).bind(
-      reason,
-      reason ? `취소 사유: ${reason}` : "",
-      reason ? `취소 사유: ${reason}` : "",
+      updatedNotes,
       member.id,
       member.displayName,
       projectId,

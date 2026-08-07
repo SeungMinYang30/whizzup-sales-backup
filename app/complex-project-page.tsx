@@ -591,11 +591,11 @@ export default function ComplexProjectPage(props: {
                         <span className={`complex-state state-${String(item.schedule_state).replace(/\s/g, "-")}`}>{String(item.schedule_state)}</span>
                       </header>
                       <div className="complex-item-metrics">
-                        <span>수주 <b>{numberValue(item.awarded_qty).toLocaleString("ko-KR")}{String(item.unit)}</b></span>
+                        <span>기준 수량 <b>{numberValue(item.settlement_quantity).toLocaleString("ko-KR")}{String(item.unit)}</b>{numberValue(item.awarded_qty) < 1 && <small> · 원본 수량 미입력</small>}</span>
                         <span>일정 배정 <b>{numberValue(item.planned_delivery_qty).toLocaleString("ko-KR")}{String(item.unit)}</b></span>
                         <span>완료 <b>{numberValue(item.completed_delivery_qty).toLocaleString("ko-KR")}{String(item.unit)}</b></span>
-                        <span>금액 <b>{item.catalog_unit_price === null ? "미입력" : money(numberValue(item.catalog_unit_price) * numberValue(item.awarded_qty))}</b></span>
-                        <span>업체 <b>{String(item.supplier_vendor_name || "미지정")}</b></span>
+                        <span>금액 <b>{item.effective_unit_price === null ? "미입력" : money(item.item_amount)}</b>{item.unit_price_source === "제품 기준" && <small> · 제품 기준</small>}</span>
+                        <span>업체 <b>{String(item.supplier_display_name || "미지정")}</b></span>
                         <span className={String(item.protection_status) === "신청 완료" ? "ok" : "warning-text"}>영업보호 <b>{String(item.protection_state || item.protection_status)}</b></span>
                       </div>
                       <div className="complex-item-notes">
@@ -637,13 +637,13 @@ function ItemForm(props: { project: ComplexProject; item: Row | null; busy: bool
     <label>품목 구분<select name="itemCategory" defaultValue={String(item?.item_category ?? "기자재")}>{["기자재", "가구·비품", "설치·공사", "소프트웨어", "기타"].map((name) => <option key={name}>{name}</option>)}</select></label>
     <label className="wide">품목명<input name="productName" required defaultValue={String(item?.product_name ?? "")} /></label>
     <label className="wide">규격<input name="specification" defaultValue={String(item?.specification ?? "")} /></label>
-    <label>수량<input name="awardedQty" type="number" min="0" defaultValue={numberValue(item?.awarded_qty)} /></label>
+    <label>수량<input name="awardedQty" type="number" min="0" defaultValue={numberValue(item?.awarded_qty) || numberValue(item?.settlement_quantity)} /></label>
     <label>단위<input name="unit" defaultValue={String(item?.unit ?? "대")} /></label>
-    <label>단가<input name="unitPrice" type="number" min="0" defaultValue={item?.catalog_unit_price === null ? "" : numberValue(item?.catalog_unit_price)} /></label>
+    <label>단가<input name="unitPrice" type="number" min="0" defaultValue={item?.effective_unit_price === null ? "" : numberValue(item?.effective_unit_price)} /></label>
     <label>상태<select name="status" defaultValue={String(item?.status ?? "수주")}>{["제안", "견적", "수주", "발주", "설치 중", "설치 완료", "보류", "취소"].map((name) => <option key={name}>{name}</option>)}</select></label>
     <label>공간<select name="zoneId" defaultValue={String(item?.zone_id ?? "")}><option value="">공간 미지정</option>{props.project.zones.map((zone) => <option key={String(zone.id)} value={String(zone.id)}>{String(zone.name)}</option>)}</select></label>
     <label>납품·설치 위치<input name="deliveryLocation" defaultValue={String(item?.delivery_location ?? "")} /></label>
-    <label>업체<input name="supplierName" defaultValue={String(item?.supplier_vendor_name ?? "")} /></label>
+    <label>업체<input name="supplierName" defaultValue={String(item?.supplier_vendor_name || item?.supplier_display_name || "")} /></label>
     <label>영업보호<select name="protectionStatus" defaultValue={String(item?.protection_state ?? item?.protection_status ?? "신청 필요")}>{["신청 필요", "신청 중", "보호 중", "승인", "만료", "해당 없음"].map((name) => <option key={name}>{name}</option>)}</select></label>
     <label>보호 대상 업체<input name="protectionVendorName" defaultValue={String(item?.protection_vendor_name ?? item?.supplier_vendor_name ?? "")} /></label>
     <label>영업보호 만료일<input name="protectionExpiresAt" type="date" defaultValue={String(item?.protection_expires_at ?? "")} /></label>
