@@ -1,4 +1,5 @@
 import {
+  createFullBackup,
   replicaContentChecksum,
   restoreReplicaBackup,
   validateFullBackup,
@@ -91,6 +92,15 @@ function safeErrorMessage(error: unknown) {
   return "Unknown replication error";
 }
 
+async function forceRequested(request: Request) {
+  try {
+    const body = (await request.json()) as { force?: unknown };
+    return body?.force === true;
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(request: Request) {
   if (!authorized(request)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -116,6 +126,7 @@ export async function POST(request: Request) {
     );
   }
 
+  const force = await forceRequested(request);
   const startedAt = Date.now();
   const sourceOrigin = primaryOrigin();
   try {
@@ -142,6 +153,31 @@ export async function POST(request: Request) {
         checksum: contentChecksum,
         createdAt: sourceInspection.createdAt,
       });
+    }
+
+    if (current?.source_checksum && !force) {
+      const localBackup = await createFullBackup();
+      const localChecksum = await replicaContentChecksum(localBackup);
+      if (localChecksum !== current.source_checksum) {
+        const durationMs = Date.now() - startedAt;
+        const errorMessage =
+          "Replica has independent local changes; automatic overwrite was blocked";
+        await markReplicationFailure({
+          sourceOrigin,
+          durationMs,
+          errorMessage,
+        });
+        return Response.json(
+          {
+            ok: false,
+            conflict: true,
+            error: errorMessage,
+            sourceChecksum: contentChecksum,
+            localChecksum,
+          },
+          { status: 409 },
+        );
+      }
     }
 
     const inspection = await restoreReplicaBackup(backup);
