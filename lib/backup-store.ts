@@ -1250,6 +1250,18 @@ async function checksumBackup(backup: Omit<FullBackup, "checksum">) {
   return sha256Hex(canonicalJson(checksumSource(backup)));
 }
 
+function replicaChecksumData(data: FullBackup["data"]) {
+  return {
+    ...data,
+    // Online-presence heartbeats update this field every few seconds. They
+    // should still be present in the backup, but must not trigger a full
+    // 5,000+ row replica restore when no business data changed.
+    members: data.members.map(({ last_seen_at: _lastSeenAt, ...member }) =>
+      member,
+    ),
+  };
+}
+
 export async function replicaContentChecksum(
   backup: Pick<
     FullBackup,
@@ -1261,7 +1273,7 @@ export async function replicaContentChecksum(
       formatVersion: backup.formatVersion,
       schemaVersion: backup.schemaVersion,
       counts: backup.counts,
-      data: backup.data,
+      data: replicaChecksumData(backup.data),
     }),
   );
 }
