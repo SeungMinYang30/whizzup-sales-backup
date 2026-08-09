@@ -124,10 +124,17 @@ function databaseUrl() {
 }
 
 function rowsWithCount<T extends QueryRow = QueryRow>(
-  result: QueryResult<T>,
+  result: QueryResult<T> | QueryResult<T>[],
 ): PostgresResult<T> {
-  const rows = result.rows as PostgresResult<T>;
-  rows.count = Number(result.rowCount ?? rows.length ?? 0);
+  // node-postgres returns one QueryResult per statement when a migration is
+  // executed as a multi-statement string. Schema migrations mostly contain
+  // DDL, so flatten the result set instead of assuming `result.rows` exists.
+  const queryResults = Array.isArray(result) ? result : [result];
+  const rows = queryResults.flatMap((entry) => entry.rows ?? []) as PostgresResult<T>;
+  rows.count = queryResults.reduce(
+    (count, entry) => count + Number(entry.rowCount ?? entry.rows?.length ?? 0),
+    0,
+  );
   return rows;
 }
 
