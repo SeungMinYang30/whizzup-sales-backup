@@ -1256,9 +1256,18 @@ function replicaChecksumData(data: FullBackup["data"]) {
     // Online-presence heartbeats update this field every few seconds. They
     // should still be present in the backup, but must not trigger a full
     // 5,000+ row replica restore when no business data changed.
-    members: data.members.map(({ last_seen_at: _lastSeenAt, ...member }) =>
-      member,
-    ),
+    members: data.members.map(({ last_seen_at: _lastSeenAt, ...member }) => {
+      let permissions = member.permissions;
+      if (typeof permissions === "string") {
+        try {
+          permissions = JSON.parse(permissions);
+        } catch {
+          // Validation reports malformed permissions separately. Keeping the
+          // original value here makes the checksum deterministic meanwhile.
+        }
+      }
+      return { ...member, permissions };
+    }),
   };
 }
 
