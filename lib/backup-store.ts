@@ -156,6 +156,7 @@ export const BACKUP_TABLES = [
       "id",
       "email",
       "display_name",
+      "job_title",
       "role",
       "permissions",
       "status",
