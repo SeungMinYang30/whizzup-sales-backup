@@ -7,6 +7,10 @@ import {
   requireMemberPermission,
 } from "../../../lib/collaboration";
 import { ensureActivityChangeLedgerReady } from "../../../lib/activity-change-ledger";
+import {
+  ensureDirectAuthReady,
+  setMemberPassword,
+} from "../../../lib/local-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +22,7 @@ export async function GET(request: Request) {
       const d1 = await ensureCollaborationReady();
       const result = await d1
         .prepare(
-          `SELECT id, display_name, role, status
+          `SELECT id, display_name, job_title, role, status
            FROM members
            WHERE status = 'approved' AND is_sales = 1
            ORDER BY display_name COLLATE NOCASE, id`,
@@ -27,16 +31,21 @@ export async function GET(request: Request) {
       return Response.json({ members: result.results });
     }
     await requireMemberPermission("members:manage");
-    const d1 = await ensureCollaborationReady();
+    const d1 = await ensureDirectAuthReady();
     const result = await d1
       .prepare(`
         SELECT
-          id, email, username, display_name, role, permissions, status, is_sales, created_at,
-          approved_at, approved_by, last_seen_at
-        FROM members
+          m.id, m.email, m.username, m.display_name, m.job_title, m.role, m.permissions,
+          m.status, m.is_sales, m.created_at, m.approved_at, m.approved_by,
+          m.last_seen_at,
+          EXISTS(
+            SELECT 1 FROM member_password_reset_requests r
+            WHERE r.member_id = m.id AND r.status = 'pending'
+          ) AS password_reset_pending
+        FROM members m
         ORDER BY
-          CASE status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
-          created_at DESC
+          CASE m.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
+          m.created_at DESC
       `)
       .all();
     return Response.json({ members: result.results });
@@ -51,9 +60,11 @@ export async function POST(request: Request) {
     const payload = (await request.json()) as {
       email?: string;
       displayName?: string;
+      jobTitle?: string;
     };
     const email = String(payload.email ?? "").trim().toLowerCase();
     const displayName = String(payload.displayName ?? "").trim();
+    const jobTitle = String(payload.jobTitle ?? "").trim().slice(0, 40);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return Response.json(
         { error: "등록할 이메일 주소를 확인해 주세요." },
@@ -68,6 +79,10 @@ export async function POST(request: Request) {
     }
 
     const d1 = await ensureCollaborationReady();
+    await d1
+      .prepare("DELETE FROM member_rejections WHERE lower(email) = ?")
+      .bind(email)
+      .run();
     const existing = await d1
       .prepare("SELECT * FROM members WHERE LOWER(email) = ?")
       .bind(email)
@@ -78,13 +93,14 @@ export async function POST(request: Request) {
         .prepare(`
           UPDATE members SET
             display_name = ?,
+            job_title = ?,
             status = 'approved',
             approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
             approved_by = COALESCE(approved_by, ?)
           WHERE id = ?
           RETURNING *
         `)
-        .bind(displayName, actor.id, Number(existing.id))
+        .bind(displayName, jobTitle, actor.id, Number(existing.id))
         .first();
       return Response.json({ member, created: false, approvedNow });
     }
@@ -92,12 +108,12 @@ export async function POST(request: Request) {
     const member = await d1
       .prepare(`
         INSERT INTO members (
-          email, display_name, role, permissions, status, is_sales,
+          email, display_name, job_title, role, permissions, status, is_sales,
           approved_at, approved_by, last_seen_at
-        ) VALUES (?, ?, 'member', '[]', 'approved', 0, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, 'member', '[]', 'approved', 0, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
         RETURNING *
       `)
-      .bind(email, displayName, actor.id)
+      .bind(email, displayName, jobTitle, actor.id)
       .first();
     return Response.json(
       { member, created: true, approvedNow: true },
@@ -140,7 +156,7 @@ export async function PUT(request: Request) {
     }
     if (target.role === "admin") {
       return Response.json(
-        { error: "운영관리자 계정은 변경할 수 없습니다." },
+        { error: "운영자 계정은 변경할 수 없습니다." },
         { status: 400 },
       );
     }
@@ -203,7 +219,9 @@ export async function PATCH(request: Request) {
     const payload = (await request.json()) as {
       id?: number;
       displayName?: string;
+      jobTitle?: string;
       isSales?: boolean;
+      temporaryPassword?: string;
     };
     const id = Number(payload.id);
 
@@ -219,10 +237,29 @@ export async function PATCH(request: Request) {
       return Response.json({ error: "사용자를 찾을 수 없습니다." }, { status: 404 });
     }
 
+    if (typeof payload.temporaryPassword === "string") {
+      if (actor.role !== "admin") {
+        return Response.json(
+          { error: "비밀번호 초기화는 운영자만 할 수 있습니다." },
+          { status: 403 },
+        );
+      }
+      await setMemberPassword(id, payload.temporaryPassword);
+      await d1
+        .prepare(`
+          UPDATE member_password_reset_requests
+          SET status = 'resolved', resolved_at = CURRENT_TIMESTAMP, resolved_by = ?
+          WHERE member_id = ? AND status = 'pending'
+        `)
+        .bind(actor.id, id)
+        .run();
+      return Response.json({ ok: true });
+    }
+
     if (typeof payload.isSales === "boolean") {
       if (actor.role !== "admin") {
         return Response.json(
-          { error: "영업 담당자 지정은 운영관리자만 할 수 있습니다." },
+          { error: "영업 담당자 지정은 운영자만 할 수 있습니다." },
           { status: 403 },
         );
       }
@@ -253,9 +290,18 @@ export async function PATCH(request: Request) {
         { status: 403 },
       );
     }
+    const jobTitle =
+      typeof payload.jobTitle === "string"
+        ? payload.jobTitle.trim().slice(0, 40)
+        : null;
     const member = await d1
-      .prepare("UPDATE members SET display_name = ? WHERE id = ? RETURNING *")
-      .bind(displayName, id)
+      .prepare(`
+        UPDATE members SET
+          display_name = ?,
+          job_title = COALESCE(?, job_title)
+        WHERE id = ? RETURNING *
+      `)
+      .bind(displayName, jobTitle, id)
       .first();
     if (!member) {
       return Response.json({ error: "사용자를 찾을 수 없습니다." }, { status: 404 });
@@ -279,7 +325,7 @@ export async function DELETE(request: Request) {
     const actor = await requireMemberPermission("members:manage");
     if (actor.role !== "admin") {
       return Response.json(
-        { error: "계정 영구 삭제는 운영관리자만 할 수 있습니다." },
+        { error: "계정 영구 삭제는 운영자만 할 수 있습니다." },
         { status: 403 },
       );
     }
@@ -303,11 +349,10 @@ export async function DELETE(request: Request) {
     }
     if (String(target.role) === "admin") {
       return Response.json(
-        { error: "운영관리자 계정은 삭제할 수 없습니다." },
+        { error: "운영자 계정은 삭제할 수 없습니다." },
         { status: 400 },
       );
     }
-
     await ensureActivityChangeLedgerReady();
     const archivedTarget = { ...target };
     delete archivedTarget.password_hash;
@@ -322,6 +367,15 @@ export async function DELETE(request: Request) {
         .bind(id, JSON.stringify(archivedTarget), actor.id)
         .run();
       await tx.batch([
+        tx
+          .prepare(`
+            INSERT INTO member_rejections (email, rejected_by, rejected_at)
+            VALUES (lower(?), ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(email) DO UPDATE SET
+              rejected_by = excluded.rejected_by,
+              rejected_at = CURRENT_TIMESTAMP
+          `)
+          .bind(String(target.email), actor.id),
         tx
         .prepare("UPDATE members SET approved_by = ? WHERE approved_by = ?")
         .bind(actor.id, id),

@@ -38,6 +38,7 @@ type QuotationDocument = {
 };
 
 type QuotationStorage = {
+  provider?: "google-drive" | "site-storage";
   usedBytes: number;
   remainingBytes: number;
   limitBytes: number;
@@ -422,6 +423,7 @@ export default function QuotationDocuments({
       formData.set("businessRound", String(businessRound));
       formData.set("pdf", storedPdf);
       if (parsedXlsx) {
+        formData.set("sourceFile", pdfFile);
         formData.set("companyName", parsedXlsx.sourceName.replace(/\.xlsx$/i, ""));
         formData.set("quoteAmount", String(parsedXlsx.quoteAmount || ""));
         if (parsedXlsx.quoteDate) formData.set("quoteDate", parsedXlsx.quoteDate);
@@ -946,7 +948,15 @@ export default function QuotationDocuments({
         </button>
       </div>
 
-      {storage && (
+      {storage?.provider === "google-drive" ? (
+        <div className="quotation-storage safe">
+          <div>
+            <strong>원본 파일 Google Drive 보관</strong>
+            <span>견적서 {storage.documentCount}건 · {storage.pageCount}페이지</span>
+          </div>
+          <small>페이지 미리보기만 사이트 임시 저장공간을 사용합니다.</small>
+        </div>
+      ) : storage ? (
         <div className={`quotation-storage ${storageTone}`}>
           <div>
             <strong>저장공간 {formatBytes(storage.usedBytes)} / {formatBytes(storage.limitBytes)}</strong>
@@ -957,7 +967,7 @@ export default function QuotationDocuments({
           </div>
           <small>관리 기준 10GB · 견적서 {storage.documentCount}건 · {storage.pageCount}페이지</small>
         </div>
-      )}
+      ) : null}
 
       {uploadOpen && (
         <form className="quotation-upload-form" onSubmit={uploadQuotation}>

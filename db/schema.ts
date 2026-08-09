@@ -203,6 +203,7 @@ export const members = sqliteTable("members", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   email: text("email").notNull().unique(),
   displayName: text("display_name").notNull(),
+  jobTitle: text("job_title").notNull().default(""),
   role: text("role").notNull().default("member"),
   permissions: text("permissions").notNull().default("[]"),
   status: text("status").notNull().default("pending"),
@@ -213,6 +214,46 @@ export const members = sqliteTable("members", {
   lastSeenAt: text("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   currentView: text("current_view").notNull().default(""),
 });
+
+export const memberCredentials = sqliteTable("member_credentials", {
+  memberId: integer("member_id").primaryKey(),
+  passwordHash: text("password_hash").notNull(),
+  passwordSalt: text("password_salt").notNull(),
+  passwordIterations: integer("password_iterations").notNull().default(210000),
+  passwordSetAt: text("password_set_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  failedAttempts: integer("failed_attempts").notNull().default(0),
+  lockedUntil: text("locked_until"),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const memberSessions = sqliteTable(
+  "member_sessions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    memberId: integer("member_id").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    rememberMe: integer("remember_me", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    lastSeenAt: text("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("member_sessions_member_idx").on(table.memberId, table.expiresAt)],
+);
+
+export const memberPasswordResetRequests = sqliteTable(
+  "member_password_reset_requests",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    memberId: integer("member_id"),
+    email: text("email").notNull(),
+    status: text("status").notNull().default("pending"),
+    requestedAt: text("requested_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    resolvedAt: text("resolved_at"),
+    resolvedBy: integer("resolved_by"),
+  },
+  (table) => [
+    index("member_password_reset_status_idx").on(table.status, table.requestedAt),
+  ],
+);
 
 export const dataControlEvents = sqliteTable(
   "data_control_events",
@@ -944,6 +985,57 @@ export const complexProjectEvents = sqliteTable(
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [index("complex_project_events_project_idx").on(table.complexProjectId, table.createdAt, table.id)],
+);
+
+export const resourcePosts = sqliteTable(
+  "resource_posts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    category: text("category").notNull().default("기타"),
+    title: text("title").notNull(),
+    content: text("content").notNull().default(""),
+    createdBy: integer("created_by").notNull(),
+    createdByName: text("created_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    archivedAt: text("archived_at"),
+    archivedBy: integer("archived_by"),
+  },
+  (table) => [
+    index("resource_posts_active_idx").on(
+      table.archivedAt,
+      table.createdAt,
+      table.id,
+    ),
+  ],
+);
+
+export const resourceAttachments = sqliteTable(
+  "resource_attachments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    postId: integer("post_id").notNull(),
+    originalName: text("original_name").notNull(),
+    driveFileId: text("drive_file_id").notNull().unique(),
+    driveFolderId: text("drive_folder_id").notNull().default(""),
+    mimeType: text("mime_type").notNull().default("application/octet-stream"),
+    sizeBytes: integer("size_bytes").notNull().default(0),
+    sourceFingerprint: text("source_fingerprint").notNull().default(""),
+    sourceRelativePath: text("source_relative_path").notNull().default(""),
+    createdBy: integer("created_by").notNull(),
+    createdByName: text("created_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("resource_attachments_post_idx").on(
+      table.postId,
+      table.createdAt,
+      table.id,
+    ),
+    uniqueIndex("resource_attachments_source_fingerprint_idx")
+      .on(table.sourceFingerprint)
+      .where(sql`${table.sourceFingerprint} <> ''`),
+  ],
 );
 
 export const productVendorLinks = sqliteTable(

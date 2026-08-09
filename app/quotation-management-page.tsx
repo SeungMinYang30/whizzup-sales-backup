@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AuthoredQuotation, AuthoredQuotationItem } from "../lib/authored-quotations";
 import type { ProductCatalogItem } from "../lib/product-catalog";
 import { createQuotationWorkbook } from "../lib/quotation-xlsx";
@@ -84,9 +84,7 @@ export default function QuotationManagementPage({
   async function load() {
     setLoading(true);
     try {
-      const quoteResponse = await fetch("/api/quotations", {
-        cache: "no-store",
-      });
+      const quoteResponse = await fetch("/api/quotations", { cache: "no-store" });
       const quotePayload = await quoteResponse.json() as { quotations?: AuthoredQuotation[]; error?: string };
       if (!quoteResponse.ok) throw new Error(quotePayload.error || "견적서를 불러오지 못했습니다.");
       setQuotes(quotePayload.quotations ?? []);
@@ -99,19 +97,17 @@ export default function QuotationManagementPage({
 
   useEffect(() => { void load(); }, []);
 
-  const deferredQuery = useDeferredValue(query);
-  const deferredProductQuery = useDeferredValue(productQuery);
   const filteredQuotes = useMemo(() => {
-    const key = deferredQuery.trim().toLocaleLowerCase("ko-KR");
+    const key = query.trim().toLocaleLowerCase("ko-KR");
     return key
       ? quotes.filter((quote) => `${quote.organization} ${quote.projectTitle} ${quote.quoteNumber}`.toLocaleLowerCase("ko-KR").includes(key))
       : quotes;
-  }, [deferredQuery, quotes]);
+  }, [query, quotes]);
 
   const filteredProducts = useMemo(() => {
-    const key = deferredProductQuery.trim().toLocaleLowerCase("ko-KR").replace(/\s/g, "");
+    const key = productQuery.trim().toLocaleLowerCase("ko-KR").replace(/\s/g, "");
     return products.filter((product) => !key || `${product.name}${product.specification}${product.note}`.toLocaleLowerCase("ko-KR").replace(/\s/g, "").includes(key)).slice(0, 80);
-  }, [deferredProductQuery, products]);
+  }, [productQuery, products]);
 
   const numbers = useMemo(() => {
     if (!draft) return { subtotal: 0, supply: 0, tax: 0, total: 0, earning: 0, consortium: 0, margin: 0, marginRate: 0 };

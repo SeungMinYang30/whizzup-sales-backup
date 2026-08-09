@@ -26,11 +26,15 @@ import { ensureInventoryReady } from "./inventory-store";
 import { ensureOrganizationSchedulesReady } from "./organization-schedules";
 import { ensureAuthoredQuotationsReady } from "./authored-quotations";
 import { ensureComplexProjectsReady } from "./complex-projects";
+import { ensureResourceLibraryReady } from "./resource-library";
+import { ensureProductComparisonDocumentsReady } from "./product-comparison-documents";
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-08-07-complex-project-controls";
+export const BACKUP_SCHEMA_VERSION = "2026-08-09-product-resource-import";
 const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
+  "2026-08-09-google-drive-library",
+  "2026-08-07-complex-project-controls",
   "2026-08-07-complex-projects",
   "2026-08-03-construction-schedule-board",
   "2026-08-03-authored-quotations",
@@ -114,6 +118,11 @@ const COMPLEX_PROJECT_BACKUP_TABLES = new Set([
   "complex_project_deliveries",
   "complex_project_events",
 ]);
+const DRIVE_LIBRARY_BACKUP_TABLES = new Set([
+  "resource_posts",
+  "resource_attachments",
+  "product_comparison_documents",
+]);
 
 function legacyBackupMayOmitTable(
   schemaVersion: string,
@@ -127,7 +136,8 @@ function legacyBackupMayOmitTable(
         JOINT_PROJECT_BACKUP_TABLES.has(tableName) ||
         INVENTORY_BACKUP_TABLES.has(tableName) ||
         ORGANIZATION_SCHEDULE_BACKUP_TABLES.has(tableName) ||
-        COMPLEX_PROJECT_BACKUP_TABLES.has(tableName)))
+        COMPLEX_PROJECT_BACKUP_TABLES.has(tableName) ||
+        DRIVE_LIBRARY_BACKUP_TABLES.has(tableName)))
   );
 }
 
@@ -582,6 +592,59 @@ export const BACKUP_TABLES = [
       "created_by",
       "created_by_name",
       "created_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "resource_posts",
+    columns: [
+      "id",
+      "category",
+      "title",
+      "content",
+      "created_by",
+      "created_by_name",
+      "created_at",
+      "updated_at",
+      "archived_at",
+      "archived_by",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "resource_attachments",
+    columns: [
+      "id",
+      "post_id",
+      "original_name",
+      "drive_file_id",
+      "drive_folder_id",
+      "mime_type",
+      "size_bytes",
+      "source_fingerprint",
+      "source_relative_path",
+      "created_by",
+      "created_by_name",
+      "created_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "product_comparison_documents",
+    columns: [
+      "id",
+      "equipment_item_id",
+      "catalog_product_id",
+      "product_name",
+      "original_name",
+      "drive_file_id",
+      "drive_folder_id",
+      "mime_type",
+      "size_bytes",
+      "created_by",
+      "created_by_name",
+      "created_at",
+      "archived_at",
     ],
     orderBy: "id",
   },
@@ -1126,6 +1189,8 @@ async function ensureBackupReady() {
   await ensureOrganizationSchedulesReady();
   await ensureAuthoredQuotationsReady();
   await ensureComplexProjectsReady();
+  await ensureResourceLibraryReady();
+  await ensureProductComparisonDocumentsReady();
   const d1 = getD1();
   await ensureInstitutionDecisionsReady(d1);
   await d1.prepare(`CREATE TABLE IF NOT EXISTS holdem_weekly_scores (
@@ -1728,6 +1793,21 @@ function validateRows(
     data.quotation_documents,
     (row) => requiredText(row.original_key, "quotation_documents.original_key"),
     "견적서 원본 파일 키",
+  );
+  assertUnique(
+    data.resource_posts,
+    (row) => String(asInteger(row.id, "resource_posts.id")),
+    "자료실 게시글 ID",
+  );
+  assertUnique(
+    data.resource_attachments,
+    (row) => String(asInteger(row.id, "resource_attachments.id")),
+    "자료실 첨부 ID",
+  );
+  assertUnique(
+    data.resource_attachments,
+    (row) => requiredText(row.drive_file_id, "resource_attachments.drive_file_id"),
+    "자료실 Google Drive 파일 ID",
   );
   assertUnique(
     data.organization_school_links,
@@ -2338,6 +2418,15 @@ function validateRows(
       true,
     ),
   );
+  const resourcePostIds = rowSet(data.resource_posts, "id", "resource_posts");
+  data.resource_posts.forEach((row) => {
+    assertReference(row.created_by, memberIds, "resource_posts.created_by", true);
+    assertReference(row.archived_by, memberIds, "resource_posts.archived_by", true);
+  });
+  data.resource_attachments.forEach((row) => {
+    assertReference(row.post_id, resourcePostIds, "resource_attachments.post_id");
+    assertReference(row.created_by, memberIds, "resource_attachments.created_by", true);
+  });
   data.authored_quotations.forEach((row) => {
     assertReference(
       row.created_by,
@@ -2587,7 +2676,7 @@ export async function createFullBackup(): Promise<FullBackup> {
         "화면에서 등록한 OpenAI API 키",
         "나이스 학교정보 API 인증키",
         "다시 조회할 수 있는 공식 학교정보 임시 캐시",
-        "견적서·협력사 증빙 첨부파일 원본(R2 목록·연결정보만 포함)",
+        "견적서·자료실·협력사 증빙 첨부파일 원본(R2 또는 Google Drive 연결정보만 포함)",
       ],
     },
     counts,
@@ -3095,7 +3184,10 @@ function insertStatements(
           ? row[column] ?? "whizzup"
           : table.name === "complex_projects" && column === "source_award_status"
             ? row[column] ?? "위즈업 수주"
-            : row[column] ?? null;
+            : table.name === "resource_attachments" &&
+                (column === "source_fingerprint" || column === "source_relative_path")
+              ? row[column] ?? ""
+              : row[column] ?? null;
         parameters.push(restoredValue);
         return "?";
       });
@@ -3127,6 +3219,7 @@ type RestorePresence = {
   restoresJointProjects: boolean;
   restoresInventory: boolean;
   restoresComplexProjects: boolean;
+  restoresDriveLibrary: boolean;
 };
 
 function restorePresenceFromInput(input: unknown): RestorePresence {
@@ -3163,6 +3256,9 @@ function restorePresenceFromInput(input: unknown): RestorePresence {
     restoresComplexProjects: [...COMPLEX_PROJECT_BACKUP_TABLES].every((tableName) =>
       Array.isArray(rawData?.[tableName]),
     ),
+    restoresDriveLibrary: [...DRIVE_LIBRARY_BACKUP_TABLES].every((tableName) =>
+      Array.isArray(rawData?.[tableName]),
+    ),
   };
 }
 
@@ -3183,6 +3279,7 @@ async function replaceDatabaseFromBackup(
     restoresJointProjects: true,
     restoresInventory: true,
     restoresComplexProjects: true,
+    restoresDriveLibrary: true,
   },
 ) {
   const {
@@ -3200,9 +3297,17 @@ async function replaceDatabaseFromBackup(
     restoresJointProjects,
     restoresInventory,
     restoresComplexProjects,
+    restoresDriveLibrary,
   } = presence;
   const d1 = await ensureBackupReady();
   const statements = [
+    ...(restoresDriveLibrary
+      ? [
+          d1.prepare("DELETE FROM product_comparison_documents"),
+          d1.prepare("DELETE FROM resource_attachments"),
+          d1.prepare("DELETE FROM resource_posts"),
+        ]
+      : []),
     ...(restoresInventory
       ? [
           d1.prepare("DELETE FROM inventory_transactions"),
@@ -3287,6 +3392,9 @@ async function replaceDatabaseFromBackup(
 
   const insertOrder: BackupTableName[] = [
     "members",
+    "resource_posts",
+    "resource_attachments",
+    "product_comparison_documents",
     "inventory_products",
     "inventory_transactions",
     "award_vendors",
@@ -3338,6 +3446,12 @@ async function replaceDatabaseFromBackup(
   ];
 
   insertOrder.forEach((tableName) => {
+    if (
+      DRIVE_LIBRARY_BACKUP_TABLES.has(tableName) &&
+      !restoresDriveLibrary
+    ) {
+      return;
+    }
     if (
       (tableName === "inventory_products" ||
         tableName === "inventory_transactions") &&
@@ -3449,6 +3563,9 @@ async function replaceDatabaseFromBackup(
 
   [
     "members",
+    "resource_posts",
+    "resource_attachments",
+    "product_comparison_documents",
     "activities",
     "award_vendors",
     "award_vendor_documents",

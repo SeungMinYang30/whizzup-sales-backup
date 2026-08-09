@@ -217,7 +217,9 @@ test("builds the Korean collaborative sales management application", async () =>
 
   assert.match(layout, /lang="ko"/);
   assert.match(layout, /위즈업 영업관리/);
-  assert.match(page, /requireChatGPTUser/);
+  assert.match(page, /getApplicationIdentity/);
+  assert.match(page, /LoginPage/);
+  assert.match(page, /InitialPasswordSetup/);
   assert.match(crm, /새 기록/);
   assert.match(crm, /엑셀 대량 등록/);
   assert.match(crm, /엑셀 양식 다운로드/);
@@ -282,7 +284,7 @@ test("builds the Korean collaborative sales management application", async () =>
   assert.match(backupStore, /award_vendors/);
   assert.match(backupStore, /manager_alert_acknowledgements/);
   assert.match(backupStore, /checksumBackup/);
-  assert.match(backupStore, /현재 대표관리자 계정/);
+  assert.match(backupStore, /현재 운영자 계정/);
   assert.doesNotMatch(
     backupStore,
     /name:\s*"oauth_tokens"|name:\s*"oauth_codes"|client_secret_hash/,
@@ -312,8 +314,8 @@ test("builds the Korean collaborative sales management application", async () =>
   assert.match(crm, /API 등록·관리/);
   assert.match(crm, /데이터 백업·복구/);
   assert.match(crm, /팀 업무 현황 · 관리자 영업 점검/);
-  assert.match(crm, /대표관리자 권한 변경은 대표관리자만 가능합니다/);
-  assert.match(crm, /이름 저장/);
+  assert.match(crm, /운영자 권한 변경은 운영자만 가능합니다/);
+  assert.match(crm, /이름·직책 저장/);
   assert.match(crm, /역할·기능 권한 저장/);
   assert.match(crm, /members:manage/);
   assert.match(styles, /\.member-access-editor/);

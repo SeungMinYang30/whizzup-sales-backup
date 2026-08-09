@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { resilientFetch } from "./resilient-fetch";
 import { downloadComplexProjectWorkbook } from "./complex-project-xlsx";
 
@@ -40,16 +40,6 @@ type Payload = {
   budgetGroups: Row[];
   members: Row[];
   candidates: Row[];
-};
-
-type ComparisonDocument = {
-  id: number;
-  productId: string;
-  originalName: string;
-  mimeType: string;
-  sizeBytes: number;
-  createdByName: string;
-  createdAt: string;
 };
 
 const emptyPayload: Payload = { projects: [], budgetGroups: [], members: [], candidates: [] };
@@ -94,19 +84,19 @@ export default function ComplexProjectPage(props: {
   const [deliveryItemId, setDeliveryItemId] = useState<number | null>(null);
   const [editItem, setEditItem] = useState<Row | null>(null);
   const [editDelivery, setEditDelivery] = useState<Row | null>(null);
-  const [comparisonItem, setComparisonItem] = useState<Row | null>(null);
-  const [comparisonDocuments, setComparisonDocuments] = useState<ComparisonDocument[]>([]);
-  const [comparisonBusy, setComparisonBusy] = useState(false);
-  const [exportBusy, setExportBusy] = useState(false);
-  const [comparisonMessage, setComparisonMessage] = useState("");
   const [candidateSearch, setCandidateSearch] = useState("");
-  const [createSourceType, setCreateSourceType] = useState<"existing" | "manual">("existing");
+  const [createSourceType, setCreateSourceType] = useState<"whizzup" | "new">("whizzup");
   const [candidates, setCandidates] = useState<Row[]>([]);
   const [candidateLoading, setCandidateLoading] = useState(false);
+  const [selectedOrganization, setSelectedOrganization] = useState("");
   const [selectedScope, setSelectedScope] = useState("");
-  const [createManagerId, setCreateManagerId] = useState("");
+  const [createNewRound, setCreateNewRound] = useState(false);
   const [createName, setCreateName] = useState("");
-  const [createTotalBudget, setCreateTotalBudget] = useState("");
+  const [createBudget, setCreateBudget] = useState("");
+  const [newOrganization, setNewOrganization] = useState("");
+  const [newRegion, setNewRegion] = useState("");
+  const [newBusinessRound, setNewBusinessRound] = useState("1");
+  const [createManagerId, setCreateManagerId] = useState("");
   const [detailTarget, setDetailTarget] = useState<{
     organization: string;
     businessRound: number;
@@ -118,7 +108,7 @@ export default function ComplexProjectPage(props: {
       const response = await resilientFetch("/api/complex-projects", {
         cache: "no-store",
         timeoutMs: 20_000,
-        retries: 0,
+        retries: 1,
       });
       const body = await readJson<Payload & { error?: string }>(response);
       if (!response.ok) throw new Error(body.error || "공간재구조화 사업을 불러오지 못했습니다.");
@@ -153,6 +143,7 @@ export default function ComplexProjectPage(props: {
       if (!organization) return;
       setDetailTarget({ organization, businessRound });
       setCandidateSearch(organization);
+      setSelectedOrganization(organization);
       setSelectedScope(`${organization}\u001f${businessRound}`);
       setCreateOpen(true);
     } catch {
@@ -171,12 +162,12 @@ export default function ComplexProjectPage(props: {
     setSelectedId(Number(existing.id));
     setCreateOpen(false);
     setDetailTarget(null);
-    setMessage("이미 활성화된 공간재구조화 사업을 열었습니다.");
+    setMessage("이미 관리 중인 공간재구조화 사업을 열었습니다.");
   }, [data.projects, detailTarget, loading]);
 
   useEffect(() => {
     const query = candidateSearch.trim();
-    if (!createOpen || createSourceType !== "existing" || query.replace(/\s+/g, "").length < 2) {
+    if (!createOpen || createSourceType !== "whizzup" || query.replace(/\s+/g, "").length < 2) {
       setCandidates([]);
       setCandidateLoading(false);
       return;
@@ -184,14 +175,14 @@ export default function ComplexProjectPage(props: {
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setCandidateLoading(true);
-      void resilientFetch(`/api/complex-projects?candidateQuery=${encodeURIComponent(query)}`, {
-        cache: "no-store",
+    void resilientFetch(`/api/complex-projects?candidateQuery=${encodeURIComponent(query)}`, {
+      cache: "no-store",
+      timeoutMs: 15_000,
+      retries: 1,
         signal: controller.signal,
-        timeoutMs: 12_000,
-        retries: 0,
       })
         .then(async (response) => {
-          const body = await readJson<{ candidates?: Row[]; error?: string }>(response);
+          const body = (await response.json()) as { candidates?: Row[]; error?: string };
           if (!response.ok) throw new Error(body.error || "기관을 검색하지 못했습니다.");
           setCandidates(Array.isArray(body.candidates) ? body.candidates : []);
         })
@@ -215,28 +206,32 @@ export default function ComplexProjectPage(props: {
     [data.projects, selectedId],
   );
 
-  const applyCandidateDefaults = useCallback((candidate: Row) => {
-    const scope = `${candidate.organization}\u001f${candidate.business_round}`;
-    setSelectedScope(scope);
-    setCreateName(String(candidate.suggested_name || `${candidate.organization} 공간재구조화 사업`));
-    setCreateTotalBudget(numberValue(candidate.suggested_total_budget)
-      ? String(numberValue(candidate.suggested_total_budget))
-      : "");
-    const normalizedManager = String(candidate.progress_manager || "").replace(/\s+/g, "").toLocaleLowerCase("ko-KR");
-    const matched = data.members.find((member) =>
-      String(member.display_name || "").replace(/\s+/g, "").toLocaleLowerCase("ko-KR") === normalizedManager,
-    );
-    setCreateManagerId(matched ? String(matched.id) : "");
-  }, [data.members]);
+  const candidateInstitutions = useMemo(() => {
+    const groups = new Map<string, { organization: string; canonical: string; region: string; address: string; rounds: Row[] }>();
+    candidates.forEach((candidate) => {
+      const organization = String(candidate.organization || "").trim();
+      const canonical = String(candidate.canonical_organization || organization).trim();
+      if (!organization || !canonical) return;
+      const current = groups.get(canonical) ?? {
+        organization,
+        canonical,
+        region: String(candidate.region || ""),
+        address: String(candidate.address || ""),
+        rounds: [],
+      };
+      current.rounds.push(candidate);
+      groups.set(canonical, current);
+    });
+    return [...groups.values()].map((group) => ({
+      ...group,
+      rounds: group.rounds.sort((left, right) => numberValue(right.business_round) - numberValue(left.business_round)),
+    }));
+  }, [candidates]);
 
-  useEffect(() => {
-    if (!detailTarget || !candidates.length || createName || createTotalBudget) return;
-    const candidate = candidates.find((entry) =>
-      String(entry.organization) === detailTarget.organization
-      && numberValue(entry.business_round) === detailTarget.businessRound,
-    );
-    if (candidate) applyCandidateDefaults(candidate);
-  }, [applyCandidateDefaults, candidates, createName, createTotalBudget, detailTarget]);
+  const selectedInstitution = useMemo(
+    () => candidateInstitutions.find((group) => group.organization === selectedOrganization) ?? null,
+    [candidateInstitutions, selectedOrganization],
+  );
 
   async function mutate(payload: Record<string, unknown>, success: string) {
     if (busy) return false;
@@ -283,38 +278,44 @@ export default function ComplexProjectPage(props: {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const scope = selectedScope.split("\u001f");
-    const organization = createSourceType === "manual"
-      ? String(form.get("manualOrganization") ?? "").trim()
-      : scope[0];
-    const businessRound = createSourceType === "manual"
-      ? Math.max(1, Number(form.get("manualBusinessRound") || 1))
+    const organization = createSourceType === "new" ? newOrganization.trim() : scope[0];
+    const businessRound = createSourceType === "new"
+      ? Math.max(1, Number(newBusinessRound || 1))
       : Number(scope[1] || 1);
     if (!organization) {
-      setMessage("검색 결과에서 기관과 사업 차수를 선택해 주세요.");
+      setMessage(createSourceType === "new" ? "기관명을 입력해 주세요." : "기관과 사업 차수를 선택해 주세요.");
       return;
     }
     const ok = await mutate({
       action: "create_project",
       sourceType: "whizzup",
-      createAwardActivity: createSourceType === "manual",
+      registerNewAward: createSourceType === "new",
+      createNewRound: createSourceType === "whizzup" && createNewRound,
       organization,
       businessRound,
-      name: form.get("name"),
+      region: createSourceType === "new" ? newRegion : selectedInstitution?.region,
+      name: createName,
       status: "준비",
-      totalBudget: form.get("totalBudget"),
+      totalBudget: createBudget,
       managerMemberId: createManagerId,
       notes: form.get("notes"),
     }, "공간재구조화 사업을 시작했습니다.");
     if (ok) {
-      if (numberValue(ok.projectId)) setSelectedId(numberValue(ok.projectId));
+      const createdProjectId = numberValue(ok.projectId);
+      if (createdProjectId) setSelectedId(createdProjectId);
       setCreateOpen(false);
       setCandidateSearch("");
       setCandidates([]);
+      setSelectedOrganization("");
       setSelectedScope("");
-      setCreateManagerId("");
+      setCreateNewRound(false);
       setCreateName("");
-      setCreateTotalBudget("");
-      setCreateSourceType("existing");
+      setCreateBudget("");
+      setNewOrganization("");
+      setNewRegion("");
+      setNewBusinessRound("1");
+      setCreateManagerId("");
+      setCreateSourceType("whizzup");
     }
   }
 
@@ -431,136 +432,10 @@ export default function ComplexProjectPage(props: {
     await mutate({ action: "delete_entity", projectId: selected.id, entity, id }, "항목을 삭제했습니다.");
   }
 
-  function updateComparisonDocumentCount(itemId: number, count: number) {
-    setData((current) => ({
-      ...current,
-      projects: current.projects.map((project) => ({
-        ...project,
-        items: project.items.map((item) =>
-          numberValue(item.equipment_item_id) === itemId
-            ? { ...item, comparison_document_count: Math.max(0, count) }
-            : item,
-        ),
-      })),
-    }));
-  }
-
-  async function openComparisonDocuments(item: Row) {
-    const documentKey = String(item.comparison_document_key ?? "").trim();
-    if (!documentKey) {
-      setMessage("비교표를 연결할 품목 정보를 확인하지 못했습니다.");
-      return;
-    }
-    setComparisonItem(item);
-    setComparisonDocuments([]);
-    setComparisonMessage("");
-    setComparisonBusy(true);
-    try {
-      const response = await resilientFetch(
-        `/api/product-comparison-documents?productId=${encodeURIComponent(documentKey)}`,
-        { cache: "no-store", timeoutMs: 12_000, retries: 0 },
-      );
-      const body = await readJson<{ documents?: ComparisonDocument[]; error?: string }>(response);
-      if (!response.ok || !Array.isArray(body.documents)) {
-        throw new Error(body.error || "비교표를 불러오지 못했습니다.");
-      }
-      setComparisonDocuments(body.documents);
-    } catch (error) {
-      setComparisonMessage(error instanceof Error ? error.message : "비교표를 불러오지 못했습니다.");
-    } finally {
-      setComparisonBusy(false);
-    }
-  }
-
-  async function uploadComparisonDocument(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file || !comparisonItem || comparisonBusy) return;
-    const documentKey = String(comparisonItem.comparison_document_key ?? "").trim();
-    if (!documentKey) return;
-    setComparisonBusy(true);
-    setComparisonMessage("");
-    try {
-      const formData = new FormData();
-      formData.set("productId", documentKey);
-      formData.set("file", file);
-      const response = await fetch("/api/product-comparison-documents", {
-        method: "POST",
-        body: formData,
-      });
-      const body = await readJson<{ document?: ComparisonDocument; error?: string }>(response);
-      if (!response.ok || !body.document) {
-        throw new Error(body.error || "비교표를 첨부하지 못했습니다.");
-      }
-      const nextDocuments = [body.document, ...comparisonDocuments];
-      setComparisonDocuments(nextDocuments);
-      updateComparisonDocumentCount(
-        numberValue(comparisonItem.equipment_item_id),
-        nextDocuments.length,
-      );
-      setComparisonMessage("비교표를 첨부했습니다.");
-    } catch (error) {
-      setComparisonMessage(error instanceof Error ? error.message : "비교표를 첨부하지 못했습니다.");
-    } finally {
-      setComparisonBusy(false);
-    }
-  }
-
-  async function deleteComparisonDocument(document: ComparisonDocument) {
-    if (
-      !comparisonItem ||
-      comparisonBusy ||
-      !window.confirm(`'${document.originalName}' 비교표를 삭제할까요?`)
-    ) return;
-    setComparisonBusy(true);
-    setComparisonMessage("");
-    try {
-      const response = await fetch("/api/product-comparison-documents", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: document.id }),
-      });
-      const body = await readJson<{ error?: string }>(response);
-      if (!response.ok) throw new Error(body.error || "비교표를 삭제하지 못했습니다.");
-      const nextDocuments = comparisonDocuments.filter((item) => item.id !== document.id);
-      setComparisonDocuments(nextDocuments);
-      updateComparisonDocumentCount(
-        numberValue(comparisonItem.equipment_item_id),
-        nextDocuments.length,
-      );
-      setComparisonMessage("비교표를 삭제했습니다.");
-    } catch (error) {
-      setComparisonMessage(error instanceof Error ? error.message : "비교표를 삭제하지 못했습니다.");
-    } finally {
-      setComparisonBusy(false);
-    }
-  }
-
   async function cancelProject() {
-    if (!selected) return;
-    const reason = window.prompt(
-      "공간재구조화 사업 연결을 취소합니다. 기관 상세·예산·품목·수주 기록은 삭제되지 않습니다.\n취소 사유를 입력해 주세요.",
-      "",
-    );
-    if (reason === null) return;
-    if (!window.confirm("공간재구조화 사업을 취소하시겠습니까? 원본 기관 기록과 회계·통계 자료는 그대로 유지됩니다.")) return;
-    const ok = await mutate({ action: "cancel_project", projectId: selected.id, reason }, "공간재구조화 사업을 취소했습니다.");
-    if (ok) setSelectedId(null);
-  }
-
-  async function exportProjectWorkbook() {
-    if (!selected || exportBusy) return;
-    setExportBusy(true);
-    setMessage("");
-    try {
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-      downloadComplexProjectWorkbook(selected);
-      setMessage("현재 기관 자료로 공간재구조화 사업 관리대장을 만들었습니다.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "엑셀을 만들지 못했습니다.");
-    } finally {
-      setExportBusy(false);
-    }
+    if (!selected || !window.confirm("이 공간재구조화 사업을 취소하시겠습니까? 기록은 보존되고 목록에서 숨겨집니다.")) return;
+    const result = await mutate({ action: "cancel_project", projectId: selected.id }, "공간재구조화 사업을 취소했습니다.");
+    if (result) setSelectedId(null);
   }
 
   return (
@@ -571,7 +446,10 @@ export default function ComplexProjectPage(props: {
           <h2>공간재구조화 사업 관리</h2>
           <p>큰 사업의 여러 예산·공간·품목·분할 납품·영업보호를 한 화면에서 관리합니다.</p>
         </div>
-        <button type="button" className="primary" onClick={() => setCreateOpen((open) => !open)}>
+        <button type="button" className="primary" onClick={() => setCreateOpen((open) => {
+          if (!open) setMessage("");
+          return !open;
+        })}>
           + 공간재구조화 사업 시작
         </button>
       </header>
@@ -579,66 +457,102 @@ export default function ComplexProjectPage(props: {
       {message && <div className="complex-message" role="status">{message}</div>}
 
       {createOpen && (
-        <form className="complex-inline-form" onSubmit={createProject}>
-          <strong>기관의 공간재구조화 사업 활성화</strong>
+        <form className="complex-inline-form" onSubmit={createProject} noValidate>
+          <strong>기관의 공간재구조화 사업 시작</strong>
           <div className="complex-source-switch wide" role="radiogroup" aria-label="공간재구조화 사업 출처">
-            <button type="button" role="radio" aria-checked={createSourceType === "existing"} className={createSourceType === "existing" ? "selected" : ""} onClick={() => { setCreateSourceType("existing"); setSelectedScope(""); setCreateName(""); setCreateTotalBudget(""); }}>기존 위즈업 수주에서 선택</button>
-            <button type="button" role="radio" aria-checked={createSourceType === "manual"} className={createSourceType === "manual" ? "selected" : ""} onClick={() => { setCreateSourceType("manual"); setSelectedScope(""); setCreateName(""); setCreateTotalBudget(""); setCandidates([]); }}>새 기관 위즈업 수주 등록</button>
+            <button type="button" role="radio" aria-checked={createSourceType === "whizzup"} className={createSourceType === "whizzup" ? "selected" : ""} onClick={() => { setCreateSourceType("whizzup"); setSelectedScope(""); setCreateNewRound(false); }}>기존 위즈업 기관에서 선택</button>
+            <button type="button" role="radio" aria-checked={createSourceType === "new"} className={createSourceType === "new" ? "selected" : ""} onClick={() => { setCreateSourceType("new"); setSelectedOrganization(""); setSelectedScope(""); setCandidates([]); }}>새 기관 위즈업 수주 등록</button>
           </div>
-          {createSourceType === "existing" ? <>
+          {createSourceType === "whizzup" ? <>
           <label className="wide">기관 검색
             <input
               value={candidateSearch}
               onChange={(event) => {
                 setCandidateSearch(event.target.value);
+                setSelectedOrganization("");
                 setSelectedScope("");
-                setCreateName("");
-                setCreateTotalBudget("");
+                setCreateNewRound(false);
               }}
               placeholder="기관명 또는 지역을 두 글자 이상 입력"
               autoComplete="off"
             />
             <small>{candidateLoading ? "기관을 검색하는 중입니다." : candidateSearch.replace(/\s+/g, "").length < 2 ? "두 글자부터 검색합니다." : `${candidates.length}개 후보`}</small>
           </label>
-          <div className="complex-candidate-results wide" role="listbox" aria-label="공간재구조화 사업 기관 검색 결과">
-            {candidates.map((candidate) => {
-              const scope = `${candidate.organization}\u001f${candidate.business_round}`;
-              const active = numberValue(candidate.complex_project_id) > 0;
-              return <button
-                type="button"
-                key={scope}
-                className={selectedScope === scope ? "selected" : ""}
-                onClick={() => {
-                  if (active) {
-                    setSelectedId(numberValue(candidate.complex_project_id));
-                    setCreateOpen(false);
-                    setMessage("이미 활성화된 공간재구조화 사업을 열었습니다.");
-                    return;
-                  }
-                  applyCandidateDefaults(candidate);
-                }}
-              >
-                <span><b>{String(candidate.organization)}</b><small>{String(candidate.region || "지역 미입력")} · {numberValue(candidate.business_round)}차 · {String(candidate.award_status || "수주 미정")}</small><small>{String(candidate.address || "주소 미입력")}</small><small>{numberValue(candidate.linked_budget_count)}개 예산 · 품목 {money(candidate.linked_item_amount)} · 공사 {money(candidate.linked_construction_amount)}</small></span>
-                <em>{active ? "관리 중" : numberValue(candidate.whizzup_award) ? "위즈업 수주" : "선택"}</em>
-              </button>;
-            })}
+          <div className="complex-candidate-results wide" role="listbox" aria-label="공간재구조화 기관 검색 결과">
+            {candidateInstitutions.map((institution) => <button
+              type="button"
+              key={institution.canonical}
+              className={selectedOrganization === institution.organization ? "selected" : ""}
+              onClick={() => {
+                setSelectedOrganization(institution.organization);
+                setSelectedScope("");
+                setCreateNewRound(false);
+                setCreateName(`${institution.organization} 공간재구조화 사업`);
+                setCreateBudget("");
+                const latestManager = institution.rounds.find((candidate) => String(candidate.progress_manager || "").trim());
+                const matched = data.members.find((member) => String(member.display_name) === String(latestManager?.progress_manager || ""));
+                setCreateManagerId(matched ? String(matched.id) : "");
+              }}
+            >
+              <span><b>{institution.organization}</b><small>{institution.region || "지역 미입력"} · {institution.rounds.length}개 사업 차수</small><small>{institution.address || "주소 미입력"}</small></span>
+              <em>차수 선택</em>
+            </button>)}
             {!candidateLoading && candidateSearch.replace(/\s+/g, "").length >= 2 && !candidates.length && <p>일치하는 기관·사업 차수가 없습니다.</p>}
           </div>
+          {selectedInstitution && <div className="complex-round-results wide">
+            <strong>{selectedInstitution.organization} 사업 차수</strong>
+            {selectedInstitution.rounds.map((candidate) => {
+              const scope = `${candidate.organization}\u001f${candidate.business_round}`;
+              const active = numberValue(candidate.complex_project_id) > 0;
+              return <button type="button" key={scope} className={selectedScope === scope && !createNewRound ? "selected" : ""} onClick={() => {
+                if (active) {
+                  setSelectedId(numberValue(candidate.complex_project_id));
+                  setCreateOpen(false);
+                  setMessage("이미 관리 중인 공간재구조화 사업을 열었습니다.");
+                  return;
+                }
+                setSelectedScope(scope);
+                setCreateNewRound(false);
+                setCreateName(String(candidate.complex_project_name || `${candidate.organization} 공간재구조화 사업`));
+                setCreateBudget(numberValue(candidate.budget_total) > 0 ? String(numberValue(candidate.budget_total)) : "");
+                const matched = data.members.find((member) => String(member.display_name) === String(candidate.progress_manager));
+                setCreateManagerId(matched ? String(matched.id) : "");
+              }}>
+                <span><b>{numberValue(candidate.business_round)}차</b><small>{String(candidate.latest_date || "날짜 미입력")} · 예산 {numberValue(candidate.budget_count)}개 · 품목 {numberValue(candidate.item_count)}개</small></span>
+                <em>{active ? "관리 중" : "기존 차수 연결"}</em>
+              </button>;
+            })}
+            <button type="button" className={createNewRound ? "selected" : ""} onClick={() => {
+              const nextRound = Math.max(0, ...selectedInstitution.rounds.map((candidate) => numberValue(candidate.business_round))) + 1;
+              setSelectedScope(`${selectedInstitution.organization}\u001f${nextRound}`);
+              setCreateNewRound(true);
+              setCreateName(`${selectedInstitution.organization} 공간재구조화 사업`);
+              setCreateBudget("");
+              const latestManager = selectedInstitution.rounds.find((candidate) => String(candidate.progress_manager || "").trim());
+              const matched = data.members.find((member) => String(member.display_name) === String(latestManager?.progress_manager || ""));
+              setCreateManagerId(matched ? String(matched.id) : "");
+            }}><span><b>새 차수 만들기</b><small>기관 정보만 이어받고 과거 예산·품목은 복사하지 않습니다.</small></span><em>새 사업</em></button>
+          </div>}
           </> : <>
-            <div className="complex-external-notice wide">새 기관을 기관별 관리(수주 후)에 <b>위즈업 수주</b>로 함께 등록합니다. 수주·수금·회계·제품 통계의 동일 기관·사업 차수와 연결됩니다.</div>
-            <label>기관명<input name="manualOrganization" required placeholder="기관명" /></label>
-            <label>사업 차수<input name="manualBusinessRound" type="number" min="1" defaultValue="1" /></label>
+            <div className="complex-external-notice wide">새 위즈업 수주 기관과 1차 사업을 기관별 관리에도 함께 등록합니다.</div>
+            <label>기관명<input value={newOrganization} onChange={(event) => { setNewOrganization(event.target.value); if (!createName) setCreateName(`${event.target.value} 공간재구조화 사업`); }} required placeholder="기관명" /></label>
+            <label>지역<input value={newRegion} onChange={(event) => setNewRegion(event.target.value)} placeholder="예: 경기 고양" /></label>
+            <label>사업 차수<input value={newBusinessRound} onChange={(event) => setNewBusinessRound(event.target.value)} type="number" min="1" /></label>
           </>}
-          <label>사업명<input name="name" value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="기관 선택 시 기존 사업 정보를 불러옵니다" /></label>
-          <label>총 관리예산<input name="totalBudget" value={createTotalBudget} onChange={(event) => setCreateTotalBudget(event.target.value)} type="number" min="0" placeholder="기관 선택 시 기존 예산을 합산합니다" /></label>
+          <label>사업명<input value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="예: 일산초 공간재구조화 사업" /></label>
+          <label>총 관리예산<input value={createBudget} onChange={(event) => setCreateBudget(event.target.value)} type="number" min="0" placeholder="예: 1279228000" /></label>
           <label>진행 담당자
             <select value={createManagerId} onChange={(event) => setCreateManagerId(event.target.value)}>
               <option value="">담당자 미지정</option>
-              {data.members.map((member) => <option key={String(member.id)} value={String(member.id)}>{String(member.display_name)}</option>)}
+              {data.members.map((member) => <option key={String(member.id)} value={String(member.id)}>{String(member.display_label || member.display_name)}</option>)}
             </select>
           </label>
           <label className="wide">메모<textarea name="notes" rows={2} /></label>
-          <div className="complex-form-actions"><button type="button" onClick={() => setCreateOpen(false)}>취소</button><button className="primary" disabled={busy || (createSourceType === "existing" && !selectedScope)}>{busy ? "저장 중…" : "시작"}</button></div>
+          <div className="complex-form-actions">
+            {message && <span className="complex-form-feedback" role="status" aria-live="polite">{message}</span>}
+            <button type="button" onClick={() => setCreateOpen(false)}>취소</button>
+            <button type="submit" className="primary" disabled={busy || (createSourceType === "whizzup" && !selectedScope) || (createSourceType === "new" && !newOrganization.trim())}>{busy ? "저장 중…" : "시작"}</button>
+          </div>
         </form>
       )}
 
@@ -656,7 +570,7 @@ export default function ComplexProjectPage(props: {
               </span>
             </button>
           ))}
-          {!loading && data.projects.length === 0 && <p className="empty-state">아직 활성화한 공간재구조화 사업이 없습니다.</p>}
+          {!loading && data.projects.length === 0 && <p className="empty-state">아직 등록한 공간재구조화 사업이 없습니다.</p>}
         </aside>
 
         <div className="complex-project-detail">
@@ -664,15 +578,27 @@ export default function ComplexProjectPage(props: {
             <>
               <div className="complex-detail-heading">
                 <div><h3>{selected.name}</h3><p>{selected.organization} · {numberValue(selected.business_round)}차 사업 · {selected.source_type === "external" ? `${selected.source_award_status}(통계 제외)` : "위즈업 수주"}</p></div>
-                <div className="complex-heading-actions"><button type="button" onClick={() => props.onOpenOrganization?.(selected.organization, numberValue(selected.business_round))}>기관 상세 보기</button><button type="button" disabled={exportBusy} onClick={() => void exportProjectWorkbook()}>{exportBusy ? "엑셀 생성 중…" : "엑셀 내보내기"}</button><button type="button" className="danger" onClick={() => void cancelProject()}>공간재구조화 사업 취소</button></div>
+                <div className="complex-detail-actions">
+                  <button type="button" onClick={() => downloadComplexProjectWorkbook(selected)}>엑셀 내보내기</button>
+                  <button type="button" onClick={() => props.onOpenOrganization?.(selected.organization, numberValue(selected.business_round))}>기관 상세 보기</button>
+                  <button type="button" className="danger" onClick={() => void cancelProject()}>사업 취소</button>
+                </div>
+              </div>
+
+              <div className="complex-institution-link" role="status">
+                <div>
+                  <strong>기관 상세와 같은 사업 기록을 사용합니다.</strong>
+                  <span>기관 상세의 같은 차수에 등록된 예산 {selected.budgets.length.toLocaleString("ko-KR")}건·품목 {selected.items.length.toLocaleString("ko-KR")}건이 자동으로 연결되며, 어느 화면에서 수정해도 함께 반영됩니다.</span>
+                </div>
+                <button type="button" onClick={() => props.onOpenOrganization?.(selected.organization, numberValue(selected.business_round))}>기관 상세 열기</button>
               </div>
 
               <div className="complex-summary-grid">
                 <article><small>총 관리예산</small><b>{money(selected.total_budget)}</b></article>
                 <article><small>예산 배정 합계</small><b>{money(selected.summary.allocated_amount)}</b></article>
+                <article><small>등록 견적·공사비</small><b>{money(selected.summary.quote_amount)}</b></article>
                 <article><small>연결 품목 금액</small><b>{money(selected.summary.item_quote_amount)}</b></article>
                 <article><small>연결 공사비</small><b>{money(selected.summary.construction_amount)}</b></article>
-                <article><small>품목·공사비 합계</small><b>{money(selected.summary.quote_amount)}</b></article>
                 <article className={selected.summary.remaining_budget !== null && selected.summary.remaining_budget < 0 ? "danger" : ""}><small>{selected.summary.remaining_budget !== null && selected.summary.remaining_budget < 0 ? "관리예산 초과" : "관리예산 잔액"}</small><b>{selected.summary.remaining_budget === null ? "예산 미입력" : money(Math.abs(selected.summary.remaining_budget))}</b></article>
                 <article className={selected.summary.unscheduled_count ? "warning" : ""}><small>일정 미정 품목</small><b>{selected.summary.unscheduled_count}건</b></article>
                 <article className={selected.summary.protection_needed_count ? "warning" : ""}><small>영업보호 필요</small><b>{selected.summary.protection_needed_count}건</b></article>
@@ -688,7 +614,7 @@ export default function ComplexProjectPage(props: {
                   <label>사업명<input name="name" defaultValue={selected.name} required /></label>
                   <label>상태<select name="status" defaultValue={selected.status}>{["준비", "진행", "보류", "완료", "취소"].map((status) => <option key={status}>{status}</option>)}</select></label>
                   <label>총 관리예산<input name="totalBudget" type="number" min="0" defaultValue={selected.total_budget ?? ""} /></label>
-                  <label>진행 담당자<select name="managerMemberId" defaultValue={String(selected.manager_member_id ?? "")}><option value="">담당자 미지정</option>{data.members.map((member) => <option key={String(member.id)} value={String(member.id)}>{String(member.display_name)}</option>)}</select></label>
+                  <label>진행 담당자<select name="managerMemberId" defaultValue={String(selected.manager_member_id ?? "")}><option value="">담당자 미지정</option>{data.members.map((member) => <option key={String(member.id)} value={String(member.id)}>{String(member.display_label || member.display_name)}</option>)}</select></label>
                   <label className="wide">메모<textarea name="notes" rows={2} defaultValue={selected.notes} /></label>
                   <div className="complex-form-actions"><button className="primary" disabled={busy}>기본 정보 저장</button></div>
                 </form>
@@ -714,7 +640,7 @@ export default function ComplexProjectPage(props: {
               </section>
 
               <section className="complex-section">
-                <div className="complex-section-title"><div><h3>품목·영업보호·납품</h3><p>분할 납품 합계와 수주 수량이 다르면 자동으로 표시합니다.</p></div><button type="button" onClick={() => { setEditItem(null); setItemOpen((open) => !open); }}>+ 품목 추가</button></div>
+                <div className="complex-section-title"><div><h3>품목·영업보호·납품</h3><p>기관 상세의 제품·견적 품목을 그대로 사용하며, 분할 납품 합계와 수주 수량이 다르면 자동으로 표시합니다.</p></div><button type="button" onClick={() => { setEditItem(null); setItemOpen((open) => !open); }}>+ 품목 추가</button></div>
                 {itemOpen && <ItemForm project={selected} item={editItem} busy={busy} onSubmit={saveItem} onCancel={() => { setItemOpen(false); setEditItem(null); }} />}
                 <div className="complex-item-list">
                   {selected.items.map((item) => {
@@ -730,7 +656,7 @@ export default function ComplexProjectPage(props: {
                         <span>일정 배정 <b>{numberValue(item.planned_delivery_qty).toLocaleString("ko-KR")}{String(item.unit)}</b></span>
                         <span>완료 <b>{numberValue(item.completed_delivery_qty).toLocaleString("ko-KR")}{String(item.unit)}</b></span>
                         <span>금액 <b>{item.effective_unit_price === null ? "미입력" : money(item.item_amount)}</b>{item.unit_price_source === "제품 기준" && <small> · 제품 기준</small>}</span>
-                        <span>업체 <b>{String(item.supplier_display_name || "미지정")}</b></span>
+                        <span>업체 <b>{String(item.supplier_display_name || item.supplier_vendor_name || "미지정")}</b></span>
                         <span className={String(item.protection_status) === "신청 완료" ? "ok" : "warning-text"}>영업보호 <b>{String(item.protection_state || item.protection_status)}</b></span>
                       </div>
                       <div className="complex-item-notes">
@@ -744,15 +670,7 @@ export default function ComplexProjectPage(props: {
                       <div className="complex-delivery-list">
                         {(item.deliveries ?? []).map((delivery) => <span key={String(delivery.id)}><b>{String(delivery.kind)}</b><small>{String(delivery.start_date || "일정 미정")}{delivery.end_date && delivery.end_date !== delivery.start_date ? ` ~ ${delivery.end_date}` : ""}</small><small>{numberValue(delivery.planned_qty)}{String(item.unit)} · {String(delivery.status)}</small><button type="button" onClick={() => { setDeliveryItemId(itemId); setEditDelivery(delivery); }}>수정</button><button type="button" onClick={() => void removeEntity("delivery", numberValue(delivery.id))}>삭제</button></span>)}
                       </div>
-                      <footer>
-                        <button type="button" onClick={() => void openComparisonDocuments(item)}>
-                          {numberValue(item.comparison_document_count) > 0
-                            ? `비교표 ${numberValue(item.comparison_document_count)}건`
-                            : "+ 비교표 등록"}
-                        </button>
-                        <button type="button" onClick={() => { setEditItem(item); setItemOpen(true); }}>품목 수정</button>
-                        <button type="button" className="primary" onClick={() => { setDeliveryItemId(itemId); setEditDelivery(null); }}>+ 분할 일정</button>
-                      </footer>
+                      <footer><button type="button" onClick={() => { setEditItem(item); setItemOpen(true); }}>품목 수정</button><button type="button" className="primary" onClick={() => { setDeliveryItemId(itemId); setEditDelivery(null); }}>+ 분할 일정</button></footer>
                       {deliveryItemId === itemId && <DeliveryForm item={item} delivery={editDelivery} busy={busy} onSubmit={saveDelivery} onCancel={() => { setDeliveryItemId(null); setEditDelivery(null); }} />}
                     </article>;
                   })}
@@ -760,73 +678,9 @@ export default function ComplexProjectPage(props: {
                 </div>
               </section>
             </>
-          ) : <div className="empty-state">왼쪽에서 공간재구조화 사업을 선택해 주세요.</div>}
+            ) : <div className="empty-state">왼쪽에서 공간재구조화 사업을 선택해 주세요.</div>}
         </div>
       </div>
-
-      {comparisonItem && (
-        <div
-          className="product-catalog-modal-shell"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.currentTarget === event.target && !comparisonBusy) {
-              setComparisonItem(null);
-            }
-          }}
-        >
-          <section
-            className="product-catalog-dialog product-comparison-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="complex-comparison-title"
-          >
-            <div className="product-catalog-dialog-header">
-              <div>
-                <span className="section-kicker">PRODUCT COMPARISON</span>
-                <h3 id="complex-comparison-title">물품 비교표</h3>
-                <p>{String(comparisonItem.product_name || "품목")}에 연결된 비교표를 관리합니다.</p>
-              </div>
-              <button
-                type="button"
-                aria-label="닫기"
-                disabled={comparisonBusy}
-                onClick={() => setComparisonItem(null)}
-              >
-                ×
-              </button>
-            </div>
-            <label className="product-comparison-upload">
-              <strong>{comparisonBusy ? "처리 중…" : "+ 비교표 첨부"}</strong>
-              <span>PDF·Excel·Word · 파일당 20MB 이하</span>
-              <input
-                type="file"
-                accept=".pdf,.xlsx,.xls,.docx"
-                disabled={comparisonBusy}
-                onChange={(event) => void uploadComparisonDocument(event)}
-              />
-            </label>
-            {comparisonMessage && <p className="product-comparison-message">{comparisonMessage}</p>}
-            <div className="product-comparison-list">
-              {comparisonDocuments.map((document) => (
-                <article key={document.id}>
-                  <div>
-                    <strong>{document.originalName}</strong>
-                    <small>{(document.sizeBytes / 1024 / 1024).toFixed(2)}MB · {document.createdByName || "운영자"}</small>
-                  </div>
-                  <a href={`/api/product-comparison-documents?id=${document.id}`} target="_blank" rel="noreferrer">내려받기</a>
-                  <button type="button" disabled={comparisonBusy} onClick={() => void deleteComparisonDocument(document)}>삭제</button>
-                </article>
-              ))}
-              {!comparisonDocuments.length && !comparisonBusy && (
-                <div className="empty-state">첨부된 비교표가 없습니다.</div>
-              )}
-            </div>
-            <div className="product-catalog-dialog-actions">
-              <button type="button" className="primary-button" disabled={comparisonBusy} onClick={() => setComparisonItem(null)}>확인</button>
-            </div>
-          </section>
-        </div>
-      )}
     </section>
   );
 }
@@ -838,13 +692,13 @@ function ItemForm(props: { project: ComplexProject; item: Row | null; busy: bool
     <label>품목 구분<select name="itemCategory" defaultValue={String(item?.item_category ?? "기자재")}>{["기자재", "가구·비품", "설치·공사", "소프트웨어", "기타"].map((name) => <option key={name}>{name}</option>)}</select></label>
     <label className="wide">품목명<input name="productName" required defaultValue={String(item?.product_name ?? "")} /></label>
     <label className="wide">규격<input name="specification" defaultValue={String(item?.specification ?? "")} /></label>
-    <label>수량<input name="awardedQty" type="number" min="0" defaultValue={numberValue(item?.awarded_qty) || numberValue(item?.settlement_quantity)} /></label>
+    <label>수량<input name="awardedQty" type="number" min="0" defaultValue={numberValue(item?.awarded_qty)} /></label>
     <label>단위<input name="unit" defaultValue={String(item?.unit ?? "대")} /></label>
-    <label>단가<input name="unitPrice" type="number" min="0" defaultValue={item?.effective_unit_price === null ? "" : numberValue(item?.effective_unit_price)} /></label>
+    <label>단가<input name="unitPrice" type="number" min="0" defaultValue={item?.catalog_unit_price === null ? "" : numberValue(item?.catalog_unit_price)} /></label>
     <label>상태<select name="status" defaultValue={String(item?.status ?? "수주")}>{["제안", "견적", "수주", "발주", "설치 중", "설치 완료", "보류", "취소"].map((name) => <option key={name}>{name}</option>)}</select></label>
     <label>공간<select name="zoneId" defaultValue={String(item?.zone_id ?? "")}><option value="">공간 미지정</option>{props.project.zones.map((zone) => <option key={String(zone.id)} value={String(zone.id)}>{String(zone.name)}</option>)}</select></label>
     <label>납품·설치 위치<input name="deliveryLocation" defaultValue={String(item?.delivery_location ?? "")} /></label>
-    <label>업체<input name="supplierName" defaultValue={String(item?.supplier_vendor_name || item?.supplier_display_name || "")} /></label>
+    <label>업체<input name="supplierName" defaultValue={String(item?.supplier_vendor_name ?? "")} /></label>
     <label>영업보호<select name="protectionStatus" defaultValue={String(item?.protection_state ?? item?.protection_status ?? "신청 필요")}>{["신청 필요", "신청 중", "보호 중", "승인", "만료", "해당 없음"].map((name) => <option key={name}>{name}</option>)}</select></label>
     <label>보호 대상 업체<input name="protectionVendorName" defaultValue={String(item?.protection_vendor_name ?? item?.supplier_vendor_name ?? "")} /></label>
     <label>영업보호 만료일<input name="protectionExpiresAt" type="date" defaultValue={String(item?.protection_expires_at ?? "")} /></label>

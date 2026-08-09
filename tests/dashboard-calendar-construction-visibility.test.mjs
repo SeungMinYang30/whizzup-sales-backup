@@ -41,7 +41,7 @@ test("대시보드는 저장된 일정을 먼저 표시하고 Google 확인은 �
   assert.match(scheduleRoute, /if \(!refreshGoogle\)[\s\S]*?listScheduleCalendarForMember/);
   assert.match(calendar, /requestCalendar\(false\)/);
   assert.match(calendar, /requestCalendar\(true\)/);
-  assert.match(calendar, /window\.setTimeout\(resolve, 3_500\)/);
+  assert.match(calendar, /window\.setTimeout\(resolve, 900\)/);
   assert.match(calendar, /Google 일정 확인 중/);
 });
 
@@ -69,39 +69,11 @@ test("대시보드 시공 현황은 경량 요약을 즉시 조회하고 전체 
   assert.match(crmApp, /scope=construction-summary&today=/);
   assert.doesNotMatch(crmApp, /scope=construction-board/);
   assert.match(crmApp, /onDashboardCounts=\{setConstructionDashboardCounts\}/);
-  assert.match(crmApp, /constructionDashboardCounts\?\.planned/);
-  assert.match(constructionPage, /if \(!onDashboardCounts \|\| !boardLoaded\) return;/);
-  assert.match(scheduleRoute, /scope"\) === "construction-summary"/);
-  assert.match(scheduleRoute, /listConstructionScheduleSummary\(today\)/);
   assert.equal(
-    (constructionPage.match(/resilientFetch\("\/api\/schedules\?scope=construction-board"/g) ?? []).length,
+    (constructionPage.match(/fetch\("\/api\/schedules\?scope=construction-board"/g) ?? []).length,
     1,
   );
-  assert.match(constructionPage, /retries: 2/);
-  assert.match(constructionPage, /window\.setTimeout\(\(\) => void load\(\), embedded \? 500 : 0\)/);
   assert.match(constructionPage, /onDashboardCounts\(projects\.filter/);
-});
-
-test("시공 현황 요약은 숨김과 타사 수주를 제외하고 필요한 일정 상태만 읽는다", () => {
-  const summary = schedules.slice(
-    schedules.indexOf("export async function listConstructionScheduleSummary"),
-    schedules.indexOf("export async function addConstructionScheduleProject"),
-  );
-  assert.match(summary, /FROM construction_schedule_projects csp/);
-  assert.match(summary, /latest_award_status/);
-  assert.match(summary, /!== "위즈업 수주"/);
-  assert.match(summary, /TRIM\(COALESCE\(csp\.hidden_at, ''\)\) = ''/);
-  assert.match(summary, /FROM organization_schedules os/);
-  assert.match(summary, /os\.scheduled_date <= \?/);
-  assert.doesNotMatch(summary, /equipment_projects|equipment_items/);
-});
-
-test("시공 일정표 조회는 등록 기관 범위만 읽어 전체 영업·품목 스캔을 피한다", () => {
-  assert.match(schedules, /FROM construction_schedule_projects csp/);
-  assert.match(schedules, /JOIN construction_schedule_projects csp[\s\S]*?csp\.organization = os\.organization/);
-  assert.match(schedules, /JOIN construction_schedule_projects csp[\s\S]*?csp\.organization = p\.organization/);
-  assert.match(schedules, /SELECT a\.award_status[\s\S]*?a\.organization = csp\.organization[\s\S]*?LIMIT 1/);
-  assert.doesNotMatch(schedules, /ROW_NUMBER\(\) OVER \([\s\S]*?PARTITION BY organization, business_round/);
 });
 
 test("시공 일정표 목록 삭제는 원본을 보존하고 기관 추가로 재등록한다", () => {

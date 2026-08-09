@@ -46,7 +46,6 @@ function escapeXml(value: unknown) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;");
 }
-
 function columnName(index: number) {
   let value = index + 1;
   let result = "";

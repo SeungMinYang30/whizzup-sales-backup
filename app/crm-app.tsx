@@ -131,6 +131,7 @@ const OwnerPerformancePage = lazy(() => import("./owner-performance-page"));
 const InventoryPage = lazy(() => import("./inventory-page"));
 const ConstructionSchedulePage = lazy(() => import("./construction-schedule-page"));
 const ComplexProjectPage = lazy(() => import("./complex-project-page"));
+const ResourceLibraryPage = lazy(() => import("./resource-library-page"));
 const QuotationDocuments = lazy(() => import("./quotation-documents"));
 const SalesMapPage = lazy(() => import("./sales-map"));
 const HomeCalendar = lazy(() => import("./home-calendar"));
@@ -1039,6 +1040,7 @@ type View =
   | "dashboard"
   | "budget-institutions"
   | "complex-projects"
+  | "resources"
   | "records"
   | "followup"
   | "schedules"
@@ -1084,6 +1086,7 @@ type SessionMember = {
   id: number;
   email: string;
   displayName: string;
+  jobTitle: string;
   role: "admin" | "assistant" | "member";
   permissions: MemberPermission[];
   status: "pending" | "approved" | "suspended";
@@ -1134,12 +1137,14 @@ type TeamMember = {
   email: string;
   username: string;
   displayName: string;
+  jobTitle: string;
   role: "admin" | "assistant" | "member";
   permissions: MemberPermission[];
   status: "pending" | "approved" | "suspended";
   isSales: boolean;
   createdAt: string;
   lastSeenAt: string;
+  passwordResetPending: boolean;
 };
 
 type MemberPresence = {
@@ -1178,6 +1183,7 @@ async function requestMemberPresence() {
 type ActivityReviewAssignee = {
   id: number;
   displayName: string;
+  jobTitle: string;
 };
 
 type ManagerIssueFilter = ManagerInspectionFilter;
@@ -1199,7 +1205,15 @@ type ManagerAlertAcknowledgement = {
 type ManagerAlertMemberOption = {
   id: number;
   displayName: string;
+  jobTitle: string;
+  displayLabel: string;
 };
+
+function memberLabel(member: { displayName: string; jobTitle?: string }) {
+  const name = member.displayName.trim();
+  const title = String(member.jobTitle ?? "").trim().replace(/님$/, "").trim();
+  return title ? `${name} ${title === "대표" ? "대표님" : title}` : name;
+}
 
 type ActivityReviewAcknowledgement = {
   activityId: number;
@@ -1624,6 +1638,7 @@ const navItems: { id: View; label: string; mark: string }[] = [
   { id: "awards", label: "기관별 관리(수주 후)", mark: "W" },
   { id: "vendors", label: "협력사 관리", mark: "V" },
   { id: "products", label: "제품·견적 관리", mark: "P" },
+  { id: "resources", label: "자료실", mark: "R" },
   { id: "map", label: "영업·수주 지도", mark: "M" },
 ];
 
@@ -1631,6 +1646,7 @@ const presenceViewLabels: Record<View, string> = {
   dashboard: "대시보드",
   "budget-institutions": "예산별 기관",
   "complex-projects": "공간재구조화 사업 관리",
+  resources: "자료실",
   records: "영업 기록",
   followup: "기관별 관리(수주 전)",
   schedules: "일정",
@@ -1693,6 +1709,7 @@ const availableViews = new Set<View>([
   "dashboard",
   "budget-institutions",
   "complex-projects",
+  "resources",
   "records",
   "followup",
   "schedules",
@@ -3496,12 +3513,13 @@ async function requestSession() {
     ...payload,
     member: {
       ...payload.member,
-      role:
+      role: (
         payload.member.role === "admin"
           ? "admin"
           : payload.member.role === "assistant"
             ? "assistant"
-            : "member",
+            : "member"
+      ) as SessionMember["role"],
       permissions: normalizeMemberPermissions(payload.member.permissions),
     },
   };
@@ -6252,6 +6270,8 @@ export default function CrmApp({
   const [recordsFullyLoaded, setRecordsFullyLoaded] = useState(false);
   const recordsFullyLoadedRef = useRef(false);
   const fullRecordsLoadingRef = useRef(false);
+  const recordsRefreshLoadingRef = useRef(false);
+  const recordsLastRefreshedAtRef = useRef(0);
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const [typeFilter, setTypeFilter] = useState("전체 유형");
@@ -6662,6 +6682,7 @@ export default function CrmApp({
         (recordsFullyLoaded || view !== "dashboard" ? "full" : "dashboard");
       const nextRecords = await requestRecords(requestedScope);
       setRecords(nextRecords);
+      recordsLastRefreshedAtRef.current = Date.now();
       if (requestedScope === "full") {
         recordsFullyLoadedRef.current = true;
         setRecordsFullyLoaded(true);
@@ -6675,11 +6696,14 @@ export default function CrmApp({
   }
 
   async function refreshRecordsInBackground() {
+    if (recordsRefreshLoadingRef.current || fullRecordsLoadingRef.current) return;
+    recordsRefreshLoadingRef.current = true;
     try {
       const requestedScope =
         recordsFullyLoaded || view !== "dashboard" ? "full" : "dashboard";
       const nextRecords = await requestRecords(requestedScope);
       setRecords(nextRecords);
+      recordsLastRefreshedAtRef.current = Date.now();
       if (requestedScope === "full") {
         recordsFullyLoadedRef.current = true;
         setRecordsFullyLoaded(true);
@@ -6687,6 +6711,8 @@ export default function CrmApp({
       setError("");
     } catch {
       setToast("저장은 완료했습니다. 최신 목록은 잠시 후 다시 확인해 주세요.");
+    } finally {
+      recordsRefreshLoadingRef.current = false;
     }
   }
 
@@ -6730,6 +6756,7 @@ export default function CrmApp({
         (payload.members ?? []).map((member) => ({
           id: Number(member.id),
           displayName: String(member.display_name ?? ""),
+          jobTitle: String(member.job_title ?? ""),
         })),
       );
       activityReviewAssigneesLoadedRef.current = true;
@@ -6796,6 +6823,37 @@ export default function CrmApp({
   }
 
   useEffect(() => {
+    if (sessionStatus !== "approved") return;
+    let active = true;
+    const today = toLocalDateValue(new Date());
+    setConstructionDashboardCountsFailed(false);
+    void resilientFetch(
+      `/api/schedules?scope=construction-summary&today=${encodeURIComponent(today)}`,
+      {
+        cache: "no-store",
+        timeoutMs: 15_000,
+        retries: 1,
+      },
+    )
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          counts?: ConstructionDashboardCounts;
+          error?: string;
+        };
+        if (!response.ok || !payload.counts) {
+          throw new Error(payload.error || "시공 현황을 불러오지 못했습니다.");
+        }
+        if (active) setConstructionDashboardCounts(payload.counts);
+      })
+      .catch(() => {
+        if (active) setConstructionDashboardCountsFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [sessionStatus]);
+
+  useEffect(() => {
     let active = true;
     // Approved returning users can load their dashboard rows while the
     // session endpoint confirms permissions. If the parallel request is too
@@ -6820,6 +6878,7 @@ export default function CrmApp({
           if (!active) return;
           if (!recordsFullyLoadedRef.current) {
             setRecords(nextRecords);
+            recordsLastRefreshedAtRef.current = Date.now();
             recordsFullyLoadedRef.current = false;
             setRecordsFullyLoaded(false);
           }
@@ -6906,37 +6965,6 @@ export default function CrmApp({
       }
     };
   }, [sessionStatus, view]);
-
-  useEffect(() => {
-    if (sessionStatus !== "approved") return;
-    let active = true;
-    const today = toLocalDateValue(new Date());
-    setConstructionDashboardCountsFailed(false);
-    void resilientFetch(
-      `/api/schedules?scope=construction-summary&today=${encodeURIComponent(today)}`,
-      {
-        cache: "no-store",
-        timeoutMs: 15_000,
-        retries: 1,
-      },
-    )
-      .then(async (response) => {
-        const payload = (await response.json()) as {
-          counts?: ConstructionDashboardCounts;
-          error?: string;
-        };
-        if (!response.ok || !payload.counts) {
-          throw new Error(payload.error || "시공 현황을 불러오지 못했습니다.");
-        }
-        if (active) setConstructionDashboardCounts(payload.counts);
-      })
-      .catch(() => {
-        if (active) setConstructionDashboardCountsFailed(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [sessionStatus]);
 
   useEffect(() => {
     if (sessionStatus !== "approved" || view !== "dashboard") return;
@@ -7034,6 +7062,7 @@ export default function CrmApp({
     void requestRecords("full")
       .then((nextRecords) => {
         setRecords(nextRecords);
+        recordsLastRefreshedAtRef.current = Date.now();
         recordsFullyLoadedRef.current = true;
         setRecordsFullyLoaded(true);
         setError("");
@@ -7049,6 +7078,21 @@ export default function CrmApp({
         fullRecordsLoadingRef.current = false;
         setLoading(false);
       });
+  }, [recordsFullyLoaded, sessionStatus, view]);
+
+  useEffect(() => {
+    if (sessionStatus !== "approved") return;
+    const refreshIfStale = () => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - recordsLastRefreshedAtRef.current < 60_000) return;
+      void refreshRecordsInBackground();
+    };
+    window.addEventListener("focus", refreshIfStale);
+    document.addEventListener("visibilitychange", refreshIfStale);
+    return () => {
+      window.removeEventListener("focus", refreshIfStale);
+      document.removeEventListener("visibilitychange", refreshIfStale);
+    };
   }, [recordsFullyLoaded, sessionStatus, view]);
 
   useEffect(() => {
@@ -7136,6 +7180,7 @@ export default function CrmApp({
         (nextView === "accounting" && !canManageAccounting) ||
         (nextView === "analytics" && !canViewAnalytics) ||
         (nextView === "owner-performance" && !isPrimaryOwner) ||
+        (nextView === "lounge" && !isPrimaryOwner) ||
         (nextView === "inventory" && !canManageInventory) ||
         (nextView === "integration" && !canManageIntegration) ||
         (nextView === "backup" && !canManageBackup && !canManageTrash)
@@ -7798,8 +7843,8 @@ export default function CrmApp({
       }
       if (awardSort === "stage") {
         return (
-          awardStageOptions.indexOf(a.awardStage) -
-            awardStageOptions.indexOf(b.awardStage) ||
+          awardStageOptions.indexOf(a.awardStage as (typeof awardStageOptions)[number]) -
+            awardStageOptions.indexOf(b.awardStage as (typeof awardStageOptions)[number]) ||
           b.activityDate.localeCompare(a.activityDate)
         );
       }
@@ -11167,6 +11212,7 @@ export default function CrmApp({
           email: String(member.email),
           username: String(member.username ?? ""),
           displayName: String(member.display_name),
+          jobTitle: String(member.job_title ?? ""),
           role:
             String(member.role) === "admin"
               ? "admin"
@@ -11183,6 +11229,7 @@ export default function CrmApp({
           isSales: Number(member.is_sales ?? 0) === 1,
           createdAt: String(member.created_at),
           lastSeenAt: String(member.last_seen_at),
+          passwordResetPending: Number(member.password_reset_pending ?? 0) === 1,
         })),
       );
     } catch (caught) {
@@ -11191,57 +11238,6 @@ export default function CrmApp({
       );
     } finally {
       setTeamLoading(false);
-    }
-  }
-
-  async function registerMemberByEmail(
-    event: React.FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-    if (memberInviteSaving) return;
-    try {
-      setMemberInviteSaving(true);
-      const response = await fetch("/api/members", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: memberInviteEmail,
-          displayName: memberInviteName,
-        }),
-      });
-      const payload = (await response.json()) as {
-        created?: boolean;
-        approvedNow?: boolean;
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(payload.error || "구성원을 등록하지 못했습니다.");
-      }
-      setMemberInviteEmail("");
-      setMemberInviteName("");
-      await Promise.all([loadTeam(), loadActivityReviewAssignees()]);
-      if (payload.approvedNow) {
-        setSession((current) =>
-          current
-            ? { ...current, approvedCount: current.approvedCount + 1 }
-            : current,
-        );
-      }
-      setToast(
-        payload.created
-          ? "이메일 구성원을 승인 상태로 등록했습니다."
-          : payload.approvedNow
-            ? "기존 승인 요청을 승인 상태로 전환했습니다."
-            : "이미 승인된 이메일의 이름을 갱신했습니다.",
-      );
-    } catch (caught) {
-      setToast(
-        caught instanceof Error
-          ? caught.message
-          : "구성원을 등록하지 못했습니다.",
-      );
-    } finally {
-      setMemberInviteSaving(false);
     }
   }
 
@@ -11745,6 +11741,7 @@ export default function CrmApp({
       (nextView === "accounting" && !canManageAccounting) ||
       (nextView === "analytics" && !canViewAnalytics) ||
       (nextView === "owner-performance" && !isPrimaryOwner) ||
+      (nextView === "lounge" && !isPrimaryOwner) ||
       (nextView === "inventory" && !canManageInventory) ||
       (nextView === "integration" && !canManageIntegration) ||
       (nextView === "backup" && !canManageBackup && !canManageTrash)
@@ -11956,9 +11953,9 @@ export default function CrmApp({
       if (!response.ok) throw new Error(payload.error || "권한을 변경하지 못했습니다.");
       setToast(
         status === "approved"
-          ? `${member.displayName} 님을 승인했습니다.`
+          ? `${memberLabel(member)}을 승인했습니다.`
           : status === "suspended"
-            ? `${member.displayName} 님의 사용을 중지했습니다.`
+            ? `${memberLabel(member)}의 사용을 중지했습니다.`
             : "승인 대기로 변경했습니다.",
       );
       await Promise.all([loadTeam(), loadActivityReviewAssignees()]);
@@ -12031,8 +12028,8 @@ export default function CrmApp({
       await loadActivityReviewAssignees();
       setToast(
         isSales
-          ? `${member.displayName} 님을 영업 담당자로 등록했습니다.`
-          : `${member.displayName} 님은 사이트만 이용하도록 변경했습니다.`,
+          ? `${memberLabel(member)}을 영업 담당자로 등록했습니다.`
+          : `${memberLabel(member)}은 사이트만 이용하도록 변경했습니다.`,
       );
     } catch (caught) {
       setToast(
@@ -12046,8 +12043,8 @@ export default function CrmApp({
   async function deleteMember(member: TeamMember, rejection = false) {
     const confirmed = window.confirm(
       rejection
-        ? `${member.displayName} 님의 가입을 거절하고 계정을 삭제할까요?\n다시 접속하면 새 승인 요청으로 등록됩니다.`
-        : `${member.displayName} 님의 계정을 영구 삭제할까요?\n연결된 업무 이력은 보존되고 로그인 계정만 삭제됩니다.`,
+        ? `${memberLabel(member)}의 가입을 거절하고 계정을 삭제할까요?\n다시 접속하면 새 승인 요청으로 등록됩니다.`
+        : `${memberLabel(member)}의 계정을 영구 삭제할까요?\n연결된 업무 이력은 보존되고 로그인 계정만 삭제됩니다.`,
     );
     if (!confirmed) return;
 
@@ -12078,8 +12075,8 @@ export default function CrmApp({
       );
       setToast(
         rejection
-          ? `${member.displayName} 님의 가입을 거절하고 계정을 삭제했습니다.`
-          : `${member.displayName} 님의 계정을 삭제했습니다.`,
+          ? `${memberLabel(member)}의 가입을 거절하고 계정을 삭제했습니다.`
+          : `${memberLabel(member)}의 계정을 삭제했습니다.`,
       );
     } catch (caught) {
       setToast(
@@ -12784,6 +12781,7 @@ export default function CrmApp({
       setAiMessages([]);
       setAiDraft("");
       setAiError("");
+      setAiDetailLevelPreference("auto");
       setToast(`${savedCount}개 기관 기록을 저장했습니다.`);
       void refreshRecordsInBackground();
       void Promise.allSettled(backgroundTasks).then(() => {
@@ -13117,6 +13115,7 @@ export default function CrmApp({
           setAiMessages([]);
           setAiDraft("");
           setAiError("");
+          setAiDetailLevelPreference("auto");
         }
       }
       void refreshRecordsInBackground();
@@ -14215,8 +14214,8 @@ export default function CrmApp({
       const preset = memberAccessPreset(member);
       setToast(
         preset === "custom"
-          ? `${member.displayName} 님의 권한을 직접 설정했습니다.`
-          : `${member.displayName} 님을 ${memberAccessPresetLabels[preset]}로 설정했습니다.`,
+          ? `${memberLabel(member)}의 권한을 직접 설정했습니다.`
+          : `${memberLabel(member)}을 ${memberAccessPresetLabels[preset]}로 설정했습니다.`,
       );
     }
   }
@@ -14227,7 +14226,11 @@ export default function CrmApp({
       const response = await fetch("/api/members", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: member.id, displayName }),
+        body: JSON.stringify({
+          id: member.id,
+          displayName,
+          jobTitle: member.jobTitle,
+        }),
       });
       const payload = (await response.json()) as {
         member?: Record<string, unknown>;
@@ -14256,6 +14259,38 @@ export default function CrmApp({
     } catch (caught) {
       setToast(
         caught instanceof Error ? caught.message : "표시 이름을 저장하지 못했습니다.",
+      );
+    }
+  }
+
+  async function resetMemberPassword(member: TeamMember) {
+    const temporaryPassword = window.prompt(
+      `${memberLabel(member)}이 사용할 임시 비밀번호를 입력해 주세요.\n영문과 숫자를 포함해 8자 이상이어야 합니다.`,
+    );
+    if (!temporaryPassword) return;
+    try {
+      const response = await fetch("/api/members", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: member.id, temporaryPassword }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "비밀번호를 초기화하지 못했습니다.");
+      }
+      setTeamMembers((current) =>
+        current.map((item) =>
+          item.id === member.id
+            ? { ...item, passwordResetPending: false }
+            : item,
+        ),
+      );
+      setToast(`${memberLabel(member)}의 임시 비밀번호를 설정했습니다.`);
+    } catch (caught) {
+      setToast(
+        caught instanceof Error
+          ? caught.message
+          : "비밀번호를 초기화하지 못했습니다.",
       );
     }
   }
@@ -14441,7 +14476,7 @@ export default function CrmApp({
     if (
       confirmChange &&
       !window.confirm(
-        `${record.organization}의 진행 담당자를 ${assignee.displayName}님으로 변경하시겠습니까?`,
+        `${record.organization}의 진행 담당자를 ${memberLabel(assignee)}으로 변경하시겠습니까?`,
       )
     ) {
       return;
@@ -14485,7 +14520,7 @@ export default function CrmApp({
       });
       setActivityReviewTransferOpenId(null);
       setToast(
-        `${record.organization}의 진행 담당자를 ${assignee.displayName}님으로 변경했습니다.`,
+        `${record.organization}의 진행 담당자를 ${memberLabel(assignee)}으로 변경했습니다.`,
       );
     } catch (caught) {
       setToast(
@@ -14563,7 +14598,9 @@ export default function CrmApp({
     if (!canEditProgressManager) {
       return (
         <span className="inline-assignee-static">
-          {isPartnerAward ? "해당 없음" : record.progressManager || "미지정"}
+          {isPartnerAward
+            ? "해당 없음"
+            : memberLabel(activityReviewAssignees.find((member) => member.displayName === record.progressManager) ?? { displayName: record.progressManager || "미지정" })}
         </span>
       );
     }
@@ -14595,7 +14632,7 @@ export default function CrmApp({
               ? "해당 없음"
               : isSaving
                 ? "변경 중…"
-                : record.progressManager || "미지정"}
+                : memberLabel(activityReviewAssignees.find((member) => member.displayName === record.progressManager) ?? { displayName: record.progressManager || "미지정" })}
           </option>
           {activityReviewAssignees
             .filter(
@@ -14603,7 +14640,7 @@ export default function CrmApp({
             )
             .map((member) => (
               <option key={member.id} value={member.id}>
-                {member.displayName}
+                {memberLabel(member)}
               </option>
             ))}
         </select>
@@ -15051,7 +15088,9 @@ export default function CrmApp({
       : view === "budget-institutions"
         ? "예산별 기관"
         : view === "complex-projects"
-          ? "공간재구조화 사업 관리"
+                ? "공간재구조화 사업 관리"
+        : view === "resources"
+          ? "자료실"
         : view === "records"
         ? teamPeriodDays === "all"
           ? "팀 업무 현황"
@@ -15356,7 +15395,7 @@ export default function CrmApp({
             <div className="admin-nav-group">
               <p>
                 운영 도구
-                <span>{isOwner ? "운영관리자" : "보조 운영자"}</span>
+                <span>{isOwner ? "운영자" : "보조관리자"}</span>
               </p>
               {orderedManagementNavItems.map((item, index) => (
                 <div
@@ -15472,7 +15511,7 @@ export default function CrmApp({
                 <strong>{session.member.displayName}</strong>
                 <span>
                   {session.member.role === "admin"
-                    ? "운영관리자"
+                    ? "운영자"
                     : session.member.role === "assistant"
                       ? "보조 운영자"
                       : "구성원"}
@@ -15484,17 +15523,19 @@ export default function CrmApp({
             </button>
             {profileMenuOpen && (
               <div className="profile-popover" role="menu">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setProfileMenuOpen(false);
-                    void selectView("lounge");
-                  }}
-                >
-                  <strong>♣ 사내 휴게실</strong>
-                  <span>몽글이·콩이와 가볍게 홀덤을 즐겨보세요.</span>
-                </button>
+                {isPrimaryOwner && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      void selectView("lounge");
+                    }}
+                  >
+                    <strong>♣ 사내 휴게실</strong>
+                    <span>몽글이·콩이와 가볍게 홀덤을 즐겨보세요.</span>
+                  </button>
+                )}
                 {isPrimaryOwner && (
                   <button
                     type="button"
@@ -15617,7 +15658,7 @@ export default function CrmApp({
           </div>
         </header>
 
-        <div className={`content ${view === "dashboard" || view === "followup" || view === "map" || view === "budget-institutions" || view === "complex-projects" || view === "backup" || view === "records" || view === "organizations" || view === "awards" || view === "products" || view === "vendors" || view === "accounting" || view === "analytics" || view === "owner-performance" || view === "inventory" ? "content-wide" : ""}`}>
+        <div className={`content ${view === "dashboard" || view === "followup" || view === "map" || view === "budget-institutions" || view === "complex-projects" || view === "resources" || view === "backup" || view === "records" || view === "organizations" || view === "awards" || view === "products" || view === "vendors" || view === "accounting" || view === "analytics" || view === "owner-performance" || view === "inventory" ? "content-wide" : ""}`}>
           <div className="page-heading">
             <div>
               <p className="eyebrow">TM · MEETING MANAGEMENT</p>
@@ -15634,7 +15675,7 @@ export default function CrmApp({
                   : view === "analytics"
                     ? "회계 확인 기준의 월간·연간 수주와 제품 흐름을 확인합니다."
                   : view === "owner-performance"
-                    ? "운영관리자 본인만 담당자별 수주·마진·판매 실적을 확인할 수 있습니다."
+                    ? "운영자 본인만 담당자별 수주·마진·판매 실적을 확인할 수 있습니다."
                   : view === "inventory"
                     ? "보유 장비의 현재 수량과 입고·출고·조정 이력을 한곳에서 관리합니다."
                    : view === "integration"
@@ -15653,6 +15694,8 @@ export default function CrmApp({
                         ? "선정기관 명단을 예산별로 관리하고, 기존 영업 기록과 안전하게 연결합니다."
                       : view === "complex-projects"
                         ? "큰 사업의 예산·공간·품목·영업보호·분할 납품을 기존 회계와 통계에 연결해 관리합니다."
+                      : view === "resources"
+                        ? "제안서·매뉴얼·공문·제품 자료를 함께 올리고 게시판처럼 내려받습니다."
                       : view === "lounge"
                         ? "가상 칩으로 가볍게 쉬어가는 승인 구성원 전용 공간입니다."
                       : view === "schedules"
@@ -15715,23 +15758,6 @@ export default function CrmApp({
                     <p>내용을 편하게 적으면 AI가 기관별 기록·일정·제안 품목을 정리합니다.</p>
                   </div>
                 </div>
-                <label className="ai-detail-level-control">
-                  <span>상세 기록</span>
-                  <select
-                    value={aiDetailLevelPreference}
-                    onChange={(event) =>
-                      setAiDetailLevelPreference(
-                        event.target.value as "auto" | ActivityDetailLevel,
-                      )
-                    }
-                    disabled={aiOrganizing}
-                  >
-                    <option value="auto">AI 자동 판단</option>
-                    <option value="compact">간단 기록</option>
-                    <option value="standard">일반 기록</option>
-                    <option value="detailed">상세 기록</option>
-                  </select>
-                </label>
                 <div className="ai-record-entry">
                   <textarea
                     ref={aiDraftInputRef}
@@ -16018,7 +16044,7 @@ export default function CrmApp({
                             <div><span>수주</span><strong>{aiPreview.awardStatus || "미정"}</strong></div>
                             <div><span>사업방식</span><strong>{[aiPreview.executionType, aiPreview.consortiumCompany].filter((value) => value && value !== "미정").join(" · ") || "미정"}</strong></div>
                             <div><span>수주 현재 상태</span><strong>{aiPreview.awardStage || "미정"}</strong></div>
-                            <div><span>진행 담당자</span><strong>{aiPreview.progressManager || "미정"}</strong></div>
+                            <div><span>진행 담당자</span><strong>{memberLabel(activityReviewAssignees.find((member) => member.displayName === aiPreview.progressManager) ?? { displayName: aiPreview.progressManager || "미정" })}</strong></div>
                             <div>
                               <span>기록 수준</span>
                               <strong>
@@ -16397,7 +16423,16 @@ export default function CrmApp({
             </Suspense>
           )}
 
-          {view === "map" || view === "budget-institutions" || view === "complex-projects" || view === "lounge" ? null : view === "accounting" ? (
+          {view === "resources" && session && (
+            <Suspense fallback={<DeferredPageFallback />}>
+              <ResourceLibraryPage
+                memberId={session.member.id}
+                isAdmin={session.member.role === "admin"}
+              />
+            </Suspense>
+          )}
+
+          {view === "map" || view === "budget-institutions" || view === "complex-projects" || view === "resources" || view === "lounge" ? null : view === "accounting" ? (
             <Suspense fallback={<DeferredPageFallback />}>
               <AccountingPage
                 key={accountingInitialTab}
@@ -16432,6 +16467,7 @@ export default function CrmApp({
             <Suspense fallback={<DeferredPageFallback />}>
               <ConstructionSchedulePage
                 records={records}
+                onDashboardCounts={setConstructionDashboardCounts}
                 onOpenOrganization={(organization, businessRound) => {
                   setDetailBusinessRound(businessRound);
                   setDetailOrganization(organization);
@@ -16709,10 +16745,28 @@ export default function CrmApp({
                               disabled={!isOwner && member.role !== "member"}
                               onClick={() => void updateMemberDisplayName(member)}
                             >
-                              이름 저장
+                              이름·직책 저장
                             </button>
                           </div>
                           <small>{member.username ? `아이디 ${member.username}` : member.email}</small>
+                          <div className="member-job-title-editor">
+                            <input
+                              aria-label={`${member.email} 직책`}
+                              maxLength={40}
+                              value={member.jobTitle}
+                              onChange={(event) =>
+                                setTeamMembers((current) =>
+                                  current.map((item) =>
+                                    item.id === member.id
+                                      ? { ...item, jobTitle: event.target.value }
+                                      : item,
+                                  ),
+                                )
+                              }
+                              placeholder="직책"
+                              disabled={!isOwner && member.role !== "member"}
+                            />
+                          </div>
                           {session.canViewPresence && member.status === "approved" && (
                             <span
                               className={`member-presence-badge ${
@@ -16752,7 +16806,7 @@ export default function CrmApp({
                           </span>
                           <small>
                             {member.role === "admin"
-                              ? "운영관리자"
+                              ? "운영자"
                               : memberAccessPresetLabels[
                                   memberAccessPreset(member)
                                 ]}
@@ -16766,10 +16820,21 @@ export default function CrmApp({
                           </small>
                         </div>
                         <div className="member-actions">
+                          {member.passwordResetPending && (
+                            <span className="password-reset-requested">비밀번호 재설정 요청</span>
+                          )}
+                          {isOwner && member.id !== session.member.id && (
+                            <button
+                              type="button"
+                              onClick={() => void resetMemberPassword(member)}
+                            >
+                              비밀번호 초기화
+                            </button>
+                          )}
                           {member.id === session.member.id ? (
                             <span>현재 계정</span>
                           ) : !isOwner && member.role !== "member" ? (
-                            <span>운영관리자만 변경</span>
+                            <span>운영자만 변경</span>
                           ) : member.status === "pending" ? (
                             <>
                               <button
@@ -17037,7 +17102,7 @@ export default function CrmApp({
                             )}
                             <p className="owner-only-access-note">
                               선택한 운영 도구 메뉴만 왼쪽 메뉴에 표시됩니다.
-                              운영관리자 권한 변경은 운영관리자만 가능합니다.
+                              운영자 권한 변경은 운영자만 가능합니다.
                             </p>
                             <button
                               type="button"
@@ -17203,7 +17268,7 @@ export default function CrmApp({
                 )}
                 <p className="openai-security-note">
                   API 키 원문은 화면에 다시 노출되지 않고 전체 DB 백업에도
-                  포함되지 않습니다. 이 설정과 전체 DB 복원은 운영관리자만
+                  포함되지 않습니다. 이 설정과 전체 DB 복원은 운영자만
                   사용할 수 있습니다.
                 </p>
               </article>
@@ -17531,7 +17596,7 @@ export default function CrmApp({
                 </div>
                 <div className="manager-toolbar">
                   <div className="manager-view-controls">
-                    {canManageRecords && managerAlertMembers.length > 0 && (
+                    {isPrimaryOwner && managerAlertMembers.length > 0 && (
                       <label className="manager-member-select">
                         <span>점검 화면</span>
                         <select
@@ -17546,7 +17611,7 @@ export default function CrmApp({
                         >
                           {managerAlertMembers.map((member) => (
                             <option key={member.id} value={member.id}>
-                              {member.displayName}
+                              {member.displayLabel || memberLabel(member)}
                             </option>
                           ))}
                         </select>
@@ -17779,7 +17844,7 @@ export default function CrmApp({
                                           </strong>
                                           <span>
                                             진행 담당자{" "}
-                                            {historyRecord.progressManager || "미지정"}
+                                            {memberLabel(activityReviewAssignees.find((member) => member.displayName === historyRecord.progressManager) ?? { displayName: historyRecord.progressManager || "미지정" })}
                                           </span>
                                         </header>
                                         <p>
@@ -19629,14 +19694,14 @@ export default function CrmApp({
                                     setTeamDetailMode("attention");
                                   }}
                                 >
-                                  {record.progressManager || "미등록"}
+                                  {memberLabel(activityReviewAssignees.find((member) => member.displayName === record.progressManager) ?? { displayName: record.progressManager || "미등록" })}
                                 </button>
                               </td>
                             )}
                           {view === "dashboard" && (
                             <td>
                               <strong className="progress-manager-cell">
-                                {record.progressManager || "미등록"}
+                                {memberLabel(activityReviewAssignees.find((member) => member.displayName === record.progressManager) ?? { displayName: record.progressManager || "미등록" })}
                               </strong>
                             </td>
                           )}
@@ -19818,28 +19883,6 @@ export default function CrmApp({
                 >
                   + 새 사업
                 </button>
-              </div>
-              <div className="history-complex-project-action">
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.sessionStorage.setItem(
-                      "whizzup.complexProjectTarget",
-                      JSON.stringify({
-                        organization: detailOrganization,
-                        businessRound: selectedDetailBusinessRound,
-                      }),
-                    );
-                    cancelDetailInlineEdit();
-                    setDetailOrganization(null);
-                    void selectView("complex-projects");
-                  }}
-                >
-                  공간재구조화 사업으로 관리
-                </button>
-                <small>
-                  현재 기관의 {selectedDetailBusinessRound}차 사업을 활성화하거나 기존 공간재구조화 사업을 엽니다.
-                </small>
               </div>
               <JointProjectSummary
                 projectId={detailDisplayRecord.jointProjectId}
@@ -20317,14 +20360,16 @@ export default function CrmApp({
                       >
                         <option value="">담당자 선택</option>
                         {registeredSalesNames.map((name) => (
-                          <option key={name}>{name}</option>
+                          <option key={name} value={name}>
+                            {memberLabel(activityReviewAssignees.find((member) => member.displayName === name) ?? { displayName: name })}
+                          </option>
                         ))}
                       </select>
                       {renderDetailInlineActions(detailDisplayRecord)}
                     </div>
                   ) : (
                     <>
-                      <strong>{detailDisplayRecord.progressManager || "미등록"}</strong>
+                      <strong>{memberLabel(activityReviewAssignees.find((member) => member.displayName === detailDisplayRecord.progressManager) ?? { displayName: detailDisplayRecord.progressManager || "미등록" })}</strong>
                       {session?.canViewPresence &&
                         detailDisplayRecord.awardStatus !== "협력사 수주" && (
                           <button
@@ -20799,7 +20844,7 @@ export default function CrmApp({
                 </div>
                 <div>
                   <dt>담당자</dt>
-                  <dd>{selectedActivityDetail.progressManager || "미지정"}</dd>
+                  <dd>{memberLabel(activityReviewAssignees.find((member) => member.displayName === selectedActivityDetail.progressManager) ?? { displayName: selectedActivityDetail.progressManager || "미지정" })}</dd>
                 </div>
                 {activityDetailFactsForRecord(selectedActivityDetail).map((fact) => (
                   <div key={`${fact.label}-${fact.value}`}>
@@ -23129,7 +23174,7 @@ export default function CrmApp({
                         )}
                       {registeredSalesNames.map((name) => (
                         <option key={name} value={name}>
-                          {name}
+                          {memberLabel(activityReviewAssignees.find((member) => member.displayName === name) ?? { displayName: name })}
                         </option>
                       ))}
                     </select>

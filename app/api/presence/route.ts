@@ -1,6 +1,8 @@
 import {
   accessErrorResponse,
+  AccessError,
   ensureCollaborationReady,
+  isPrimaryOwner,
   requireApprovedMember,
   requirePrimaryOwner,
 } from "../../../lib/collaboration";
@@ -34,6 +36,9 @@ export async function POST(request: Request) {
     const member = await requireApprovedMember();
     const payload = await request.json().catch(() => ({})) as { view?: unknown };
     const requestedView = String(payload.view ?? "");
+    if (requestedView === "lounge" && !(await isPrimaryOwner(member))) {
+      throw new AccessError("사내 휴게실은 운영관리자만 사용할 수 있습니다.", 403);
+    }
     const currentView = allowedPresenceViews.has(requestedView)
       ? requestedView
       : "";

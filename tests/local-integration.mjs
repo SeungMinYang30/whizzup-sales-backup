@@ -104,7 +104,7 @@ try {
   assert.equal(memberSession.response.status, 200);
 
   const team = await request("/api/members", { headers: ownerHeaders });
-  assert.equal(team.response.status, 200);
+  assert.equal(team.response.status, 200, `${JSON.stringify(team.payload)}\n${serverOutput}`);
   const testMember = team.payload.members.find(
     (member) => member.email === "integration.member@local.test",
   );
@@ -201,6 +201,11 @@ try {
     { id: rejectedSession.payload.member.id },
   );
   assert.equal(rejectedDeletion.response.status, 200);
+  const rejectedAgain = await request("/api/session", {
+    headers: rejectedHeaders,
+  });
+  assert.equal(rejectedAgain.response.status, 403);
+  assert.match(rejectedAgain.payload.error, /거절되어 삭제된 가입 요청/);
   const teamAfterRejection = await request("/api/members", {
     headers: ownerHeaders,
   });

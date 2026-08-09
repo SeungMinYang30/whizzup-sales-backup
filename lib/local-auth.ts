@@ -80,6 +80,11 @@ export function ensureLocalAuthSchema() {
   return localAuthSchemaPromise;
 }
 
+export async function ensureDirectAuthReady() {
+  await ensureLocalAuthSchema();
+  return getD1();
+}
+
 export function normalizeUsername(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
 }
@@ -106,6 +111,38 @@ export function hashPassword(password: string, salt = randomBytes(16).toString("
     "sha256",
   ).toString("base64");
   return { hash, salt, iterations: LOCAL_AUTH_ITERATIONS };
+}
+
+export async function setMemberPassword(memberId: number, password: unknown) {
+  const value = String(password ?? "");
+  if (!validatePassword(value)) {
+    throw new Error("비밀번호는 영문과 숫자를 포함해 8자 이상 입력해 주세요.");
+  }
+  const { hash, salt, iterations } = hashPassword(value);
+  const d1 = await ensureDirectAuthReady();
+  await d1.transaction(async (transaction) => {
+    await transaction
+      .prepare(
+        `UPDATE members
+         SET password_hash = ?, password_salt = ?, password_iterations = ?,
+             failed_login_count = 0, locked_until = NULL
+         WHERE id = ?`,
+      )
+      .bind(hash, salt, iterations, memberId)
+      .run();
+    await transaction
+      .prepare("DELETE FROM local_auth_sessions WHERE member_id = ?")
+      .bind(memberId)
+      .run();
+    await transaction
+      .prepare(
+        `UPDATE member_password_reset_requests
+         SET status = 'resolved', resolved_at = CURRENT_TIMESTAMP
+         WHERE member_id = ? AND status = 'pending'`,
+      )
+      .bind(memberId)
+      .run();
+  });
 }
 
 export function verifyPassword(

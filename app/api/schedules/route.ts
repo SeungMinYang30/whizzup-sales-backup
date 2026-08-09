@@ -8,7 +8,6 @@ import {
   addConstructionScheduleProject,
   deleteOrganizationSchedule,
   listConstructionScheduleBoard,
-  listConstructionScheduleSummary,
   listOrganizationSchedules,
   removeConstructionScheduleProject,
   replaceOrganizationSchedules,
@@ -68,15 +67,6 @@ export async function GET(request: Request) {
   try {
     const member = await requireApprovedMember();
     const url = new URL(request.url);
-    if (url.searchParams.get("scope") === "construction-summary") {
-      const today = url.searchParams.get("today") ?? "";
-      if (!validCalendarDate(today)) {
-        throw new Error("시공 현황 기준일을 확인해 주세요.");
-      }
-      return Response.json({
-        counts: await listConstructionScheduleSummary(today),
-      });
-    }
     if (url.searchParams.get("scope") === "construction-board") {
       return Response.json(await listConstructionScheduleBoard());
     }

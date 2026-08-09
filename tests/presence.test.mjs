@@ -13,7 +13,7 @@ test("limits live presence to the primary owner and refreshes it in near real ti
   assert.match(route, /requirePrimaryOwner\(\)/);
   assert.match(route, /-35 seconds/);
   assert.match(route, /last_seen_at = CURRENT_TIMESTAMP/);
-  assert.match(collaboration, /ORDER BY id ASC/);
+  assert.match(collaboration, /ORDER BY (?:CASE WHEN lower\(email\) = \? THEN 0 ELSE 1 END, )?id ASC/);
   assert.match(session, /canViewPresence/);
   assert.match(crm, /setInterval\(heartbeat, 60_000\)/);
   assert.match(crm, /whizzup-presence-heartbeat-leader/);

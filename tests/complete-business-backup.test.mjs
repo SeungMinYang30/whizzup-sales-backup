@@ -53,7 +53,7 @@ test("backup validates document, trash, school-link, and holdem ownership refere
 test("backup clearly distinguishes document metadata from stored file originals", () => {
   assert.match(
     backup,
-    /견적서·협력사 증빙 첨부파일 원본\(R2 목록·연결정보만 포함\)/,
+    /견적서·자료실·협력사 증빙 첨부파일 원본\(R2 또는 Google Drive 연결정보만 포함\)/,
   );
 });
 

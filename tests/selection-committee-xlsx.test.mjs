@@ -1,24 +1,30 @@
 import assert from "node:assert/strict";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("the original Ilsan selection workbook is preserved and populated from selected products", async () => {
-  const [creator, page, template] = await Promise.all([
-    read("../lib/selection-committee-xlsx.ts"),
+test("product management removes selection-workbook UI and manages one comparison file per product", async () => {
+  const [page, route, migration, comparisonStore] = await Promise.all([
     read("../app/product-catalog-page.tsx"),
-    stat(new URL("../public/templates/일산초_물품선정위원회_원본양식.xlsx", import.meta.url)),
+    read("../app/api/product-comparison-documents/route.ts"),
+    read("../drizzle/0080_product_resource_import_and_comparisons.sql"),
+    read("../lib/product-comparison-documents.ts"),
   ]);
 
-  assert.ok(template.size > 10_000_000, "the original styled workbook asset must be bundled");
-  assert.match(creator, /fillSelectionSheet/);
-  assert.match(creator, /fillCountSheet/);
-  assert.match(creator, /fillAggregateSheet/);
-  assert.match(creator, /fillComparisonSheet/);
-  assert.match(creator, /20_000_000/);
-  assert.match(creator, /sameName/);
-  assert.match(page, /물품선정 자료 만들기/);
-  assert.match(page, /수량×단가 기준/);
-  assert.match(page, /원본 빈 양식/);
+  assert.doesNotMatch(page, /물품선정 자료 만들기/);
+  assert.doesNotMatch(page, /일산초 원본/);
+  assert.match(page, /openProductComparison/);
+  assert.match(page, /비교표 교체/);
+  assert.match(page, /product-comparison-body/);
+  assert.match(page, /product-comparison-empty/);
+  assert.match(page, /download=1/);
+  assert.match(page, /deleteProductComparison/);
+  assert.match(route, /catalog_product_id/);
+  assert.match(route, /previous\.results/);
+  assert.match(route, /rollbackDriveMoves\(archivedMoves\)/);
+  assert.match(migration, /`catalog_product_id` text DEFAULT '' NOT NULL/);
+  assert.match(comparisonStore, /\["equipment_item_id", "INTEGER NOT NULL DEFAULT 0"\]/);
+  assert.match(comparisonStore, /ALTER TABLE product_comparison_documents ADD COLUMN/);
+  assert.match(comparisonStore, /CREATE UNIQUE INDEX IF NOT EXISTS idx_product_comparison_documents_catalog_active/);
 });

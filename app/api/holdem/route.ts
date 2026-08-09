@@ -1,4 +1,4 @@
-import { accessErrorResponse, ensureCollaborationReady, requireApprovedMember } from "../../../lib/collaboration";
+import { accessErrorResponse, ensureCollaborationReady, requirePrimaryOwner } from "../../../lib/collaboration";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,7 @@ const weekStart = () => {
 
 export async function GET() {
   try {
-    const member = await requireApprovedMember();
+    const member = await requirePrimaryOwner();
     const d1 = await ready();
     const week = weekStart();
     const rows = await d1.prepare(`SELECT h.member_id AS memberId, m.display_name AS displayName,
@@ -40,7 +40,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const member = await requireApprovedMember();
+    const member = await requirePrimaryOwner();
     const body = await request.json() as { chips?: unknown; won?: unknown };
     const chips = Math.max(0, Math.min(10000, Math.round(Number(body.chips) || 0)));
     const won = body.won === true ? 1 : 0;

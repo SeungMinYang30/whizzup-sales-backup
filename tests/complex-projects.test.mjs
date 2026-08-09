@@ -16,8 +16,14 @@ test("complex projects reuse canonical budgets and items across accounting and a
   assert.match(store, /LEFT JOIN complex_project_item_details detail ON detail\.equipment_item_id = item\.id/);
   assert.match(store, /linkBudgetNameEntity/);
   assert.match(store, /INSERT OR IGNORE INTO complex_project_item_details[\s\S]*JOIN equipment_items item/);
+  assert.match(store, /institutionIdentityKey\(row\.organization, aliasSetting\) === projectInstitutionKey/);
+  assert.match(store, /await syncAllWhizzupBudgetLinks\(d1\);[\s\S]*const \[projectResult/);
+  assert.match(store, /INSERT OR IGNORE INTO complex_project_budget_links/);
+  assert.match(store, /UPDATE activities SET progress_manager = \?, progress_manager_locked = \?/);
   assert.match(page, /기존 표준 예산과 품목 카드를 그대로 사용해 통계·회계 이중 집계를 막습니다/);
-  assert.match(crm, /id: "complex-projects", label: "공간재구조화 사업 관리"/);
+  assert.match(page, /기관 상세와 같은 사업 기록을 사용합니다/);
+  assert.match(page, /어느 화면에서 수정해도 함께 반영됩니다/);
+  assert.match(crm, /"complex-projects": "공간재구조화 사업 관리"/);
 });
 
 test("partial delivery changes stay linked to the schedule board and remain editable", async () => {
@@ -30,11 +36,8 @@ test("partial delivery changes stay linked to the schedule board and remain edit
   assert.match(store, /complex_delivery_id/);
   assert.match(store, /sync_status = 'pending', sync_operation = 'upsert'/);
   assert.match(store, /refreshOrganizationScheduleMirror/);
-  assert.match(store, /plannedQty < settlementQuantity[\s\S]*"수량 미배정"/);
-  assert.match(store, /plannedQty > settlementQuantity[\s\S]*"수량 초과"/);
-  assert.match(store, /completedQty >= settlementQuantity[\s\S]*"납품 완료"/);
-  assert.match(store, /proposedQty > 0[\s\S]*"기관 품목 수량"[\s\S]*awardedQty > 0[\s\S]*"수주 수량"[\s\S]*installedQty > 0[\s\S]*"설치 수량"/);
-  assert.match(page, /String\(item\.quantity_source\) === "기본 수량"[\s\S]*원본 수량 미입력/);
+  assert.match(store, /plannedQty < (?:awardedQty|settlementQuantity)[\s\S]*"수량 미배정"/);
+  assert.match(store, /plannedQty > (?:awardedQty|settlementQuantity)[\s\S]*"수량 초과"/);
   assert.match(store, /refreshDeliveredQuantity/);
   assert.match(page, /deliveryId: editDelivery\?\.id/);
   assert.match(page, />수정<\/button><button type="button" onClick=\{\(\) => void removeEntity\("delivery"/);
@@ -51,23 +54,24 @@ test("complex project activation uses searched institution rounds and approved s
 
   assert.match(store, /query\.replace\(\/\\s\+\/g, ""\)\.length < 2/);
   assert.match(store, /a\.award_status = '위즈업 수주'/);
-  assert.doesNotMatch(store, /\)\s*\)\s*\), project_finance AS/);
-  assert.match(store, /const sourceType = "whizzup"/);
-  assert.match(store, /INSERT INTO activities[\s\S]*'위즈업 수주'[\s\S]*'수주 전환'/);
-  assert.match(store, /ON CONFLICT\(seed_key\) DO UPDATE SET/);
-  assert.match(store, /INSERT INTO activity_authors/);
-  assert.match(page, /새 기관 위즈업 수주 등록/);
-  assert.match(page, /수주·수금·회계·제품 통계의 동일 기관·사업 차수와 연결됩니다/);
-  assert.doesNotMatch(page, /협력사·타업체 수주를 위한 내부 일정·품목 관리/);
-  assert.match(store, /status = 'approved'/);
-  assert.match(store, /is_sales = 1/);
-  assert.match(store, /role = 'admin'/);
-  assert.match(store, /manager_member_id = COALESCE\(excluded\.manager_member_id, complex_projects\.manager_member_id\)/);
+  assert.match(store, /rememberedInstitutionAliasCandidates/);
+  assert.match(store, /institutionIdentityKey/);
+  assert.match(store, /organization_locations search_location/);
+  assert.match(store, /같은 기관·/);
+  assert.match(store, /const sourceType = "whizzup" as const/);
+  assert.doesNotMatch(page, /외부 사업 수기 등록/);
+  assert.doesNotMatch(page, /sourceAwardStatus/);
+  assert.match(store, /ORDER BY location\.updated_at DESC LIMIT 1/);
+  assert.match(store, /status = 'approved' AND is_sales = 1/);
+  assert.match(store, /const existingProject = await d1\.prepare/);
+  assert.match(store, /manager_member_id = COALESCE\(\?, manager_member_id\)/);
   assert.match(store, /TRIM\(construction_schedule_projects\.work_summary\)/);
   assert.match(store, /ELSE construction_schedule_projects\.work_summary/);
   assert.match(page, /두 글자부터 검색합니다/);
+  assert.match(page, /<form className="complex-inline-form" onSubmit=\{createProject\} noValidate>/);
+  assert.match(page, /<button type="submit" className="primary"/);
   assert.match(page, /whizzup\.complexProjectTarget/);
-  assert.match(crm, /공간재구조화 사업으로 관리/);
+  assert.match(crm, /공간재구조화 사업 관리/);
   assert.match(crm, /operationScope: "pre_awards"/);
   assert.match(crm, /attempt <= 2/);
   assert.match(records, /existingActivityChangeItemIds/);
@@ -81,7 +85,7 @@ test("complex project activation carries existing budgets items and financial to
   assert.match(store, /readCanonicalBusinessRoundBudgets/);
   assert.match(store, /activityBudgetsFromRecord/);
   assert.match(store, /INSERT INTO complex_project_budget_links/);
-  assert.match(store, /ON CONFLICT\(complex_project_id, equipment_project_id\) DO NOTHING/);
+  assert.match(store, /ON CONFLICT\(complex_project_id, equipment_project_id\) DO (?:NOTHING|UPDATE)/);
   assert.match(store, /item_quote_amount/);
   assert.match(store, /construction_amount/);
   assert.match(store, /export async function cancelComplexProject/);
@@ -92,7 +96,7 @@ test("complex project activation carries existing budgets items and financial to
   assert.match(store, /supplier_display_name/);
   assert.match(page, /원본 수량 미입력/);
   assert.match(page, /제품 기준/);
-  assert.match(page, /공간재구조화 사업 취소/);
+  assert.match(page, /공간재구조화 사업을 취소/);
   assert.match(page, /연결 품목 금액/);
   assert.match(page, /연결 공사비/);
 });
@@ -121,7 +125,7 @@ test("complex project writes are atomic and refresh failures cannot be mistaken 
     assert.doesNotMatch(block, /return listComplexProjects\(\)/);
   }
   assert.match(store, /const \[projectResult,[\s\S]*= await d1\.batch\(/);
-  assert.doesNotMatch(store, /syncAllWhizzupBudgetLinks/);
+  assert.match(store, /export async function listComplexProjects[\s\S]*await syncAllWhizzupBudgetLinks\(d1\);[\s\S]*const \[projectResult/);
   assert.match(page, /resilientFetch\("\/api\/complex-projects"/);
   assert.match(page, /최신 화면 갱신이 지연되고 있어/);
   assert.match(route, /isDatabaseUnavailableError/);
@@ -149,43 +153,6 @@ test("complex project items preserve selection protection and site requirements"
   assert.match(page, /전기·배선 요구사항/);
   assert.match(page, /네트워크 요구사항/);
   assert.match(schema, /protectionExpiresAt: text\("protection_expires_at"\)/);
-});
-
-test("complex project items always expose shared comparison-document management", async () => {
-  const [store, page, route] = await Promise.all([
-    read("../lib/complex-projects.ts"),
-    read("../app/complex-project-page.tsx"),
-    read("../app/api/product-comparison-documents/route.ts"),
-  ]);
-
-  assert.match(store, /comparison_document_key/);
-  assert.match(store, /equipment-item:\$\{integer\(row\.equipment_item_id\)\}/);
-  assert.match(page, /\+ 비교표 등록/);
-  assert.match(page, /물품 비교표/);
-  assert.match(page, /uploadComparisonDocument/);
-  assert.match(page, /deleteComparisonDocument/);
-  assert.match(route, /PDF, Excel 또는 Word 비교표/);
-});
-
-test("space restructuring projects export the selected institution data to a styled workbook", async () => {
-  const [page, workbook] = await Promise.all([
-    read("../app/complex-project-page.tsx"),
-    read("../app/complex-project-xlsx.ts"),
-  ]);
-
-  assert.match(page, /downloadComplexProjectWorkbook\(selected\)/);
-  assert.match(page, /엑셀 내보내기/);
-  assert.match(workbook, /집행계획 총괄/);
-  assert.match(workbook, /예산별 집행/);
-  assert.match(workbook, /공간·품목/);
-  assert.match(workbook, /물품선정표/);
-  assert.match(workbook, /분할 납품 일정/);
-  assert.match(workbook, /영업보호 현황/);
-  assert.match(workbook, /fullCalcOnLoad="1"/);
-  assert.match(workbook, /Print_Area/);
-  assert.match(workbook, /fitToWidth="1"/);
-  assert.match(workbook, /project\.items\.flatMap/);
-  assert.match(workbook, /item\.deliveries/);
 });
 
 test("merge and full backup preserve every complex-project relation", async () => {

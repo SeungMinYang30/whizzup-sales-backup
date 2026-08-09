@@ -1,5 +1,6 @@
 import { getD1 } from "../db";
 import { getPostgresObjectStorage } from "./postgres-object-storage";
+import { isGoogleDriveConfigured } from "./google-drive-storage";
 
 export const QUOTATION_STORAGE_LIMIT_BYTES = 10 * 1024 * 1024 * 1024;
 export const QUOTATION_MAX_PDF_BYTES = 20 * 1024 * 1024;
@@ -139,6 +140,7 @@ export async function quotationStorageStats(
     QUOTATION_STORAGE_LIMIT_BYTES - usedBytes,
   );
   return {
+    provider: isGoogleDriveConfigured() ? "google-drive" : "site-storage",
     usedBytes,
     remainingBytes,
     limitBytes: QUOTATION_STORAGE_LIMIT_BYTES,

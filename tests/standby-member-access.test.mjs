@@ -46,7 +46,7 @@ test("백업 지정 계정은 기존 대표관리자를 유지하면서 대표 �
   );
   assert.match(
     collaboration,
-    /STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS[\s\S]{0,260}return true;[\s\S]{0,260}ORDER BY id ASC/,
+    /export async function isPrimaryOwner[\s\S]*STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS\.has[\s\S]*return true;[\s\S]*ORDER BY CASE WHEN lower\(email\) = \? THEN 0 ELSE 1 END, id ASC/,
   );
 });
 

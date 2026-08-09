@@ -885,7 +885,8 @@ summary와 recommendation.meetingSummary는 “논의했습니다”, “확인�
 재연락일과 후속 연락 일정은 별도 관리 항목이므로 summary와 recommendation.meetingSummary에는 넣지 마세요.
 “일정 확인이 핵심”, “별도 장비나 수주 정보 없음”, “추가 정보 없음”, “특이사항 없음”처럼 AI의 해설이나 입력에 없는 항목의 부재를 설명하는 문장은 절대 만들지 마세요.
 단, 기관이 특정 장비가 필요 없다고 전달했거나 미수주가 확정된 것처럼 실제 발언·결정에 포함된 부정 사실은 생략하지 마세요.
-상세 기록 선호는 "${detailLevelPreference}"입니다. auto이면 짧은 단순 확인은 compact, 일반 TM·통화는 standard, 미팅·방문·현장 실측 또는 예산·제품·공간·경쟁사·일정처럼 서로 다른 사실이 여러 개 포함된 기록은 detailed로 판단하세요. auto가 아니면 반드시 지정된 상세 수준을 사용하세요.
+상세 기록 선호는 "${detailLevelPreference}"입니다. auto이면 짧은 단순 확인은 compact, 일반 TM·통화는 standard, 미팅·방문·현장 실측 또는 예산·견적·제품·공간·수주·납품·여러 일정처럼 서로 다른 사실이 여러 개 포함된 기록은 detailed로 판단하세요. 어느 수준인지 애매하면 standard를 사용하세요. auto가 아니면 반드시 지정된 상세 수준을 사용하세요.
+상세 수준은 화면에 보이는 서술 분량만 조절합니다. 어떤 수준이든 기관명, 날짜, 예산명·금액, 품목·수량·단가, 기관 담당자, 진행 담당자, 수주 상태, 후속 일정 등 구조화 필드는 원문에서 확인되는 값을 빠짐없이 추출하세요.
 compact이면 detailSummary, detailKeyFacts, detailSections를 비워도 됩니다. standard와 detailed이면 detailSummary에 전체 맥락을 2~5문장으로 보존하고, detailKeyFacts에는 참석자·총예산·주요 일정·사업명처럼 원문에 명시된 핵심 사실만 넣으세요.
 detailed이면 detailSections를 예산, 구축 방향, 공간별 검토, 경쟁 업체, 공사 및 일정, 향후 진행 등 실제 원문에 있는 주제로 나누세요. 원문에 없는 섹션은 만들지 말고, 긴 원문을 지나치게 축약하지 마세요. 날짜·금액·제품명·참석자·업체명·수량을 임의로 바꾸거나 추가하지 마세요.
 각 draft의 recommendation에는 공식 기록을 자동 변경하지 않는 별도 영업 대응 제안을 작성하세요.
@@ -971,7 +972,7 @@ budgetType은 위 목록의 표준명 또는 별칭과 입력 내용이 정확�
           detailLevelPreference === "auto"
             ? detailLevelValues.includes(String(draft.detailLevel ?? ""))
               ? draft.detailLevel
-              : "compact"
+              : "standard"
             : detailLevelPreference,
         rawInput: userProjectText,
         status: normalizeAiSuggestedStatus(draft.status, false),

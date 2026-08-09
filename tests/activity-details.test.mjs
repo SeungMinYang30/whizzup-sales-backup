@@ -34,7 +34,11 @@ test("AI 상세 기록을 저장하고 이력별로 열어볼 수 있다", async
   assert.match(aiRoute, /detailSections/);
   assert.match(aiRoute, /rawInput: userProjectText/);
   assert.match(aiRoute, /function mergeDetailSections/);
-  assert.match(crm, /AI 자동 판단/);
+  assert.match(crm, /사이트에서 AI 정리/);
+  assert.match(aiRoute, /애매하면 standard를 사용하세요/);
+  assert.match(aiRoute, /서술 분량만 조절합니다/);
+  assert.match(aiRoute, /: "standard"/);
+  assert.match(crm, /setAiDetailLevelPreference\("auto"\)/);
   assert.match(crm, /상세 기록 보기/);
   assert.match(crm, /상세 기록 수정/);
   assert.match(crm, /AI 상세 기록 수정/);
@@ -83,7 +87,7 @@ test("새 상세 필드는 전체 백업과 이전 백업 복원에 안전하게
   const backupStore = await source("../lib/backup-store.ts");
   assert.match(
     backupStore,
-    /BACKUP_SCHEMA_VERSION = "2026-08-03-inventory-ledger"/,
+    /BACKUP_SCHEMA_VERSION = "2026-08-09-product-resource-import"/,
   );
   assert.match(backupStore, /"2026-08-02-complete-business-backup"/);
   assert.match(backupStore, /"2026-07-31-activity-details"/);

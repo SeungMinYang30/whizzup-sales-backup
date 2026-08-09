@@ -16,6 +16,17 @@ import {
   createTrashBatch,
   ensureTrashReady,
 } from "../../../lib/trash-store";
+import {
+  downloadDriveFile,
+  driveFileIdFromKey,
+  driveObjectKey,
+  isGoogleDriveConfigured,
+  moveDriveFile,
+  removeDriveFile,
+  rollbackDriveMoves,
+  safeDriveFolderName,
+  uploadDriveFile,
+} from "../../../lib/google-drive-storage";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +66,27 @@ async function serveStoredFile(request: Request, id: number) {
         : "";
   if (!key) {
     return Response.json({ error: "파일 위치가 올바르지 않습니다." }, { status: 400 });
+  }
+  const driveFileId = driveFileIdFromKey(key);
+  if (driveFileId) {
+    const stored = await downloadDriveFile(driveFileId);
+    const contentType =
+      stored.headers.get("Content-Type") ||
+      (row.original_name.toLowerCase().endsWith(".xlsx")
+        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : "application/pdf");
+    const disposition =
+      searchParams.get("download") === "1" || contentType !== "application/pdf"
+        ? "attachment"
+        : "inline";
+    return new Response(stored.body, {
+      headers: {
+        "Content-Type": contentType,
+        "Content-Disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(row.original_name)}`,
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   }
   const stored = await getQuotationBucket().get(key);
   if (!stored) {
@@ -117,6 +149,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const uploadedKeys: string[] = [];
+  let uploadedDriveFileId = "";
   try {
     const member = await requireApprovedMember();
     const formData = await request.formData();
@@ -127,6 +160,7 @@ export async function POST(request: Request) {
     );
     const quoteAmount = clean(formData.get("quoteAmount"), 120);
     const pdf = formData.get("pdf");
+    const sourceFile = formData.get("sourceFile");
     const pages = formData
       .getAll("pages")
       .filter((entry): entry is File => entry instanceof File);
@@ -167,6 +201,18 @@ export async function POST(request: Request) {
     if (signature !== "%PDF-") {
       return Response.json({ error: "올바른 PDF 파일이 아닙니다." }, { status: 400 });
     }
+    if (
+      sourceFile != null &&
+      (!(sourceFile instanceof File) ||
+        !sourceFile.name.toLowerCase().endsWith(".xlsx") ||
+        sourceFile.size < 1 ||
+        sourceFile.size > QUOTATION_MAX_PDF_BYTES)
+    ) {
+      return Response.json(
+        { error: "원본 엑셀은 20MB 이하 XLSX 파일만 보관할 수 있습니다." },
+        { status: 400 },
+      );
+    }
 
     const companyName =
       clean(formData.get("companyName"), 120) ||
@@ -183,8 +229,10 @@ export async function POST(request: Request) {
 
     const d1 = await ensureQuotationDocumentsReady();
     const storage = await quotationStorageStats(d1);
-    const totalSize = pdf.size + pages.reduce((sum, page) => sum + page.size, 0);
-    if (totalSize > storage.remainingBytes) {
+    const originalFile =
+      isGoogleDriveConfigured() && sourceFile instanceof File ? sourceFile : pdf;
+    const totalSize = originalFile.size + pages.reduce((sum, page) => sum + page.size, 0);
+    if (!isGoogleDriveConfigured() && totalSize > storage.remainingBytes) {
       return Response.json(
         { error: "견적서 저장공간이 부족합니다. 기존 파일을 정리해 주세요." },
         { status: 413 },
@@ -192,19 +240,44 @@ export async function POST(request: Request) {
     }
 
     const prefix = `quotation-documents/${crypto.randomUUID()}`;
-    const originalKey = `${prefix}/original.pdf`;
+    let originalKey = `${prefix}/original.pdf`;
     const pageKeys = pages.map(
       (_, index) => `${prefix}/page-${String(index + 1).padStart(3, "0")}.webp`,
     );
     const bucket = getQuotationBucket();
-    await bucket.put(originalKey, pdf, {
-      httpMetadata: {
-        contentType: "application/pdf",
-        contentDisposition: "inline",
-      },
-      customMetadata: { organization, originalName: pdf.name.slice(0, 240) },
-    });
-    uploadedKeys.push(originalKey);
+    if (isGoogleDriveConfigured()) {
+      const regionRow = await d1
+        .prepare(
+          `SELECT region FROM activities
+           WHERE organization = ? AND business_round = ? AND TRIM(region) <> ''
+           ORDER BY updated_at DESC, id DESC LIMIT 1`,
+        )
+        .bind(organization, businessRound)
+        .first<{ region: string }>();
+      const stored = await uploadDriveFile({
+        file: originalFile,
+        folderSegments: [
+          "01_기관자료",
+          safeDriveFolderName(regionRow?.region, "지역 미분류"),
+          safeDriveFolderName(organization),
+          "견적서",
+          quoteDate.slice(0, 4),
+        ],
+        contextType: "institution-quotation",
+        contextId: `${organization}|${businessRound}`,
+      });
+      uploadedDriveFileId = stored.fileId;
+      originalKey = driveObjectKey(stored.fileId);
+    } else {
+      await bucket.put(originalKey, pdf, {
+        httpMetadata: {
+          contentType: "application/pdf",
+          contentDisposition: "inline",
+        },
+        customMetadata: { organization, originalName: pdf.name.slice(0, 240) },
+      });
+      uploadedKeys.push(originalKey);
+    }
     for (let index = 0; index < pages.length; index += 1) {
       await bucket.put(pageKeys[index], pages[index], {
         httpMetadata: { contentType: pages[index].type || "image/webp" },
@@ -232,9 +305,9 @@ export async function POST(request: Request) {
         companyName,
         quoteAmount,
         quoteDate,
-        pdf.name.slice(0, 240),
+        originalFile.name.slice(0, 240),
         originalKey,
-        pdf.size,
+        originalFile.size,
         JSON.stringify(pageKeys),
         JSON.stringify(pages.map((page) => page.size)),
         pages.length,
@@ -252,6 +325,9 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
+    if (uploadedDriveFileId) {
+      await removeDriveFile(uploadedDriveFileId).catch(() => undefined);
+    }
     if (uploadedKeys.length) {
       try {
         await getQuotationBucket().delete(uploadedKeys);
@@ -264,6 +340,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  let archivedDriveMove: Awaited<ReturnType<typeof moveDriveFile>> | null = null;
   try {
     const member = await requireApprovedMember();
     const payload = (await request.json()) as { id?: unknown };
@@ -276,6 +353,16 @@ export async function DELETE(request: Request) {
       return Response.json({ error: "견적서를 찾지 못했습니다." }, { status: 404 });
     }
     await ensureTrashReady();
+    const driveFileId = driveFileIdFromKey(row.original_key);
+    if (driveFileId) {
+      archivedDriveMove = await moveDriveFile(driveFileId, [
+        "99_보관",
+        "기관자료",
+        safeDriveFolderName(row.organization),
+        "견적서",
+        String(new Date().getFullYear()),
+      ]);
+    }
     const trashBatchId = await createTrashBatch(
       d1,
       member,
@@ -291,6 +378,9 @@ export async function DELETE(request: Request) {
       storage: await quotationStorageStats(d1),
     });
   } catch (error) {
+    if (archivedDriveMove) {
+      await rollbackDriveMoves([archivedDriveMove]).catch(() => undefined);
+    }
     return accessErrorResponse(error);
   }
 }

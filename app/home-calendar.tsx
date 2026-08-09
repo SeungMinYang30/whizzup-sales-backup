@@ -139,7 +139,6 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   const [monthValue, setMonthValue] = useState(today.slice(0, 7));
   const [selectedDate, setSelectedDate] = useState(today);
   const [filter, setFilter] = useState<CalendarFilter>("all");
-  const [scheduleSearch, setScheduleSearch] = useState("");
   const [hideCompleted, setHideCompleted] = useState(false);
   const [schedules, setSchedules] = useState<HomeCalendarSchedule[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -510,21 +509,11 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
     }
   }
 
-  const normalizedScheduleSearch = normalizedInstitution(scheduleSearch);
   const visibleSchedules = useMemo(
-    () => schedules.filter((item) => {
-      if (hideCompleted && item.completed) return false;
-      if (item.category === "construction" && !isConstructionStage(item.label)) return false;
-      if (!normalizedScheduleSearch) return true;
-      return normalizedInstitution([
-        item.organization,
-        item.label,
-        item.details,
-        item.assigneeName,
-        CATEGORY_LABEL[item.category],
-      ].filter(Boolean).join(" ")).includes(normalizedScheduleSearch);
-    }),
-    [hideCompleted, normalizedScheduleSearch, schedules],
+    () => schedules.filter((item) =>
+      (!hideCompleted || !item.completed)
+      && (item.category !== "construction" || isConstructionStage(item.label))),
+    [hideCompleted, schedules],
   );
   const filtered = useMemo(
     () => visibleSchedules.filter((item) => filter === "all" || item.category === filter),
@@ -583,14 +572,8 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
         {googleState.configured && !googleState.connected ? <small className="google-calendar-state">위즈업 공유일정 연결을 확인해 주세요.</small> : null}
         {googleState.connected && !googleState.writable ? <small className="google-calendar-state">Google 일정은 읽기 전용으로 연결되었습니다.</small> : null}
         {googleRefreshing ? <small className="google-calendar-state">Google 일정 확인 중…</small> : null}
-        <label className="home-calendar-search"><span>⌕</span><input value={scheduleSearch} onChange={(event) => setScheduleSearch(event.target.value)} placeholder="기관·일정·담당자 검색" aria-label="통합 일정 검색" />{scheduleSearch ? <button type="button" onClick={() => setScheduleSearch("")} aria-label="일정 검색어 지우기">×</button> : null}</label>
         <label className="home-calendar-completed-filter"><input type="checkbox" checked={hideCompleted} onChange={(event) => setHideCompleted(event.target.checked)} /> 완료 일정 숨기기</label>
       </div>
-      {normalizedScheduleSearch ? <div className="home-calendar-search-results" role="status">
-        <strong>검색 결과 {filtered.length}건</strong>
-        {filtered.slice(0, 8).map((item) => <button type="button" key={`search-${item.id}`} onClick={() => { setMonthValue(item.scheduledDate.slice(0, 7)); setSelectedDate(item.scheduledDate); }}><span>{item.organization}</span><small>{item.scheduledDate} · {cleanScheduleTitle(item.label)} · {item.assigneeName || "담당자 미정"}</small></button>)}
-        {!filtered.length ? <span>현재 표시 범위에서 일치하는 일정이 없습니다.</span> : null}
-      </div> : null}
       {syncIssues.length ? <div className="calendar-sync-issues" role="status">
         <strong>Google Calendar 동기화 실패 {syncIssues.length}건</strong>
         {syncIssues.slice(0, 3).map((issue) => <div key={issue.id}>

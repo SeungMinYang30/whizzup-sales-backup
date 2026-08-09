@@ -41,8 +41,6 @@ export async function POST(request: Request) {
     const action = String(payload.action ?? "");
     const result = action === "create_project"
       ? await createComplexProject(payload, member)
-      : action === "cancel_project"
-        ? await cancelComplexProject(payload, member)
       : action === "update_project"
         ? await updateComplexProject(payload, member)
         : action === "add_budget"
@@ -55,9 +53,11 @@ export async function POST(request: Request) {
                 ? await saveComplexDelivery(payload, member)
                 : action === "delete_entity"
                   ? await deleteComplexEntity(payload, member)
+                  : action === "cancel_project"
+                    ? await cancelComplexProject(payload, member)
                   : null;
     if (!result) {
-      return Response.json({ error: "공간재구조화 사업 작업을 확인해 주세요." }, { status: 400 });
+      return Response.json({ error: "복합사업 작업을 확인해 주세요." }, { status: 400 });
     }
     return Response.json({ ok: true, ...result });
   } catch (error) {

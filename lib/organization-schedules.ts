@@ -485,45 +485,41 @@ export async function listConstructionScheduleBoard() {
   if (!isPostgresDatabase()) await ensureEquipmentReady();
   // GET 요청에서 대량 DELETE를 실행하지 않습니다. 최신 수주 상태를 한 번
   // 읽어 화면에서 필터링하면 D1 쓰기 잠금 없이 동일한 결과를 얻습니다.
-  const [projectsResult, schedulesResult, productResult] = await Promise.all([
+  const [projectsResult, schedulesResult, productResult, latestAwardsResult] = await Promise.all([
     d1.prepare(
-      `SELECT csp.*,
-              COALESCE((
-                SELECT a.award_status
-                FROM activities a
-                WHERE a.organization = csp.organization
-                  AND a.business_round = csp.business_round
-                ORDER BY a.activity_date DESC, a.id DESC
-                LIMIT 1
-              ), '') AS latest_award_status
-       FROM construction_schedule_projects csp
+      `SELECT * FROM construction_schedule_projects
        ORDER BY completed ASC, updated_at DESC, organization COLLATE NOCASE ASC`,
     ).all<Record<string, unknown>>(),
     d1.prepare(
-       `SELECT os.*
-        FROM organization_schedules os
-        JOIN construction_schedule_projects csp
-          ON csp.organization = os.organization
-         AND csp.business_round = os.business_round
-        WHERE COALESCE(os.category, 'general') = 'construction'
-          AND TRIM(COALESCE(os.deleted_at, '')) = ''
-        ORDER BY os.scheduled_date ASC, os.id ASC`,
+       `SELECT * FROM organization_schedules
+       WHERE COALESCE(category, 'general') = 'construction'
+         AND TRIM(COALESCE(deleted_at, '')) = ''
+       ORDER BY scheduled_date ASC, id ASC`,
     ).all<Record<string, unknown>>(),
     d1.prepare(
       `SELECT p.organization, p.business_round, i.product_name, i.sort_order, i.id
        FROM equipment_projects p
-       JOIN construction_schedule_projects csp
-         ON csp.organization = p.organization
-        AND csp.business_round = p.business_round
        JOIN equipment_items i ON i.project_id = p.id
        WHERE TRIM(COALESCE(i.product_name, '')) <> ''
        ORDER BY p.organization COLLATE NOCASE ASC, p.business_round ASC,
                  p.updated_at DESC, i.sort_order ASC, i.id ASC`,
     ).all<Record<string, unknown>>(),
+    d1.prepare(
+      `SELECT organization, business_round, award_status
+       FROM (
+         SELECT organization, business_round, award_status,
+                ROW_NUMBER() OVER (
+                  PARTITION BY organization, business_round
+                  ORDER BY activity_date DESC, id DESC
+                ) AS row_number
+         FROM activities
+       )
+       WHERE row_number = 1`,
+    ).all<Record<string, unknown>>(),
   ]);
   const whizzupScopes = new Set(
-    projectsResult.results
-      .filter((row) => clean(row.latest_award_status) === "위즈업 수주")
+    latestAwardsResult.results
+      .filter((row) => clean(row.award_status) === "위즈업 수주")
       .map((row) => `${String(row.organization ?? "")}\u001f${Math.max(1, Number(row.business_round) || 1)}`),
   );
   const productNamesByScope = new Map<string, string[]>();
@@ -546,49 +542,6 @@ export async function listConstructionScheduleBoard() {
       whizzupScopes.has(`${String(row.organization ?? "")}\u001f${Math.max(1, Number(row.business_round) || 1)}`),
     ).map(scheduleJson),
   };
-}
-
-export async function listConstructionScheduleSummary(
-  todayInput: unknown,
-): Promise<ConstructionDashboardCounts> {
-  const today = validDate(todayInput);
-  if (!today) throw new Error("시공 현황 기준일을 확인해 주세요.");
-  const d1 = await ensureOrganizationSchedulesReady();
-  const result = await d1.prepare(
-    `SELECT csp.completed,
-            COALESCE((
-              SELECT a.award_status
-              FROM activities a
-              WHERE a.organization = csp.organization
-                AND a.business_round = csp.business_round
-              ORDER BY a.activity_date DESC, a.id DESC
-              LIMIT 1
-            ), '') AS latest_award_status,
-            CASE WHEN EXISTS (
-              SELECT 1
-              FROM organization_schedules os
-              WHERE os.organization = csp.organization
-                AND os.business_round = csp.business_round
-                AND COALESCE(os.category, 'general') = 'construction'
-                AND TRIM(COALESCE(os.deleted_at, '')) = ''
-                AND os.completed = 0
-                AND TRIM(COALESCE(os.scheduled_date, '')) <> ''
-                AND os.scheduled_date <= ?
-            ) THEN 1 ELSE 0 END AS has_started
-     FROM construction_schedule_projects csp
-     WHERE TRIM(COALESCE(csp.hidden_at, '')) = ''`,
-  ).bind(today).all<Record<string, unknown>>();
-
-  return result.results.reduce<ConstructionDashboardCounts>(
-    (counts, row) => {
-      if (clean(row.latest_award_status) !== "위즈업 수주") return counts;
-      if (Number(row.completed) === 1) counts.completed += 1;
-      else if (Number(row.has_started) === 1) counts.active += 1;
-      else counts.planned += 1;
-      return counts;
-    },
-    { planned: 0, active: 0, completed: 0 },
-  );
 }
 
 export async function addConstructionScheduleProject(input: {

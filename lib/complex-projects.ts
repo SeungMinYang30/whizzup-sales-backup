@@ -1,5 +1,5 @@
 import { getD1, isPostgresDatabase } from "../db";
-import type { Member } from "./collaboration";
+import { memberDisplayLabel, type Member } from "./collaboration";
 import { ensureBudgetNamesReady, linkBudgetNameEntity, normalizeBudgetNameKey } from "./budget-names";
 import { ensureEquipmentReady } from "./equipment-store";
 import {
@@ -26,6 +26,12 @@ import {
   type ProductCatalogItem,
 } from "./product-catalog";
 import { readProductCatalogRelations } from "./product-vendor-links";
+import {
+  canonicalInstitutionName,
+  INSTITUTION_ALIASES_SETTING_KEY,
+  institutionIdentityKey,
+  rememberedInstitutionAliasCandidates,
+} from "./institution-names";
 
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS complex_projects (
@@ -51,8 +57,6 @@ const schemaStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS complex_projects_active_idx
    ON complex_projects (active, status, updated_at, id)`,
-  `CREATE INDEX IF NOT EXISTS complex_projects_source_idx
-   ON complex_projects (source_type, active, organization, business_round)`,
   `CREATE TABLE IF NOT EXISTS complex_project_budget_links (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     complex_project_id INTEGER NOT NULL,
@@ -162,10 +166,34 @@ function validDate(value: unknown) {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "";
 }
 
+async function loadInstitutionAliasSetting(d1: ReturnType<typeof getD1>) {
+  try {
+    const setting = await d1
+      .prepare("SELECT value FROM app_settings WHERE key = ? LIMIT 1")
+      .bind(INSTITUTION_ALIASES_SETTING_KEY)
+      .first<{ value: string }>();
+    return String(setting?.value ?? "");
+  } catch {
+    return "";
+  }
+}
+
+function activityBudgetTotal(value: unknown, fallback: unknown) {
+  try {
+    const budgets = JSON.parse(String(value || "[]")) as Array<Record<string, unknown>>;
+    const total = budgets.reduce((sum, budget) => {
+      const amount = Number(String(budget.amount ?? budget.budgetAmount ?? "").replace(/[^0-9.-]/g, ""));
+      return sum + (Number.isFinite(amount) && amount > 0 ? amount : 0);
+    }, 0);
+    if (total > 0) return Math.round(total);
+  } catch {
+    // 예전 기록은 단일 예산 금액을 사용합니다.
+  }
+  const amount = Number(String(fallback ?? "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+}
+
 async function initializeComplexProjects() {
-  // Vercel/Postgres applies the versioned schema once in db/index.ts. Running
-  // every subsystem migration and the historical item backfill on each cold
-  // start made institution search and the first mutation unnecessarily slow.
   if (isPostgresDatabase()) return getD1();
   await Promise.all([
     ensureRecordsReady(),
@@ -179,15 +207,19 @@ async function initializeComplexProjects() {
   const projectColumns = await d1
     .prepare("PRAGMA table_info(complex_projects)")
     .all<{ name: string }>();
-  if (!projectColumns.results.some((column) => column.name === "manager_member_id")) {
+  if (!projectColumns.results.some((column: { name: string }) => column.name === "manager_member_id")) {
     await d1.prepare("ALTER TABLE complex_projects ADD COLUMN manager_member_id INTEGER").run();
   }
-  if (!projectColumns.results.some((column) => column.name === "source_type")) {
+  if (!projectColumns.results.some((column: { name: string }) => column.name === "source_type")) {
     await d1.prepare("ALTER TABLE complex_projects ADD COLUMN source_type TEXT NOT NULL DEFAULT 'whizzup'").run();
   }
-  if (!projectColumns.results.some((column) => column.name === "source_award_status")) {
+  if (!projectColumns.results.some((column: { name: string }) => column.name === "source_award_status")) {
     await d1.prepare("ALTER TABLE complex_projects ADD COLUMN source_award_status TEXT NOT NULL DEFAULT '위즈업 수주'").run();
   }
+  await d1.prepare(
+    `CREATE INDEX IF NOT EXISTS complex_projects_source_idx
+     ON complex_projects (source_type, active, organization, business_round)`,
+  ).run();
   const detailColumns = await d1
     .prepare("PRAGMA table_info(complex_project_item_details)")
     .all<{ name: string }>();
@@ -202,7 +234,7 @@ async function initializeComplexProjects() {
     ["protection_expires_at", "ALTER TABLE complex_project_item_details ADD COLUMN protection_expires_at TEXT NOT NULL DEFAULT ''"],
   ] as const;
   for (const [column, sql] of detailMigrations) {
-    if (!detailColumns.results.some((entry) => entry.name === column)) {
+    if (!detailColumns.results.some((entry: { name: string }) => entry.name === column)) {
       await d1.prepare(sql).run();
     }
   }
@@ -224,6 +256,7 @@ async function initializeComplexProjects() {
      FROM complex_project_budget_links link
      JOIN equipment_items item ON item.project_id = link.equipment_project_id`,
   ).run();
+  await syncAllWhizzupBudgetLinks(d1);
   return d1;
 }
 
@@ -254,118 +287,47 @@ async function writeEvent(
 async function requireProject(d1: ReturnType<typeof getD1>, projectId: number) {
   const project = await d1.prepare("SELECT * FROM complex_projects WHERE id = ? AND active = 1")
     .bind(projectId).first<Record<string, unknown>>();
-  if (!project) throw new Error("공간재구조화 사업을 찾지 못했습니다.");
+  if (!project) throw new Error("복합사업을 찾지 못했습니다.");
   return project;
 }
 
-async function syncBudgetLinks(d1: ReturnType<typeof getD1>, projectId: number) {
+async function syncBudgetLinks(
+  d1: ReturnType<typeof getD1>,
+  projectId: number,
+  aliasSettingValue?: string,
+) {
   const project = await requireProject(d1, projectId);
   if (clean(project.source_type, 30) !== "whizzup") return;
-  const organization = String(project.organization);
-  const businessRound = Number(project.business_round);
-  const latestActivity = await d1.prepare(
-    `SELECT id FROM activities
-     WHERE organization = ? AND business_round = ? AND award_status = '위즈업 수주'
-     ORDER BY activity_date DESC, id DESC LIMIT 1`,
-  ).bind(organization, businessRound).first<{ id: number }>();
-  const canonicalBudgets = await readCanonicalBusinessRoundBudgets(
-    d1,
-    organization,
-    businessRound,
-  );
-  for (const budget of canonicalBudgets) {
-    const budgetName = clean(budget.budgetOriginalName || budget.budgetType, 160);
-    if (!budgetName) continue;
-    const existing = await d1.prepare(
-      `SELECT id FROM equipment_projects
-       WHERE organization = ? AND business_round = ?
-         AND (
-           (? > 0 AND budget_group_id = ?)
-           OR (? = 0 AND LOWER(TRIM(COALESCE(NULLIF(budget_original_name, ''), NULLIF(budget_type, ''), name))) = LOWER(TRIM(?)))
-         )
-       ORDER BY id LIMIT 1`,
-    ).bind(
-      organization,
-      businessRound,
-      Number(budget.budgetGroupId ?? 0),
-      Number(budget.budgetGroupId ?? 0),
-      Number(budget.budgetGroupId ?? 0),
-      budgetName,
-    ).first<{ id: number }>();
-    if (!existing) {
-      await d1.prepare(
-        `INSERT INTO equipment_projects
-          (organization, business_round, name, status, budget_type, budget_original_name,
-           budget_group_id, budget_match_status, budget_match_method, budget_kind, notes,
-           activity_id, created_by)
-         VALUES (?, ?, ?, '수주', ?, ?, ?, ?, ?, ?, '', ?, ?)`,
-      ).bind(
-        organization,
-        businessRound,
-        budgetName,
-        budget.budgetType || budgetName,
-        budgetName,
-        budget.budgetGroupId,
-        budget.budgetMatchStatus || (budget.budgetGroupId ? "auto" : "unclassified"),
-        budget.budgetMatchMethod || "complex-project",
-        budget.budgetKind || "unclassified",
-        latestActivity?.id ?? null,
-        Number(project.created_by) || Number(project.updated_by) || 0,
-      ).run();
-    }
-  }
-  await d1.prepare(
-    `INSERT INTO complex_project_budget_links
-       (complex_project_id, equipment_project_id, sort_order)
-     SELECT ?, ep.id,
-            COALESCE((SELECT MAX(sort_order) + 1 FROM complex_project_budget_links WHERE complex_project_id = ?), 0)
-              + ROW_NUMBER() OVER (ORDER BY ep.id) - 1
-     FROM equipment_projects ep
-     JOIN activities activity ON activity.id = ep.activity_id
-     WHERE ep.organization = ? AND ep.business_round = ?
-       AND activity.award_status = '위즈업 수주'
-       AND NOT EXISTS (
-         SELECT 1 FROM complex_project_budget_links link
-         WHERE link.complex_project_id = ? AND link.equipment_project_id = ep.id
-       )
-     ON CONFLICT(complex_project_id, equipment_project_id) DO NOTHING`,
-  ).bind(
-    projectId,
-    projectId,
-    organization,
-    businessRound,
-    projectId,
-  ).run();
-  for (const budget of canonicalBudgets) {
-    const budgetName = clean(budget.budgetOriginalName || budget.budgetType, 160);
-    const allocatedAmount = parseStoredActivityBudgetMoney(
-      budget.budgetAmountOverride ||
-      budget.budgetInstitutionAmount ||
-      budget.budgetAmount,
-    );
-    if (!budgetName || !allocatedAmount) continue;
-    await d1.prepare(
-      `UPDATE complex_project_budget_links
-       SET allocated_amount = COALESCE(allocated_amount, ?), updated_at = CURRENT_TIMESTAMP
-       WHERE complex_project_id = ?
-         AND equipment_project_id IN (
-           SELECT id FROM equipment_projects
-           WHERE organization = ? AND business_round = ?
-             AND (
-               (? > 0 AND budget_group_id = ?)
-               OR (? = 0 AND LOWER(TRIM(COALESCE(NULLIF(budget_original_name, ''), NULLIF(budget_type, ''), name))) = LOWER(TRIM(?)))
-             )
-         )`,
-    ).bind(
-      allocatedAmount,
-      projectId,
-      organization,
-      businessRound,
-      Number(budget.budgetGroupId ?? 0),
-      Number(budget.budgetGroupId ?? 0),
-      Number(budget.budgetGroupId ?? 0),
-      budgetName,
-    ).run();
+  const aliasSetting = aliasSettingValue ?? await loadInstitutionAliasSetting(d1);
+  const projectInstitutionKey = institutionIdentityKey(project.organization, aliasSetting);
+  const equipmentResult = await d1.prepare(
+    `SELECT id, organization
+     FROM equipment_projects
+     WHERE business_round = ?
+     ORDER BY id`,
+  ).bind(Number(project.business_round)).all<{ id: number; organization: string }>();
+  const linkedResult = await d1.prepare(
+    `SELECT equipment_project_id
+     FROM complex_project_budget_links
+     WHERE complex_project_id = ?`,
+  ).bind(projectId).all<{ equipment_project_id: number }>();
+  const linkedIds = new Set(linkedResult.results.map((row) => Number(row.equipment_project_id)));
+  const equipmentIds = equipmentResult.results
+    .filter((row) => institutionIdentityKey(row.organization, aliasSetting) === projectInstitutionKey)
+    .map((row) => Number(row.id))
+    .filter((id) => id > 0 && !linkedIds.has(id));
+  if (equipmentIds.length) {
+    const sortRow = await d1.prepare(
+      `SELECT COALESCE(MAX(sort_order) + 1, 0) AS next_sort
+       FROM complex_project_budget_links
+       WHERE complex_project_id = ?`,
+    ).bind(projectId).first<{ next_sort: number }>();
+    const nextSort = Number(sortRow?.next_sort ?? 0);
+    await d1.batch(equipmentIds.map((equipmentProjectId, index) => d1.prepare(
+      `INSERT OR IGNORE INTO complex_project_budget_links
+         (complex_project_id, equipment_project_id, sort_order)
+       VALUES (?, ?, ?)`,
+    ).bind(projectId, equipmentProjectId, nextSort + index)));
   }
   await d1.prepare(
     `INSERT OR IGNORE INTO complex_project_item_details
@@ -375,6 +337,18 @@ async function syncBudgetLinks(d1: ReturnType<typeof getD1>, projectId: number) 
      JOIN complex_project_budget_links link ON link.equipment_project_id = item.project_id
      WHERE link.complex_project_id = ?`,
   ).bind(projectId, projectId).run();
+}
+
+async function syncAllWhizzupBudgetLinks(d1: ReturnType<typeof getD1>) {
+  const aliasSetting = await loadInstitutionAliasSetting(d1);
+  const projects = await d1.prepare(
+    `SELECT id FROM complex_projects
+     WHERE active = 1 AND source_type = 'whizzup'
+     ORDER BY id`,
+  ).all<{ id: number }>();
+  for (const project of projects.results) {
+    await syncBudgetLinks(d1, Number(project.id), aliasSetting);
+  }
 }
 
 async function readCurrentProductCatalogMap(
@@ -406,6 +380,8 @@ async function readCurrentProductCatalogMap(
 
 export async function listComplexProjects() {
   const d1 = await ensureComplexProjectsReady();
+  // 기관 상세와 같은 기관·차수의 최신 예산·품목을 한 데이터로 연결합니다.
+  await syncAllWhizzupBudgetLinks(d1);
   await ensureProductComparisonDocumentsReady();
   const [catalogProducts, catalogRelations] = await Promise.all([
     readCurrentProductCatalogMap(d1),
@@ -660,10 +636,38 @@ export async function listComplexProjects() {
 export async function searchComplexProjectCandidates(value: unknown) {
   const query = clean(value, 80);
   if (query.replace(/\s+/g, "").length < 2) return [];
-  // Candidate search only needs the already-versioned Postgres schema. Avoid
-  // waiting for the full complex-project page initialization on every search.
+  // 후보 검색은 이미 운영 중인 기본 테이블만 사용해 전체 관리 화면 초기화를 기다리지 않습니다.
   const d1 = getD1();
-  const like = `%${query.toLocaleLowerCase("ko-KR")}%`;
+  const aliasSetting = await loadInstitutionAliasSetting(d1);
+  const searchTerms = [
+    query,
+    canonicalInstitutionName(query),
+    ...rememberedInstitutionAliasCandidates(query, aliasSetting).map(
+      (candidate) => candidate.canonical,
+    ),
+  ]
+    .map((term) => clean(term, 120).toLocaleLowerCase("ko-KR"))
+    .filter(Boolean)
+    .filter((term, index, all) => all.indexOf(term) === index)
+    .slice(0, 10);
+  const predicates = searchTerms.map(
+    () => `(
+      LOWER(a.organization) LIKE ?
+      OR LOWER(COALESCE(a.region, '')) LIKE ?
+      OR EXISTS (
+        SELECT 1 FROM organization_locations search_location
+        WHERE search_location.organization = a.organization
+          AND (
+            LOWER(COALESCE(search_location.address, '')) LIKE ?
+            OR LOWER(COALESCE(search_location.road_address, '')) LIKE ?
+          )
+      )
+    )`,
+  );
+  const bindings = searchTerms.flatMap((term) => {
+    const like = `%${term}%`;
+    return [like, like, like, like];
+  });
   const result = await d1.prepare(
     `WITH latest AS (
        SELECT a.*,
@@ -673,216 +677,203 @@ export async function searchComplexProjectCandidates(value: unknown) {
               ) AS row_number
        FROM activities a
        WHERE a.award_status = '위즈업 수주'
-         AND (
-           LOWER(a.organization) LIKE ?
-           OR LOWER(COALESCE(a.region, '')) LIKE ?
-         )
-     ), project_finance AS (
-       SELECT ep.organization, ep.business_round,
-              COALESCE(SUM(COALESCE(ep.construction_amount, 0)), 0) AS construction_amount,
-              COALESCE(SUM(COALESCE(item.item_amount, 0)), 0) AS item_amount,
-              STRING_AGG(DISTINCT NULLIF(TRIM(ep.name), ''), ' · ') AS budget_names
-       FROM equipment_projects ep
-       JOIN activities source_activity ON source_activity.id = ep.activity_id
-       LEFT JOIN (
-         SELECT project_id,
-                SUM(COALESCE(awarded_qty, 0) * COALESCE(catalog_unit_price, 0)) AS item_amount
-         FROM equipment_items
-         GROUP BY project_id
-       ) item ON item.project_id = ep.id
-       WHERE source_activity.award_status = '위즈업 수주'
-       GROUP BY ep.organization, ep.business_round
+          AND (${predicates.join(" OR ")})
      )
      SELECT latest.organization, latest.business_round, latest.region,
-            latest.progress_manager, latest.topic, latest.summary,
-            latest.budget_type, latest.budget_amount,
-            latest.budget_amount_override, latest.budgets_json,
-            CASE WHEN latest.award_status = '위즈업 수주' THEN 1 ELSE 0 END AS whizzup_award,
-            latest.award_status, latest.activity_date AS latest_date,
-            COALESCE(location.road_address, location.address, '') AS address,
-            COALESCE(project_finance.item_amount, 0) AS item_amount,
-            COALESCE(project_finance.construction_amount, 0) AS construction_amount,
-            COALESCE(project_finance.budget_names, '') AS budget_names,
-            existing.id AS complex_project_id,
-            existing.name AS complex_project_name
+             latest.progress_manager,
+             latest.budgets_json, latest.budget_amount,
+             CASE WHEN latest.award_status = '위즈업 수주' THEN 1 ELSE 0 END AS whizzup_award,
+             latest.award_status, latest.activity_date AS latest_date,
+             COALESCE((
+               SELECT COALESCE(location.road_address, location.address, '')
+               FROM organization_locations location
+               WHERE location.organization = latest.organization
+               ORDER BY location.updated_at DESC LIMIT 1
+             ), '') AS address,
+             existing.id AS complex_project_id,
+             existing.name AS complex_project_name,
+             (SELECT COUNT(*) FROM equipment_projects ep
+               WHERE ep.organization = latest.organization
+                 AND ep.business_round = latest.business_round) AS budget_count,
+             (SELECT COUNT(*) FROM equipment_items item
+               JOIN equipment_projects ep ON ep.id = item.project_id
+               WHERE ep.organization = latest.organization
+                 AND ep.business_round = latest.business_round) AS item_count
      FROM latest
-     LEFT JOIN organization_locations location
-       ON location.organization = latest.organization
      LEFT JOIN complex_projects existing
        ON existing.organization = latest.organization
       AND existing.business_round = latest.business_round
       AND existing.active = 1
-     LEFT JOIN project_finance
-       ON project_finance.organization = latest.organization
-      AND project_finance.business_round = latest.business_round
      WHERE latest.row_number = 1
      ORDER BY latest.activity_date DESC, latest.organization COLLATE NOCASE
      LIMIT 30`,
-  ).bind(like, like).all<Record<string, unknown>>();
-  return result.results.map((row) => {
-    const budgets = activityBudgetsFromRecord(row);
-    const budgetTotal = budgets.reduce((sum, budget) => sum + parseStoredActivityBudgetMoney(
-      budget.budgetAmountOverride || budget.budgetInstitutionAmount || budget.budgetAmount,
-    ), 0);
-    const itemAmount = integer(row.item_amount);
-    const constructionAmount = integer(row.construction_amount);
-    const equipmentTotal = itemAmount + constructionAmount;
-    const budgetNames = clean(row.budget_names, 500);
-    const topic = clean(row.topic, 160);
-    const organization = clean(row.organization, 120);
-    const suggestedName = /사업|공간|구축|조성|교실|센터/.test(topic)
-      ? topic
-      : budgetNames && !budgetNames.includes(" · ")
-        ? `${organization} ${budgetNames} 사업`
-        : `${organization} 공간재구조화 사업`;
-    return {
-      ...row,
-      suggested_name: suggestedName,
-      suggested_total_budget: budgetTotal || equipmentTotal || null,
-      linked_item_amount: itemAmount,
-      linked_construction_amount: constructionAmount,
-      linked_budget_count: budgets.length,
-    };
-  });
+  ).bind(...bindings).all<Record<string, unknown>>();
+  return result.results.map((row: Record<string, unknown>) => ({
+    ...row,
+    canonical_organization: canonicalInstitutionName(row.organization),
+    budget_total: activityBudgetTotal(row.budgets_json, row.budget_amount),
+  }));
 }
 
 export async function createComplexProject(payload: Record<string, unknown>, member: Member) {
   const d1 = await ensureComplexProjectsReady();
-  const organization = clean(payload.organization, 120);
+  const requestedOrganization = clean(payload.organization, 120);
+  const registerNewAward = payload.registerNewAward === true;
+  const createNewRound = payload.createNewRound === true;
+  const organization = registerNewAward
+    ? canonicalInstitutionName(requestedOrganization)
+    : requestedOrganization;
   const businessRound = Math.max(1, integer(payload.businessRound, 1));
-  const sourceType = "whizzup";
-  const createAwardActivity = payload.createAwardActivity === true;
+  const sourceType = "whizzup" as const;
   if (!organization) throw new Error("공간재구조화 사업 기관을 선택해 주세요.");
-  const activity = await d1.prepare(
+  const aliasSetting = await loadInstitutionAliasSetting(d1);
+  const organizationKey = institutionIdentityKey(organization, aliasSetting);
+  const sameRoundOrganizations = await d1
+    .prepare(
+      `SELECT organization FROM complex_projects WHERE business_round = ?
+       UNION
+       SELECT organization FROM activities WHERE business_round = ?`,
+    )
+    .bind(businessRound, businessRound)
+    .all<{ organization: string }>();
+  const identityDuplicate = sameRoundOrganizations.results.find(
+    (row: { organization: string }) =>
+      clean(row.organization, 120) !== organization &&
+      institutionIdentityKey(row.organization, aliasSetting) === organizationKey,
+  );
+  if (identityDuplicate) {
+    throw new Error(
+      `같은 기관·${businessRound}차 기록이 '${clean(identityDuplicate.organization, 120)}' 이름으로 이미 있습니다. 기존 기관에서 차수를 선택해 주세요.`,
+    );
+  }
+  let activity = sourceType === "whizzup" ? await d1.prepare(
     `SELECT id, award_status FROM activities WHERE organization = ? AND business_round = ?
        AND award_status = '위즈업 수주'
      ORDER BY activity_date DESC, id DESC LIMIT 1`,
-  ).bind(organization, businessRound).first<{ id: number; award_status: string }>();
-  if (!activity && !createAwardActivity) {
+  ).bind(organization, businessRound).first<{ id: number; award_status: string }>() : null;
+  if (sourceType === "whizzup" && !activity && !createNewRound && !registerNewAward) {
     throw new Error("위즈업 수주로 확정된 기관·사업 차수를 찾지 못했습니다.");
   }
-  const existingSource = await d1.prepare(
-    `SELECT id, source_type FROM complex_projects
-     WHERE organization = ? AND business_round = ? LIMIT 1`,
-  ).bind(organization, businessRound).first<{ id: number; source_type: string }>();
-  if (existingSource && clean(existingSource.source_type, 30) !== sourceType && !createAwardActivity) {
-    throw new Error("같은 기관·차수에 다른 출처의 공간재구조화 사업이 이미 있습니다. 기존 사업을 열어 확인해 주세요.");
-  }
+  const institutionSeed = sourceType === "whizzup" ? await d1.prepare(
+    `SELECT region, contact_role, contact_name, contact_phone, contact_email,
+            contacts_json, progress_manager
+       FROM activities WHERE organization = ?
+      ORDER BY activity_date DESC, id DESC LIMIT 1`,
+  ).bind(organization).first<Record<string, unknown>>() : null;
   const name = clean(payload.name, 160) || `${organization} 공간재구조화 사업`;
   const requestedManagerId = integer(payload.managerMemberId) || null;
   const requestedManager = requestedManagerId
     ? await d1.prepare(
         `SELECT id, display_name FROM members
-         WHERE id = ? AND status = 'approved'
-           AND (is_sales = 1 OR role = 'admin' OR EXISTS (
-             SELECT 1 FROM activities activity
-             WHERE TRIM(activity.progress_manager) = TRIM(members.display_name)
-           ))`,
+         WHERE id = ? AND status = 'approved' AND is_sales = 1`,
       ).bind(requestedManagerId).first<{ id: number; display_name: string }>()
     : null;
   if (requestedManagerId && !requestedManager) {
     throw new Error("승인된 영업담당자를 선택해 주세요.");
   }
-  const managerName = requestedManager?.display_name || clean(payload.managerName, 120);
-  let savedProjectId = 0;
+  const managerName = requestedManager?.display_name
+    || clean(payload.managerName, 120)
+    || clean(institutionSeed?.progress_manager, 120);
+  const existingProject = await d1.prepare(
+    `SELECT id FROM complex_projects
+     WHERE organization = ? AND business_round = ?
+     ORDER BY active DESC, id ASC LIMIT 1`,
+  ).bind(organization, businessRound).first<{ id: number }>();
+  let savedProjectId = Number(existingProject?.id ?? 0);
   let savedActivityId = Number(activity?.id ?? 0);
   let createdActivity = false;
   await d1.transaction(async (transaction) => {
-    if (!savedActivityId) {
-      const totalBudget = nullableMoney(payload.totalBudget);
-      const activitySeedKey = `space-restructuring:${organization}:${businessRound}`.slice(0, 240);
-      const activityDate = koreaTodayValue();
-      const activityRecord = await transaction.prepare(
+  const statements = [];
+  if (sourceType === "whizzup" && !activity) {
+    createdActivity = true;
+    statements.push(
+      transaction.prepare(
         `INSERT INTO activities
-           (seed_key, activity_date, date_confidence, activity_type, category,
-            organization, business_round, budget_amount, budget_amount_mode,
-            budget_amount_override, topic, summary, status, status_manual,
-            award_status, award_company, execution_type, award_stage,
+           (activity_date, activity_type, category, region, organization, business_round,
+            topic, summary, detail_level, status, status_manual,
+            award_status, award_company, award_stage, award_stage_manual,
             progress_manager, progress_manager_locked, follow_up_required,
+            contact_role, contact_name, contact_phone, contact_email, contacts_json,
             source_chat, notes, updated_by_member_id, updated_by_name)
-         VALUES (?, ?, '확정', '기타', '공간재구조화', ?, ?, ?, 'manual', ?, ?, ?,
-                 '수주 전환', 1, '위즈업 수주', '위즈업', '직영', '일정 조율',
-                 ?, 0, 0, '공간재구조화 사업 직접 등록', ?, ?, ?)
-         ON CONFLICT(seed_key) DO UPDATE SET
-           activity_date = excluded.activity_date,
-           category = excluded.category,
-           budget_amount = CASE WHEN excluded.budget_amount <> '' THEN excluded.budget_amount ELSE activities.budget_amount END,
-           budget_amount_override = CASE WHEN excluded.budget_amount_override <> '' THEN excluded.budget_amount_override ELSE activities.budget_amount_override END,
-           topic = excluded.topic, summary = excluded.summary,
-           status = '수주 전환', status_manual = 1,
-           award_status = '위즈업 수주', award_company = '위즈업',
-           execution_type = '직영', award_stage = '일정 조율',
-           progress_manager = CASE WHEN excluded.progress_manager <> '' THEN excluded.progress_manager ELSE activities.progress_manager END,
-           source_chat = excluded.source_chat, notes = excluded.notes,
-           updated_by_member_id = excluded.updated_by_member_id,
-           updated_by_name = excluded.updated_by_name,
-           updated_at = CURRENT_TIMESTAMP
-         RETURNING id`,
+         VALUES (?, '기타', '내부', ?, ?, ?,
+                 ?, ?, 'standard', '수주 전환', 1,
+                 '위즈업 수주', '위즈업', '계약', 1,
+                 ?, 1, 0, ?, ?, ?, ?, ?,
+                 '공간재구조화 사업 관리', ?, ?, ?)`,
       ).bind(
-        activitySeedKey,
-        activityDate,
+        koreaTodayValue(),
+        clean(payload.region, 80) || clean(institutionSeed?.region, 80),
         organization,
         businessRound,
-        totalBudget === null ? "" : String(totalBudget),
-        totalBudget === null ? "" : String(totalBudget),
         name,
-        "공간재구조화 사업 관리에서 위즈업 수주로 등록했습니다.",
+        registerNewAward ? "새 기관 위즈업 수주 등록" : "기존 기관 새 사업 차수 등록",
+        managerName,
+        clean(institutionSeed?.contact_role, 120),
+        clean(institutionSeed?.contact_name, 120),
+        clean(institutionSeed?.contact_phone, 120),
+        clean(institutionSeed?.contact_email, 160),
+        clean(institutionSeed?.contacts_json, 4000) || "[]",
+        clean(payload.notes, 1000),
+        member.id,
+        member.displayName,
+      ),
+    );
+  }
+  if (existingProject) {
+    statements.push(
+      transaction.prepare(
+        `UPDATE complex_projects SET
+           name = ?, status = ?,
+           total_budget = COALESCE(?, total_budget),
+           source_type = ?, source_award_status = ?,
+           manager_member_id = COALESCE(?, manager_member_id),
+           manager_name = CASE WHEN ? <> '' THEN ? ELSE manager_name END,
+           notes = ?, active = 1,
+           updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+      ).bind(
+        name,
+        clean(payload.status, 30) || "준비",
+        nullableMoney(payload.totalBudget),
+        sourceType,
+        "위즈업 수주",
+        requestedManager?.id ?? null,
+        managerName,
         managerName,
         clean(payload.notes, 1000),
         member.id,
         member.displayName,
-      ).first<{ id: number }>();
-      savedActivityId = Number(activityRecord?.id ?? 0);
-      if (!savedActivityId) throw new Error("기관별 관리에 위즈업 수주 기록을 만들지 못했습니다.");
-      createdActivity = true;
-      await transaction.prepare(
-        `INSERT INTO activity_authors (activity_id, member_id, created_by_name, created_at)
-         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-         ON CONFLICT(activity_id) DO UPDATE SET
-           member_id = excluded.member_id,
-           created_by_name = excluded.created_by_name,
-           created_at = excluded.created_at`,
-      ).bind(savedActivityId, member.id, member.displayName).run();
-    }
-    await transaction.prepare(
-      `INSERT INTO complex_projects
-         (organization, business_round, name, status, total_budget, source_type, source_award_status,
-          manager_member_id, manager_name, notes,
-          created_by, created_by_name, updated_by, updated_by_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(organization, business_round) DO UPDATE SET
-         name = excluded.name, status = excluded.status,
-         total_budget = COALESCE(excluded.total_budget, complex_projects.total_budget),
-         source_type = excluded.source_type,
-         source_award_status = excluded.source_award_status,
-         manager_member_id = COALESCE(excluded.manager_member_id, complex_projects.manager_member_id),
-         manager_name = CASE WHEN excluded.manager_name <> '' THEN excluded.manager_name ELSE complex_projects.manager_name END,
-         notes = excluded.notes, active = 1,
-         updated_by = excluded.updated_by, updated_by_name = excluded.updated_by_name,
-         updated_at = CURRENT_TIMESTAMP`,
-    ).bind(
-      organization,
-      businessRound,
-      name,
-      clean(payload.status, 30) || "준비",
-      nullableMoney(payload.totalBudget),
-      sourceType,
-      "위즈업 수주",
-      requestedManager?.id ?? null,
-      managerName,
-      clean(payload.notes, 1000),
-      member.id,
-      member.displayName,
-      member.id,
-      member.displayName,
-    ).run();
-    const project = await transaction.prepare(
-      "SELECT id FROM complex_projects WHERE organization = ? AND business_round = ?",
-    ).bind(organization, businessRound).first<{ id: number }>();
-    if (!project) throw new Error("공간재구조화 사업을 저장하지 못했습니다.");
-    savedProjectId = Number(project.id);
-    await syncBudgetLinks(transaction, project.id);
-    await transaction.prepare(
+        existingProject.id,
+      ),
+    );
+  } else {
+    statements.push(
+      transaction.prepare(
+        `INSERT INTO complex_projects
+           (organization, business_round, name, status, total_budget, source_type, source_award_status,
+            manager_member_id, manager_name, notes,
+            created_by, created_by_name, updated_by, updated_by_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        organization,
+        businessRound,
+        name,
+        clean(payload.status, 30) || "준비",
+        nullableMoney(payload.totalBudget),
+        sourceType,
+        "위즈업 수주",
+        requestedManager?.id ?? null,
+        managerName,
+        clean(payload.notes, 1000),
+        member.id,
+        member.displayName,
+        member.id,
+        member.displayName,
+      ),
+    );
+  }
+  statements.push(
+    transaction.prepare(
       `INSERT INTO construction_schedule_projects
          (organization, business_round, work_summary, work_summary_mode, completed,
           created_by, created_by_name, updated_by, updated_by_name)
@@ -895,15 +886,40 @@ export async function createComplexProject(payload: Record<string, unknown>, mem
          END,
          hidden_at = '', updated_by = excluded.updated_by,
          updated_by_name = excluded.updated_by_name, updated_at = CURRENT_TIMESTAMP`,
-    ).bind(organization, businessRound, name, member.id, member.displayName, member.id, member.displayName).run();
-    await writeEvent(transaction, project.id, "create_or_enable", {
-      organization,
-      businessRound,
-      name,
-      sourceType,
-      activityId: savedActivityId,
-      createdActivity,
-    }, member);
+    ).bind(organization, businessRound, name, member.id, member.displayName, member.id, member.displayName),
+  );
+  await transaction.batch(statements);
+  if (createdActivity) {
+    const created = await transaction.prepare(
+      `SELECT id FROM activities
+       WHERE organization = ? AND business_round = ? AND award_status = '위즈업 수주'
+       ORDER BY activity_date DESC, id DESC LIMIT 1`,
+    ).bind(organization, businessRound).first<{ id: number }>();
+    savedActivityId = Number(created?.id ?? 0);
+    if (!savedActivityId) throw new Error("기관별 관리에 위즈업 수주 기록을 만들지 못했습니다.");
+    await transaction.prepare(
+      `INSERT INTO activity_authors (activity_id, member_id, created_by_name, created_at)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(activity_id) DO UPDATE SET
+         member_id = excluded.member_id,
+         created_by_name = excluded.created_by_name,
+         created_at = excluded.created_at`,
+    ).bind(savedActivityId, member.id, member.displayName).run();
+  }
+  if (managerName) {
+    await transaction.prepare(
+      `UPDATE activities SET progress_manager = ?, progress_manager_locked = ?,
+         updated_at = CURRENT_TIMESTAMP
+       WHERE organization = ? AND business_round = ? AND award_status = '위즈업 수주'`,
+    ).bind(managerName, 1, organization, businessRound).run();
+  }
+  const project = await transaction.prepare(
+    "SELECT id FROM complex_projects WHERE organization = ? AND business_round = ?",
+  ).bind(organization, businessRound).first<{ id: number }>();
+  if (!project) throw new Error("공간재구조화 사업을 저장하지 못했습니다.");
+  savedProjectId = Number(project.id);
+  await syncBudgetLinks(transaction, project.id);
+  await writeEvent(transaction, project.id, "create_or_enable", { organization, businessRound, name, sourceType }, member);
   });
   return { projectId: savedProjectId, activityId: savedActivityId, createdActivity };
 }
@@ -937,37 +953,6 @@ export async function updateComplexProject(payload: Record<string, unknown>, mem
     await writeEvent(transaction, projectId, "update_project", payload, member);
   });
   return { projectId };
-}
-
-export async function cancelComplexProject(payload: Record<string, unknown>, member: Member) {
-  const d1 = await ensureComplexProjectsReady();
-  const projectId = integer(payload.projectId);
-  const reason = clean(payload.reason, 500);
-  await d1.transaction(async (transaction) => {
-    const project = await requireProject(transaction, projectId);
-    const previousNotes = String(project.notes ?? "").trim();
-    const reasonLine = reason ? `취소 사유: ${reason}` : "";
-    const updatedNotes = [previousNotes, reasonLine].filter(Boolean).join("\n");
-    await transaction.prepare(
-      `UPDATE complex_projects
-       SET status = '취소', active = 0,
-           notes = ?,
-           updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-    ).bind(
-      updatedNotes,
-      member.id,
-      member.displayName,
-      projectId,
-    ).run();
-    await writeEvent(transaction, projectId, "cancel_project", {
-      organization: project.organization,
-      businessRound: project.business_round,
-      reason,
-      preservedOriginalRecords: true,
-    }, member);
-  });
-  return { projectId, cancelled: true };
 }
 
 export async function addComplexBudget(payload: Record<string, unknown>, member: Member) {
@@ -1348,4 +1333,35 @@ export async function deleteComplexEntity(payload: Record<string, unknown>, memb
     await refreshOrganizationScheduleMirror(project.organization, project.business_round);
   }
   return { projectId, entity, id };
+}
+
+export async function cancelComplexProject(payload: Record<string, unknown>, member: Member) {
+  const d1 = await ensureComplexProjectsReady();
+  const projectId = integer(payload.projectId);
+  const reason = clean(payload.reason, 500);
+  await d1.transaction(async (transaction) => {
+    const project = await requireProject(transaction, projectId);
+    const previousNotes = String(project.notes ?? "").trim();
+    const reasonLine = reason ? `취소 사유: ${reason}` : "";
+    const updatedNotes = [previousNotes, reasonLine].filter(Boolean).join("\n");
+    await transaction.prepare(
+      `UPDATE complex_projects
+       SET status = '취소', active = 0,
+           notes = ?,
+           updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+    ).bind(
+      updatedNotes,
+      member.id,
+      member.displayName,
+      projectId,
+    ).run();
+    await writeEvent(transaction, projectId, "cancel_project", {
+      organization: project.organization,
+      businessRound: project.business_round,
+      reason,
+      preservedOriginalRecords: true,
+    }, member);
+  });
+  return { projectId, cancelled: true };
 }

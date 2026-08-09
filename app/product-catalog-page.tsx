@@ -22,9 +22,6 @@ import {
   createQuotationWorkbook,
   type QuotationLine,
 } from "../lib/quotation-xlsx";
-import {
-  createSelectionCommitteeWorkbook,
-} from "../lib/selection-committee-xlsx";
 import QuotationManagementPage, {
   type QuotationInstitutionOption,
 } from "./quotation-management-page";
@@ -54,12 +51,11 @@ type ProductVendorOption = {
 
 type ProductComparisonDocument = {
   id: number;
-  productId: string;
-  originalName: string;
-  mimeType: string;
-  sizeBytes: number;
-  createdByName: string;
-  createdAt: string;
+  original_name: string;
+  mime_type: string;
+  size_bytes: number;
+  created_by_name: string;
+  created_at: string;
 };
 
 type ImportPreview = {
@@ -357,21 +353,15 @@ export default function ProductCatalogPage({
   const [favoriteProductIds, setFavoriteProductIds] = useState<string[]>([]);
   const [vendorOptions, setVendorOptions] = useState<ProductVendorOption[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
-  const [selectionWorkbookOpen, setSelectionWorkbookOpen] = useState(false);
-  const [selectionQuantities, setSelectionQuantities] = useState<Record<string, string>>({});
-  const [selectionWorkbookBusy, setSelectionWorkbookBusy] = useState(false);
+  const [comparisonProduct, setComparisonProduct] = useState<ProductCatalogItem | null>(null);
+  const [comparisonDocuments, setComparisonDocuments] = useState<ProductComparisonDocument[]>([]);
+  const [comparisonBusy, setComparisonBusy] = useState(false);
   const [bulkVendorId, setBulkVendorId] = useState("__choose__");
   const [catalogView, setCatalogView] = useState<"all" | "favorites">("all");
   const [productPage, setProductPage] = useState(1);
   const [canReorder, setCanReorder] = useState(false);
   const [draggedProductId, setDraggedProductId] = useState<string | null>(null);
   const [searchDraft, setSearchDraft] = useState(search);
-  const [comparisonProduct, setComparisonProduct] =
-    useState<ProductCatalogItem | null>(null);
-  const [comparisonDocuments, setComparisonDocuments] =
-    useState<ProductComparisonDocument[]>([]);
-  const [comparisonBusy, setComparisonBusy] = useState(false);
-  const [comparisonMessage, setComparisonMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -496,11 +486,6 @@ export default function ProductCatalogPage({
   const currentPageSelected =
     productPageItems.length > 0 &&
     productPageItems.every((product) => selectedProductIdSet.has(product.id));
-  const selectedProducts = useMemo(
-    () => products.filter((product) => selectedProductIdSet.has(product.id)),
-    [products, selectedProductIdSet],
-  );
-
   useEffect(() => {
     setProductPage(1);
   }, [catalogView, normalizedSearch]);
@@ -975,122 +960,61 @@ export default function ProductCatalogPage({
     setMessage("");
   }
 
-  async function openComparisonDocuments(product: ProductCatalogItem) {
+  async function openProductComparison(product: ProductCatalogItem) {
     setComparisonProduct(product);
-    setComparisonDocuments([]);
-    setComparisonMessage("");
     setComparisonBusy(true);
+    setMessage("");
     try {
       const response = await fetch(
-        `/api/product-comparison-documents?productId=${encodeURIComponent(product.id)}`,
+        `/api/product-comparison-documents?catalogProductId=${encodeURIComponent(product.id)}`,
         { cache: "no-store" },
       );
-      const data = (await response.json().catch(() => ({}))) as {
-        documents?: ProductComparisonDocument[];
-        error?: string;
-      };
-      if (!response.ok || !Array.isArray(data.documents)) {
-        throw new Error(data.error || "비교표를 불러오지 못했습니다.");
-      }
-      setComparisonDocuments(data.documents);
+      const body = await response.json() as { documents?: ProductComparisonDocument[]; error?: string };
+      if (!response.ok) throw new Error(body.error || "물품 비교표를 불러오지 못했습니다.");
+      setComparisonDocuments(body.documents ?? []);
     } catch (error) {
-      setComparisonMessage(
-        error instanceof Error ? error.message : "비교표를 불러오지 못했습니다.",
-      );
+      setComparisonDocuments([]);
+      setMessage(error instanceof Error ? error.message : "물품 비교표를 불러오지 못했습니다.");
     } finally {
       setComparisonBusy(false);
     }
   }
 
-  async function uploadComparisonDocument(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file || !comparisonProduct || comparisonBusy) return;
+  async function uploadProductComparison(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!comparisonProduct || comparisonBusy) return;
+    const formElement = event.currentTarget;
+    const body = new FormData(formElement);
+    body.set("catalogProductId", comparisonProduct.id);
+    body.set("productName", comparisonProduct.name);
     setComparisonBusy(true);
-    setComparisonMessage("");
-    try {
-      const formData = new FormData();
-      formData.set("productId", comparisonProduct.id);
-      formData.set("file", file);
-      const response = await fetch("/api/product-comparison-documents", {
-        method: "POST",
-        body: formData,
-      });
-      const data = (await response.json().catch(() => ({}))) as {
-        document?: ProductComparisonDocument;
-        error?: string;
-      };
-      if (!response.ok || !data.document) {
-        throw new Error(data.error || "비교표를 첨부하지 못했습니다.");
-      }
-      setComparisonDocuments((current) => [data.document!, ...current]);
-      setComparisonMessage("비교표를 첨부했습니다.");
-    } catch (error) {
-      setComparisonMessage(
-        error instanceof Error ? error.message : "비교표를 첨부하지 못했습니다.",
-      );
-    } finally {
-      setComparisonBusy(false);
-    }
-  }
-
-  async function deleteComparisonDocument(document: ProductComparisonDocument) {
-    if (comparisonBusy || !window.confirm(`'${document.originalName}' 비교표를 삭제할까요?`)) {
-      return;
-    }
-    setComparisonBusy(true);
-    setComparisonMessage("");
-    try {
-      const response = await fetch("/api/product-comparison-documents", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: document.id }),
-      });
-      const data = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(data.error || "비교표를 삭제하지 못했습니다.");
-      setComparisonDocuments((current) =>
-        current.filter((item) => item.id !== document.id),
-      );
-      setComparisonMessage("비교표를 삭제했습니다.");
-    } catch (error) {
-      setComparisonMessage(
-        error instanceof Error ? error.message : "비교표를 삭제하지 못했습니다.",
-      );
-    } finally {
-      setComparisonBusy(false);
-    }
-  }
-
-  function openSelectionWorkbook() {
-    if (!selectedProducts.length) {
-      setMessage("물품선정 자료에 넣을 제품을 먼저 선택해 주세요.");
-      return;
-    }
-    setSelectionQuantities(Object.fromEntries(selectedProducts.map((product) => [product.id, "1"])));
-    setSelectionWorkbookOpen(true);
-    setMessage("");
-  }
-
-  async function downloadSelectionWorkbook() {
-    if (selectionWorkbookBusy) return;
-    setSelectionWorkbookBusy(true);
     setMessage("");
     try {
-      const lines = selectedProducts.map((product) => {
-        const quantity = Number(selectionQuantities[product.id] || 1);
-        if (!Number.isFinite(quantity) || quantity <= 0) {
-          throw new Error(`${product.name}의 수량을 확인해 주세요.`);
-        }
-        return { productId: product.id, quantity };
-      });
-      const bytes = await createSelectionCommitteeWorkbook(lines, products);
-      downloadBytes(bytes, `물품선정위원회_집계표_평가표_${localDateString()}.xlsx`);
-      setSelectionWorkbookOpen(false);
-      setMessage("일산초 원본 디자인의 물품선정위원회 자료를 내려받았습니다.");
+      const response = await fetch("/api/product-comparison-documents", { method: "POST", body });
+      const result = await response.json() as { error?: string; replaced?: boolean };
+      if (!response.ok) throw new Error(result.error || "물품 비교표를 저장하지 못했습니다.");
+      formElement.reset();
+      await openProductComparison(comparisonProduct);
+      setMessage(result.replaced ? "물품 비교표를 교체했습니다." : "물품 비교표를 등록했습니다.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "물품선정 엑셀을 만들지 못했습니다.");
-    } finally {
-      setSelectionWorkbookBusy(false);
+      setMessage(error instanceof Error ? error.message : "물품 비교표를 저장하지 못했습니다.");
+      setComparisonBusy(false);
+    }
+  }
+
+  async function deleteProductComparison(id: number) {
+    if (!comparisonProduct || comparisonBusy || !window.confirm("이 제품의 물품 비교표를 삭제할까요?")) return;
+    setComparisonBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/product-comparison-documents?id=${id}`, { method: "DELETE" });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "물품 비교표를 삭제하지 못했습니다.");
+      await openProductComparison(comparisonProduct);
+      setMessage("물품 비교표를 삭제했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "물품 비교표를 삭제하지 못했습니다.");
+      setComparisonBusy(false);
     }
   }
 
@@ -1369,14 +1293,6 @@ export default function ProductCatalogPage({
           >
             {saving ? "저장 중…" : "선택 제품 일괄 적용"}
           </button>
-          <button
-            type="button"
-            className="selection-workbook-button"
-            disabled={!selectedProductIds.length || selectionWorkbookBusy}
-            onClick={openSelectionWorkbook}
-          >
-            물품선정 자료 만들기
-          </button>
           {selectedProductIds.length > 0 && (
             <button
               type="button"
@@ -1510,7 +1426,7 @@ export default function ProductCatalogPage({
                       <button
                         type="button"
                         className="product-comparison-button"
-                        onClick={() => void openComparisonDocuments(product)}
+                        onClick={() => void openProductComparison(product)}
                       >
                         비교표
                       </button>
@@ -1742,130 +1658,55 @@ export default function ProductCatalogPage({
         </div>
       )}
 
-      {selectionWorkbookOpen && (
-        <div
-          className="product-catalog-modal-shell"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.currentTarget === event.target && !selectionWorkbookBusy) setSelectionWorkbookOpen(false);
-          }}
-        >
-          <section className="product-catalog-dialog selection-workbook-dialog" role="dialog" aria-modal="true" aria-labelledby="selection-workbook-title">
-            <div className="product-catalog-dialog-header">
-              <div>
-                <span className="section-kicker">SELECTION COMMITTEE</span>
-                <h3 id="selection-workbook-title">물품선정위원회 자료 만들기</h3>
-                <p>일산초 원본 엑셀의 서식·색상·배치·인쇄 설정을 유지하고 선택한 제품을 연결합니다.</p>
-              </div>
-              <button type="button" aria-label="닫기" disabled={selectionWorkbookBusy} onClick={() => setSelectionWorkbookOpen(false)}>×</button>
-            </div>
-            <div className="selection-workbook-notice">
-              수량×단가 기준으로 2천만 원 이상·미만 표로 자동 분류하며, 같은 품명의 등록 제품을 비교 후보로 자동 배치합니다.
-            </div>
-            <div className="selection-workbook-lines">
-              {selectedProducts.map((product) => {
-                const quantity = Number(selectionQuantities[product.id] || 1);
-                const total = (product.unitPrice ?? 0) * (Number.isFinite(quantity) ? quantity : 0);
-                const alternatives = products.filter((candidate) => candidate.id !== product.id && normalizeSearchValue(candidate.name) === normalizeSearchValue(product.name)).length;
-                return <div className="selection-workbook-line" key={product.id}>
-                  <div><strong>{product.name}</strong><small>{product.specification || "규격 미등록"}</small><small>비교 후보 {Math.min(2, alternatives)}개 자동 연결</small></div>
-                  <label><span>수량</span><input type="number" min="1" value={selectionQuantities[product.id] ?? "1"} onChange={(event) => setSelectionQuantities((current) => ({ ...current, [product.id]: event.target.value }))} /></label>
-                  <div className="selection-workbook-amount"><span>기준 금액</span><strong>{priceFormatter.format(total)}원</strong><em>{total >= 20_000_000 ? "2천만원 이상" : "2천만원 미만"}</em></div>
-                </div>;
-              })}
-            </div>
-            <div className="product-catalog-dialog-actions">
-              <a className="secondary-button" href="/templates/일산초_물품선정위원회_원본양식.xlsx" download>원본 빈 양식</a>
-              <button type="button" className="secondary-button" disabled={selectionWorkbookBusy} onClick={() => setSelectionWorkbookOpen(false)}>취소</button>
-              <button type="button" className="primary-button" disabled={selectionWorkbookBusy} onClick={() => void downloadSelectionWorkbook()}>{selectionWorkbookBusy ? "엑셀 생성 중…" : "연결된 엑셀 내려받기"}</button>
-            </div>
-          </section>
-        </div>
-      )}
-
       {comparisonProduct && (
         <div
           className="product-catalog-modal-shell"
           role="presentation"
           onMouseDown={(event) => {
-            if (event.currentTarget === event.target && !comparisonBusy) {
-              setComparisonProduct(null);
-            }
+            if (event.currentTarget === event.target && !comparisonBusy) setComparisonProduct(null);
           }}
         >
-          <section
-            className="product-catalog-dialog product-comparison-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="product-comparison-title"
-          >
+          <section className="product-catalog-dialog product-comparison-dialog" role="dialog" aria-modal="true" aria-labelledby="product-comparison-title">
             <div className="product-catalog-dialog-header">
               <div>
                 <span className="section-kicker">PRODUCT COMPARISON</span>
-                <h3 id="product-comparison-title">물품 비교표</h3>
-                <p>{comparisonProduct.name}에 연결된 자료는 공간재구조화 사업 품목에서도 함께 사용됩니다.</p>
+                <h3 id="product-comparison-title">물품 비교표 관리</h3>
+                <p><strong>{comparisonProduct.name}</strong>에 연결할 비교표를 등록하거나 교체합니다.</p>
               </div>
-              <button
-                type="button"
-                aria-label="닫기"
-                disabled={comparisonBusy}
-                onClick={() => setComparisonProduct(null)}
-              >
-                ×
-              </button>
+              <button type="button" aria-label="닫기" disabled={comparisonBusy} onClick={() => setComparisonProduct(null)}>×</button>
             </div>
-            <label className="product-comparison-upload">
-              <strong>{comparisonBusy ? "처리 중…" : "+ 비교표 첨부"}</strong>
-              <span>PDF·Excel·Word · 파일당 20MB 이하</span>
-              <input
-                type="file"
-                accept=".pdf,.xlsx,.xls,.docx"
-                disabled={comparisonBusy}
-                onChange={(event) => void uploadComparisonDocument(event)}
-              />
-            </label>
-            {comparisonMessage && (
-              <p className="product-comparison-message">{comparisonMessage}</p>
-            )}
-            <div className="product-comparison-list">
-              {comparisonDocuments.map((document) => (
-                <article key={document.id}>
-                  <div>
-                    <strong>{document.originalName}</strong>
-                    <small>
-                      {(document.sizeBytes / 1024 / 1024).toFixed(2)}MB · {document.createdByName || "운영자"}
-                    </small>
-                  </div>
-                  <a
-                    href={`/api/product-comparison-documents?id=${document.id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    내려받기
-                  </a>
-                  <button
-                    type="button"
-                    disabled={comparisonBusy}
-                    onClick={() => void deleteComparisonDocument(document)}
-                  >
-                    삭제
-                  </button>
-                </article>
-              ))}
-              {!comparisonDocuments.length && !comparisonBusy && (
-                <div className="empty-state">첨부된 비교표가 없습니다.</div>
-              )}
-            </div>
-            <div className="product-catalog-dialog-actions">
-              <button
-                type="button"
-                className="primary-button"
-                disabled={comparisonBusy}
-                onClick={() => setComparisonProduct(null)}
-              >
-                확인
-              </button>
-            </div>
+            <form className="product-comparison-form" onSubmit={uploadProductComparison}>
+              <div className="product-comparison-body">
+                <div className="product-comparison-current">
+                  {comparisonDocuments.map((document) => (
+                    <article key={document.id}>
+                      <div>
+                        <strong>{document.original_name}</strong>
+                        <small>{Math.max(1, Math.round(document.size_bytes / 1024)).toLocaleString("ko-KR")}KB · {document.created_at.slice(0, 10)}</small>
+                      </div>
+                      <div>
+                        <a className="secondary-button" href={`/api/product-comparison-documents?id=${document.id}&download=1`}>다운로드</a>
+                        <button type="button" className="product-delete-button" disabled={comparisonBusy} onClick={() => void deleteProductComparison(document.id)}>삭제</button>
+                      </div>
+                    </article>
+                  ))}
+                  {!comparisonBusy && comparisonDocuments.length === 0 && (
+                    <div className="product-comparison-empty">
+                      <strong>등록된 비교표가 없습니다.</strong>
+                      <span>아래에서 파일을 선택하면 이 제품에 바로 연결됩니다.</span>
+                    </div>
+                  )}
+                </div>
+                <div className="product-comparison-upload">
+                  <label><span>{comparisonDocuments.length ? "새 파일로 교체" : "비교표 파일 등록"}</span><input name="file" type="file" required disabled={comparisonBusy} /></label>
+                  <small>엑셀, PDF, 한글 등 비교표 원본 파일을 등록할 수 있습니다.</small>
+                </div>
+              </div>
+              <div className="product-catalog-dialog-actions">
+                <button type="button" className="secondary-button" disabled={comparisonBusy} onClick={() => setComparisonProduct(null)}>닫기</button>
+                <button type="submit" className="primary-button" disabled={comparisonBusy}>{comparisonBusy ? "저장 중…" : comparisonDocuments.length ? "비교표 교체" : "비교표 등록"}</button>
+              </div>
+            </form>
           </section>
         </div>
       )}

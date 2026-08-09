@@ -53,6 +53,17 @@ export async function POST(request: Request) {
 
     await ensureLocalAuthSchema();
     const d1 = getD1();
+    const signupEmail = localMemberEmail(username);
+    const rejection = await d1
+      .prepare("SELECT email FROM member_rejections WHERE lower(email) = lower(?) LIMIT 1")
+      .bind(signupEmail)
+      .first<{ email: string }>();
+    if (rejection) {
+      return Response.json(
+        { error: "거절되어 삭제된 가입 요청입니다. 운영자에게 다시 등록을 요청해 주세요." },
+        { status: 403 },
+      );
+    }
     const existing = await d1
       .prepare("SELECT id FROM members WHERE lower(username) = lower(?) LIMIT 1")
       .bind(username)
@@ -72,7 +83,7 @@ export async function POST(request: Request) {
         ) VALUES (?, ?, ?, ?, ?, ?, 'member', '[]', 'pending', 0, CURRENT_TIMESTAMP)`,
       )
       .bind(
-        localMemberEmail(username),
+        signupEmail,
         username,
         credential.hash,
         credential.salt,

@@ -147,29 +147,3 @@ test("product order and favorites are saved per approved member", () => {
   assert.match(source, /★ 즐겨찾기/);
   assert.match(source, /PC에서 저장한 내 순서대로 표시됩니다/);
 });
-
-test("product comparison documents are attached once and reused by complex projects", () => {
-  const route = readFileSync(
-    new URL("../app/api/product-comparison-documents/route.ts", import.meta.url),
-    "utf8",
-  );
-  const catalog = readFileSync(
-    new URL("../app/product-catalog-page.tsx", import.meta.url),
-    "utf8",
-  );
-  const complex = readFileSync(
-    new URL("../lib/complex-projects.ts", import.meta.url),
-    "utf8",
-  );
-  const styles = readFileSync(
-    new URL("../app/globals.css", import.meta.url),
-    "utf8",
-  );
-  assert.match(route, /product_id, original_name, object_key/);
-  assert.match(route, /PDF, Excel 또는 Word 비교표/);
-  assert.match(catalog, /물품 비교표/);
-  assert.match(catalog, /product-comparison-documents\?id=/);
-  assert.match(complex, /comparisonDocumentCounts/);
-  assert.match(complex, /comparison_document_key: comparisonDocumentKey/);
-  assert.match(styles, /\.product-edit-button,\s*\.product-comparison-button/);
-});

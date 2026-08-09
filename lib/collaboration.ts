@@ -22,6 +22,7 @@ export type Member = {
   email: string;
   username: string;
   displayName: string;
+  jobTitle: string;
   role: "admin" | "assistant" | "member";
   permissions: MemberPermission[];
   status: "pending" | "approved" | "suspended";
@@ -43,6 +44,17 @@ export class AccessError extends Error {
 }
 
 export const OAUTH_ACTIVITY_SCOPE = "activities:write";
+export const PRIMARY_OWNER_EMAIL = "freeyang30@gmail.com";
+
+export function memberDisplayLabel(
+  member: { displayName?: unknown; display_name?: unknown; jobTitle?: unknown; job_title?: unknown },
+) {
+  const name = String(member.displayName ?? member.display_name ?? "").trim();
+  const rawTitle = String(member.jobTitle ?? member.job_title ?? "").trim();
+  if (!rawTitle) return name;
+  const title = rawTitle.replace(/님$/, "").trim();
+  return `${name} ${title === "대표" ? "대표님" : title}`.trim();
+}
 
 const STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS = new Set([
   "freeyang30@gmail.com",
@@ -63,6 +75,11 @@ const schemaStatements = [
     last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
   "CREATE INDEX IF NOT EXISTS members_status_idx ON members (status, created_at)",
+  `CREATE TABLE IF NOT EXISTS member_rejections (
+    email TEXT PRIMARY KEY,
+    rejected_by INTEGER,
+    rejected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
   `CREATE TABLE IF NOT EXISTS activity_authors (
     activity_id INTEGER PRIMARY KEY,
     member_id INTEGER,
@@ -127,14 +144,14 @@ async function initializeCollaboration() {
   const memberColumns = await d1
     .prepare("PRAGMA table_info(members)")
     .all<{ name: string }>();
-  if (!memberColumns.results.some((column) => column.name === "permissions")) {
+  if (!memberColumns.results.some((column: { name: string }) => column.name === "permissions")) {
     await d1
       .prepare(
         "ALTER TABLE members ADD COLUMN permissions TEXT NOT NULL DEFAULT '[]'",
       )
       .run();
   }
-  if (!memberColumns.results.some((column) => column.name === "is_sales")) {
+  if (!memberColumns.results.some((column: { name: string }) => column.name === "is_sales")) {
     await d1
       .prepare(
         "ALTER TABLE members ADD COLUMN is_sales INTEGER NOT NULL DEFAULT 0",
@@ -160,6 +177,7 @@ function mapMember(row: Record<string, unknown>): Member {
     email: String(row.email),
     username: String(row.username ?? ""),
     displayName: String(row.display_name),
+    jobTitle: String(row.job_title ?? ""),
     role,
     permissions: normalizeMemberPermissions(row.permissions),
     status:
@@ -200,6 +218,18 @@ export async function getOrCreateMember(
         .first<Record<string, unknown>>();
 
   if (!row && identity.provider === "google") {
+    const rejection = await d1
+      .prepare(
+        "SELECT email FROM member_rejections WHERE lower(email) = lower(?) LIMIT 1",
+      )
+      .bind(email)
+      .first<{ email: string }>();
+    if (rejection) {
+      throw new AccessError(
+        "거절되어 삭제된 가입 요청입니다. 운영자에게 다시 등록을 요청해 주세요.",
+        403,
+      );
+    }
     await d1
       .prepare(`
         INSERT INTO members (
@@ -306,7 +336,7 @@ export async function getOrCreateMember(
 
 export async function requireMember(refreshLastSeen = false) {
   const identity = await getChatGPTUser();
-  if (!identity) throw new AccessError("ChatGPT 로그인이 필요합니다.", 401);
+  if (!identity) throw new AccessError("로그인이 필요합니다.", 401);
   return getOrCreateMember(identity, refreshLastSeen);
 }
 
@@ -356,9 +386,10 @@ export async function isPrimaryOwner(
       `SELECT id
        FROM members
        WHERE role = 'admin' AND status = 'approved'
-       ORDER BY id ASC
+       ORDER BY CASE WHEN lower(email) = ? THEN 0 ELSE 1 END, id ASC
        LIMIT 1`,
     )
+    .bind(PRIMARY_OWNER_EMAIL)
     .first<{ id: number }>();
   return Number(owner?.id) === member.id;
 }
@@ -366,7 +397,7 @@ export async function isPrimaryOwner(
 export async function requirePrimaryOwner() {
   const member = await requireApprovedMember();
   if (!(await isPrimaryOwner(member))) {
-    throw new AccessError("운영관리자 본인만 접속 현황을 확인할 수 있습니다.", 403);
+    throw new AccessError("운영관리자 본인만 사용할 수 있습니다.", 403);
   }
   return member;
 }

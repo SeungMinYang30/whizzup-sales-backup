@@ -116,7 +116,7 @@ export default function OwnerPerformancePage({
   }
 
   useEffect(() => {
-    // 운영관리자 전용 원격 데이터는 화면 진입 시 한 번 동기화합니다.
+    // 운영자 전용 원격 데이터는 화면 진입 시 한 번 동기화합니다.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadPerformance();
   }, []);

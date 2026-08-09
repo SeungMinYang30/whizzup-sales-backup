@@ -267,7 +267,7 @@ export async function setActivityAssignmentAutomatic(
   const d1 = await ensureActivityAssignmentHistoryReady();
   if (!(await isPrimaryOwner(actor))) {
     throw new AccessError(
-      "운영관리자만 진행 담당자 배정 방식을 변경할 수 있습니다.",
+      "운영자만 진행 담당자 배정 방식을 변경할 수 있습니다.",
       403,
     );
   }
@@ -332,7 +332,7 @@ export async function setActivityAssignmentFixed(
   const d1 = await ensureActivityAssignmentHistoryReady();
   if (!(await isPrimaryOwner(actor))) {
     throw new AccessError(
-      "운영관리자만 진행 담당자 배정 방식을 변경할 수 있습니다.",
+      "운영자만 진행 담당자 배정 방식을 변경할 수 있습니다.",
       403,
     );
   }

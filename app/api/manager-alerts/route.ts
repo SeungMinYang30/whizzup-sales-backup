@@ -2,6 +2,8 @@ import {
   AccessError,
   accessErrorResponse,
   ensureCollaborationReady,
+  isPrimaryOwner,
+  memberDisplayLabel,
   normalizeMemberPermissions,
   requireMemberPermission,
 } from "../../../lib/collaboration";
@@ -33,48 +35,82 @@ function cleanOrganizations(value: unknown) {
 type ManagerAlertMemberOption = {
   id: number;
   displayName: string;
+  jobTitle: string;
+  displayLabel: string;
 };
 
+type ManagerAlertMemberRow = {
+  id: number;
+  email: string;
+  display_name: string;
+  job_title: string;
+  role: string;
+  permissions: string;
+};
+
+function isHumanManagerAccount(email: string, displayName: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedName = displayName.trim().toLowerCase();
+  return !(
+    normalizedEmail.includes("-noreply@chatgpt.com") ||
+    normalizedEmail.startsWith("sites-") ||
+    normalizedName.includes("screenshot service") ||
+    normalizedName.includes("system service")
+  );
+}
+
 async function resolveManagerAlertTarget(
-  requesterId: number,
+  requester: Awaited<ReturnType<typeof requireMemberPermission>>,
   requestedMemberId: unknown,
 ) {
+  const requesterIsPrimaryOwner = await isPrimaryOwner(requester);
   const d1 = await ensureCollaborationReady();
   const rows = await d1
     .prepare(
-      `SELECT id, display_name, role, permissions
+       `SELECT id, email, display_name, job_title, role, permissions
        FROM members
        WHERE status = 'approved'
        ORDER BY display_name COLLATE NOCASE, id`,
     )
-    .all<{
-      id: number;
-      display_name: string;
-      role: string;
-      permissions: string;
-    }>();
+    .all<ManagerAlertMemberRow>();
   const members = rows.results
     .filter(
-      (row) =>
-        row.role === "admin" ||
-        normalizeMemberPermissions(row.permissions).includes("records:manage"),
+      (row: ManagerAlertMemberRow) =>
+        isHumanManagerAccount(row.email, row.display_name) &&
+        (row.role === "admin" ||
+          normalizeMemberPermissions(row.permissions).includes("records:manage")),
     )
-    .map<ManagerAlertMemberOption>((row) => ({
+    .map<ManagerAlertMemberOption>((row: ManagerAlertMemberRow) => ({
       id: Number(row.id),
       displayName: String(row.display_name).trim() || `사용자 ${row.id}`,
+      jobTitle: String(row.job_title ?? "").trim(),
+      displayLabel: memberDisplayLabel(row) || `사용자 ${row.id}`,
     }));
   const parsedMemberId = Number(requestedMemberId);
   const selectedMemberId =
-    Number.isInteger(parsedMemberId) && parsedMemberId > 0
+    requesterIsPrimaryOwner && Number.isInteger(parsedMemberId) && parsedMemberId > 0
       ? parsedMemberId
-      : requesterId;
-  if (!members.some((member) => member.id === selectedMemberId)) {
+      : requester.id;
+  if (
+    !requesterIsPrimaryOwner &&
+    Number.isInteger(parsedMemberId) &&
+    parsedMemberId > 0 &&
+    parsedMemberId !== requester.id
+  ) {
+    throw new AccessError("다른 구성원의 점검 화면은 운영관리자만 처리할 수 있습니다.", 403);
+  }
+  if (!members.some((member: ManagerAlertMemberOption) => member.id === selectedMemberId)) {
     throw new AccessError(
       "선택한 사용자는 관리자 영업 점검 권한이 없습니다.",
       403,
     );
   }
-  return { members, selectedMemberId };
+  return {
+    members: requesterIsPrimaryOwner
+      ? members
+      : members.filter((member: ManagerAlertMemberOption) => member.id === requester.id),
+    selectedMemberId,
+  };
 }
 
 export async function GET(request: Request) {
@@ -82,7 +118,7 @@ export async function GET(request: Request) {
     const member = await requireMemberPermission("records:manage");
     const requestedMemberId = new URL(request.url).searchParams.get("memberId");
     const { members, selectedMemberId } = await resolveManagerAlertTarget(
-      member.id,
+      member,
       requestedMemberId,
     );
     const acknowledgements =
@@ -98,7 +134,7 @@ export async function POST(request: Request) {
     const member = await requireMemberPermission("records:manage");
     const payload = (await request.json()) as Record<string, unknown>;
     const { selectedMemberId } = await resolveManagerAlertTarget(
-      member.id,
+      member,
       payload.memberId,
     );
     const rawItems = Array.isArray(payload.items) ? payload.items : [];
@@ -158,7 +194,7 @@ export async function DELETE(request: Request) {
     const member = await requireMemberPermission("records:manage");
     const payload = (await request.json()) as Record<string, unknown>;
     const { selectedMemberId } = await resolveManagerAlertTarget(
-      member.id,
+      member,
       payload.memberId,
     );
     const organizations = cleanOrganizations(payload.organizations);
@@ -183,7 +219,7 @@ export async function PATCH(request: Request) {
     const member = await requireMemberPermission("records:manage");
     const payload = (await request.json()) as Record<string, unknown>;
     const { selectedMemberId } = await resolveManagerAlertTarget(
-      member.id,
+      member,
       payload.memberId,
     );
     const organizations = cleanOrganizations(payload.organizations);

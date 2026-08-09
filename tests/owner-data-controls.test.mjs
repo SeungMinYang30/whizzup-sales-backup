@@ -42,7 +42,7 @@ test("the institution cleanup inventory is primary-owner only", () => {
     /payload\.dataControl[\s\S]*await requirePrimaryOwner\(\)/,
   );
   assert.match(trashRoute, /const member = await requirePrimaryOwner\(\)/);
-  assert.match(dataControlPanel, /대표관리자 본인 전용/);
+  assert.match(dataControlPanel, /운영자 본인 전용/);
 });
 
 test("pre-award and every award source can be filtered independently", () => {

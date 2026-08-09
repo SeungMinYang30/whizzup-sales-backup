@@ -359,7 +359,7 @@ export default function DataControlPanel({
             복구 가능한 보관함으로 옮깁니다.
           </p>
         </div>
-        <span className="backup-owner-badge">운영관리자 본인 전용</span>
+        <span className="backup-owner-badge">운영자 본인 전용</span>
       </div>
 
       <div className="data-control-tabs" role="tablist" aria-label="데이터 관리 구분">
