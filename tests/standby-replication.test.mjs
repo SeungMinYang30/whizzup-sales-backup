@@ -33,6 +33,10 @@ test("standby sync is one-way, authenticated, bounded, and uncached", () => {
   assert.match(syncRoute, /cache:\s*"no-store"/);
   assert.match(syncRoute, /restoreReplicaBackup/);
   assert.match(syncRoute, /replicaContentChecksum/);
+  assert.match(syncRoute, /createFullBackup/);
+  assert.match(syncRoute, /forceRequested/);
+  assert.match(syncRoute, /localChecksum !== current\.source_checksum/);
+  assert.match(syncRoute, /automatic overwrite was blocked/);
   assert.match(syncRoute, /validateFullBackup/);
   assert.doesNotMatch(syncRoute, /fetch\([^)]*supabase/i);
   assert.match(syncRoute, /AUTOMATIC_STANDBY_SYNC_ENABLED/);
@@ -56,6 +60,7 @@ test("replica restore validates the signed backup before replacement", () => {
   assert.match(backupStore, /column === "permissions"/);
   assert.match(backupStore, /name: "members"[\s\S]*?"job_title"/);
   assert.match(backupStore, /last_seen_at: _lastSeenAt/);
+  assert.match(backupStore, /permissions = JSON\.parse\(permissions\)/);
   assert.match(backupStore, /data: replicaChecksumData\(backup\.data\)/);
   assert.match(backupStore, /jsonb_build_array/);
   assert.match(backupStore, /memberPermissions/);
