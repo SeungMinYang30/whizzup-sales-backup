@@ -21,6 +21,14 @@ const scheduler = await readFile(
   new URL("../lib/replication-scheduler.ts", import.meta.url),
   "utf8",
 );
+const credentials = await readFile(
+  new URL("../lib/standby-credentials.ts", import.meta.url),
+  "utf8",
+);
+const vercelSchema = await readFile(
+  new URL("../db/vercel-schema.ts", import.meta.url),
+  "utf8",
+);
 
 test("standby sync is one-way, authenticated, bounded, and uncached", () => {
   assert.match(syncRoute, /STANDBY_SYNC_SECRET/);
@@ -38,9 +46,22 @@ test("standby sync is one-way, authenticated, bounded, and uncached", () => {
   assert.match(syncRoute, /localChecksum !== current\.source_checksum/);
   assert.match(syncRoute, /automatic overwrite was blocked/);
   assert.match(syncRoute, /validateFullBackup/);
+  assert.match(syncRoute, /validateStandbyCredentialSnapshot/);
+  assert.match(syncRoute, /restoreStandbyCredentials/);
   assert.doesNotMatch(syncRoute, /fetch\([^)]*supabase/i);
   assert.match(syncRoute, /AUTOMATIC_STANDBY_SYNC_ENABLED/);
   assert.match(syncRoute, /Automatic full-database synchronization is disabled/);
+});
+
+test("Sites password credentials are checksum-validated and restored separately", () => {
+  assert.match(credentials, /whizzup-member-credentials/);
+  assert.match(credentials, /Standby credential checksum mismatch/);
+  assert.match(credentials, /does not match the replicated member/);
+  assert.match(credentials, /INSERT INTO member_credentials/);
+  assert.match(credentials, /password_hash = excluded\.password_hash/);
+  assert.match(credentials, /member_credentials\.failed_attempts/);
+  assert.match(vercelSchema, /CREATE TABLE IF NOT EXISTS public\.member_credentials/);
+  assert.match(vercelSchema, /REVOKE ALL ON public\.member_credentials FROM anon, authenticated/);
 });
 
 test("replica restore validates the signed backup before replacement", () => {

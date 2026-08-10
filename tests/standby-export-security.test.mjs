@@ -6,6 +6,10 @@ const route = await readFile(
   new URL("../app/api/standby-export/route.ts", import.meta.url),
   "utf8",
 );
+const credentialExport = await readFile(
+  new URL("../lib/standby-credentials.ts", import.meta.url),
+  "utf8",
+);
 
 test("standby export requires a server-side bearer secret", () => {
   assert.match(route, /STANDBY_EXPORT_SECRET/);
@@ -21,4 +25,8 @@ test("standby export is read-only and never cached", () => {
   assert.match(route, /createFullBackup/);
   assert.match(route, /private, no-store/);
   assert.match(route, /X-WHIZZUP-Backup-Checksum/);
+  assert.match(route, /createStandbyCredentialSnapshot/);
+  assert.match(route, /memberCredentials/);
+  assert.match(credentialExport, /FROM member_credentials c/);
+  assert.match(credentialExport, /sha256/);
 });

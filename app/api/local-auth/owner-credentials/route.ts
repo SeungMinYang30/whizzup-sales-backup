@@ -5,8 +5,8 @@ import {
 } from "../../../../lib/collaboration";
 import {
   ensureLocalAuthSchema,
-  hashPassword,
   normalizeUsername,
+  setMemberPassword,
   validatePassword,
   validateUsername,
 } from "../../../../lib/local-auth";
@@ -33,7 +33,6 @@ export async function POST(request: Request) {
     }
 
     await ensureLocalAuthSchema();
-    const credential = hashPassword(password);
     const d1 = getD1();
     const duplicate = await d1.prepare(
       "SELECT id FROM members WHERE lower(username) = lower(?) AND id <> ? LIMIT 1",
@@ -41,23 +40,14 @@ export async function POST(request: Request) {
     if (duplicate) {
       return Response.json({ error: "이미 사용 중인 아이디입니다." }, { status: 409 });
     }
-    await d1.batch([
-      d1.prepare("DELETE FROM local_auth_sessions WHERE member_id = ?").bind(owner.id),
-      d1
-        .prepare(
-          `UPDATE members
-           SET username = ?, password_hash = ?, password_salt = ?,
-               password_iterations = ?, failed_login_count = 0, locked_until = NULL
-           WHERE id = ? AND role = 'admin' AND status = 'approved'`,
-        )
-        .bind(
-          username,
-          credential.hash,
-          credential.salt,
-          credential.iterations,
-          owner.id,
-        ),
-    ]);
+    await d1
+      .prepare(
+        `UPDATE members SET username = ?
+         WHERE id = ? AND role = 'admin' AND status = 'approved'`,
+      )
+      .bind(username, owner.id)
+      .run();
+    await setMemberPassword(owner.id, password);
     return Response.json({ ok: true, username });
   } catch (error) {
     return accessErrorResponse(error);

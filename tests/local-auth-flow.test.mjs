@@ -9,19 +9,23 @@ import {
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
-test("직원은 이메일 없이 아이디와 비밀번호로 가입 신청한다", async () => {
-  const [signup, loginPage, loginForm] = await Promise.all([
+test("직원은 Sites에서 쓰던 이메일과 비밀번호로 가입하고 로그인한다", async () => {
+  const [signup, loginPage, loginForm, resetRequest] = await Promise.all([
     read("app/api/local-auth/signup/route.ts"),
     read("app/login/page.tsx"),
     read("app/login/local-login-form.tsx"),
+    read("app/api/local-auth/reset-request/route.ts"),
   ]);
-  assert.match(signup, /status, is_sales, last_seen_at/);
+  assert.match(signup, /email, display_name, job_title/);
   assert.match(signup, /'pending'/);
-  assert.match(signup, /localMemberEmail\(username\)/);
-  assert.match(signup, /buildMemberDisplayName\(name, jobTitle\)/);
-  assert.match(loginPage, /가입을 신청하고, 관리자 승인 후/);
+  assert.match(signup, /lower\(email\) = lower\(\?\)/);
+  assert.match(signup, /setMemberPassword/);
+  assert.match(loginPage, /Google 이메일과 설정한/);
   assert.match(loginForm, /<span>직책<\/span>/);
+  assert.match(loginForm, /<span>이메일<\/span>/);
   assert.match(loginForm, /member-job-title-suggestions/);
+  assert.match(loginForm, /비밀번호 재설정/);
+  assert.match(resetRequest, /member_password_reset_requests/);
 });
 
 test("직책 대표는 대표님으로 표시하고 다른 직책은 그대로 유지한다", () => {
@@ -36,9 +40,12 @@ test("비밀번호는 강한 해시와 로그인 잠금으로 보호한다", asy
     read("lib/local-auth.ts"),
     read("app/api/local-auth/login/route.ts"),
   ]);
-  assert.match(auth, /210_000/);
+  assert.match(auth, /100_000/);
   assert.match(auth, /pbkdf2Sync/);
+  assert.match(auth, /Buffer\.from\(salt, "utf8"\)/);
+  assert.match(auth, /INSERT INTO member_credentials/);
   assert.match(auth, /httpOnly: true/);
+  assert.match(login, /LEFT JOIN member_credentials/);
   assert.match(login, /INTERVAL '15 minutes'/);
   assert.match(login, /failures >= 5/);
 });
@@ -52,6 +59,7 @@ test("운영자는 현재 승인된 계정에 별도 아이디 로그인을 안�
   assert.match(ownerRoute, /normalizeUsername\(payload\.username \|\| owner\.email\.split\("@"\)\[0\]\)/);
   assert.match(ownerRoute, /SELECT id FROM members WHERE lower\(username\) = lower\(\?\) AND id <> \?/);
   assert.match(ownerRoute, /WHERE id = \? AND role = 'admin' AND status = 'approved'/);
+  assert.match(ownerRoute, /setMemberPassword\(owner\.id, password\)/);
   assert.match(ownerSetup, /Google 로그인도 계속 사용할 수 있습니다/);
   assert.match(ownerSetup, /\/api\/local-auth\/owner-credentials/);
 });

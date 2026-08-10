@@ -15,12 +15,20 @@ import {
   configureStandbySchedule,
   removeStandbySchedule,
 } from "../../../lib/replication-scheduler";
+import {
+  restoreStandbyCredentials,
+  validateStandbyCredentialSnapshot,
+} from "../../../lib/standby-credentials";
 
 export const dynamic = "force-dynamic";
 
 const DEFAULT_PRIMARY_ORIGIN = "https://whizzup.kr";
 const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 60_000;
+
+type StandbyBackupEnvelope = FullBackup & {
+  memberCredentials?: unknown;
+};
 
 function serverValue(name: string) {
   return String(process.env[name] ?? "").trim();
@@ -84,7 +92,7 @@ async function fetchPrimaryBackup(origin: string) {
     throw new Error("Primary backup is larger than the allowed sync size");
   }
 
-  return JSON.parse(new TextDecoder().decode(bytes)) as FullBackup;
+  return JSON.parse(new TextDecoder().decode(bytes)) as StandbyBackupEnvelope;
 }
 
 function safeErrorMessage(error: unknown) {
@@ -133,6 +141,9 @@ export async function POST(request: Request) {
     await markReplicationAttempt(sourceOrigin);
     const backup = await fetchPrimaryBackup(sourceOrigin);
     const { inspection: sourceInspection } = await validateFullBackup(backup);
+    const credentialSnapshot = validateStandbyCredentialSnapshot(
+      backup.memberCredentials,
+    );
     const contentChecksum = await replicaContentChecksum(backup);
     const current = await getReplicationSyncState();
 
@@ -140,6 +151,9 @@ export async function POST(request: Request) {
       current?.status !== "failed" &&
       current?.source_checksum === contentChecksum
     ) {
+      const credentials = credentialSnapshot
+        ? await restoreStandbyCredentials(credentialSnapshot)
+        : null;
       await markReplicationSuccess({
         sourceOrigin,
         sourceCreatedAt: sourceInspection.createdAt,
@@ -152,6 +166,7 @@ export async function POST(request: Request) {
         changed: false,
         checksum: contentChecksum,
         createdAt: sourceInspection.createdAt,
+        credentials,
       });
     }
 
@@ -181,6 +196,9 @@ export async function POST(request: Request) {
     }
 
     const inspection = await restoreReplicaBackup(backup);
+    const credentials = credentialSnapshot
+      ? await restoreStandbyCredentials(credentialSnapshot)
+      : null;
     const durationMs = Date.now() - startedAt;
     await markReplicationSuccess({
       sourceOrigin,
@@ -196,6 +214,7 @@ export async function POST(request: Request) {
       createdAt: inspection.createdAt,
       totalRows: inspection.totalRows,
       counts: inspection.counts,
+      credentials,
       durationMs,
     });
   } catch (error) {

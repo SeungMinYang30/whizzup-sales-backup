@@ -1,4 +1,5 @@
 import { createFullBackup } from "../../../lib/backup-store";
+import { createStandbyCredentialSnapshot } from "../../../lib/standby-credentials";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +35,11 @@ export async function GET(request: Request) {
   }
 
   try {
-    const backup = await createFullBackup();
-    return Response.json(backup, {
+    const [backup, memberCredentials] = await Promise.all([
+      createFullBackup(),
+      createStandbyCredentialSnapshot(),
+    ]);
+    return Response.json({ ...backup, memberCredentials }, {
       headers: {
         "Cache-Control": "private, no-store, max-age=0",
         "X-Content-Type-Options": "nosniff",

@@ -36,8 +36,8 @@ export default async function LoginPage({
         <p className="oauth-kicker">SECURE SIGN IN</p>
         <h1>WHIZZUP 로그인</h1>
         <p>
-          직원은 이름·직책과 사용할 아이디·비밀번호로 가입을 신청하고, 관리자 승인 후
-          같은 정보로 로그인합니다.
+          직원은 현재 Sites의 ChatGPT 로그인에 사용한 Google 이메일과 설정한
+          비밀번호로 동일한 계정에 로그인합니다.
         </p>
         {errorMessage ? <p className="oauth-error">{errorMessage}</p> : null}
         <LocalLoginForm returnTo={returnTo} />

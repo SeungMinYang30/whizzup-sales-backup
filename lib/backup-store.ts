@@ -2828,10 +2828,15 @@ export async function validateFullBackup(
       throw new BackupValidationError(`${table.name} 데이터가 없습니다.`);
     }
     data[table.name] = (
-      table.name === "members" && input.schemaVersion === "2026-07-18"
+      table.name === "members"
         ? rows.map((row) =>
-            isPlainObject(row) && !("is_sales" in row)
-              ? { ...row, is_sales: 0 }
+            isPlainObject(row)
+              ? {
+                  ...row,
+                  is_sales: "is_sales" in row ? row.is_sales : 0,
+                  job_title: "job_title" in row ? row.job_title : "",
+                  current_view: "current_view" in row ? row.current_view : "",
+                }
               : row,
           )
         : table.name === "activities"

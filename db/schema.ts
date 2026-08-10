@@ -219,7 +219,7 @@ export const memberCredentials = sqliteTable("member_credentials", {
   memberId: integer("member_id").primaryKey(),
   passwordHash: text("password_hash").notNull(),
   passwordSalt: text("password_salt").notNull(),
-  passwordIterations: integer("password_iterations").notNull().default(210000),
+  passwordIterations: integer("password_iterations").notNull().default(100000),
   passwordSetAt: text("password_set_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   failedAttempts: integer("failed_attempts").notNull().default(0),
   lockedUntil: text("locked_until"),
