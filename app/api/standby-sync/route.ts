@@ -141,9 +141,13 @@ export async function POST(request: Request) {
     await markReplicationAttempt(sourceOrigin);
     const backup = await fetchPrimaryBackup(sourceOrigin);
     const { inspection: sourceInspection } = await validateFullBackup(backup);
-    const credentialSnapshot = validateStandbyCredentialSnapshot(
-      backup.memberCredentials,
-    );
+    // Keep ordinary business-data replication running while an older Sites
+    // deployment is still being upgraded. Credential replication starts as
+    // soon as the primary includes the separately checksummed envelope.
+    const credentialSnapshot =
+      backup.memberCredentials === undefined
+        ? null
+        : validateStandbyCredentialSnapshot(backup.memberCredentials);
     const contentChecksum = await replicaContentChecksum(backup);
     const current = await getReplicationSyncState();
 

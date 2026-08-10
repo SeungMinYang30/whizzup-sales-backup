@@ -47,6 +47,7 @@ test("standby sync is one-way, authenticated, bounded, and uncached", () => {
   assert.match(syncRoute, /automatic overwrite was blocked/);
   assert.match(syncRoute, /validateFullBackup/);
   assert.match(syncRoute, /validateStandbyCredentialSnapshot/);
+  assert.match(syncRoute, /backup\.memberCredentials === undefined/);
   assert.match(syncRoute, /restoreStandbyCredentials/);
   assert.doesNotMatch(syncRoute, /fetch\([^)]*supabase/i);
   assert.match(syncRoute, /AUTOMATIC_STANDBY_SYNC_ENABLED/);
