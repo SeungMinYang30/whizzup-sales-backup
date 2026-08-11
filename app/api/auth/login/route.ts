@@ -1,11 +1,39 @@
 import {
   createDirectSession,
   findMemberByEmail,
+  setMemberPassword,
   verifyMemberPassword,
 } from "../../../../lib/app-auth";
 
 export const dynamic = "force-dynamic";
 const AUTH_STEP_TIMEOUT_MS = 12_000;
+
+async function verifyAgainstPrimarySite(
+  email: string,
+  password: string,
+  remember: boolean,
+) {
+  const primaryOrigin = String(process.env.PRIMARY_SITE_ORIGIN ?? "").trim();
+  const appOrigin = String(process.env.APP_ORIGIN ?? "").trim();
+  if (!primaryOrigin || primaryOrigin === appOrigin) return false;
+
+  const endpoint = new URL("/api/auth/login", primaryOrigin);
+  if (endpoint.protocol !== "https:") return false;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ email, password, remember }),
+    cache: "no-store",
+    redirect: "error",
+    signal: AbortSignal.timeout(AUTH_STEP_TIMEOUT_MS),
+  });
+  if (!response.ok) return false;
+  const result = (await response.json().catch(() => null)) as { ok?: boolean } | null;
+  return result?.ok === true;
+}
 
 class AuthStepTimeoutError extends Error {
   constructor(readonly stage: string) {
@@ -55,6 +83,30 @@ export async function POST(request: Request) {
       verifyMemberPassword(Number(member.id), password),
     );
     if (!verified.ok) {
+      if (verified.reason !== "locked") {
+        stage = "primary_site_verification";
+        const primaryVerified = await withAuthTimeout(
+          stage,
+          verifyAgainstPrimarySite(
+            email,
+            password,
+            Boolean(payload.remember),
+          ),
+        );
+        if (primaryVerified) {
+          stage = "standby_credential_creation";
+          await withAuthTimeout(
+            stage,
+            setMemberPassword(Number(member.id), password),
+          );
+          stage = "session_creation";
+          await withAuthTimeout(
+            stage,
+            createDirectSession(Number(member.id), Boolean(payload.remember)),
+          );
+          return Response.json({ ok: true, migrated: true });
+        }
+      }
       const error =
         verified.reason === "not-set"
           ? "아직 비밀번호가 설정되지 않았습니다. 기존 ChatGPT 로그인으로 접속해 최초 비밀번호를 설정해 주세요."
