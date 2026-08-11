@@ -349,6 +349,10 @@ function equipmentProposalText(record: Record<string, unknown>) {
     .join("\n");
 }
 
+function isAiInputActivity(record: Record<string, unknown>) {
+  return clean(record.source_chat) === "사이트 AI 입력";
+}
+
 const DEFAULT_RECORD_PAGE_SIZE = 500;
 const MAX_RECORD_PAGE_SIZE = 500;
 const MAX_DASHBOARD_RECORD_PAGE_SIZE = 2_500;
@@ -654,13 +658,16 @@ export async function createActivityRecord(
       await mergeInstitutionRecords(alias, canonicalOrganization, member.id);
     }
   }
-  const equipmentProjectId = await syncEquipmentProjectFromRecord(
-    {
-      ...equipmentSyncPayload(record),
-      installedProducts: payload.installedProducts,
-    },
-    member.id,
-  );
+  const skipAiEquipmentSync = isAiInputActivity(record);
+  const equipmentProjectId = skipAiEquipmentSync
+    ? null
+    : await syncEquipmentProjectFromRecord(
+        {
+          ...equipmentSyncPayload(record),
+          installedProducts: payload.installedProducts,
+        },
+        member.id,
+      );
   await Promise.all([
     equipmentProjectId
       ? syncImportedAwardEquipment({
@@ -669,17 +676,21 @@ export async function createActivityRecord(
           memberId: member.id,
         })
       : Promise.resolve(0),
-    syncEquipmentItemsFromProgressSchedule(
-      clean(record.organization),
-      clean(record.progress_schedule),
-      Math.max(1, Number(record.business_round) || 1),
-    ),
-    promotePlannedEquipmentFromActivity({
-      organization: clean(record.organization),
-      businessRound: Math.max(1, Number(record.business_round) || 1),
-      budgetType: clean(record.budget_type),
-      activityText: equipmentProposalText(record),
-    }),
+    skipAiEquipmentSync
+      ? Promise.resolve(0)
+      : syncEquipmentItemsFromProgressSchedule(
+          clean(record.organization),
+          clean(record.progress_schedule),
+          Math.max(1, Number(record.business_round) || 1),
+        ),
+    skipAiEquipmentSync
+      ? Promise.resolve(0)
+      : promotePlannedEquipmentFromActivity({
+          organization: clean(record.organization),
+          businessRound: Math.max(1, Number(record.business_round) || 1),
+          budgetType: clean(record.budget_type),
+          activityText: equipmentProposalText(record),
+        }),
     mergeActivityProgressSchedule({
       activityId: Number(record.id),
       organization: record.organization,
@@ -692,10 +703,57 @@ export async function createActivityRecord(
   return record;
 }
 
+function calendarInstitutionBusinessRound(value: unknown) {
+  const requested = Number(value);
+  return Number.isSafeInteger(requested) && requested > 0
+    ? Math.min(99, requested)
+    : 1;
+}
+
+async function findCalendarInstitutionRecord(
+  d1: Awaited<ReturnType<typeof ensureRecordsReady>>,
+  organization: string,
+  businessRound: number,
+) {
+  return await d1
+    .prepare(
+      `SELECT * FROM activities
+       WHERE organization = ? AND business_round = ?
+       ORDER BY activity_date DESC, id DESC
+       LIMIT 1`,
+    )
+    .bind(organization, businessRound)
+    .first<Record<string, unknown>>();
+}
+
 export async function POST(request: Request) {
   try {
     const member = await requireApprovedMember();
     const payload = (await request.json()) as Record<string, unknown>;
+    if (payload.reuseExistingInstitution === true) {
+      const d1 = await ensureRecordsReady();
+      const organization = await resolveInstitutionName(d1, payload);
+      const businessRound = calendarInstitutionBusinessRound(payload.businessRound);
+      const existing = await findCalendarInstitutionRecord(d1, organization, businessRound);
+      if (existing) return Response.json({ record: existing, reused: true });
+
+      const seedKey = `calendar-institution:${businessRound}:${institutionAliasKey(organization).slice(0, 180)}`;
+      try {
+        const record = await createActivityRecord(
+          { ...payload, organization, businessRound, seedKey },
+          member,
+        );
+        return Response.json({ record, reused: false }, { status: 201 });
+      } catch (error) {
+        const seedConflict = error instanceof Error
+          && error.message.includes("UNIQUE constraint failed")
+          && error.message.includes("seed_key");
+        if (!seedConflict) throw error;
+        const raced = await findCalendarInstitutionRecord(d1, organization, businessRound);
+        if (raced) return Response.json({ record: raced, reused: true });
+        throw error;
+      }
+    }
     const record = await createActivityRecord(payload, member);
     return Response.json({ record }, { status: 201 });
   } catch (error) {
@@ -1095,13 +1153,16 @@ export async function PUT(request: Request) {
           resolvedBudgets,
         );
       }
-      const equipmentProjectId = await syncEquipmentProjectFromRecord(
-        {
-          ...equipmentSyncPayload(result),
-          installedProducts: payload.installedProducts,
-        },
-        member.id,
-      );
+      const skipAiEquipmentSync = isAiInputActivity(result);
+      const equipmentProjectId = skipAiEquipmentSync
+        ? null
+        : await syncEquipmentProjectFromRecord(
+            {
+              ...equipmentSyncPayload(result),
+              installedProducts: payload.installedProducts,
+            },
+            member.id,
+          );
       await Promise.all([
         equipmentProjectId
           ? syncImportedAwardEquipment({
@@ -1110,17 +1171,21 @@ export async function PUT(request: Request) {
               memberId: member.id,
             })
           : Promise.resolve(0),
-        syncEquipmentItemsFromProgressSchedule(
-          clean(result.organization),
-          clean(result.progress_schedule),
-          Math.max(1, Number(result.business_round) || 1),
-        ),
-        promotePlannedEquipmentFromActivity({
-          organization: clean(result.organization),
-          businessRound: Math.max(1, Number(result.business_round) || 1),
-          budgetType: clean(result.budget_type),
-          activityText: equipmentProposalText(result),
-        }),
+        skipAiEquipmentSync
+          ? Promise.resolve(0)
+          : syncEquipmentItemsFromProgressSchedule(
+              clean(result.organization),
+              clean(result.progress_schedule),
+              Math.max(1, Number(result.business_round) || 1),
+            ),
+        skipAiEquipmentSync
+          ? Promise.resolve(0)
+          : promotePlannedEquipmentFromActivity({
+              organization: clean(result.organization),
+              businessRound: Math.max(1, Number(result.business_round) || 1),
+              budgetType: clean(result.budget_type),
+              activityText: equipmentProposalText(result),
+            }),
         mergeActivityProgressSchedule({
           activityId: Number(result.id),
           organization: result.organization,

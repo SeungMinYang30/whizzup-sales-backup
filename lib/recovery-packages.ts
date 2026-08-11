@@ -1,18 +1,16 @@
 import { strToU8, zipSync } from "fflate";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { FullBackup } from "./backup-store";
 import {
+  RECOVERY_SOURCE_ASSET_PATH,
   RECOVERY_SOURCE_FILE_COUNT,
   RECOVERY_SOURCE_SHA256,
-  RECOVERY_SOURCE_ZIP_BASE64,
 } from "./generated-recovery-source";
 
-function base64Bytes(value: string) {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
+function recoverySourceBytes() {
+  const relativePath = RECOVERY_SOURCE_ASSET_PATH.replace(/^\/+/, "");
+  return new Uint8Array(readFileSync(join(process.cwd(), "public", relativePath)));
 }
 
 function safeEmbeddedJson(value: unknown) {
@@ -73,7 +71,7 @@ export function createEmergencyRecoveryPackage(backup: FullBackup) {
   };
   return zipSync(
     {
-      "WHIZZUP_source.zip": base64Bytes(RECOVERY_SOURCE_ZIP_BASE64),
+      "WHIZZUP_source.zip": recoverySourceBytes(),
       [dataFilename]: strToU8(JSON.stringify(backup, null, 2)),
       "READ_THIS_FIRST.txt": strToU8(emergencyGuide(backup)),
       "MANIFEST.json": strToU8(JSON.stringify(manifest, null, 2)),

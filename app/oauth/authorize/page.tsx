@@ -30,7 +30,12 @@ export default async function AuthorizePage({
   });
   const returnTo = `/oauth/authorize?${encoded.toString()}`;
   const identity = await requireChatGPTUser(returnTo);
-  const member = await getOrCreateMember(identity);
+  const member = await getOrCreateMember({
+    email: identity.email,
+    displayName: identity.displayName,
+    source: "chatgpt",
+    memberId: identity.memberId ?? undefined,
+  });
 
   if (member.status !== "approved") {
     return (

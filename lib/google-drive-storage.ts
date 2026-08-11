@@ -366,6 +366,7 @@ export async function createDriveResumableUpload(input: {
   folderSegments: string[];
   contextType: string;
   contextId?: string;
+  contextCategory?: string;
   createdBy: number;
 }) {
   if (!isGoogleDriveConfigured()) {
@@ -382,6 +383,7 @@ export async function createDriveResumableUpload(input: {
       whizzup: "1",
       contextType: input.contextType.slice(0, 60),
       contextId: text(input.contextId).slice(0, 180),
+      contextCategory: text(input.contextCategory).slice(0, 80),
       createdBy: String(input.createdBy),
     },
   };

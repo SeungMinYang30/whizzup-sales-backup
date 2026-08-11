@@ -43,9 +43,18 @@ export type OwnerPerformanceManager = {
   institutions: OwnerPerformanceInstitution[];
 };
 
-function normalizedManager(value: unknown) {
-  const manager = String(value ?? "").trim();
-  return manager && manager !== "해당 없음" ? manager : "담당자 미정";
+export function canonicalOwnerPerformanceManagerName(value: unknown) {
+  const manager = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!manager || manager === "해당 없음") return "담당자 미정";
+
+  const compact = manager.replace(/\s+/g, "").replace(/님$/u, "");
+  if (compact === "양승민" || compact === "양승민이사") {
+    return "양승민 이사";
+  }
+  if (compact === "박원석" || compact === "박원석대표") {
+    return "박원석 대표님";
+  }
+  return manager;
 }
 
 function inDateRange(date: string, startDate: string, endDate: string) {
@@ -76,7 +85,7 @@ export function buildOwnerPerformance(
 
   const managers = new Map<string, OwnerPerformanceManager>();
   filteredAwards.forEach((award) => {
-    const name = normalizedManager(award.progressManager);
+    const name = canonicalOwnerPerformanceManagerName(award.progressManager);
     const manager = managers.get(name) ?? {
       name,
       orderCount: 0,

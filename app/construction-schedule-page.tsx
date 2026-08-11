@@ -10,8 +10,8 @@ import {
 import {
   CONSTRUCTION_STAGES,
   constructionStageIndex,
-  isConstructionStage,
 } from "../lib/construction-stages";
+import { calculateConstructionDashboardCounts } from "../lib/construction-dashboard";
 import { downloadConstructionTimelineXlsx } from "./activity-xlsx";
 
 type ScheduleRecord = {
@@ -46,16 +46,21 @@ type ConstructionSchedule = {
   stage: string;
   scheduledDate: string;
   endDate: string;
+  startTime: string;
+  endTime: string;
   vendorName: string;
   details: string;
   completed: boolean;
 };
 
 type EditorItem = {
+  id?: number;
   key: string;
   stage: string;
   scheduledDate: string;
   endDate: string;
+  startTime: string;
+  endTime: string;
   vendorName: string;
   details: string;
   active: boolean;
@@ -70,7 +75,7 @@ type EditorState = {
   selectedProductNames: string[];
   completed: boolean;
   items: EditorItem[];
-  preservedItems: EditorItem[];
+  customStage: string;
 };
 
 const STAGES = [...CONSTRUCTION_STAGES];
@@ -79,6 +84,15 @@ const localDate = (date = new Date()) =>
 const scopeKey = (organization: string, businessRound: number) =>
   `${organization}\u001f${businessRound}`;
 const itemKey = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const TIME_OPTIONS = Array.from({ length: 24 * 6 }, (_, index) => {
+  const minutes = index * 10;
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+});
+const oneHourLater = (time: string) => {
+  const [hour, minute] = time.split(":").map(Number);
+  const minutes = Math.min(23 * 60 + 50, hour * 60 + minute + 60);
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+};
 const summarizeProducts = (names: string[]) => {
   const unique = [...new Set(names.map((name) => name.trim()).filter(Boolean))];
   if (unique.length <= 5) return unique.join(" · ");
@@ -94,11 +108,13 @@ export default function ConstructionSchedulePage({
   onOpenOrganization,
   embedded = false,
   onDashboardCounts,
+  formatManagerName = (name) => name || "미정",
 }: {
   records: ScheduleRecord[];
   onOpenOrganization: (organization: string, businessRound: number) => void;
   embedded?: boolean;
   onDashboardCounts?: (counts: { planned: number; active: number; completed: number }) => void;
+  formatManagerName?: (name: string) => string;
 }) {
   const today = localDate();
   const [start, setStart] = useState(today);
@@ -106,6 +122,7 @@ export default function ConstructionSchedulePage({
   const [schedules, setSchedules] = useState<ConstructionSchedule[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadSucceeded, setLoadSucceeded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [hideCompleted, setHideCompleted] = useState(true);
@@ -156,8 +173,10 @@ export default function ConstructionSchedulePage({
       if (!response.ok) throw new Error(payload.error || "일정표를 불러오지 못했습니다.");
       setProjects(payload.projects ?? []);
       setSchedules(payload.schedules ?? []);
+      setLoadSucceeded(true);
       setMessage("");
     } catch (error) {
+      setLoadSucceeded(false);
       setMessage(error instanceof Error ? error.message : "일정표를 불러오지 못했습니다.");
     } finally {
       setLoading(false);
@@ -169,26 +188,9 @@ export default function ConstructionSchedulePage({
   }, []);
 
   useEffect(() => {
-    if (!onDashboardCounts || loading) return;
-    const todayValue = localDate();
-    const schedulesByProject = new Map<string, ConstructionSchedule[]>();
-    schedules.forEach((schedule) => {
-      const key = scopeKey(schedule.organization, schedule.businessRound);
-      schedulesByProject.set(key, [...(schedulesByProject.get(key) ?? []), schedule]);
-    });
-    onDashboardCounts(projects.filter((project) => !project.hidden).reduce(
-      (counts, project) => {
-        if (project.completed) counts.completed += 1;
-        else {
-          const hasStarted = (schedulesByProject.get(scopeKey(project.organization, project.businessRound)) ?? [])
-            .some((schedule) => !schedule.completed && Boolean(schedule.scheduledDate) && schedule.scheduledDate <= todayValue);
-          counts[hasStarted ? "active" : "planned"] += 1;
-        }
-        return counts;
-      },
-      { planned: 0, active: 0, completed: 0 },
-    ));
-  }, [loading, onDashboardCounts, projects, schedules]);
+    if (!onDashboardCounts || loading || !loadSucceeded) return;
+    onDashboardCounts(calculateConstructionDashboardCounts(projects, schedules));
+  }, [loadSucceeded, loading, onDashboardCounts, projects, schedules]);
 
   const schedulesByScope = useMemo(() => {
     const map = new Map<string, ConstructionSchedule[]>();
@@ -209,7 +211,6 @@ export default function ConstructionSchedulePage({
           project,
           record,
           items: (schedulesByScope.get(scopeKey(project.organization, project.businessRound)) ?? [])
-            .filter((item) => isConstructionStage(item.stage || item.label))
             .sort((a, b) =>
               a.scheduledDate.localeCompare(b.scheduledDate)
               || constructionStageIndex(a.stage || a.label) - constructionStageIndex(b.stage || b.label),
@@ -285,21 +286,20 @@ export default function ConstructionSchedulePage({
   function openEditor(project: ConstructionProject, selectedDate = today) {
     const current = schedulesByScope.get(scopeKey(project.organization, project.businessRound)) ?? [];
     const toEditorItem = (schedule: ConstructionSchedule): EditorItem => ({
+      id: schedule.id,
       key: `saved-${schedule.id}`,
       stage: schedule.stage || schedule.label,
       scheduledDate: schedule.scheduledDate,
       endDate: schedule.endDate || schedule.scheduledDate,
+      startTime: schedule.startTime || "",
+      endTime: schedule.endTime || "",
       vendorName: schedule.vendorName,
       details: schedule.details,
       active: true,
     });
     const items = current
-      .filter((schedule) => isConstructionStage(schedule.stage || schedule.label))
       .map(toEditorItem)
       .sort((a, b) => constructionStageIndex(a.stage) - constructionStageIndex(b.stage));
-    const preservedItems = current
-      .filter((schedule) => !isConstructionStage(schedule.stage || schedule.label))
-      .map(toEditorItem);
     STAGES.forEach((stage) => {
       if (!items.some((item) => item.stage === stage)) {
         items.push({
@@ -307,6 +307,8 @@ export default function ConstructionSchedulePage({
           stage,
           scheduledDate: selectedDate,
           endDate: selectedDate,
+          startTime: "",
+          endTime: "",
           vendorName: "",
           details: "",
           active: false,
@@ -328,7 +330,7 @@ export default function ConstructionSchedulePage({
         : project.sourceProductNames.filter((name) => project.workSummary.includes(name)),
       completed: project.completed,
       items,
-      preservedItems,
+      customStage: "",
     });
   }
 
@@ -337,6 +339,13 @@ export default function ConstructionSchedulePage({
     setEditor({
       ...editor,
       items: editor.items.map((item) => (item.key === key ? { ...item, ...patch } : item)),
+    });
+  }
+
+  function updateEditorStartTime(key: string, startTime: string) {
+    updateEditorItem(key, {
+      startTime,
+      endTime: startTime ? oneHourLater(startTime) : "",
     });
   }
 
@@ -351,11 +360,45 @@ export default function ConstructionSchedulePage({
           stage,
           scheduledDate: date,
           endDate: date,
+          startTime: "",
+          endTime: "",
           vendorName: "",
           details: "",
           active: true,
         },
       ],
+    });
+  }
+
+  function addCustomStage() {
+    if (!editor) return;
+    const stage = editor.customStage.trim().slice(0, 40);
+    if (!stage) return;
+    const existing = editor.items.find((item) => item.stage === stage);
+    if (existing) {
+      setEditor({
+        ...editor,
+        customStage: "",
+        items: editor.items.map((item) => item.key === existing.key
+          ? { ...item, active: true }
+          : item),
+      });
+      return;
+    }
+    setEditor({
+      ...editor,
+      customStage: "",
+      items: [...editor.items, {
+        key: itemKey(),
+        stage,
+        scheduledDate: today,
+        endDate: today,
+        startTime: "",
+        endTime: "",
+        vendorName: "",
+        details: "",
+        active: true,
+      }],
     });
   }
 
@@ -376,12 +419,15 @@ export default function ConstructionSchedulePage({
     if (!editor || saving) return;
     setSaving(true);
     try {
-      const activeItems = [
-        ...editor.items.filter((item) => item.active),
-        ...editor.preservedItems,
-      ];
+      const activeItems = editor.items.filter((item) => item.active);
       if (activeItems.some((item) => !item.scheduledDate || !item.endDate || item.endDate < item.scheduledDate)) {
         throw new Error("시작일과 종료일을 확인해 주세요.");
+      }
+      if (activeItems.some((item) => item.endTime && !item.startTime)) {
+        throw new Error("종료 시간을 사용하려면 시작 시간도 선택해 주세요.");
+      }
+      if (activeItems.some((item) => item.startTime && item.endTime && item.scheduledDate === item.endDate && item.endTime <= item.startTime)) {
+        throw new Error("같은 날 일정의 종료 시간은 시작 시간보다 늦어야 합니다.");
       }
       const response = await fetch("/api/schedules", {
         method: "PUT",
@@ -448,7 +494,7 @@ export default function ConstructionSchedulePage({
       record?.region || "지역 미등록",
       `${project.organization}\n${project.businessRound}차 사업`,
       displayWorkSummary(project) || "공사·품목 미등록",
-      record?.progressManager || "미정",
+      formatManagerName(record?.progressManager || ""),
       ...days.map((day) => items
         .filter((item) => item.scheduledDate <= day && (item.endDate || item.scheduledDate) >= day)
         .map((item) => `${item.stage || item.label}${item.vendorName ? ` (${item.vendorName})` : ""}`)
@@ -544,7 +590,7 @@ export default function ConstructionSchedulePage({
               >
                 {displayWorkSummary(project) || "공사·품목 미등록"}
               </button>
-              <span>{record?.progressManager || "미정"}</span>
+              <span>{formatManagerName(record?.progressManager || "")}</span>
             </div>
             <div className="construction-days construction-row-days">
               {days.map((day) => {
@@ -556,13 +602,14 @@ export default function ConstructionSchedulePage({
                         type="button"
                         className={`construction-event stage-${constructionStageTone(item.stage || item.label)}`}
                         key={item.id}
-                        title={`${item.stage || item.label} · ${item.vendorName || "업체 미정"} · ${item.scheduledDate}~${item.endDate || item.scheduledDate}`}
+                        title={`${item.stage || item.label} · ${item.vendorName || "업체 미정"} · ${item.scheduledDate}~${item.endDate || item.scheduledDate}${item.startTime ? ` · ${item.startTime}${item.endTime ? `~${item.endTime}` : ""}` : " · 종일"}`}
+                        aria-label={`${item.stage || item.label}, ${item.vendorName || "업체 미정"}, ${item.scheduledDate}부터 ${item.endDate || item.scheduledDate}까지`}
                         onClick={(event) => {
                           event.stopPropagation();
                           openEditor(project, day);
                         }}
                       >
-                        {item.stage || item.label}
+                        <span>{item.stage || item.label}</span>
                       </button>
                     ))}
                   </span>
@@ -577,11 +624,11 @@ export default function ConstructionSchedulePage({
       <div className="construction-mobile-list">
         {rows.map(({ project, record, items }) => (
           <article key={scopeKey(project.organization, project.businessRound)}>
-            <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{record?.progressManager || "미정"}</span><button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표 목록에서 삭제`} title="일정표 목록에서 삭제" disabled={saving} onClick={() => void removeProjectFromBoard(project)}>−</button></header>
+            <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{formatManagerName(record?.progressManager || "")}</span><button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표 목록에서 삭제`} title="일정표 목록에서 삭제" disabled={saving} onClick={() => void removeProjectFromBoard(project)}>−</button></header>
             <p>{record?.region || "지역 미등록"} · {displayWorkSummary(project) || "공사·품목 미등록"}</p>
             <div>{items.map((item) => {
               const day = dayMetaByDate.get(item.scheduledDate);
-              return <button type="button" className={day ? dayClassName(day) : ""} key={item.id} onClick={() => openEditor(project, item.scheduledDate)}><b>{item.scheduledDate.slice(5).replace("-", "/")}</b>{item.stage || item.label}{day?.holidayName ? <small>{day.holidayName}</small> : null}</button>;
+              return <button type="button" className={day ? dayClassName(day) : ""} key={item.id} onClick={() => openEditor(project, item.scheduledDate)}><b>{item.scheduledDate.slice(5).replace("-", "/")}</b>{item.stage || item.label}{item.startTime ? <small>{item.startTime}{item.endTime ? `~${item.endTime}` : ""}</small> : null}{day?.holidayName ? <small>{day.holidayName}</small> : null}</button>;
             })}</div>
             <button className="construction-mobile-edit" type="button" onClick={() => openEditor(project)}>일정 관리</button>
           </article>
@@ -608,7 +655,7 @@ export default function ConstructionSchedulePage({
       {editor ? (
         <div className="schedule-editor-shell" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setEditor(null); }}>
           <div className="schedule-editor construction-stage-editor" role="dialog" aria-modal="true">
-            <header><div><span className="section-kicker">CONSTRUCTION SCHEDULE</span><h3>{editor.organization}</h3><p>체크한 단계만 저장됩니다. + 버튼으로 같은 단계의 기간을 추가할 수 있습니다.</p></div><button type="button" onClick={() => setEditor(null)}>×</button></header>
+            <header><div><span className="section-kicker">CONSTRUCTION SCHEDULE</span><h3>{editor.organization}</h3><p>체크한 공정만 저장됩니다. 목록에 없는 공정은 직접 추가할 수 있습니다.</p></div><button type="button" onClick={() => setEditor(null)}>×</button></header>
             <div className="construction-editor-summary">
               <label>공사·품목<input value={editor.workSummary} onChange={(event) => setEditor({ ...editor, workSummary: event.target.value, workSummaryMode: "manual" })} placeholder="예: 스크린·시스템 설치" /></label>
               <label className="construction-project-complete"><input type="checkbox" checked={editor.completed} onChange={(event) => setEditor({ ...editor, completed: event.target.checked })} />기관 일정 완료</label>
@@ -644,8 +691,18 @@ export default function ConstructionSchedulePage({
             ) : (
               <p className="construction-products-empty">상세페이지에 등록된 품목이 없어 공사·품목을 직접 입력해 주세요.</p>
             )}
+            <div className="construction-custom-stage">
+              <input
+                value={editor.customStage}
+                maxLength={40}
+                onChange={(event) => setEditor({ ...editor, customStage: event.target.value })}
+                onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addCustomStage(); } }}
+                placeholder="목록에 없는 공정명 직접 입력"
+              />
+              <button type="button" onClick={addCustomStage}>+ 공정 추가</button>
+            </div>
             <div className="construction-stage-table">
-              <div className="construction-stage-head"><span>사용</span><span>단계</span><span>시공 업체</span><span>메모</span><span>시작일</span><span>종료일</span><span>추가</span></div>
+              <div className="construction-stage-head"><span>사용</span><span>단계</span><span>시공 업체</span><span>메모</span><span>시작일</span><span>종료일</span><span>시작 시간</span><span>종료 시간</span><span>추가</span></div>
               {editor.items.map((item, index) => (
                 <div className={`construction-stage-row${item.active ? " active" : ""}`} key={item.key}>
                   <input aria-label={`${item.stage} 사용`} type="checkbox" checked={item.active} onChange={(event) => updateEditorItem(item.key, { active: event.target.checked })} />
@@ -654,6 +711,20 @@ export default function ConstructionSchedulePage({
                   <input value={item.details} maxLength={500} disabled={!item.active} onChange={(event) => updateEditorItem(item.key, { details: event.target.value })} placeholder="선택 입력" />
                   <input type="date" value={item.scheduledDate} disabled={!item.active} onChange={(event) => updateEditorItem(item.key, { scheduledDate: event.target.value, endDate: item.endDate < event.target.value ? event.target.value : item.endDate })} />
                   <input type="date" value={item.endDate} disabled={!item.active} onChange={(event) => updateEditorItem(item.key, { endDate: event.target.value })} />
+                  <select
+                    aria-label={`${item.stage} 시작 시간`}
+                    value={item.startTime}
+                    disabled={!item.active}
+                    onInput={(event) => updateEditorStartTime(item.key, event.currentTarget.value)}
+                    onChange={(event) => updateEditorStartTime(item.key, event.currentTarget.value)}
+                  >
+                    <option value="">종일</option>
+                    {TIME_OPTIONS.map((time) => <option value={time} key={time}>{time}</option>)}
+                  </select>
+                  <select aria-label={`${item.stage} 종료 시간`} value={item.endTime} disabled={!item.active || !item.startTime} onChange={(event) => updateEditorItem(item.key, { endTime: event.target.value })}>
+                    <option value="">자동(+1시간)</option>
+                    {TIME_OPTIONS.map((time) => <option value={time} key={time}>{time}</option>)}
+                  </select>
                   <button type="button" aria-label={`${item.stage} 기간 추가`} onClick={() => addStageRange(item.stage, item.endDate || item.scheduledDate)}>+</button>
                 </div>
               ))}

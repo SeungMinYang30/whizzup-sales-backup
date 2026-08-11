@@ -9,8 +9,28 @@ import {
   officialSchoolSearchTerms,
   rememberedInstitutionAlias,
   rememberedInstitutionAliasCandidates,
+  institutionNameWithoutRegionPrefix,
   updateInstitutionAliasSetting,
 } from "../lib/institution-names.ts";
+
+test("AI 기관명에서 행정 지역 접두어만 제거하고 기관 고유명은 유지한다", () => {
+  assert.equal(
+    institutionNameWithoutRegionPrefix("경기도 광주 도수초", "경기 광주"),
+    "도수초등학교",
+  );
+  assert.equal(
+    institutionNameWithoutRegionPrefix("경남 함양군청", "경남 함양"),
+    "함양군청",
+  );
+  assert.equal(
+    institutionNameWithoutRegionPrefix("경남 함양 군청", "경남 함양"),
+    "함양군청",
+  );
+  assert.equal(
+    institutionNameWithoutRegionPrefix("서울대학교", "서울"),
+    "서울대학교",
+  );
+});
 
 test("학교급과 성별이 포함된 흔한 줄임말을 정식 형태로 정리한다", () => {
   assert.equal(canonicalInstitutionName("진명여고"), "진명여자고등학교");

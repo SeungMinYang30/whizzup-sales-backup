@@ -10,11 +10,6 @@ type CampaignInstitutionBasicField = {
 };
 
 const campaignInstitutionBasicFields: CampaignInstitutionBasicField[] = [
-  {
-    name: "progress_manager",
-    sameRoundOnly: true,
-    excludeNotApplicable: true,
-  },
   { name: "contact_role", sameRoundOnly: false, excludeNotApplicable: false },
   { name: "contact_name", sameRoundOnly: false, excludeNotApplicable: false },
   { name: "contact_phone", sameRoundOnly: false, excludeNotApplicable: false },

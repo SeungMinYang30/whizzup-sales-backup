@@ -14,6 +14,10 @@ export type ProductCatalogItem = {
   needsReview: boolean;
   supplierVendorId?: number | null;
   supplierVendorName?: string;
+  procurement?: boolean;
+  procurementChannel?: string;
+  procurementNumber?: string;
+  procurementFeeRate?: number | null;
 };
 
 type ProductCatalogRow = [
@@ -143,5 +147,17 @@ export const PRODUCT_CATALOG: ProductCatalogItem[] = productCatalogRows.map(
       unitPrice === null &&
       !note &&
       commissionRate === null,
+    procurement: /G\s*2\s*B|S\s*2\s*B|나라장터|조달|디지털서비스몰|혁신장터/iu.test(note),
+    procurementChannel: /S\s*2\s*B/iu.test(note)
+      ? "S2B"
+      : /디지털서비스몰/iu.test(note)
+        ? "디지털서비스몰"
+        : /혁신장터/iu.test(note)
+          ? "혁신장터"
+          : /G\s*2\s*B|나라장터|조달/iu.test(note)
+            ? "G2B"
+            : "",
+    procurementNumber: note.match(/(?:G\s*2\s*B|S\s*2\s*B|식별번호)[^0-9]{0,20}([0-9][0-9\s-]{4,}[0-9])/iu)?.[1]?.replace(/\D/g, "") ?? "",
+    procurementFeeRate: /G\s*2\s*B|S\s*2\s*B|나라장터|조달|디지털서비스몰|혁신장터/iu.test(note) ? 0.0054 : null,
   }),
 );

@@ -170,10 +170,30 @@ export function getConstructionTimelineDays(start: string, length: number, today
   );
 }
 
-const STAGE_ORDER = ["출고", "철거", "통신", "목공", "도장", "바닥", "시스템", "납품", "사인", "검수"];
+const STAGE_ORDER = [
+  "철거",
+  "전기",
+  "설비",
+  "목공",
+  "도장",
+  "바닥",
+  "벽체",
+  "유리",
+  "가구",
+  "집기",
+  "시스템",
+  "전자칠판",
+  "사인",
+  "청소",
+  "이사",
+  "이동",
+  "납품",
+  "검수",
+  "교육",
+];
 
 export function constructionStageTone(stage: string) {
   const normalized = stage.replaceAll(" ", "");
   const index = STAGE_ORDER.findIndex((candidate) => normalized.includes(candidate));
-  return index >= 0 ? index % 5 : -1;
+  return index >= 0 ? index % 5 : 0;
 }

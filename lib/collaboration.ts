@@ -1,5 +1,9 @@
 import { getD1, isDatabaseUnavailableError } from "../db";
-import { getChatGPTUser, type ChatGPTUser } from "../app/chatgpt-auth";
+import {
+  getApplicationIdentity,
+  type ApplicationIdentity,
+} from "./app-auth";
+import { personDisplayLabel } from "./person-label";
 
 export const MEMBER_PERMISSIONS = [
   "records:manage",
@@ -20,7 +24,6 @@ export type MemberPermission = (typeof MEMBER_PERMISSIONS)[number];
 export type Member = {
   id: number;
   email: string;
-  username: string;
   displayName: string;
   jobTitle: string;
   role: "admin" | "assistant" | "member";
@@ -46,19 +49,19 @@ export class AccessError extends Error {
 export const OAUTH_ACTIVITY_SCOPE = "activities:write";
 export const PRIMARY_OWNER_EMAIL = "freeyang30@gmail.com";
 
+// The standby must remain operable even when the Sites identity provider is
+// unavailable. This address is already the primary Sites owner and is restored
+// from the signed member backup, so keep it approved with the complete local
+// permission set on the independent deployment.
+const STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS = new Set([
+  PRIMARY_OWNER_EMAIL,
+]);
+
 export function memberDisplayLabel(
   member: { displayName?: unknown; display_name?: unknown; jobTitle?: unknown; job_title?: unknown },
 ) {
-  const name = String(member.displayName ?? member.display_name ?? "").trim();
-  const rawTitle = String(member.jobTitle ?? member.job_title ?? "").trim();
-  if (!rawTitle) return name;
-  const title = rawTitle.replace(/님$/, "").trim();
-  return `${name} ${title === "대표" ? "대표님" : title}`.trim();
+  return personDisplayLabel(member);
 }
-
-const STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS = new Set([
-  "freeyang30@gmail.com",
-]);
 
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS members (
@@ -175,7 +178,6 @@ function mapMember(row: Record<string, unknown>): Member {
   return {
     id: Number(row.id),
     email: String(row.email),
-    username: String(row.username ?? ""),
     displayName: String(row.display_name),
     jobTitle: String(row.job_title ?? ""),
     role,
@@ -195,121 +197,61 @@ function mapMember(row: Record<string, unknown>): Member {
 }
 
 export async function getOrCreateMember(
-  identity: ChatGPTUser,
+  identity: ApplicationIdentity,
   refreshLastSeen = false,
 ) {
   const d1 = await ensureCollaborationReady();
   const email = identity.email.trim().toLowerCase();
-  const bootstrapAdminEmail =
-    process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase() ?? "";
-  const isBootstrapAdmin = Boolean(
-    bootstrapAdminEmail && bootstrapAdminEmail === email,
-  );
   let row = identity.memberId
     ? await d1
-        .prepare("SELECT * FROM members WHERE id = ? LIMIT 1")
+        .prepare("SELECT * FROM members WHERE id = ?")
         .bind(identity.memberId)
         .first<Record<string, unknown>>()
     : await d1
-        .prepare(
-          "SELECT * FROM members WHERE auth_user_id = ? OR lower(email) = lower(?) LIMIT 1",
-        )
-        .bind(identity.authUserId, email)
+        .prepare("SELECT * FROM members WHERE lower(email) = lower(?)")
+        .bind(email)
         .first<Record<string, unknown>>();
 
-  if (!row && identity.provider === "google") {
+  if (!row) {
     const rejection = await d1
-      .prepare(
-        "SELECT email FROM member_rejections WHERE lower(email) = lower(?) LIMIT 1",
-      )
+      .prepare("SELECT email FROM member_rejections WHERE lower(email) = lower(?) LIMIT 1")
       .bind(email)
       .first<{ email: string }>();
     if (rejection) {
-      throw new AccessError(
-        "거절되어 삭제된 가입 요청입니다. 운영자에게 다시 등록을 요청해 주세요.",
-        403,
-      );
+      throw new AccessError("거절되어 삭제된 가입 요청입니다. 운영자에게 다시 등록을 요청해 주세요.", 403);
     }
+    const count = await d1
+      .prepare("SELECT COUNT(*) AS count FROM members")
+      .first<{ count: number }>();
+    const firstMember = (count?.count ?? 0) === 0;
     await d1
       .prepare(`
         INSERT INTO members (
-          auth_user_id, email, display_name, role, status, approved_at,
-          last_seen_at
-        ) VALUES (?, ?, ?, 'member', 'pending', NULL, CURRENT_TIMESTAMP)
+          email, display_name, role, status, approved_at, last_seen_at
+        ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT (email) DO NOTHING
       `)
-      .bind(identity.authUserId, email, identity.displayName)
+      .bind(
+        email,
+        identity.displayName,
+        firstMember ? "admin" : "member",
+        firstMember ? "approved" : "pending",
+        firstMember ? new Date().toISOString() : null,
+      )
       .run();
     row = await d1
-      .prepare("SELECT * FROM members WHERE lower(email) = lower(?) LIMIT 1")
+      .prepare("SELECT * FROM members WHERE lower(email) = lower(?)")
       .bind(email)
       .first<Record<string, unknown>>();
-  }
-
-  if (row && identity.provider === "google") {
+  } else if (refreshLastSeen) {
     await d1
-      .prepare(`
-        UPDATE members
-        SET auth_user_id = NULL
-        WHERE auth_user_id = ? AND id <> ?
-      `)
-      .bind(identity.authUserId, Number(row.id))
+      .prepare("UPDATE members SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .bind(Number(row.id))
       .run();
-    await d1
-      .prepare(`
-        UPDATE members
-        SET auth_user_id = ?,
-            display_name = CASE
-              WHEN TRIM(COALESCE(display_name, '')) = '' THEN ?
-              ELSE display_name
-            END,
-            last_seen_at = CASE
-              WHEN ? = 1 THEN CURRENT_TIMESTAMP
-              ELSE last_seen_at
-            END
-        WHERE id = ?
-        RETURNING *
-      `)
-      .bind(
-        identity.authUserId,
-        identity.displayName,
-        refreshLastSeen ? 1 : 0,
-        Number(row.id),
-      )
-      .first<Record<string, unknown>>()
-      .then((updated) => {
-        if (updated) row = updated;
-      });
+    row.last_seen_at = new Date().toISOString();
   }
 
-  if (row && isBootstrapAdmin) {
-    const promoted = await d1
-      .prepare(`
-        UPDATE members AS candidate
-        SET role = 'admin',
-            status = 'approved',
-            approved_at = COALESCE(candidate.approved_at, CURRENT_TIMESTAMP),
-            last_seen_at = CURRENT_TIMESTAMP
-        WHERE candidate.id = ?
-          AND lower(candidate.email) = lower(?)
-          AND NOT EXISTS (
-            SELECT 1
-            FROM members AS approved_admin
-            WHERE approved_admin.role = 'admin'
-              AND approved_admin.status = 'approved'
-              AND approved_admin.id <> candidate.id
-          )
-        RETURNING *
-      `)
-      .bind(Number(row.id), bootstrapAdminEmail)
-      .first<Record<string, unknown>>();
-    if (promoted) row = promoted;
-  }
-
-  if (
-    row &&
-    STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS.has(email)
-  ) {
+  if (row && STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS.has(email)) {
     const standbyPermissions = [...MEMBER_PERMISSIONS];
     await d1
       .prepare(`
@@ -335,7 +277,7 @@ export async function getOrCreateMember(
 }
 
 export async function requireMember(refreshLastSeen = false) {
-  const identity = await getChatGPTUser();
+  const identity = await getApplicationIdentity();
   if (!identity) throw new AccessError("로그인이 필요합니다.", 401);
   return getOrCreateMember(identity, refreshLastSeen);
 }
@@ -430,14 +372,6 @@ export function normalizeMemberPermissions(value: unknown): MemberPermission[] {
   return MEMBER_PERMISSIONS.filter((permission) => source.includes(permission));
 }
 
-export function memberPermissionsJsonExpression(
-  permissions: readonly MemberPermission[],
-) {
-  return permissions.length > 0
-    ? `jsonb_build_array(${permissions.map(() => "?::text").join(", ")})`
-    : "'[]'::jsonb";
-}
-
 export function hasMemberPermission(
   member: Pick<Member, "role" | "permissions">,
   permission: MemberPermission,
@@ -482,6 +416,14 @@ export function accessErrorResponse(error: unknown) {
     { error: "요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요." },
     { status: 500 },
   );
+}
+
+export function memberPermissionsJsonExpression(
+  permissions: readonly MemberPermission[],
+) {
+  return permissions.length > 0
+    ? `jsonb_build_array(${permissions.map(() => "?::text").join(", ")})`
+    : "'[]'::jsonb";
 }
 
 export function randomToken(bytes = 32) {

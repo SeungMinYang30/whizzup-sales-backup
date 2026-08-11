@@ -13,12 +13,18 @@ test("keeps desktop list controls visible without clipping rows", async () => {
   assert.match(crm, /manager-priority-header/);
   assert.match(crm, /manager-toolbar/);
   assert.match(catalog, /product-catalog-sticky-controls/);
+  assert.match(catalog, /product-catalog-bulk-vendor/);
+  assert.match(catalog, /product-catalog-column-head-scroll/);
+  assert.match(catalog, /선택 · 품명/);
+  assert.match(catalog, /stickyColumnHeaderRef\.current\.scrollLeft/);
   assert.match(
     styles,
     /\.records-panel:has\(\.data-list-workspace\) > \.records-heading/,
   );
   assert.match(styles, /\.manager-priority-panel > \.manager-toolbar/);
   assert.match(styles, /\.product-catalog-sticky-controls/);
+  assert.match(styles, /\.product-catalog-column-head/);
+  assert.match(styles, /grid-template-columns: 18% 20% 10% 14% 8% 10% 10% 10%/);
   assert.match(styles, /\.history-body > \.history-summary-grid/);
   assert.match(
     styles,

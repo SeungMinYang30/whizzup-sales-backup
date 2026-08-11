@@ -167,6 +167,47 @@ export const organizationSchedules = sqliteTable(
     uniqueIndex("organization_schedules_google_event_idx").on(
       table.googleEventId,
     ).where(sql`${table.googleEventId} <> ''`),
+    uniqueIndex("organization_schedules_active_local_identity_idx").on(
+      sql`LOWER(TRIM(${table.organization}))`,
+      table.businessRound,
+      sql`LOWER(TRIM(${table.label}))`,
+      table.scheduledDate,
+      sql`LOWER(TRIM(COALESCE(${table.category}, 'general')))`,
+    ).where(sql`
+      COALESCE(${table.category}, 'general') <> 'construction'
+      AND TRIM(COALESCE(${table.deletedAt}, '')) = ''
+      AND TRIM(COALESCE(${table.googleEventId}, '')) = ''
+    `),
+    uniqueIndex("organization_schedules_active_local_semantic_identity_idx").on(
+      sql`LOWER(TRIM(${table.organization}))`,
+      table.businessRound,
+      sql`REPLACE(
+        REPLACE(
+          REPLACE(
+            LOWER(CASE
+              WHEN INSTR(TRIM(${table.label}), ']') BETWEEN 1 AND 12
+                THEN SUBSTR(TRIM(${table.label}), INSTR(TRIM(${table.label}), ']') + 1)
+              ELSE TRIM(${table.label})
+            END),
+            ' ',
+            ''
+          ),
+          REPLACE(LOWER(TRIM(${table.organization})), ' ', ''),
+          ''
+        ),
+        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+          REPLACE(LOWER(TRIM(${table.organization})), ' ', ''),
+          '특별자치도', ''), '특별자치시', ''), '광역시', ''), '특별시', ''),
+          '도', ''), '시', ''), '군', ''), '구', ''),
+        ''
+      )`,
+      table.scheduledDate,
+      sql`LOWER(TRIM(COALESCE(${table.category}, 'general')))`,
+    ).where(sql`
+      COALESCE(${table.category}, 'general') <> 'construction'
+      AND TRIM(COALESCE(${table.deletedAt}, '')) = ''
+      AND TRIM(COALESCE(${table.googleEventId}, '')) = ''
+    `),
     uniqueIndex("organization_schedules_complex_delivery_idx").on(
       table.complexDeliveryId,
     ).where(sql`${table.complexDeliveryId} IS NOT NULL`),
@@ -1038,6 +1079,48 @@ export const resourceAttachments = sqliteTable(
   ],
 );
 
+export const youtubeResourceLinks = sqliteTable(
+  "youtube_resource_links",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    videoId: text("video_id").notNull().unique(),
+    youtubeUrl: text("youtube_url").notNull(),
+    title: text("title").notNull().default(""),
+    description: text("description").notNull().default(""),
+    thumbnailUrl: text("thumbnail_url").notNull().default(""),
+    kind: text("kind").notNull().default("video"),
+    publishedAt: text("published_at").notNull().default(""),
+    createdBy: integer("created_by").notNull(),
+    createdByName: text("created_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("youtube_resource_links_video_idx").on(table.videoId),
+    index("youtube_resource_links_created_idx").on(table.createdAt, table.id),
+  ],
+);
+
+export const youtubeChannelVideos = sqliteTable(
+  "youtube_channel_videos",
+  {
+    videoId: text("video_id").primaryKey(),
+    title: text("title").notNull().default(""),
+    description: text("description").notNull().default(""),
+    thumbnailUrl: text("thumbnail_url").notNull().default(""),
+    youtubeUrl: text("youtube_url").notNull(),
+    kind: text("kind").notNull().default("video"),
+    publishedAt: text("published_at").notNull().default(""),
+    active: integer("active").notNull().default(1),
+    syncSource: text("sync_source").notNull().default(""),
+    lastSeenAt: text("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("youtube_channel_videos_active_idx").on(table.active, table.publishedAt, table.videoId),
+  ],
+);
+
 export const productVendorLinks = sqliteTable(
   "product_vendor_links",
   {
@@ -1290,6 +1373,9 @@ export const authoredQuotations = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     quoteNumber: text("quote_number").notNull().unique(),
+    revisionRootId: integer("revision_root_id").notNull().default(0),
+    revisionParentId: integer("revision_parent_id").notNull().default(0),
+    revisionNumber: integer("revision_number").notNull().default(0),
     organization: text("organization").notNull(),
     businessRound: integer("business_round").notNull().default(1),
     projectTitle: text("project_title").notNull().default(""),
@@ -1301,6 +1387,7 @@ export const authoredQuotations = sqliteTable(
     consortiumRate: text("consortium_rate").notNull().default("0"),
     discountAmount: integer("discount_amount").notNull().default(0),
     extraAmount: integer("extra_amount").notNull().default(0),
+    additionalInternalConstructionCost: integer("additional_internal_construction_cost").notNull().default(0),
     subtotalAmount: integer("subtotal_amount").notNull().default(0),
     supplyAmount: integer("supply_amount").notNull().default(0),
     taxAmount: integer("tax_amount").notNull().default(0),
@@ -1314,6 +1401,16 @@ export const authoredQuotations = sqliteTable(
       .default(false),
     memo: text("memo").notNull().default(""),
     itemsJson: text("items_json").notNull().default("[]"),
+    budgetsJson: text("budgets_json").notNull().default("[]"),
+    drivePdfFileId: text("drive_pdf_file_id").notNull().default(""),
+    drivePdfName: text("drive_pdf_name").notNull().default(""),
+    driveXlsxFileId: text("drive_xlsx_file_id").notNull().default(""),
+    driveXlsxName: text("drive_xlsx_name").notNull().default(""),
+    driveSyncStatus: text("drive_sync_status").notNull().default("none"),
+    driveSyncError: text("drive_sync_error").notNull().default(""),
+    deletedAt: text("deleted_at").notNull().default(""),
+    deletedBy: integer("deleted_by").notNull().default(0),
+    deletedByName: text("deleted_by_name").notNull().default(""),
     createdBy: integer("created_by").notNull(),
     createdByName: text("created_by_name").notNull().default(""),
     updatedBy: integer("updated_by").notNull(),
@@ -1325,6 +1422,16 @@ export const authoredQuotations = sqliteTable(
     index("authored_quotations_org_date_idx").on(
       table.organization,
       table.businessRound,
+      table.quoteDate,
+      table.id,
+    ),
+    index("authored_quotations_revision_idx").on(
+      table.revisionRootId,
+      table.revisionNumber,
+      table.id,
+    ),
+    index("authored_quotations_deleted_idx").on(
+      table.deletedAt,
       table.quoteDate,
       table.id,
     ),

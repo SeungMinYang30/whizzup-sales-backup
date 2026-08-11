@@ -34,12 +34,17 @@ import {
   activityBudgetsFromRecord,
   parseBudgetMoney,
 } from "../../../lib/activity-budgets";
+import {
+  authoredQuotationFromRow,
+  ensureAuthoredQuotationsReady,
+  type AuthoredQuotation,
+} from "../../../lib/authored-quotations";
 
 export const dynamic = "force-dynamic";
 
 type RawAccountingRow = Record<string, unknown>;
 
-function mapAccountingRow(row: RawAccountingRow) {
+function mapAccountingRow(row: RawAccountingRow, finalQuotation?: AuthoredQuotation) {
   const registeredQuote = calculateRegisteredQuoteFromTotals({
     registeredItemAmount: Number(row.registered_item_quote_amount ?? 0),
     itemCount: Number(row.quote_item_count ?? 0),
@@ -51,8 +56,8 @@ function mapAccountingRow(row: RawAccountingRow) {
       row.quote_construction_count ?? 0,
     ),
   });
-  const salesEnteredAmount = registeredQuote.contractAmount;
-  const confirmedContractAmount = registeredQuote.contractAmount;
+  const salesEnteredAmount = finalQuotation?.totalAmount ?? registeredQuote.contractAmount;
+  const confirmedContractAmount = salesEnteredAmount;
   const manufacturerCommissionExpected =
     row.manufacturer_commission_expected === null ||
     row.manufacturer_commission_expected === undefined
@@ -88,10 +93,10 @@ function mapAccountingRow(row: RawAccountingRow) {
     region: String(row.region ?? ""),
     budgetType: String(row.budget_type ?? ""),
     salesEnteredAmount,
-    quoteStatus: registeredQuote.quoteStatus,
-    quoteItemCount: registeredQuote.quoteItemCount,
+    quoteStatus: finalQuotation ? "complete" : registeredQuote.quoteStatus,
+    quoteItemCount: finalQuotation?.items.length ?? registeredQuote.quoteItemCount,
     quoteMissingAmountItemCount:
-      registeredQuote.quoteMissingAmountItemCount,
+      finalQuotation ? 0 : registeredQuote.quoteMissingAmountItemCount,
     awardStatus: String(row.award_status ?? ""),
     awardCompany: String(row.award_company ?? ""),
     executionType: String(row.execution_type ?? "") === "컨소" ? "컨소" : "직영",
@@ -1022,6 +1027,7 @@ export async function GET(request: Request) {
     }
     const member = await requireApprovedMember();
     const d1 = await ensureAccountingReady();
+    await ensureAuthoredQuotationsReady();
     const historyActivityId = Number(params.get("historyActivityId"));
     if (Number.isInteger(historyActivityId) && historyActivityId > 0) {
       await requireMemberPermission("accounting:manage");
@@ -1052,11 +1058,28 @@ export async function GET(request: Request) {
     if (params.get("scope") !== "visible" && !hasMemberPermission(member, "accounting:manage")) {
       return Response.json({ error: "수금·채권 관리 권한이 필요합니다." }, { status: 403 });
     }
-    const result = await d1
-      .prepare(
+    const [result, quotationResult] = await Promise.all([
+      d1.prepare(
         `${awardAccountingQuery} ORDER BY a.activity_date DESC, a.id DESC`,
-      )
-      .all<RawAccountingRow>();
+      ).all<RawAccountingRow>(),
+      d1.prepare(`
+        SELECT * FROM authored_quotations
+        WHERE status = 'final' AND deleted_at = ''
+        ORDER BY quote_date DESC, revision_number DESC, id DESC
+        LIMIT 1000
+      `).all<Record<string, unknown>>(),
+    ]);
+    const latestQuotationByBusiness = new Map<string, AuthoredQuotation>();
+    quotationResult.results.forEach((row) => {
+      const quotation = authoredQuotationFromRow(row);
+      const businessKey = analyticsBusinessRoundKey(
+        quotation.organization,
+        quotation.businessRound,
+      );
+      if (!latestQuotationByBusiness.has(businessKey)) {
+        latestQuotationByBusiness.set(businessKey, quotation);
+      }
+    });
     const latestRows = completedWhizzupAwardRows(result.results);
     return Response.json({
       rows: latestRows
@@ -1065,7 +1088,12 @@ export async function GET(request: Request) {
             canSeeAll ||
             String(row.progress_manager ?? "") === member.displayName,
         )
-        .map(mapAccountingRow),
+        .map((row) => mapAccountingRow(
+          row,
+          latestQuotationByBusiness.get(
+            analyticsBusinessRoundKey(row.organization, row.business_round),
+          ),
+        )),
     });
   } catch (error) {
     return accessErrorResponse(error);

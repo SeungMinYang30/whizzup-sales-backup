@@ -225,6 +225,34 @@
       "when": 1785722400000,
       "tag": "0055_activity_contacts",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1786318200000,
+      "tag": "0082_repair_direct_auth_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1786321800000,
+      "tag": "0083_quotation_revisions_and_drive_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1786375357420,
+      "tag": "0084_quotation_trash_and_upload_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1786411800000,
+      "tag": "0085_youtube_resource_links",
+      "breakpoints": true
     }
   ]
 }

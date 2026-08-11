@@ -124,6 +124,17 @@ test("a unique same-region abbreviated institution can preview the existing roun
   assert.equal(resolved, "김포 모담초중학교");
 });
 
+test("a unique school suffix without a region reuses the full existing institution", () => {
+  const resolved = resolveUniqueExistingInstitutionName(
+    { organization: "도수초등학교", region: "" },
+    [
+      { organization: "경기도 광주 도수초등학교", region: "경기 광주" },
+      { organization: "하남초등학교", region: "경기 하남" },
+    ],
+  );
+  assert.equal(resolved, "경기도 광주 도수초등학교");
+});
+
 test("an ambiguous abbreviated institution never inherits another institution's budgets", () => {
   const resolved = resolveUniqueExistingInstitutionName(
     { organization: "중앙초등학교", region: "" },

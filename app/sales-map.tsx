@@ -38,6 +38,7 @@ import {
   normalizeAwardStage,
 } from "../lib/sales-taxonomy";
 import { institutionAliasKey } from "../lib/institution-names";
+import { personDisplayLabel } from "../lib/person-label";
 import JointProjectModal, {
   type JointProjectCandidate,
 } from "./joint-project-modal";
@@ -205,6 +206,7 @@ type SalesCampaignTarget = {
 type CampaignMember = {
   id: number;
   displayName: string;
+  jobTitle: string;
   email: string;
 };
 
@@ -945,61 +947,13 @@ function normalizeCampaignMember(
   return {
     id: Number(row.id),
     displayName: String(value("displayName", "display_name")),
+    jobTitle: String(value("jobTitle", "job_title")),
     email: String(row.email ?? ""),
   };
 }
 
-type CampaignListData = {
-  campaigns: SalesCampaign[];
-  targets: SalesCampaignTarget[];
-  members: CampaignMember[];
-  loadedAt: number;
-};
-
-const CAMPAIGN_CACHE_TTL_MS = 30_000;
-let campaignListCache: CampaignListData | null = null;
-let campaignListRequest: Promise<CampaignListData> | null = null;
-
-async function requestCampaignList(force = false) {
-  if (
-    !force &&
-    campaignListCache &&
-    Date.now() - campaignListCache.loadedAt < CAMPAIGN_CACHE_TTL_MS
-  ) {
-    return campaignListCache;
-  }
-  if (!force && campaignListRequest) return campaignListRequest;
-
-  const request = fetch("/api/map/campaigns", { cache: "no-store" })
-    .then(async (response) => {
-      const payload = (await response.json()) as {
-        campaigns?: Record<string, unknown>[];
-        targets?: Record<string, unknown>[];
-        members?: Record<string, unknown>[];
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(
-          payload.error || "영업 카테고리를 불러오지 못했습니다.",
-        );
-      }
-      return {
-        campaigns: (payload.campaigns ?? []).map(normalizeCampaign),
-        targets: (payload.targets ?? []).map(normalizeCampaignTarget),
-        members: (payload.members ?? []).map(normalizeCampaignMember),
-        loadedAt: Date.now(),
-      } satisfies CampaignListData;
-    })
-    .then((data) => {
-      campaignListCache = data;
-      return data;
-    });
-  if (!force) campaignListRequest = request;
-  try {
-    return await request;
-  } finally {
-    if (!force && campaignListRequest === request) campaignListRequest = null;
-  }
+function campaignMemberLabel(member: CampaignMember) {
+  return personDisplayLabel(member);
 }
 
 function resolveMapStatus(record: SalesMapRecord | undefined): MapStatus {
@@ -1348,7 +1302,6 @@ export default function SalesMapPage({
   const onSearchChangeRef = useRef(onSearchChange);
   const skipNextVisibleBoundsFitRef = useRef(false);
   const previousActiveRef = useRef(active);
-  const mapResourcesRequestedRef = useRef(false);
   const [javascriptKey, setJavascriptKey] = useState("");
   const [keyInput, setKeyInput] = useState("");
   const [configLoading, setConfigLoading] = useState(true);
@@ -1454,7 +1407,6 @@ export default function SalesMapPage({
   } | null>(null);
   const [notice, setNotice] = useState("");
   const [searchDraft, setSearchDraft] = useState(search);
-  const deferredSearchDraft = useDeferredValue(searchDraft);
   const deferredCampaignInstitutionSearch = useDeferredValue(
     campaignInstitutionSearch,
   );
@@ -1677,10 +1629,27 @@ export default function SalesMapPage({
   async function loadCampaigns() {
     try {
       setCampaignLoading(true);
-      const campaignData = await requestCampaignList(true);
-      setCampaigns(campaignData.campaigns);
-      setCampaignTargets(campaignData.targets);
-      setCampaignMembers(campaignData.members);
+      const response = await fetch("/api/map/campaigns", {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as {
+        campaigns?: Record<string, unknown>[];
+        targets?: Record<string, unknown>[];
+        members?: Record<string, unknown>[];
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(
+          payload.error || "영업 카테고리를 불러오지 못했습니다.",
+        );
+      }
+      setCampaigns((payload.campaigns ?? []).map(normalizeCampaign));
+      setCampaignTargets(
+        (payload.targets ?? []).map(normalizeCampaignTarget),
+      );
+      setCampaignMembers(
+        (payload.members ?? []).map(normalizeCampaignMember),
+      );
     } catch (caught) {
       setNotice(
         caught instanceof Error
@@ -1693,8 +1662,6 @@ export default function SalesMapPage({
   }
 
   useEffect(() => {
-    if (displayMode !== "map" || mapResourcesRequestedRef.current) return;
-    mapResourcesRequestedRef.current = true;
     let mounted = true;
     if (displayMode === "map") {
       setConfigLoading(true);
@@ -1753,14 +1720,25 @@ export default function SalesMapPage({
       setLocationsLoading(false);
     }
 
-    return () => {
-      mounted = false;
-    };
-  }, [displayMode]);
-
-  useEffect(() => {
-    let mounted = true;
-    void requestCampaignList()
+    void fetch("/api/map/campaigns", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          campaigns?: Record<string, unknown>[];
+          targets?: Record<string, unknown>[];
+          members?: Record<string, unknown>[];
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(
+            payload.error || "영업 카테고리를 불러오지 못했습니다.",
+          );
+        }
+        return {
+          campaigns: (payload.campaigns ?? []).map(normalizeCampaign),
+          targets: (payload.targets ?? []).map(normalizeCampaignTarget),
+          members: (payload.members ?? []).map(normalizeCampaignMember),
+        };
+      })
       .then((campaignData) => {
         if (!mounted) return;
         setCampaigns(campaignData.campaigns);
@@ -2137,6 +2115,34 @@ export default function SalesMapPage({
           ),
     [activeCampaignId, campaignTargets],
   );
+  const budgetPortfolioSummary = useMemo(() => {
+    const uniqueInstitutions = new Set<string>();
+    const budgetKeysByInstitution = new Map<string, Set<string>>();
+    const campaignById = new Map(
+      campaigns.map((campaign) => [campaign.id, campaign] as const),
+    );
+    campaignTargets.forEach((target) => {
+      const institutionKey =
+        institutionAliasKey(target.organization) ||
+        institutionSearchText(target.organization);
+      if (!institutionKey) return;
+      uniqueInstitutions.add(institutionKey);
+      const campaign = campaignById.get(target.campaignId);
+      const budgetKey = campaign?.budgetGroupId
+        ? `group:${campaign.budgetGroupId}`
+        : `name:${institutionSearchText(campaign?.budgetType || "")}`;
+      const current = budgetKeysByInstitution.get(institutionKey) ?? new Set<string>();
+      if (budgetKey !== "name:") current.add(budgetKey);
+      budgetKeysByInstitution.set(institutionKey, current);
+    });
+    return {
+      uniqueInstitutionCount: uniqueInstitutions.size,
+      participationCount: campaignTargets.length,
+      multipleBudgetInstitutionCount: [...budgetKeysByInstitution.values()].filter(
+        (budgetKeys) => budgetKeys.size > 1,
+      ).length,
+    };
+  }, [campaignTargets, campaigns]);
   const selectedBudgetJointCandidates = useMemo<JointProjectCandidate[]>(
     () =>
       budgetSelectedTargetIds
@@ -3464,7 +3470,7 @@ export default function SalesMapPage({
     }
     if (
       action === "bulk-assign" &&
-      (!budgetBulkAssigneeId || !Number(budgetBulkAssigneeId))
+      !budgetBulkAssigneeId
     ) {
       setNotice("일괄 지정할 진행 담당자를 선택해 주세요.");
       return;
@@ -3487,7 +3493,11 @@ export default function SalesMapPage({
           campaignId: activeCampaign.id,
           targetIds: budgetSelectedTargetIds,
           assignedMemberId:
-            action === "bulk-assign" ? Number(budgetBulkAssigneeId) : undefined,
+            action === "bulk-assign"
+              ? budgetBulkAssigneeId === "unassigned"
+                ? null
+                : Number(budgetBulkAssigneeId)
+              : undefined,
         }),
       });
       const payload = (await response.json()) as {
@@ -4574,7 +4584,7 @@ export default function SalesMapPage({
     "수주 후 진행",
     "완료",
   ];
-  const budgetKeyword = deferredSearchDraft.trim().toLocaleLowerCase("ko-KR");
+  const budgetKeyword = search.trim().toLocaleLowerCase("ko-KR");
   const matchesBudgetTargetFilters = (target: SalesCampaignTarget) => {
     if (
       budgetQuickFilter === "whizzup" &&
@@ -4755,6 +4765,24 @@ export default function SalesMapPage({
               </button>
             </div>
           </header>
+
+          <div className="budget-portfolio-summary" aria-label="예산별 기관 전체 통계">
+            <div>
+              <span>전체 기관</span>
+              <strong>{budgetPortfolioSummary.uniqueInstitutionCount}곳</strong>
+              <small>학교·기관 중복 제외</small>
+            </div>
+            <div>
+              <span>예산 참여</span>
+              <strong>{budgetPortfolioSummary.participationCount}건</strong>
+              <small>예산별 기관 연결 기준</small>
+            </div>
+            <div>
+              <span>복수 예산 기관</span>
+              <strong>{budgetPortfolioSummary.multipleBudgetInstitutionCount}곳</strong>
+              <small>두 개 이상 표준 예산 참여</small>
+            </div>
+          </div>
 
           <div className="budget-campaign-tabs" aria-label="예산 명단 선택">
             {campaigns.map((campaign) => (
@@ -4942,9 +4970,10 @@ export default function SalesMapPage({
                     aria-label="일괄 진행 담당자"
                   >
                     <option value="">담당자 선택</option>
+                    <option value="unassigned">미지정</option>
                     {campaignMembers.map((member) => (
                       <option key={member.id} value={member.id}>
-                        {member.displayName}
+                        {campaignMemberLabel(member)}
                       </option>
                     ))}
                   </select>
@@ -5110,7 +5139,7 @@ export default function SalesMapPage({
                               <option value="">미지정</option>
                               {campaignMembers.map((member) => (
                                 <option key={member.id} value={member.id}>
-                                  {member.displayName}
+                                  {campaignMemberLabel(member)}
                                 </option>
                               ))}
                             </select>
@@ -5257,7 +5286,7 @@ export default function SalesMapPage({
                               <option value="">미지정</option>
                               {campaignMembers.map((member) => (
                                 <option key={member.id} value={member.id}>
-                                  {member.displayName}
+                                  {campaignMemberLabel(member)}
                                 </option>
                               ))}
                             </select>
@@ -5371,7 +5400,11 @@ export default function SalesMapPage({
               onChange={(event) => void handleCampaignPdf(event)}
               hidden
             />
-            <button type="button" onClick={downloadCampaignTemplate}>
+            <button
+              type="button"
+              className="campaign-template-button"
+              onClick={downloadCampaignTemplate}
+            >
               엑셀 양식 다운로드
             </button>
             <button
@@ -5841,10 +5874,10 @@ export default function SalesMapPage({
                           }
                           disabled={assignmentSaving === campaignTarget.id}
                         >
-                          <option value="">미배정</option>
+                          <option value="">미지정</option>
                           {campaignMembers.map((member) => (
                             <option key={member.id} value={member.id}>
-                              {member.displayName}
+                              {campaignMemberLabel(member)}
                             </option>
                           ))}
                         </select>

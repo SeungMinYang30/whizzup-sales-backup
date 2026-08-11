@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [api, sync, store, route, calendar, crm, migration, connectionMigration, contentRefreshMigration, descriptionRefreshMigration, structuredRefreshMigration, schema] = await Promise.all([
+const [api, sync, store, route, calendar, crm, migration, connectionMigration, contentRefreshMigration, descriptionRefreshMigration, structuredRefreshMigration, scheduleDedupMigration, semanticScheduleDedupMigration, schema] = await Promise.all([
   readFile(new URL("../lib/google-calendar-api.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/google-calendar-sync.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/organization-schedules.ts", import.meta.url), "utf8"),
@@ -14,6 +14,8 @@ const [api, sync, store, route, calendar, crm, migration, connectionMigration, c
   readFile(new URL("../drizzle/0071_google_calendar_content_refresh.sql", import.meta.url), "utf8"),
   readFile(new URL("../drizzle/0072_google_calendar_description_refresh.sql", import.meta.url), "utf8"),
   readFile(new URL("../drizzle/0073_google_calendar_structured_description.sql", import.meta.url), "utf8"),
+  readFile(new URL("../drizzle/0087_organization_schedule_identity_dedup.sql", import.meta.url), "utf8"),
+  readFile(new URL("../drizzle/0088_organization_schedule_semantic_identity.sql", import.meta.url), "utf8"),
   readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
 ]);
 
@@ -62,7 +64,7 @@ test("기존 시공 Google 일정은 안전하게 다시 연결하고 신뢰 가
 
 test("새 메모만 저장·양방향 동기화하고 과거 메모는 임의 생성하지 않는다", () => {
   assert.match(calendar, /메모 <small>선택 입력 · 새 일정부터 저장됩니다/);
-  assert.match(calendar, /details: editor\.details\.trim\(\)/);
+  assert.match(calendar, /details: draft\.details\.trim\(\)/);
   assert.match(route, /details: payload\.details/);
   assert.match(store, /const details = clean\(input\.details\)\.slice\(0, 500\)/);
   assert.match(api, /메모: \$\{schedule\.details\.trim\(\)\}/);
@@ -88,7 +90,9 @@ test("원본 우선순위와 제목 비추론 원칙을 지킨다", () => {
     calendar,
     /const title = cleanScheduleTitle\(schedule\.label\) \|\| structured\.constructionStage \|\| structured\.content/,
   );
-  assert.match(calendar, /<option value="">단계 선택<\/option>/);
+  assert.match(calendar, /<input list="construction-stage-options"/);
+  assert.match(calendar, /<datalist id="construction-stage-options">/);
+  assert.match(calendar, /목록에 없어도 직접 입력하면 저장 후 다음 선택부터 재사용됩니다/);
   assert.doesNotMatch(calendar, /\? "목공" : current\.title/);
 });
 
@@ -102,6 +106,27 @@ test("Google API 등록·수정·삭제는 사이트 일정 ID로 중복을 방�
   assert.match(route, /scheduleDedupeKey/);
   assert.match(route, /if \(!merged\.has\(key\)\)/);
   assert.match(api, /summary,/);
+});
+
+test("같은 기관·날짜·제목 일정은 서버와 DB에서 한 번만 저장한다", () => {
+  assert.match(store, /organization_schedules_active_local_identity_idx/);
+  assert.match(store, /INSERT OR IGNORE INTO organization_schedules/);
+  assert.match(store, /WHERE NOT EXISTS \(/);
+  assert.match(store, /같은 기관·날짜·제목의 일정이 이미 등록되어 있습니다/);
+  assert.match(scheduleDedupMigration, /Google에 이미 연결된 행 또는 먼저 생성된 원본 행/);
+  assert.match(scheduleDedupMigration, /CREATE UNIQUE INDEX IF NOT EXISTS organization_schedules_active_local_identity_idx/);
+  assert.match(scheduleDedupMigration, /LOWER\(TRIM\(label\)\)/);
+  assert.match(schema, /organization_schedules_active_local_identity_idx/);
+});
+
+test("기관명 행정구역 표기가 달라도 같은 일정으로 정리한다", () => {
+  assert.match(store, /organization_schedules_active_local_semantic_identity_idx/);
+  assert.match(store, /normalizeScheduleSemanticLabel/);
+  assert.match(store, /특별자치도\|특별자치시\|광역시\|특별시\|도\|시\|군\|구/);
+  assert.match(semanticScheduleDedupMigration, /organization_schedules_active_local_semantic_identity_idx/);
+  assert.match(semanticScheduleDedupMigration, /TRIM\(COALESCE\(keeper\.google_event_id, ''\)\) <> ''/);
+  assert.match(semanticScheduleDedupMigration, /PRAGMA optimize/);
+  assert.match(schema, /organization_schedules_active_local_semantic_identity_idx/);
 });
 
 test("Google에서 가져온 일정은 팀 연결함에서 기관에 연결하고 관리자는 원본 삭제가 가능하다", () => {

@@ -36,11 +36,19 @@ const excludedNames = new Set([
   "generated-recovery-source.ts",
 ]);
 
+function shouldExclude(name) {
+  return (
+    excludedNames.has(name) ||
+    name.startsWith("site-package-stage-") ||
+    /^site-release-.*\.tar\.gz$/i.test(name)
+  );
+}
+
 async function collect(directory, archive, prefix = "") {
   const entries = await readdir(directory, { withFileTypes: true });
   entries.sort((a, b) => a.name.localeCompare(b.name, "en"));
   for (const entry of entries) {
-    if (excludedNames.has(entry.name)) continue;
+    if (shouldExclude(entry.name)) continue;
     const absolute = path.join(directory, entry.name);
     const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {

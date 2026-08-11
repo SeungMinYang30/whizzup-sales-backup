@@ -10,12 +10,16 @@ import {
   safeDriveFolderName,
   uploadDriveResumableChunk,
 } from "../../../../lib/google-drive-storage";
+import { ensureResourceLibraryReady } from "../../../../lib/resource-library";
+import {
+  isResourceCategoryForKind,
+  isVideoResourceFile,
+  RESOURCE_CATEGORIES,
+} from "../../../../lib/resource-library-categories";
 
 export const dynamic = "force-dynamic";
 
-const categories = new Set([
-  "제안서", "매뉴얼", "계약·공문", "제품자료", "교육자료", "서식", "기타",
-]);
+const categories = new Set<string>(RESOURCE_CATEGORIES);
 const blockedExtensions = new Set([
   "exe", "dll", "bat", "cmd", "com", "msi", "ps1", "vbs", "js", "html", "htm",
 ]);
@@ -46,6 +50,13 @@ export async function POST(request: Request) {
     if (blockedExtensions.has(extension)) {
       return Response.json({ error: `${fileName} 파일 형식은 첨부할 수 없습니다.` }, { status: 400 });
     }
+    const isVideo = isVideoResourceFile(fileName, mimeType);
+    if (!isResourceCategoryForKind(category, isVideo)) {
+      return Response.json(
+        { error: isVideo ? "영상 자료 분류를 선택해 주세요." : "문서 자료 분류를 선택해 주세요." },
+        { status: 400 },
+      );
+    }
     const session = await createDriveResumableUpload({
       fileName,
       mimeType,
@@ -57,6 +68,7 @@ export async function POST(request: Request) {
       ],
       contextType: "resource-library",
       contextId: title,
+      contextCategory: category,
       createdBy: member.id,
     });
     return Response.json(session, { status: 201 });
@@ -102,7 +114,12 @@ export async function DELETE(request: Request) {
         ) &&
         metadata.appProperties.createdBy === String(member.id)
       ) {
-        await removeDriveFile(fileId).catch(() => undefined);
+        const d1 = await ensureResourceLibraryReady();
+        const linked = await d1
+          .prepare("SELECT id FROM resource_attachments WHERE drive_file_id = ? LIMIT 1")
+          .bind(fileId)
+          .first<{ id: number }>();
+        if (!linked) await removeDriveFile(fileId).catch(() => undefined);
       }
     }
     return Response.json({ ok: true });

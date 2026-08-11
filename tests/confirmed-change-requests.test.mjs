@@ -26,7 +26,7 @@ test("완료 일정은 달력에 남고 사용자가 숨길 수 있다", () => {
 
 test("Google 일정 연결 기본 분류는 영업이며 사용자가 선택한 분류를 저장한다", () => {
   assert.match(calendar, /schedule\.suggestedCategory === "construction"[\s\S]*suggestedKind\.sales/);
-  assert.match(calendar, /category: KIND_CATEGORY\[editor\.kind\]/);
+  assert.match(calendar, /category: KIND_CATEGORY\[(?:editor|draft)\.kind\]/);
   assert.match(calendar, /kind, title:/);
 });
 

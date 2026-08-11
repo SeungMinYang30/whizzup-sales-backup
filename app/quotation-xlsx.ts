@@ -27,6 +27,17 @@ export type ParsedQuotationXlsx = {
   pages: File[];
 };
 
+export type ParsedQuotationXlsxData = Omit<ParsedQuotationXlsx, "pdf" | "pages"> & {
+  equipmentKitPlan?: "one" | "two";
+  sheetName?: string;
+};
+
+export type QuotationXlsxParseOptions = {
+  mode?: "general" | "teaching-aids";
+  equipmentKitPlan?: "one" | "two";
+  requireEquipmentKitSheet?: boolean;
+};
+
 type SheetCell = {
   value: string;
   formula: string;
@@ -65,12 +76,25 @@ function excelDate(value: string) {
     : "";
 }
 
-function parseFirstWorksheet(buffer: ArrayBuffer) {
+type ParsedWorksheet = {
+  name: string;
+  rows: Map<number, Map<number, SheetCell>>;
+};
+
+function normalizeArchivePath(target: string) {
+  const cleanTarget = target.replace(/\\/g, "/").replace(/^\/+/, "");
+  const parts = (cleanTarget.startsWith("xl/") ? cleanTarget : `xl/${cleanTarget}`).split("/");
+  const normalized: string[] = [];
+  for (const part of parts) {
+    if (!part || part === ".") continue;
+    if (part === "..") normalized.pop();
+    else normalized.push(part);
+  }
+  return normalized.join("/");
+}
+
+function parseWorksheets(buffer: ArrayBuffer): ParsedWorksheet[] {
   const files = unzipSync(new Uint8Array(buffer));
-  const sheetPath =
-    Object.keys(files).find((path) => path === "xl/worksheets/sheet1.xml") ??
-    Object.keys(files).find((path) => /^xl\/worksheets\/sheet\d+\.xml$/.test(path));
-  if (!sheetPath) throw new Error("견적 엑셀의 첫 번째 시트를 찾지 못했습니다.");
   const parser = new DOMParser();
   const shared: string[] = [];
   if (files["xl/sharedStrings.xml"]) {
@@ -86,38 +110,70 @@ function parseFirstWorksheet(buffer: ArrayBuffer) {
       );
     }
   }
-  const document = parser.parseFromString(
-    strFromU8(files[sheetPath]),
-    "application/xml",
-  );
-  if (document.getElementsByTagName("parsererror").length) {
-    throw new Error("견적 엑셀 시트를 읽지 못했습니다.");
+
+  const relationshipTargets = new Map<string, string>();
+  if (files["xl/_rels/workbook.xml.rels"]) {
+    const relationships = parser.parseFromString(
+      strFromU8(files["xl/_rels/workbook.xml.rels"]),
+      "application/xml",
+    );
+    for (const relationship of Array.from(relationships.getElementsByTagName("Relationship"))) {
+      const id = relationship.getAttribute("Id") ?? "";
+      const target = relationship.getAttribute("Target") ?? "";
+      if (id && target && /worksheet$/u.test(relationship.getAttribute("Type") ?? "")) {
+        relationshipTargets.set(id, normalizeArchivePath(target));
+      }
+    }
   }
-  const rows = new Map<number, Map<number, SheetCell>>();
-  for (const row of Array.from(document.getElementsByTagName("row"))) {
-    const rowNumber = Number(row.getAttribute("r")) || rows.size + 1;
-    const values = new Map<number, SheetCell>();
-    for (const cell of Array.from(row.getElementsByTagName("c"))) {
-      const reference = cell.getAttribute("r") ?? "A1";
-      const type = cell.getAttribute("t");
-      const raw = cell.getElementsByTagName("v")[0]?.textContent ?? "";
-      const formula = cell.getElementsByTagName("f")[0]?.textContent ?? "";
-      const value =
-        type === "s"
+
+  const sheetEntries: Array<{ name: string; path: string }> = [];
+  if (files["xl/workbook.xml"]) {
+    const workbook = parser.parseFromString(strFromU8(files["xl/workbook.xml"]), "application/xml");
+    for (const [index, sheet] of Array.from(workbook.getElementsByTagName("sheet")).entries()) {
+      const relationshipId = sheet.getAttribute("r:id")
+        ?? sheet.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id")
+        ?? "";
+      const path = relationshipTargets.get(relationshipId) ?? `xl/worksheets/sheet${index + 1}.xml`;
+      if (files[path]) sheetEntries.push({ name: sheet.getAttribute("name") || `시트 ${index + 1}`, path });
+    }
+  }
+  if (!sheetEntries.length) {
+    Object.keys(files)
+      .filter((path) => /^xl\/worksheets\/sheet\d+\.xml$/.test(path))
+      .sort((left, right) => Number(left.match(/sheet(\d+)/)?.[1]) - Number(right.match(/sheet(\d+)/)?.[1]))
+      .forEach((path, index) => sheetEntries.push({ name: `시트 ${index + 1}`, path }));
+  }
+  if (!sheetEntries.length) throw new Error("견적 엑셀의 시트를 찾지 못했습니다.");
+
+  return sheetEntries.map((sheetEntry) => {
+    const document = parser.parseFromString(strFromU8(files[sheetEntry.path]), "application/xml");
+    if (document.getElementsByTagName("parsererror").length) {
+      throw new Error(`${sheetEntry.name} 시트를 읽지 못했습니다.`);
+    }
+    const rows = new Map<number, Map<number, SheetCell>>();
+    for (const row of Array.from(document.getElementsByTagName("row"))) {
+      const rowNumber = Number(row.getAttribute("r")) || rows.size + 1;
+      const values = new Map<number, SheetCell>();
+      for (const cell of Array.from(row.getElementsByTagName("c"))) {
+        const reference = cell.getAttribute("r") ?? "A1";
+        const type = cell.getAttribute("t");
+        const raw = cell.getElementsByTagName("v")[0]?.textContent ?? "";
+        const formula = cell.getElementsByTagName("f")[0]?.textContent ?? "";
+        const value = type === "s"
           ? shared[Number(raw)] ?? ""
           : type === "inlineStr"
-            ? Array.from(cell.getElementsByTagName("t"))
-                .map((text) => text.textContent ?? "")
-                .join("")
+            ? Array.from(cell.getElementsByTagName("t")).map((text) => text.textContent ?? "").join("")
             : raw;
-      values.set(columnNumber(reference), {
-        value: normalizeText(value),
-        formula,
-      });
+        values.set(columnNumber(reference), { value: normalizeText(value), formula });
+      }
+      rows.set(rowNumber, values);
     }
-    rows.set(rowNumber, values);
-  }
-  return rows;
+    return { name: sheetEntry.name, rows };
+  });
+}
+
+function parseFirstWorksheet(buffer: ArrayBuffer) {
+  return parseWorksheets(buffer)[0].rows;
 }
 
 function cellValue(
@@ -227,6 +283,100 @@ function extractQuotation(
   }
   quoteAmount = quoteAmount || calculatedAmount;
   return { sourceName, quoteDate, quoteAmount, items };
+}
+
+function compactHeader(value: string) {
+  return normalizeText(value).replace(/\s+/g, "");
+}
+
+function teachingAidsColumns(rows: Map<number, Map<number, SheetCell>>) {
+  for (const row of Array.from(rows.keys()).filter((value) => value <= 45)) {
+    const columns = Array.from(rows.get(row)?.entries() ?? []);
+    const find = (labels: string[]) => columns.find(([, cell]) => labels.includes(compactHeader(cell.value)))?.[0] ?? 0;
+    const product = find(["품명", "품목명", "품목"]);
+    const quantity = find(["수량"]);
+    const unit = find(["단위"]);
+    const unitPrice = find(["단가"]);
+    const amount = find(["금액"]);
+    if (product && quantity && unit && unitPrice && amount) {
+      return { headerRow: row, product, quantity, unit, unitPrice, amount };
+    }
+  }
+  return null;
+}
+
+function extractTeachingAidsQuotation(sheet: ParsedWorksheet, sourceName: string) {
+  const columns = teachingAidsColumns(sheet.rows);
+  if (!columns) throw new Error(`${sheet.name} 시트에서 교구 품목 표를 찾지 못했습니다.`);
+  const allText = Array.from(sheet.rows.keys()).map((row) => rowText(sheet.rows, row)).join(" ");
+  const equipmentKitPlan = /(?:표준\s*)?2\s*세트/u.test(`${sheet.name} ${allText}`) ? "two" as const : "one" as const;
+  let quoteDate = "";
+  for (let row = 1; row <= columns.headerRow && !quoteDate; row += 1) {
+    for (const column of Array.from(sheet.rows.get(row)?.keys() ?? [])) {
+      quoteDate = excelDate(cellValue(sheet.rows, row, column));
+      if (quoteDate) break;
+    }
+  }
+  const items: ParsedQuotationXlsxItem[] = [];
+  let quoteAmount = 0;
+  const lastRow = Math.min(180, Math.max(...Array.from(sheet.rows.keys())));
+  for (let row = columns.headerRow + 1; row <= lastRow; row += 1) {
+    const currentRowText = rowText(sheet.rows, row);
+    if (/합계금액|총계|총금액/u.test(compactHeader(currentRowText))) {
+      quoteAmount = Math.max(
+        quoteAmount,
+        Math.round(parseNumber(cellValue(sheet.rows, row, columns.amount))),
+        ...Array.from(sheet.rows.get(row)?.values() ?? []).map((cell) => Math.round(parseNumber(cell.value))),
+      );
+      continue;
+    }
+    const productName = normalizeText(cellValue(sheet.rows, row, columns.product));
+    const quantity = Math.max(0, Math.round(parseNumber(cellValue(sheet.rows, row, columns.quantity))));
+    const unit = normalizeText(cellValue(sheet.rows, row, columns.unit)) || "EA";
+    const unitPrice = Math.max(0, Math.round(parseNumber(cellValue(sheet.rows, row, columns.unitPrice))));
+    const amount = Math.max(0, Math.round(parseNumber(cellValue(sheet.rows, row, columns.amount))));
+    if (!productName || (!unitPrice && !amount) || /합계|총계|소계/u.test(productName)) continue;
+    items.push({
+      id: `xlsx-kit-${row}`,
+      productName,
+      specification: "",
+      quantity,
+      unit,
+      unitPrice: unitPrice || (quantity ? Math.round(amount / quantity) : 0),
+      amount: amount || quantity * unitPrice,
+      procurementNumber: "",
+      isProcurement: false,
+      confidence: "높음",
+      reviewNote: "",
+    });
+  }
+  if (!items.length) throw new Error(`${sheet.name} 시트에서 교구 품목 행을 찾지 못했습니다.`);
+  const calculatedAmount = items.reduce((sum, item) => sum + item.amount, 0);
+  return {
+    sourceName,
+    quoteDate,
+    quoteAmount: quoteAmount || calculatedAmount,
+    items,
+    equipmentKitPlan,
+    sheetName: sheet.name,
+  };
+}
+
+function selectTeachingAidsSheet(
+  sheets: ParsedWorksheet[],
+  plan: "one" | "two" = "one",
+  requireEquipmentKitSheet = false,
+) {
+  const generated = sheets.find((sheet) => /교구\s*세부견적/u.test(sheet.name));
+  if (generated) return generated;
+  if (requireEquipmentKitSheet) {
+    throw new Error("저장된 Excel에 교구 세부견적 시트가 없습니다.");
+  }
+  const planNumber = plan === "two" ? "2" : "1";
+  return sheets.find((sheet) => new RegExp(`교구\\s*${planNumber}\\s*세트`, "u").test(sheet.name))
+    ?? sheets.find((sheet) => new RegExp(`${planNumber}\\s*세트`, "u").test(sheet.name))
+    ?? sheets.find((sheet) => teachingAidsColumns(sheet.rows))
+    ?? sheets[0];
 }
 
 function money(value: number) {
@@ -485,4 +635,22 @@ export async function parseQuotationXlsx(
         ),
     ),
   };
+}
+
+export async function parseQuotationXlsxData(
+  file: File,
+  options: QuotationXlsxParseOptions = {},
+): Promise<ParsedQuotationXlsxData> {
+  if (!file.name.toLocaleLowerCase().endsWith(".xlsx")) {
+    throw new Error("견적 엑셀은 .xlsx 파일만 지원합니다.");
+  }
+  const buffer = await file.arrayBuffer();
+  if (options.mode === "teaching-aids") {
+    const sheets = parseWorksheets(buffer);
+    return extractTeachingAidsQuotation(
+      selectTeachingAidsSheet(sheets, options.equipmentKitPlan, options.requireEquipmentKitSheet),
+      file.name,
+    );
+  }
+  return extractQuotation(parseFirstWorksheet(buffer), file.name);
 }

@@ -15,6 +15,10 @@ const recordsRoute = await readFile(
   "utf8",
 );
 const crm = await readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8");
+const globals = await readFile(
+  new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
 
 test("AI history assigns its signed-in author unless the business round is fixed", () => {
   assert.match(
@@ -66,6 +70,15 @@ test("primary owner can toggle the current progress manager in the detail card",
     crm,
     /role="switch"[\s\S]*aria-checked=\{[\s\S]*detailDisplayRecord\.progressManagerLocked[\s\S]*setProgressManagerLock\([\s\S]*!detailDisplayRecord\.progressManagerLocked/,
   );
+  assert.match(
+    crm,
+    /detailDisplayRecord\.progressManagerLocked[\s\S]*\? "is-fixed"[\s\S]*: "automatic"/,
+  );
+  assert.doesNotMatch(
+    crm,
+    /assignment-mode-switch \$\{[\s\S]{0,120}\? "fixed"/,
+  );
+  assert.match(globals, /\.assignment-mode-switch\.is-fixed/);
 });
 
 test("fixed assignment control is owner-only and excluded from institution lists", () => {

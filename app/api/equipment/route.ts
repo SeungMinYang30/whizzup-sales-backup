@@ -1,6 +1,7 @@
 import {
   accessErrorResponse,
   requireApprovedMember,
+  requirePrimaryOwner,
 } from "../../../lib/collaboration";
 import { ensureCampaignsReady } from "../../../lib/campaign-store";
 import {
@@ -388,15 +389,18 @@ async function syncOrganizationEquipmentSchedule(
   const d1 = await ensureRecordsReady();
   const latestSchedule = await d1
     .prepare(
-      `SELECT progress_schedule
+      `SELECT progress_schedule, source_chat
        FROM activities
        WHERE organization = ? AND business_round = ? AND progress_schedule <> ''
        ORDER BY COALESCE(activity_date, '') DESC, id DESC
        LIMIT 1`,
     )
     .bind(organization, businessRound)
-    .first<{ progress_schedule: string }>();
-  if (latestSchedule?.progress_schedule) {
+    .first<{ progress_schedule: string; source_chat: string }>();
+  if (
+    latestSchedule?.progress_schedule &&
+    clean(latestSchedule.source_chat) !== "사이트 AI 입력"
+  ) {
     await syncEquipmentItemsFromProgressSchedule(
       organization,
       latestSchedule.progress_schedule,
@@ -644,9 +648,12 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const member = await requireApprovedMember();
+    const member = await requirePrimaryOwner();
     const payload = (await request.json()) as Record<string, unknown>;
     const kind = clean(payload.kind);
+    if (kind.startsWith("ai-") && kind.endsWith("import")) {
+      return Response.json({ ok: true, disabled: true });
+    }
     const d1 = await ensureEquipmentReady();
 
     if (kind === "project") {
@@ -1199,7 +1206,7 @@ function optionalPositiveInteger(value: unknown) {
 
 export async function PUT(request: Request) {
   try {
-    const member = await requireApprovedMember();
+    const member = await requirePrimaryOwner();
     const payload = (await request.json()) as Record<string, unknown>;
     const kind = clean(payload.kind);
     const id = Number(payload.id);
@@ -1531,7 +1538,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    await requireApprovedMember();
+    await requirePrimaryOwner();
     const payload = (await request.json()) as Record<string, unknown>;
     const kind = clean(payload.kind);
     const id = Number(payload.id);

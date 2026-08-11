@@ -110,6 +110,27 @@ test("입력 화면의 초기 선택값은 최근 기관 값으로 바꾼다", (
   assert.equal(result.followUpRequired, false);
 });
 
+test("AI 기본 상태는 같은 차수의 위즈업 수주를 상담 진행으로 낮추지 않는다", () => {
+  const result = inheritInstitutionState(
+    {
+      status: "상담 진행",
+      awardStatus: "미정",
+      awardStage: "미정",
+      sourceChat: "사이트 AI 입력",
+    },
+    previousState,
+    {
+      inheritFormDefaults: true,
+      preventAwardStatusDowngrade: true,
+    },
+  );
+
+  assert.equal(result.status, "수주 전환");
+  assert.equal(result.awardStatus, "위즈업 수주");
+  assert.equal(result.awardCompany, "위즈업");
+  assert.equal(result.awardStage, "일정 조율");
+});
+
 test("최신 기록의 빈칸은 더 오래된 기록의 실제 값으로 보완한다", () => {
   const snapshot = mergeInstitutionStateSnapshots([
     {

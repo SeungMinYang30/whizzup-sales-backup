@@ -18,6 +18,7 @@ import {
   hasProcurementSignal,
   procurementNumbersFromText,
 } from "../lib/procurement-product";
+import type { AuthoredQuotation } from "../lib/authored-quotations";
 
 type QuotationDocument = {
   id: number;
@@ -316,13 +317,16 @@ export default function QuotationDocuments({
   businessRound = 1,
   onToast,
   onEquipmentImported,
+  canManageExternalQuotations = false,
 }: {
   organization: string;
   businessRound?: number;
   onToast: (message: string) => void;
   onEquipmentImported?: () => void;
+  canManageExternalQuotations?: boolean;
 }) {
   const [documents, setDocuments] = useState<QuotationDocument[]>([]);
+  const [authoredQuotations, setAuthoredQuotations] = useState<AuthoredQuotation[]>([]);
   const [storage, setStorage] = useState<QuotationStorage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -331,6 +335,7 @@ export default function QuotationDocuments({
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
   const [preview, setPreview] = useState<QuotationDocument | null>(null);
+  const [authoredPreview, setAuthoredPreview] = useState<AuthoredQuotation | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const [analysisDraft, setAnalysisDraft] =
@@ -343,17 +348,31 @@ export default function QuotationDocuments({
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(
-        `/api/quotation-documents?organization=${encodeURIComponent(organization)}&businessRound=${businessRound}`,
-        { cache: "no-store" },
-      );
+      const [response, authoredResponse] = await Promise.all([
+        fetch(
+          `/api/quotation-documents?organization=${encodeURIComponent(organization)}&businessRound=${businessRound}`,
+          { cache: "no-store" },
+        ),
+        fetch(
+          `/api/quotations?organization=${encodeURIComponent(organization)}&businessRound=${businessRound}`,
+          { cache: "no-store" },
+        ),
+      ]);
       const payload = (await response.json()) as {
         documents?: QuotationDocument[];
         storage?: QuotationStorage;
         error?: string;
       };
+      const authoredPayload = (await authoredResponse.json()) as {
+        quotations?: AuthoredQuotation[];
+        error?: string;
+      };
       if (!response.ok) throw new Error(payload.error || "견적서를 불러오지 못했습니다.");
+      if (!authoredResponse.ok) throw new Error(authoredPayload.error || "시스템 견적서를 불러오지 못했습니다.");
       setDocuments(payload.documents ?? []);
+      setAuthoredQuotations((authoredPayload.quotations ?? [])
+        .filter((quotation) => quotation.organization === organization && quotation.businessRound === businessRound && quotation.status === "final")
+        .sort((left, right) => right.quoteDate.localeCompare(left.quoteDate) || right.revisionNumber - left.revisionNumber || right.id - left.id));
       setStorage(payload.storage ?? null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "견적서를 불러오지 못했습니다.");
@@ -366,6 +385,15 @@ export default function QuotationDocuments({
     const timer = window.setTimeout(() => void loadDocuments(), 0);
     return () => window.clearTimeout(timer);
   }, [loadDocuments]);
+
+  useEffect(() => {
+    const handleFilesUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ organization?: string; businessRound?: number }>).detail;
+      if (detail?.organization === organization && detail.businessRound === businessRound) void loadDocuments();
+    };
+    window.addEventListener("whizzup:quotation-files-updated", handleFilesUpdated);
+    return () => window.removeEventListener("whizzup:quotation-files-updated", handleFilesUpdated);
+  }, [businessRound, loadDocuments, organization]);
 
   function selectPdf(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
@@ -935,28 +963,30 @@ export default function QuotationDocuments({
 
   const remainingPercent = Math.max(0, Math.min(100, storage?.remainingPercent ?? 100));
   const storageTone = remainingPercent <= 10 ? "danger" : remainingPercent <= 20 ? "warning" : "safe";
+  const authoredLatestIds = new Set<number>();
+  const authoredLatestByRoot = new Map<number, AuthoredQuotation>();
+  authoredQuotations.forEach((quotation) => {
+    const rootId = quotation.revisionRootId || quotation.id;
+    const current = authoredLatestByRoot.get(rootId);
+    if (!current || quotation.revisionNumber > current.revisionNumber) authoredLatestByRoot.set(rootId, quotation);
+  });
+  authoredLatestByRoot.forEach((quotation) => authoredLatestIds.add(quotation.id));
 
   return (
     <section className="quotation-documents">
       <div className="history-section-heading quotation-documents-heading">
         <div>
           <span className="section-kicker">QUOTATION FILES</span>
-          <h3>견적서</h3>
+          <h3>견적서 파일</h3>
         </div>
-        <button type="button" onClick={() => setUploadOpen((current) => !current)}>
-          {uploadOpen ? "첨부 닫기" : "+ PDF·엑셀 첨부"}
-        </button>
+        {canManageExternalQuotations && (
+          <button type="button" onClick={() => setUploadOpen((current) => !current)}>
+            {uploadOpen ? "첨부 닫기" : "+ PDF·엑셀 첨부"}
+          </button>
+        )}
       </div>
 
-      {storage?.provider === "google-drive" ? (
-        <div className="quotation-storage safe">
-          <div>
-            <strong>원본 파일 Google Drive 보관</strong>
-            <span>견적서 {storage.documentCount}건 · {storage.pageCount}페이지</span>
-          </div>
-          <small>페이지 미리보기만 사이트 임시 저장공간을 사용합니다.</small>
-        </div>
-      ) : storage ? (
+      {storage?.provider !== "google-drive" && storage ? (
         <div className={`quotation-storage ${storageTone}`}>
           <div>
             <strong>저장공간 {formatBytes(storage.usedBytes)} / {formatBytes(storage.limitBytes)}</strong>
@@ -969,7 +999,7 @@ export default function QuotationDocuments({
         </div>
       ) : null}
 
-      {uploadOpen && (
+      {canManageExternalQuotations && uploadOpen && (
         <form className="quotation-upload-form" onSubmit={uploadQuotation}>
           <div className="quotation-upload-grid">
             <label className="quotation-file-field">
@@ -1008,16 +1038,59 @@ export default function QuotationDocuments({
         </div>
       )}
 
-      <div className="quotation-document-list">
-        {loading ? (
-          <p className="quotation-empty">견적서를 불러오고 있습니다.</p>
-        ) : documents.length === 0 ? (
-          <p className="quotation-empty">
-            등록된 견적서가 없습니다. 업체 견적서 PDF 또는 위즈업 엑셀을
-            첨부해 주세요.
-          </p>
-        ) : (
-          documents.map((document) => (
+      <div className="quotation-file-group">
+        <div className="quotation-file-group-heading">
+          <div><strong>시스템 작성 견적서</strong><span>최종 저장할 때 생성된 PDF·Excel</span></div>
+          <b>{authoredQuotations.length}건</b>
+        </div>
+        <div className="quotation-document-list quotation-system-file-list">
+          {loading ? (
+            <p className="quotation-empty">시스템 견적서 파일을 불러오고 있습니다.</p>
+          ) : authoredQuotations.length === 0 ? (
+            <p className="quotation-empty">저장된 시스템 견적서 파일이 없습니다.</p>
+          ) : authoredQuotations.map((quotation) => (
+            <article className="quotation-document-card quotation-system-file-card" key={quotation.id}>
+              <div className={`quotation-system-thumbnail${quotation.pdfUrl ? " ready" : " missing"}`}>
+                {quotation.pdfUrl ? (
+                  <iframe
+                    src={`${quotation.pdfUrl}#page=1&view=FitH&toolbar=0&navpanes=0&scrollbar=0`}
+                    title={`${quotation.quoteNumber} 첫 페이지 미리보기`}
+                    loading="lazy"
+                  />
+                ) : <div className="quotation-system-missing">PDF<br />미생성</div>}
+                <button
+                  type="button"
+                  disabled={!quotation.pdfUrl}
+                  onClick={() => setAuthoredPreview(quotation)}
+                  aria-label={`${quotation.quoteNumber} PDF 확대 보기`}
+                >{quotation.pdfUrl ? "PDF 확대 보기" : "이전 견적"}</button>
+              </div>
+              <div className="quotation-document-meta">
+                <div>
+                  <span>{displayDate(quotation.quoteDate)} · {quotation.revisionLabel}{authoredLatestIds.has(quotation.id) ? " · 최신" : ""}</span>
+                  <strong>{quotation.projectTitle || `${quotation.businessRound}차 사업`}</strong>
+                  <b>{Number(quotation.totalAmount || 0).toLocaleString("ko-KR")}원</b>
+                </div>
+                <small>{quotation.quoteNumber} · {quotation.updatedByName}</small>
+                <div className="quotation-document-actions">
+                  {quotation.pdfUrl ? <button type="button" onClick={() => setAuthoredPreview(quotation)}>PDF 확대</button> : <span className="quotation-file-missing-label">PDF 파일 없음</span>}
+                  {quotation.pdfUrl && <a href={quotation.pdfUrl} target="_blank" rel="noreferrer">새 창에서 보기</a>}
+                  {quotation.excelUrl && <a href={quotation.excelUrl}>Excel 다운로드</a>}
+                  {quotation.sourceOriginalUrl && <a href={quotation.sourceOriginalUrl} target="_blank" rel="noreferrer">불러온 원본 보기</a>}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      {!loading && documents.length > 0 && <details className="quotation-file-group quotation-external-file-group">
+        <summary className="quotation-file-group-heading">
+          <div><strong>기타 외부 견적 자료</strong><span>예전에 별도로 첨부한 업체 PDF·Excel</span></div>
+          <b>{documents.length}건 <span className="quotation-external-open-label">· 펼쳐보기</span><span className="quotation-external-close-label">· 접기</span></b>
+        </summary>
+        <div className="quotation-document-list">
+          {documents.map((document) => (
             <article className="quotation-document-card" key={document.id}>
               <button
                 type="button"
@@ -1036,30 +1109,34 @@ export default function QuotationDocuments({
                 <small>{document.originalName} · {formatBytes(document.totalSize)} · {document.createdByName}</small>
                 <div className="quotation-document-actions">
                   <button type="button" onClick={() => setPreview(document)}>이미지 보기</button>
-                  <button
-                    type="button"
-                    className="analyze"
-                    disabled={analyzingId !== null}
-                    onClick={() => void analyzeQuotation(document)}
-                  >
-                    {analyzingId === document.id ? "AI 분석 중…" : "AI 품목 추출"}
-                  </button>
+                  {canManageExternalQuotations && (
+                    <button
+                      type="button"
+                      className="analyze"
+                      disabled={analyzingId !== null}
+                      onClick={() => void analyzeQuotation(document)}
+                    >
+                      {analyzingId === document.id ? "AI 분석 중…" : "AI 품목 추출"}
+                    </button>
+                  )}
                   <a href={document.originalUrl} target="_blank" rel="noreferrer">원본 PDF</a>
                   <a href={document.downloadUrl}>다운로드</a>
-                  <button
-                    type="button"
-                    className="delete"
-                    disabled={deletingId === document.id}
-                    onClick={() => void deleteQuotation(document)}
-                  >
-                    {deletingId === document.id ? "삭제 중…" : "삭제"}
-                  </button>
+                  {canManageExternalQuotations && (
+                    <button
+                      type="button"
+                      className="delete"
+                      disabled={deletingId === document.id}
+                      onClick={() => void deleteQuotation(document)}
+                    >
+                      {deletingId === document.id ? "삭제 중…" : "삭제"}
+                    </button>
+                  )}
                 </div>
               </div>
             </article>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      </details>}
 
       {analysisDraft && (
         <div
@@ -1424,6 +1501,29 @@ export default function QuotationDocuments({
                   <img src={url} alt={`${preview.companyName} 견적서 ${index + 1}페이지`} />
                 </figure>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {authoredPreview?.pdfUrl && (
+        <div className="quotation-preview-layer" role="dialog" aria-modal="true" aria-label={`${authoredPreview.quoteNumber} PDF 미리보기`}>
+          <button className="quotation-preview-backdrop" type="button" aria-label="시스템 견적서 미리보기 닫기" onClick={() => setAuthoredPreview(null)} />
+          <div className="quotation-preview-panel quotation-system-preview-panel">
+            <header>
+              <div>
+                <span>{displayDate(authoredPreview.quoteDate)} · {authoredPreview.revisionLabel}</span>
+                <strong>{authoredPreview.projectTitle || authoredPreview.organization}</strong>
+                <small>{authoredPreview.quoteNumber}</small>
+              </div>
+              <div>
+                <a href={authoredPreview.pdfUrl} target="_blank" rel="noreferrer">새 창에서 보기</a>
+                {authoredPreview.excelUrl && <a href={authoredPreview.excelUrl}>Excel 다운로드</a>}
+                <button type="button" onClick={() => setAuthoredPreview(null)} aria-label="닫기">×</button>
+              </div>
+            </header>
+            <div className="quotation-system-preview-frame">
+              <iframe src={`${authoredPreview.pdfUrl}#view=FitH`} title={`${authoredPreview.quoteNumber} PDF`} />
             </div>
           </div>
         </div>

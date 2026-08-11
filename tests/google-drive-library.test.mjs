@@ -48,3 +48,22 @@ test("preserves XLSX quotations while keeping PDF previews", async () => {
   assert.match(route, /sourceFile instanceof File \? sourceFile : pdf/);
   assert.match(route, /01_기관자료/);
 });
+
+test("automatically lists unmanaged Drive videos and never cleans up referenced files", async () => {
+  const [session, reconcile, page, route] = await Promise.all([
+    read("app/api/resources/upload-session/route.ts"),
+    read("app/api/resources/reconcile/route.ts"),
+    read("app/resource-library-page.tsx"),
+    read("app/api/resources/route.ts"),
+  ]);
+  assert.match(session, /SELECT id FROM resource_attachments WHERE drive_file_id/);
+  assert.match(reconcile, /const productVideoCategory = "제품 소개·시연"/);
+  assert.match(reconcile, /fileName\.replace\(\/\\\.\[\^\.\]\+\$\/u, ""\)/);
+  assert.doesNotMatch(reconcile, /file\.appProperties\?\.whizzup !== "1"/);
+  assert.match(reconcile, /Google Drive 제품 소개·시연 폴더에서 자동 등록된 영상입니다/);
+  assert.match(reconcile, /INSERT OR IGNORE INTO resource_attachments/);
+  assert.doesNotMatch(page, /누락 영상 복구/);
+  assert.match(page, /void reconcileVideos\(true\)/);
+  assert.match(route, /removeUnreferencedResourceFiles/);
+  assert.match(route, /이미 등록된 파일과 새 파일이 섞여 있습니다/);
+});

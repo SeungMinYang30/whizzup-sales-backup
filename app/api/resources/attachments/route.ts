@@ -35,9 +35,6 @@ async function editablePost(postId: number) {
     .bind(postId)
     .first<ResourcePostRow>();
   if (!post) throw new AccessError("자료를 찾지 못했습니다.", 404);
-  if (member.role !== "admin" && Number(post.created_by) !== member.id) {
-    throw new AccessError("본인이 등록한 자료만 수정할 수 있습니다.", 403);
-  }
   return { d1, member, post };
 }
 

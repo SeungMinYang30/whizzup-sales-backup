@@ -217,6 +217,8 @@ export function mergeInstitutionStateSnapshots(
 type InheritanceOptions = {
   /** 새 기록 입력 화면의 초기 선택값도 미입력으로 보고 이전 값으로 바꿉니다. */
   inheritFormDefaults?: boolean;
+  /** AI가 만든 기본 진행 상태로 이미 확정된 수주 상태를 낮추지 않습니다. */
+  preventAwardStatusDowngrade?: boolean;
 };
 
 /**
@@ -239,7 +241,8 @@ export function inheritInstitutionState<T extends object>(
     const isFormDefault =
       options.inheritFormDefaults &&
       typeof defaultValue === "string" &&
-      requested === defaultValue;
+      (requested === defaultValue ||
+        (key === "status" && requested === "상담 진행"));
     const isUnspecifiedAwardValue =
       (key === "awardStatus" || key === "awardStage") && requested === "미정";
 
@@ -256,6 +259,13 @@ export function inheritInstitutionState<T extends object>(
 
   const awardStatus = text(result.awardStatus) || "미정";
   result.awardStatus = awardStatus;
+  if (options.preventAwardStatusDowngrade) {
+    if (["위즈업 수주", "협력사 수주"].includes(awardStatus)) {
+      result.status = "수주 전환";
+    } else if (awardStatus === "타업체 수주") {
+      result.status = "영업 종료";
+    }
+  }
   if (awardStatus === "위즈업 수주") {
     result.awardCompany = "위즈업";
   } else if (awardStatus === "타업체 수주") {

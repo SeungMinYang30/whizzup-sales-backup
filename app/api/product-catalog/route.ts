@@ -15,6 +15,7 @@ import {
   readProductVendorLinkMap,
   setProductVendorLinks,
 } from "../../../lib/product-vendor-links";
+import { hasProcurementSignal, procurementNumbersFromText, resolveProcurementFeeRate } from "../../../lib/procurement-product";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,16 @@ function normalizeProduct(
   const specification = cleanText(source.specification, 1_000);
   const note = cleanText(source.note, 1_000);
   const reference = cleanText(source.reference, 2_000);
+  const procurement = source.procurement === true || hasProcurementSignal(note, specification);
+  const procurementChannel = procurement
+    ? cleanText(source.procurementChannel, 80) || (/S\s*2\s*B/iu.test(note) ? "S2B" : /디지털서비스몰/iu.test(note) ? "디지털서비스몰" : /혁신장터/iu.test(note) ? "혁신장터" : "G2B")
+    : "";
+  const procurementNumber = procurement
+    ? cleanText(source.procurementNumber, 80) || procurementNumbersFromText(note, specification)[0] || ""
+    : "";
+  const procurementFeeRate = procurement
+    ? resolveProcurementFeeRate(source.procurementFeeRate, note, specification)
+    : null;
   const unitPrice = cleanNumber(source.unitPrice, 0, 100_000_000_000);
   const supplyType = source.supplyType === "direct" ? "direct" : "partner";
   const requestedCommissionRate = cleanNumber(source.commissionRate, 0, 1);
@@ -93,6 +104,10 @@ function normalizeProduct(
       supplyType === "partner"
         ? cleanText(source.supplierVendorName, 300)
         : "",
+    procurement,
+    procurementChannel,
+    procurementNumber,
+    procurementFeeRate,
   };
 }
 
@@ -124,6 +139,10 @@ function productForStorage(product: ProductCatalogItem) {
     commissionRate: product.commissionRate,
     reference: product.reference,
     needsReview: product.needsReview,
+    procurement: product.procurement === true,
+    procurementChannel: product.procurementChannel ?? "",
+    procurementNumber: product.procurementNumber ?? "",
+    procurementFeeRate: product.procurementFeeRate ?? null,
   };
 }
 

@@ -15,7 +15,11 @@ const documentLabels: Record<DocumentType, string> = { business_registration: "�
 const documentHints: Record<DocumentType, string> = { business_registration: "업체명·사업자번호·대표자·주소·업태·종목", bankbook: "은행·계좌번호·예금주", business_card: "담당자·직함·연락처·이메일" };
 const VENDOR_PAGE_SIZE = 30;
 
-export default function AwardVendorPage() {
+export default function AwardVendorPage({
+  onCountChange,
+}: {
+  onCountChange?: (count: number) => void;
+} = {}) {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [draft, setDraft] = useState<VendorDraft>(emptyDraft);
@@ -44,6 +48,7 @@ export default function AwardVendorPage() {
     setDraft(vendor ? { ...emptyDraft, ...vendor } : emptyDraft);
   }
   useEffect(() => { void load().catch((error) => setMessage(error.message)); }, []);
+  useEffect(() => { onCountChange?.(vendors.length); }, [onCountChange, vendors.length]);
   useEffect(() => { setPage(1); }, [search]);
   useEffect(() => { setPage((current) => Math.min(current, pageCount)); }, [pageCount]);
   function choose(vendor: Vendor) { setSelectedId(vendor.id); setDraft({ ...emptyDraft, ...vendor }); setMessage(""); }

@@ -140,6 +140,8 @@ test("product order and favorites are saved per approved member", () => {
   assert.match(route, /favoriteProductIds/);
   assert.match(route, /export async function PATCH/);
   assert.match(source, /draggable=\{canReorder && catalogView === "all" && !normalizedSearch && !saving\}/);
+  assert.doesNotMatch(source, /<tr[\s\S]{0,260}draggable=\{/);
+  assert.match(source, /className="product-drag-handle"[\s\S]{0,160}draggable=\{canReorder/);
   assert.match(source, /기본 순서로/);
   assert.match(source, /moveProduct\(product\.id, -1\)/);
   assert.match(source, /moveProduct\(product\.id, 1\)/);

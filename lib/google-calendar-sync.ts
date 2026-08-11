@@ -11,7 +11,10 @@ import {
   type GoogleCalendarApiEvent,
   upsertGoogleCalendarEvent,
 } from "./google-calendar-api";
-import { CONSTRUCTION_STAGES } from "./construction-stages";
+import {
+  CONSTRUCTION_STAGES,
+  isValidConstructionStage,
+} from "./construction-stages";
 import {
   ensureOrganizationSchedulesReady,
   refreshOrganizationScheduleMirror,
@@ -231,7 +234,14 @@ async function applyGoogleSharingPolicy() {
        AND category IN ('personal', 'general')`,
   ).all<Pick<SyncRow, "id" | "category" | "label" | "google_event_id" | "sync_status" | "sync_operation">>();
   const updates = result.results.flatMap((row: Pick<SyncRow, "id" | "category" | "label" | "google_event_id" | "sync_status" | "sync_operation">) => {
-    if (isGoogleSharedSchedule(row)) return [];
+    if (isGoogleSharedSchedule(row)) {
+      if (row.sync_status !== "local_only") return [];
+      return [d1.prepare(
+        `UPDATE organization_schedules
+         SET sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
+         WHERE id = ?`,
+      ).bind(row.id)];
+    }
     const hasGoogleEvent = Boolean(row.google_event_id?.trim());
     const targetStatus = hasGoogleEvent ? "pending" : "local_only";
     const targetOperation = hasGoogleEvent ? "unlink" : "upsert";
@@ -408,8 +418,8 @@ export async function linkGoogleCalendarSchedule(input: {
     if (!googleConstructionCalendarApiConfigured()) {
       throw new Error("Google '위즈업 시공' 캘린더를 먼저 연결해 주세요.");
     }
-    if (!(CONSTRUCTION_STAGES as readonly string[]).includes(title)) {
-      throw new Error("시공 일정은 철거·목공·도장·바닥·시스템·검수·교육 단계 중 하나를 선택해 주세요.");
+    if (!isValidConstructionStage(title)) {
+      throw new Error("시공 공정명을 40자 이내로 입력해 주세요.");
     }
     constructionProject = await d1.prepare(
       `SELECT id, work_summary FROM construction_schedule_projects

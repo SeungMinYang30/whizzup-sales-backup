@@ -71,6 +71,76 @@ function tidyInstitutionName(value: unknown) {
     .trim();
 }
 
+const institutionEndingPattern =
+  /(?:대학교|대학|고등학교|중학교|초등학교|유치원|어린이집|학교|복지관|복지센터|센터|도서관|병원|보건소|청|공단|재단|협회|회관|기관)$/;
+
+const provinceNameAliases: Record<string, string[]> = {
+  서울: ["서울", "서울특별시"], 부산: ["부산", "부산광역시"], 대구: ["대구", "대구광역시"],
+  인천: ["인천", "인천광역시"], 광주: ["광주", "광주광역시"], 대전: ["대전", "대전광역시"],
+  울산: ["울산", "울산광역시"], 세종: ["세종", "세종특별자치시"], 경기: ["경기", "경기도"],
+  강원: ["강원", "강원도", "강원특별자치도"], 충북: ["충북", "충청북도"], 충남: ["충남", "충청남도"],
+  전북: ["전북", "전라북도", "전북특별자치도"], 전남: ["전남", "전라남도"], 경북: ["경북", "경상북도"],
+  경남: ["경남", "경상남도"], 제주: ["제주", "제주도", "제주특별자치도"],
+};
+
+const genericInstitutionNames = new Set([
+  "학교", "초등학교", "중학교", "고등학교", "유치원", "어린이집",
+  "대학", "대학교", "시청", "군청", "구청", "복지관", "센터", "기관",
+]);
+
+function regionPrefixCandidates(region: string) {
+  const parts = region.split(" ").filter(Boolean);
+  if (!parts.length) return [];
+  const provinceAliases = provinceNameAliases[parts[0]] ?? [parts[0]];
+  const remainder = parts.slice(1).join(" ");
+  const candidates = new Set<string>([region]);
+  provinceAliases.forEach((province) => {
+    candidates.add(province);
+    if (remainder) candidates.add(`${province} ${remainder}`);
+  });
+  return [...candidates].sort((left, right) => right.length - left.length);
+}
+
+function safeInstitutionRemainder(value: string) {
+  const compactOffice = value.replace(/^(.{2,})\s+(시청|군청|구청)$/u, "$1$2");
+  const canonical = canonicalInstitutionName(compactOffice);
+  const meaningfulBase = canonical.replace(institutionEndingPattern, "").trim();
+  if (!institutionEndingPattern.test(canonical) || meaningfulBase.length < 2) return "";
+  if (genericInstitutionNames.has(canonical.replace(/\s+/g, ""))) return "";
+  return canonical;
+}
+
+/**
+ * AI가 `강원 영월 세경대학교`처럼 지역을 기관명 앞에 붙여 반환한 경우에만
+ * 지역 접두어를 안전하게 떼어 낸다. 서울대학교처럼 기관 고유명에 지역명이
+ * 포함된 경우를 훼손하지 않도록 공백 경계와 기관형 접미사를 함께 확인한다.
+ */
+export function institutionNameWithoutRegionPrefix(
+  value: unknown,
+  region: unknown,
+) {
+  const name = tidyInstitutionName(value);
+  const normalizedRegion = tidyInstitutionName(region);
+  if (!name || !normalizedRegion) return canonicalInstitutionName(name);
+
+  for (const prefix of regionPrefixCandidates(normalizedRegion)) {
+    if (!name.startsWith(`${prefix} `)) continue;
+    const remainder = name.slice(prefix.length).trim();
+    const safeRemainder = safeInstitutionRemainder(remainder);
+    if (safeRemainder) return safeRemainder;
+    if (prefix === normalizedRegion) {
+      const administrativeOffice = remainder.match(/^(시청|군청|구청)$/)?.[1];
+      const municipality = normalizedRegion.split(" ").filter(Boolean).at(-1) ?? "";
+      if (administrativeOffice && municipality.length >= 2) {
+        return canonicalInstitutionName(`${municipality}${administrativeOffice}`);
+      }
+      return canonicalInstitutionName(name);
+    }
+  }
+
+  return canonicalInstitutionName(name);
+}
+
 function fullSchoolName(
   value: string,
   shortSuffix: string,
@@ -575,6 +645,34 @@ export function resolveUniqueExistingInstitutionName(
     .map((context) => canonicalInstitutionName(context.organization))
     .filter(Boolean);
   if (exactNames.length) return preferFullInstitutionName(...exactNames);
+
+  // 지역을 생략한 학교명(예: 도수초등학교)이 DB 전체에서 정확히 한 학교의
+  // 끝부분과만 일치하면 지역 접두어가 붙은 기존 기관을 재사용한다.
+  // 같은 이름의 학교가 여러 지역에 있으면 자동 연결하지 않는다.
+  if (!String(requestedContext.region ?? "").trim()) {
+    const requested = canonicalInstitutionName(requestedContext.organization);
+    const requestedKind = institutionKind(requested);
+    const requestedBase = institutionBaseKey(requested);
+    const suffixGroups = new Map<string, string[]>();
+    if (requestedKind !== "other" && requestedBase.length >= 2) {
+      existingContexts.forEach((context) => {
+        const candidate = canonicalInstitutionName(context.organization);
+        const candidateKind = institutionKind(candidate);
+        const candidateBase = institutionBaseKey(candidate);
+        if (
+          !compatibleSchoolKinds(requestedKind, candidateKind) ||
+          !candidateBase.endsWith(requestedBase)
+        ) return;
+        const key = institutionAliasKey(candidate);
+        suffixGroups.set(key, [...(suffixGroups.get(key) ?? []), candidate]);
+      });
+    }
+    if (suffixGroups.size === 1) {
+      return preferFullInstitutionName(
+        ...([...suffixGroups.values()][0] ?? []),
+      );
+    }
+  }
 
   const regionalGroups = new Map<string, string[]>();
   existingContexts.forEach((context) => {

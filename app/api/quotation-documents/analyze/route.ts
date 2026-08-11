@@ -1,6 +1,6 @@
 import {
   accessErrorResponse,
-  requireApprovedMember,
+  requirePrimaryOwner,
 } from "../../../../lib/collaboration";
 import { getOpenAIConfig } from "../../../../lib/openai-config";
 import {
@@ -108,7 +108,7 @@ function cleanText(value: unknown, maxLength: number) {
 
 export async function POST(request: Request) {
   try {
-    await requireApprovedMember();
+    await requirePrimaryOwner();
     const payload = (await request.json()) as { id?: unknown };
     const id = Number(payload.id);
     if (!Number.isSafeInteger(id) || id < 1) {

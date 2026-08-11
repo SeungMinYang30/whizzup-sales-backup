@@ -1,7 +1,31 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { buildOwnerPerformance } from "../lib/owner-performance.ts";
+import {
+  buildOwnerPerformance,
+  canonicalOwnerPerformanceManagerName,
+} from "../lib/owner-performance.ts";
+
+test("양승민 담당자 표기를 양승민 이사로 통합한다", () => {
+  assert.equal(canonicalOwnerPerformanceManagerName("양승민"), "양승민 이사");
+  assert.equal(canonicalOwnerPerformanceManagerName("양승민 이사"), "양승민 이사");
+  assert.equal(canonicalOwnerPerformanceManagerName("양승민 이사님"), "양승민 이사");
+
+  const result = buildOwnerPerformance([
+    { activityId: 1, businessKey: "a", businessRound: 1, activityDate: "2026-08-01", organization: "A", region: "", progressManager: "양승민", confirmed: true, confirmedAmount: 10, netRevenue: 2 },
+    { activityId: 2, businessKey: "b", businessRound: 1, activityDate: "2026-08-02", organization: "B", region: "", progressManager: "양승민 이사", confirmed: true, confirmedAmount: 20, netRevenue: 3 },
+  ], [], "2026-01-01", "2026-12-31");
+
+  assert.equal(result.managers.length, 1);
+  assert.equal(result.managers[0].name, "양승민 이사");
+  assert.equal(result.managers[0].orderCount, 2);
+});
+
+test("대표 직책은 대표님으로 통합한다", () => {
+  assert.equal(canonicalOwnerPerformanceManagerName("박원석"), "박원석 대표님");
+  assert.equal(canonicalOwnerPerformanceManagerName("박원석 대표"), "박원석 대표님");
+  assert.equal(canonicalOwnerPerformanceManagerName("박원석 대표님"), "박원석 대표님");
+});
 
 test("대표 경영 실적은 완료된 위즈업 수주를 담당자별로 한 번씩 집계한다", () => {
   const result = buildOwnerPerformance(
@@ -93,6 +117,8 @@ test("경영 요약은 대표 본인 전용 API와 프로필 메뉴로만 연결
   ]);
   assert.match(route, /ownerPerformanceResponse[\s\S]*requirePrimaryOwner\(\)/);
   assert.match(crm, /isPrimaryOwner && \([\s\S]*경영 요약/);
+  assert.match(crm, /formatManagerName=\{displayProgressManager\}/);
+  assert.match(crm, /return member \? memberLabel\(member\) : canonicalOwnerPerformanceManagerName\(raw\)/);
   assert.match(crm, /nextView === "owner-performance" && !isPrimaryOwner/);
   assert.doesNotMatch(
     crm.slice(crm.indexOf("const managementNavItems"), crm.indexOf("const visibleManagementNavItems")),

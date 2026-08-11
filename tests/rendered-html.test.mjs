@@ -392,24 +392,25 @@ test("builds the Korean collaborative sales management application", async () =>
   assert.match(crm, /name: budgetType\.trim\(\) \|\| displayName/);
   assert.match(
     crm,
-    /equipmentProjectName:\s*budgetType \|\| String\(draft\?\.equipmentProjectName/,
+    /equipmentProjectName:\s*""/,
   );
   assert.doesNotMatch(
     crm,
     /setProjectDraft\(\{[\s\S]{0,120}budgetType: event\.target\.value/,
   );
-  assert.match(crm, /saveAiEquipmentPreview/);
+  assert.doesNotMatch(crm, /saveAiEquipmentPreview/);
   assert.match(crm, /equipmentProjectStatus/);
-  assert.match(crm, /품목 관리에 연결/);
-  assert.match(crm, /제안·수주 품목/);
+  assert.doesNotMatch(crm, /품목 관리에 연결/);
+  assert.doesNotMatch(crm, /제안·수주 품목/);
   assert.doesNotMatch(crm, /requestEquipmentSummaries/);
   assert.match(aiRoute, /equipmentProjectName/);
   assert.match(aiRoute, /equipmentProjectStatus/);
   assert.match(aiRoute, /equipmentItems/);
-  assert.match(aiRoute, /사업명이 없으면[\s\S]*반드시 빈 문자열/);
-  assert.match(aiRoute, /"스크린 설치", "아이핏 설치"/);
-  assert.match(aiRoute, /inferredEquipmentItemsFromSchedule/);
-  assert.match(aiRoute, /date < todayValue/);
+  assert.match(aiRoute, /equipmentProjectName:\s*""/);
+  assert.match(aiRoute, /장비·물품의 품목, 수량, 규격, 설치 수량이나 품목 관리용 사업 정보를 추출하거나 만들지 마세요/);
+  assert.doesNotMatch(aiRoute, /inferredEquipmentItemsFromSchedule/);
+  assert.match(recordsRoute, /isAiInputActivity/);
+  assert.match(recordsRoute, /skipAiEquipmentSync/);
   assert.doesNotMatch(equipmentRoute, /defaultProjectName/);
   assert.match(recordsRoute, /syncEquipmentProjectFromRecord/);
   assert.match(recordsRoute, /DEFAULT_RECORD_PAGE_SIZE = 500/);
@@ -423,10 +424,8 @@ test("builds the Korean collaborative sales management application", async () =>
   assert.match(crm, /maximumPages = 1_000/);
   assert.match(crm, /recordsById/);
   assert.match(crm, /pagination\?\.hasMore/);
-  assert.match(
-    crm,
-    /requestRecords\(\s*preloadManagerRecords \? "full" : "dashboard",?\s*\)/,
-  );
+  assert.match(crm, /const nextRecords = await requestRecords\("dashboard"\)/);
+  assert.doesNotMatch(crm, /preloadManagerRecords/);
   assert.match(crm, /requestRecords\("full"\)/);
   assert.match(
     recordsRoute,

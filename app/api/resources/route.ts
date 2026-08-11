@@ -22,18 +22,15 @@ import {
   type ResourceAttachmentRow,
   type ResourcePostRow,
 } from "../../../lib/resource-library";
+import {
+  isResourceCategoryForKind,
+  isVideoResourceFile,
+  RESOURCE_CATEGORIES,
+} from "../../../lib/resource-library-categories";
 
 export const dynamic = "force-dynamic";
 
-const categories = new Set([
-  "제안서",
-  "매뉴얼",
-  "계약·공문",
-  "제품자료",
-  "교육자료",
-  "서식",
-  "기타",
-]);
+const categories = new Set<string>(RESOURCE_CATEGORIES);
 const blockedExtensions = new Set([
   "exe", "dll", "bat", "cmd", "com", "msi", "ps1", "vbs", "js", "html", "htm",
 ]);
@@ -50,6 +47,18 @@ function positiveId(value: unknown) {
 function normalizedCategory(value: unknown) {
   const category = clean(value, 40);
   return categories.has(category) ? category : "기타";
+}
+
+async function removeUnreferencedResourceFiles(fileIds: string[]) {
+  if (!fileIds.length) return;
+  const d1 = await ensureResourceLibraryReady().catch(() => null);
+  for (const fileId of fileIds) {
+    const linked = d1
+      ? await d1.prepare("SELECT id FROM resource_attachments WHERE drive_file_id = ? LIMIT 1")
+        .bind(fileId).first<{ id: number }>().catch(() => null)
+      : null;
+    if (!linked) await removeDriveFile(fileId).catch(() => undefined);
+  }
 }
 
 async function attachmentById(id: number) {
@@ -102,7 +111,20 @@ export async function GET(request: Request) {
       .prepare(
         `SELECT * FROM resource_posts
          WHERE ${clauses.join(" AND ")}
-         ORDER BY created_at DESC, id DESC
+         ORDER BY CASE category
+           WHEN '제안서' THEN 0
+           WHEN '매뉴얼' THEN 1
+           WHEN '계약·공문' THEN 2
+           WHEN '제품자료' THEN 3
+           WHEN '교육자료' THEN 4
+           WHEN '서식' THEN 5
+           WHEN '제품 소개·시연' THEN 10
+           WHEN '설치·사용법' THEN 11
+           WHEN '현장·납품 사례' THEN 12
+           WHEN '회사·홍보' THEN 13
+           WHEN '기타' THEN 20
+           ELSE 99 END,
+           title COLLATE NOCASE ASC, id ASC
          LIMIT 300`,
       )
       .bind(...bindings)
@@ -191,7 +213,44 @@ export async function POST(request: Request) {
       if (verified.length !== rawFiles.length) {
         throw new AccessError("첨부 파일 정보를 다시 확인해 주세요.", 400);
       }
+      const fileKinds = new Set(
+        verified.map((file) => isVideoResourceFile(file.originalName, file.mimeType)),
+      );
+      if (fileKinds.size !== 1) {
+        throw new AccessError("문서와 영상은 한 게시물에 함께 등록할 수 없습니다.", 400);
+      }
+      const isVideo = fileKinds.has(true);
+      if (!isResourceCategoryForKind(category, isVideo)) {
+        throw new AccessError(
+          isVideo ? "영상 자료 분류를 선택해 주세요." : "문서 자료 분류를 선택해 주세요.",
+          400,
+        );
+      }
       const d1 = await ensureResourceLibraryReady();
+      const linked = verified.length
+        ? await d1
+          .prepare(`SELECT * FROM resource_attachments WHERE drive_file_id IN (${verified.map(() => "?").join(",")})`)
+          .bind(...verified.map((file) => file.fileId))
+          .all<ResourceAttachmentRow>()
+        : { results: [] as ResourceAttachmentRow[] };
+      if (linked.results.length) {
+        const postIds = [...new Set(linked.results.map((file) => Number(file.post_id)))];
+        if (linked.results.length === verified.length && postIds.length === 1) {
+          const existingPost = await d1
+            .prepare("SELECT * FROM resource_posts WHERE id = ? AND archived_at IS NULL")
+            .bind(postIds[0])
+            .first<ResourcePostRow>();
+          if (existingPost) {
+            uploadedFileIds.length = 0;
+            const existingAttachments = await d1
+              .prepare("SELECT * FROM resource_attachments WHERE post_id = ? ORDER BY created_at ASC, id ASC")
+              .bind(postIds[0])
+              .all<ResourceAttachmentRow>();
+            return Response.json({ post: resourcePostJson(existingPost, existingAttachments.results) });
+          }
+        }
+        throw new AccessError("이미 등록된 파일과 새 파일이 섞여 있습니다. 자료실을 새로고침한 뒤 다시 확인해 주세요.", 409);
+      }
       const post = await d1
         .prepare(
           `INSERT INTO resource_posts (category, title, content, created_by, created_by_name)
@@ -238,6 +297,19 @@ export async function POST(request: Request) {
     }
     const blocked = files.find((file) => blockedExtensions.has(file.name.toLowerCase().split(".").pop() || ""));
     if (blocked) return Response.json({ error: `${blocked.name} 파일 형식은 첨부할 수 없습니다.` }, { status: 400 });
+    const fileKinds = new Set(
+      files.map((file) => isVideoResourceFile(file.name, file.type)),
+    );
+    if (fileKinds.size !== 1) {
+      return Response.json({ error: "문서와 영상은 한 게시물에 함께 등록할 수 없습니다." }, { status: 400 });
+    }
+    const isVideo = fileKinds.has(true);
+    if (!isResourceCategoryForKind(category, isVideo)) {
+      return Response.json(
+        { error: isVideo ? "영상 자료 분류를 선택해 주세요." : "문서 자료 분류를 선택해 주세요." },
+        { status: 400 },
+      );
+    }
 
     const uploaded = [] as Array<{
       file: File;
@@ -296,9 +368,7 @@ export async function POST(request: Request) {
     }
     return Response.json({ post: resourcePostJson(post, attachments) }, { status: 201 });
   } catch (error) {
-    if (uploadedFileIds.length) {
-      await Promise.all(uploadedFileIds.map((id) => removeDriveFile(id).catch(() => undefined)));
-    }
+    await removeUnreferencedResourceFiles(uploadedFileIds);
     return accessErrorResponse(error);
   }
 }
@@ -306,16 +376,13 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   let driveMoves: Awaited<ReturnType<typeof moveDriveFilesTransaction>> = [];
   try {
-    const member = await requireApprovedMember();
+    await requireApprovedMember();
     const input = (await request.json()) as Record<string, unknown>;
     const id = positiveId(input.id);
     if (!id) return Response.json({ error: "올바른 자료 ID가 필요합니다." }, { status: 400 });
     const d1 = await ensureResourceLibraryReady();
     const existing = await d1.prepare("SELECT * FROM resource_posts WHERE id = ? AND archived_at IS NULL").bind(id).first<ResourcePostRow>();
     if (!existing) return Response.json({ error: "자료를 찾지 못했습니다." }, { status: 404 });
-    if (member.role !== "admin" && Number(existing.created_by) !== member.id) {
-      return Response.json({ error: "본인이 등록한 자료만 수정할 수 있습니다." }, { status: 403 });
-    }
     const title = clean(input.title, 160);
     const content = clean(input.content, 4000);
     const category = normalizedCategory(input.category);
@@ -324,6 +391,25 @@ export async function PATCH(request: Request) {
       .prepare("SELECT * FROM resource_attachments WHERE post_id = ? ORDER BY id")
       .bind(id)
       .all<ResourceAttachmentRow>();
+    if (category !== existing.category && attachments.results.length) {
+      const fileKinds = new Set(
+        attachments.results.map((file) =>
+          isVideoResourceFile(file.original_name, file.mime_type),
+        ),
+      );
+      if (fileKinds.size !== 1) {
+        return Response.json(
+          { error: "문서와 영상이 함께 있는 기존 자료는 분류를 변경할 수 없습니다." },
+          { status: 400 },
+        );
+      }
+      if (!isResourceCategoryForKind(category, fileKinds.has(true))) {
+        return Response.json(
+          { error: fileKinds.has(true) ? "영상 자료 분류를 선택해 주세요." : "문서 자료 분류를 선택해 주세요." },
+          { status: 400 },
+        );
+      }
+    }
     if (category !== existing.category && attachments.results.length) {
       const year = String(existing.created_at || new Date().toISOString()).slice(0, 4);
       driveMoves = await moveDriveFilesTransaction(

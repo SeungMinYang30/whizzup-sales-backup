@@ -72,7 +72,7 @@ test("replica restore validates the signed backup before replacement", () => {
   );
   assert.match(
     backupStore,
-    /const \{ backup, inspection \} = await validateFullBackup\(input\)/,
+    /const \{ backup, inspection \} = await validateFullBackup\([\s\S]{0,80}input/,
   );
   assert.match(backupStore, /await replaceDatabaseFromBackup\(backup\)/);
   assert.doesNotMatch(

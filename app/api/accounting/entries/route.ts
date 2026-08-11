@@ -32,6 +32,11 @@ import {
   type RegisteredQuoteComponent,
   type RegisteredQuoteStatus,
 } from "../../../../lib/registered-quote";
+import {
+  authoredQuotationFromRow,
+  ensureAuthoredQuotationsReady,
+  type AuthoredQuotation,
+} from "../../../../lib/authored-quotations";
 
 export const dynamic = "force-dynamic";
 
@@ -109,6 +114,7 @@ type ActivitySource = {
   jointProjectBudgetType: string;
   jointProjectYear: number | null;
   jointProjectRound: number | null;
+  finalQuotation: AuthoredQuotation | null;
 };
 
 type Receipt = {
@@ -151,7 +157,8 @@ async function loadActivitySources(
   scope: "completed" | "upcoming" = "completed",
 ) {
   await ensureJointProjectsReady();
-  const [activityResult, projectResult, jointProjectResult] = await Promise.all([
+  await ensureAuthoredQuotationsReady();
+  const [activityResult, projectResult, jointProjectResult, quotationResult] = await Promise.all([
     d1.prepare(`
       SELECT
         a.id AS activity_id,
@@ -225,7 +232,26 @@ async function loadActivitySources(
         AND jpm.activity_id IS NOT NULL
       ORDER BY jp.id DESC, jpm.id DESC
     `).all<Record<string, unknown>>(),
+    d1.prepare(`
+      SELECT *
+      FROM authored_quotations
+      WHERE status = 'final' AND deleted_at = ''
+      ORDER BY quote_date DESC, revision_number DESC, id DESC
+      LIMIT 1000
+    `).all<Record<string, unknown>>(),
   ]);
+
+  const latestQuotationByBusiness = new Map<string, AuthoredQuotation>();
+  quotationResult.results.forEach((row) => {
+    const quotation = authoredQuotationFromRow(row);
+    const businessKey = analyticsBusinessRoundKey(
+      quotation.organization,
+      quotation.businessRound,
+    );
+    if (!latestQuotationByBusiness.has(businessKey)) {
+      latestQuotationByBusiness.set(businessKey, quotation);
+    }
+  });
 
   const jointProjectsByActivityId = new Map<
     number,
@@ -334,6 +360,7 @@ async function loadActivitySources(
       jointProjectRound: jointProject
         ? normalizeBusinessRound(jointProject.joint_project_round)
         : null,
+      finalQuotation: latestQuotationByBusiness.get(businessKey) ?? null,
     };
     sourcesByBusinessKey.set(businessKey, source);
     groupedActivityIds.forEach((id) => sources.set(id, source));
@@ -484,16 +511,77 @@ async function loadActivitySources(
     if (executionType === "컨소") source.executionType = "컨소";
   }
   for (const source of sourcesByBusinessKey.values()) {
+    const quotation = source.finalQuotation;
+    if (!quotation) continue;
+    const projectName = quotation.budgets
+      .map((budget) => budget.name)
+      .filter(Boolean)
+      .join(" + ") || quotation.projectTitle || "최종 견적";
+    source.items = quotation.items.map((item, index) => ({
+      id: -(index + 1),
+      projectId: 0,
+      projectName,
+      productName: item.name,
+      specification: item.specification,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      supplyType: item.supplyType,
+      commissionRate: item.supplyType === "partner" ? item.earningRate : null,
+      marginRate: item.supplyType === "direct" ? item.earningRate : null,
+      expectedPartnerCommission:
+        item.supplyType === "partner" ? item.expectedEarning : 0,
+      expectedDirectSalesCollection:
+        item.supplyType === "direct" ? item.amount + item.procurementFee : 0,
+      expectedDirectMargin:
+        item.supplyType === "direct" ? item.expectedEarning : 0,
+      expectedCommission:
+        item.supplyType === "partner" ? item.expectedEarning : 0,
+      expectedConsortiumSettlement: item.consortiumPayment,
+      executionType: quotation.executionType,
+      supplierVendorId: null,
+      supplierVendorName: "",
+    }));
+    source.quoteItems = quotation.items.map((item) => ({
+      quotationAmount: item.amount + item.procurementFee,
+      amountRegistered: true,
+    }));
+    source.quoteConstructions = [];
+    source.projects = new Map();
+    source.expectedPartnerCommission = quotation.items.reduce(
+      (sum, item) =>
+        sum + (item.supplyType === "partner" ? item.expectedEarning : 0),
+      0,
+    );
+    source.expectedDirectSalesCollection = quotation.items.reduce(
+      (sum, item) =>
+        sum + (item.supplyType === "direct" ? item.amount + item.procurementFee : 0),
+      0,
+    );
+    source.expectedDirectMargin = quotation.items.reduce(
+      (sum, item) =>
+        sum + (item.supplyType === "direct" ? item.expectedEarning : 0),
+      0,
+    );
+    source.expectedConstructionMargin = -Math.max(
+      0,
+      quotation.additionalInternalConstructionCost,
+    );
+    source.expectedConsortiumSettlement = quotation.consortiumPayment;
+    source.executionType = quotation.executionType;
+    source.consortiumCompany = quotation.consortiumCompany;
+  }
+  for (const source of sourcesByBusinessKey.values()) {
     const registeredQuote = calculateRegisteredQuote({
       items: source.quoteItems,
       constructions: source.quoteConstructions,
     });
-    source.contractAmount = registeredQuote.contractAmount;
-    source.estimatedContractAmount = registeredQuote.contractAmount;
-    source.quoteStatus = registeredQuote.quoteStatus;
-    source.quoteItemCount = registeredQuote.quoteItemCount;
-    source.quoteMissingAmountItemCount =
-      registeredQuote.quoteMissingAmountItemCount;
+    source.contractAmount = source.finalQuotation?.totalAmount ?? registeredQuote.contractAmount;
+    source.estimatedContractAmount = source.contractAmount;
+    source.quoteStatus = source.finalQuotation ? "complete" : registeredQuote.quoteStatus;
+    source.quoteItemCount = source.finalQuotation?.items.length ?? registeredQuote.quoteItemCount;
+    source.quoteMissingAmountItemCount = source.finalQuotation
+      ? 0
+      : registeredQuote.quoteMissingAmountItemCount;
     const projection = calculateAwardSettlementProjection({
       expectedPartnerCommission: source.expectedPartnerCommission,
       expectedDirectSalesCollection: source.expectedDirectSalesCollection,

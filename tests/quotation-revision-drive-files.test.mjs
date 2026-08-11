@@ -1,0 +1,121 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const page = await readFile(new URL("../app/quotation-management-page.tsx", import.meta.url), "utf8");
+const store = await readFile(new URL("../lib/authored-quotations.ts", import.meta.url), "utf8");
+const filesRoute = await readFile(new URL("../app/api/quotations/files/route.ts", import.meta.url), "utf8");
+const pdf = await readFile(new URL("../app/authored-quotation-pdf.ts", import.meta.url), "utf8");
+const crm = await readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8");
+const documents = await readFile(new URL("../app/quotation-documents.tsx", import.meta.url), "utf8");
+const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const backup = await readFile(new URL("../lib/backup-store.ts", import.meta.url), "utf8");
+const migration = await readFile(new URL("../drizzle/0083_quotation_revisions_and_drive_files.sql", import.meta.url), "utf8");
+const trashMigration = await readFile(new URL("../drizzle/0084_quotation_trash_and_upload_guard.sql", import.meta.url), "utf8");
+const quotationsRoute = await readFile(new URL("../app/api/quotations/route.ts", import.meta.url), "utf8");
+const quotationReconcileRoute = await readFile(new URL("../app/api/quotations/reconcile/route.ts", import.meta.url), "utf8");
+
+test("quotation actions distinguish drafts, current final files and same-number editing", () => {
+  assert.match(page, /이어서 작성/);
+  assert.match(page, /PDF 보기/);
+  assert.match(page, /Excel 다운로드/);
+  assert.match(page, /견적 수정/);
+  assert.doesNotMatch(page, /원본 보존 후 수정/);
+  assert.match(page, /currentQuotes/);
+  assert.doesNotMatch(page, /openQuotation\(quote, "copy"\)/);
+  assert.doesNotMatch(page, /openQuotation\(quote, "revision"\)/);
+  assert.doesNotMatch(page, />복사<\/button>/);
+});
+
+test("legacy revision lineage stays readable while current direct edits refresh files", () => {
+  assert.match(store, /revision_root_id/);
+  assert.match(store, /revision_parent_id/);
+  assert.match(store, /revision_number/);
+  assert.match(store, /COALESCE\(MAX\(revision_number\), 0\)/);
+  assert.match(store, /revisionNumber > 0 \? `수정\$\{revisionNumber\}` : "원본"/);
+  assert.match(store, /drive_sync_status='none', drive_sync_error=''/);
+  assert.doesNotMatch(store, /최종 견적서는 덮어쓸 수 없습니다/);
+  assert.match(migration, /authored_quotations_revision_idx/);
+});
+
+test("final save creates PDF and Excel before Drive-backed finalization", () => {
+  assert.match(page, /createAuthoredQuotationPdf/);
+  assert.match(page, /quotationWorkbookFile/);
+  assert.match(page, /formData\.set\("pdf", pdf\)/);
+  assert.match(page, /formData\.set\("xlsx", xlsx\)/);
+  assert.match(page, /견적은 임시 저장했지만 최종 파일 보관을 완료하지 못했습니다/);
+  assert.match(page, /whizzup:quotation-files-updated/);
+  assert.match(filesRoute, /uploadDriveFile/);
+  assert.match(filesRoute, /"01_기관자료"/);
+  assert.match(filesRoute, /"견적서"/);
+  assert.match(filesRoute, /SET status='final'/);
+  assert.match(filesRoute, /kind === "pdf" \? "inline" : "attachment"/);
+  assert.match(backup, /"revision_root_id"/);
+  assert.match(backup, /"drive_pdf_file_id"/);
+  assert.match(backup, /"drive_xlsx_file_id"/);
+});
+
+test("generated Drive file names and PDF preserve each quotation version", () => {
+  assert.match(pdf, /_\$\{quote\.revisionNumber > 0 \? `수정\$\{quote\.revisionNumber\}` : "원본"\}/);
+  assert.match(pdf, /%PDF-1\.4/);
+  assert.match(pdf, /식별번호/);
+  assert.match(pdf, /견적 조건 및 특이사항/);
+  assert.match(pdf, /금액 요약/);
+});
+
+test("institution detail keeps final quotations and legacy external files read-only", () => {
+  assert.match(crm, /<OrganizationQuotationHistory[\s\S]*?readOnly/);
+  assert.match(crm, /canManageExternalQuotations=\{false\}/);
+  assert.doesNotMatch(crm, /<QuotationManagementPage[\s\S]*?embedded/);
+  return;
+  assert.match(page, /<h2>\{embedded \? "견적서 내역"/);
+  assert.match(documents, /시스템 작성 견적서/);
+  assert.match(documents, /외부 첨부 견적서/);
+  assert.match(documents, /첨부된 외부 견적서가 없습니다/);
+  assert.doesNotMatch(documents, /원본 파일 Google Drive 보관/);
+});
+
+test("institution quotation cards remove horizontal scrolling and show stored PDF thumbnails", () => {
+  assert.match(page, /quotation-row-facts/);
+  assert.doesNotMatch(page, /quotation-list-head/);
+  assert.match(styles, /\.quotation-list\{display:grid/);
+  assert.doesNotMatch(styles, /\.quotation-list\{overflow-x:auto/);
+  assert.match(documents, /\/api\/quotations\?organization=/);
+  assert.match(documents, /quotation-system-thumbnail/);
+  assert.match(documents, /#page=1&view=FitH&toolbar=0/);
+  assert.match(documents, /quotation-system-preview-frame/);
+  assert.match(documents, /setAuthoredPreview/);
+  assert.match(page, /저장된 PDF 파일이 없습니다/);
+  assert.doesNotMatch(page, /const saved = await storeQuotationFiles\(quote\)/);
+});
+
+test("quotation deletion uses a recoverable trash before Drive-backed permanent removal", () => {
+  assert.match(page, /휴지통/);
+  assert.match(page, /restoreQuotation/);
+  assert.match(page, /purgeQuotation/);
+  assert.match(store, /trashAuthoredQuotation/);
+  assert.match(store, /수정본이 있는 원본/);
+  assert.match(quotationsRoute, /action === "restore"/);
+  assert.match(quotationsRoute, /action === "purge"/);
+  assert.match(quotationsRoute, /removeDriveFile/);
+  assert.match(trashMigration, /deleted_at/);
+  assert.match(trashMigration, /authored_quotations_deleted_idx/);
+});
+
+test("quotation editor uses internal history and Drive finalization is idempotent", () => {
+  assert.match(page, /whizzupQuotationEditor/);
+  assert.match(page, /window\.history\.pushState/);
+  assert.match(page, /window\.addEventListener\("popstate"/);
+  assert.match(page, /등록 품목으로 견적 만들기/);
+  assert.match(page, /현재 기관 빈 견적 만들기/);
+  assert.match(filesRoute, /drive_sync_status='uploading'/);
+  assert.match(filesRoute, /같은 견적서 파일을 이미 저장하고 있습니다/);
+});
+
+test("quotation reconciliation archives only unlinked duplicate Drive outputs", () => {
+  assert.match(quotationReconcileRoute, /requireAdminMember/);
+  assert.match(quotationReconcileRoute, /file\.appProperties\?\.contextId !== contextId/);
+  assert.match(quotationReconcileRoute, /file\.id === expectedId/);
+  assert.match(quotationReconcileRoute, /archiveDriveFile\(file\.id, "중복 견적서"\)/);
+  assert.match(page, /fetch\("\/api\/quotations\/reconcile", \{ method: "POST" \}\)/);
+});

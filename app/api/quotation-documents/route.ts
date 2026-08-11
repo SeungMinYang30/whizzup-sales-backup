@@ -1,6 +1,7 @@
 import {
   accessErrorResponse,
   requireApprovedMember,
+  requirePrimaryOwner,
 } from "../../../lib/collaboration";
 import {
   ensureQuotationDocumentsReady,
@@ -151,7 +152,7 @@ export async function POST(request: Request) {
   const uploadedKeys: string[] = [];
   let uploadedDriveFileId = "";
   try {
-    const member = await requireApprovedMember();
+    const member = await requirePrimaryOwner();
     const formData = await request.formData();
     const organization = clean(formData.get("organization"), 120);
     const businessRound = Math.max(
@@ -342,7 +343,7 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   let archivedDriveMove: Awaited<ReturnType<typeof moveDriveFile>> | null = null;
   try {
-    const member = await requireApprovedMember();
+    const member = await requirePrimaryOwner();
     const payload = (await request.json()) as { id?: unknown };
     const id = validDocumentId(String(payload.id ?? ""));
     if (!id) {

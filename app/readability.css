@@ -1405,3 +1405,287 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Mobile audit pass: compact navigation, readable calendars, and consistent work cards. */
+.calendar-organization-compact { display: none; }
+.resource-youtube-intro small {
+  color: #687894;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .topbar.has-dashboard-status {
+    display: grid;
+    grid-template-columns: 44px minmax(100px, 1fr) auto;
+    align-items: center;
+    padding: calc(7px + env(safe-area-inset-top)) 10px 7px;
+    gap: 6px;
+  }
+
+  .topbar.has-dashboard-status .menu-button { grid-column: 1; grid-row: 1; }
+  .topbar.has-dashboard-status .global-institution-search,
+  .topbar.has-dashboard-status .global-search {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+    flex-basis: auto;
+  }
+
+  .topbar.has-dashboard-status .top-actions {
+    grid-column: 3;
+    grid-row: 1;
+    display: flex;
+    gap: 4px;
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .topbar.has-dashboard-status .top-actions > button,
+  .top-actions .ai-button,
+  .top-actions .primary-button {
+    width: auto;
+    min-width: 44px;
+    min-height: 42px;
+    padding-inline: 8px;
+    flex: 0 0 auto;
+    font-size: 10px;
+  }
+
+  .top-actions .quotation-quick-button {
+    max-width: 66px;
+    padding-inline: 7px !important;
+    font-size: 10px;
+    line-height: 1.15;
+    white-space: normal;
+  }
+
+  .top-actions .ai-button span,
+  .top-actions .primary-button span {
+    margin-right: 3px;
+    font-size: 10px;
+  }
+
+  .dashboard-status-strip {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    order: initial;
+    width: 100%;
+    padding: 1px 14px 2px 0;
+    gap: 6px;
+    scroll-snap-type: x proximity;
+    -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%);
+  }
+
+  .dashboard-status-card {
+    min-width: 148px;
+    min-height: 44px;
+    flex: 0 0 148px;
+    padding: 5px 8px;
+    scroll-snap-align: start;
+  }
+
+  .dashboard-status-card > span { font-size: 10px; }
+  .dashboard-status-card dl { gap: 5px; }
+  .dashboard-status-card dt { font-size: 8px; }
+  .dashboard-status-card dd { font-size: 10px; }
+
+  .page-heading h1 {
+    font-size: clamp(25px, 7.6vw, 30px);
+    letter-spacing: -.04em;
+  }
+
+  th { font-size: 11px; }
+  td { font-size: 12px; }
+  td small { font-size: 11px; }
+
+  .dashboard-grid,
+  .summary-grid,
+  .stats-grid,
+  .history-summary-grid,
+  .equipment-finance-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .metric-card,
+  .stats-grid > *,
+  .summary-grid > * {
+    min-width: 0;
+  }
+
+  .table-scroll-shell,
+  .data-list-table,
+  .accounting-table-wrap,
+  .analytics-product-table-wrap {
+    position: relative;
+    background-image: linear-gradient(90deg, transparent calc(100% - 18px), rgba(49, 87, 230, .08));
+    background-attachment: local;
+  }
+
+  .accounting-table th:first-child,
+  .accounting-table td:first-child,
+  .analytics-product-table-wrap th:first-child,
+  .analytics-product-table-wrap td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: #fff;
+    box-shadow: 1px 0 #e2e7f0;
+  }
+
+  .accounting-table th:first-child,
+  .analytics-product-table-wrap th:first-child {
+    z-index: 3;
+    background: #f4f6fa;
+  }
+
+  .home-calendar-filters {
+    position: relative;
+    min-height: 42px;
+    padding-block: 5px;
+    scroll-snap-type: x proximity;
+    -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 20px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 20px), transparent 100%);
+  }
+
+  .home-calendar-filters button,
+  .home-calendar-completed-filter {
+    min-height: 36px;
+    scroll-snap-align: start;
+  }
+
+  .home-calendar-day {
+    min-height: 92px;
+    padding-inline: 3px;
+  }
+
+  .home-calendar-day-items > span {
+    min-height: 19px;
+    padding: 2px 4px;
+  }
+
+  .home-calendar-day-items b {
+    font-size: 9.5px;
+    letter-spacing: -.03em;
+  }
+
+  .calendar-organization-full { display: none; }
+  .calendar-organization-compact {
+    display: inline;
+    white-space: nowrap;
+  }
+
+  .quote-studio-topbar {
+    gap: 9px;
+    padding: 10px 12px;
+  }
+
+  .quote-studio-topbar h3 { font-size: 19px; }
+  .quote-studio-topbar nav {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .quote-studio-topbar nav::-webkit-scrollbar { display: none; }
+  .quote-studio-topbar button {
+    min-width: max-content;
+    min-height: 42px;
+    flex: 0 0 auto;
+    font-size: 11px;
+  }
+
+  .quote-studio-layout { padding: 8px; }
+  .quotation-item-card-section { margin: 8px; }
+  .quotation-item-card-section > header { padding: 12px; }
+  .quotation-item-search-results { max-height: min(45dvh, 360px); }
+
+  .award-vendor-page { gap: 10px; }
+  .award-vendor-directory {
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .award-vendor-directory > header { padding: 12px; }
+  .award-vendor-search {
+    width: calc(100% - 20px);
+    margin: 10px;
+    font-size: 16px;
+  }
+  .award-vendor-list {
+    display: flex;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px;
+    gap: 7px;
+    border-top: 1px solid #edf0f5;
+    scroll-snap-type: x proximity;
+  }
+  .award-vendor-list > button {
+    width: min(76vw, 270px);
+    flex: 0 0 min(76vw, 270px);
+    padding: 12px;
+    border: 1px solid #e1e6ee;
+    border-radius: 10px;
+    scroll-snap-align: start;
+  }
+  .award-vendor-editor > header { padding: 15px 14px; }
+  .award-vendor-editor > header h2 { font-size: 20px; }
+  .award-vendor-documents,
+  .award-vendor-fields { margin-top: 10px; }
+
+  .resource-post-card {
+    margin: 9px 10px;
+    overflow: hidden;
+    border: 1px solid #dfe6f1;
+    border-radius: 12px;
+  }
+  .resource-post-actions {
+    justify-content: stretch;
+    padding: 9px 12px 12px;
+    border-top: 1px solid #edf1f6;
+    background: #fafbfe;
+  }
+  .resource-post-actions button { flex: 1; min-height: 38px; }
+
+  .resource-youtube-intro { padding: 14px 12px; }
+  .resource-youtube-intro small { font-size: 10px; }
+  .resource-youtube-filters { padding: 10px 12px; }
+  .resource-youtube-filter-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
+  }
+  .resource-youtube-filter-buttons button { min-width: 0; padding-inline: 6px; }
+
+  .modal-footer,
+  .home-schedule-editor footer {
+    font-size: 12px;
+  }
+  .modal-footer button,
+  .home-schedule-editor footer button {
+    min-height: 44px;
+    padding-inline: 12px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 390px) {
+  .topbar.has-dashboard-status {
+    grid-template-columns: 42px minmax(86px, 1fr) auto;
+  }
+  .topbar.has-dashboard-status .top-actions > button,
+  .top-actions .ai-button,
+  .top-actions .primary-button {
+    min-width: 40px;
+    padding-inline: 6px;
+    font-size: 9px;
+  }
+  .top-actions .quotation-quick-button { max-width: 54px; font-size: 9px; }
+  .top-actions .ai-button span { display: none; }
+}

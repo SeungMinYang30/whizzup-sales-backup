@@ -9,6 +9,7 @@ import {
   InstitutionConfirmationRequiredError,
   institutionAliasKey,
   rememberedInstitutionAliasCandidates,
+  resolveUniqueExistingInstitutionName,
   sameInstitutionRegion,
   type InstitutionMatchContext,
   preferFullInstitutionName,
@@ -888,6 +889,23 @@ export async function resolveInstitutionName(
     return preferFullInstitutionName(...exactInputAliases);
   }
 
+  const uniqueExistingInstitution = resolveUniqueExistingInstitutionName(
+    {
+      organization: requestedInput,
+      region: requestedInstitutionDetails.region,
+      address: requestedInstitutionDetails.address,
+      schoolCode: requestedInstitutionDetails.schoolCode,
+      contactName: clean(payload.contactName),
+      contactPhone: requestedInstitutionDetails.phone,
+      contactEmail: clean(payload.contactEmail),
+      progressManager: clean(payload.progressManager),
+      topic: clean(payload.topic),
+      summary: clean(payload.summary),
+    },
+    existingContexts,
+  );
+  if (uniqueExistingInstitution) return uniqueExistingInstitution;
+
   const intentionalRename =
     payload.confirmInstitutionRename === true &&
     Boolean(clean(payload.sourceOrganization));
@@ -971,16 +989,27 @@ export function serializeProgressSchedule(value: unknown) {
       const entry = item as Record<string, unknown>;
       const label = clean(entry.label) || clean(entry.name) || "진행";
       const date = clean(entry.date);
-      return date ? `${label}\t${date}` : "";
+      const startTime = validProgressScheduleTime(entry.startTime);
+      const endTime = startTime ? validProgressScheduleTime(entry.endTime) : "";
+      return date
+        ? [label, date, startTime, endTime].join("\t").replace(/\t+$/, "")
+        : "";
     })
     .filter(Boolean)
     .join("\n");
 }
 
-type ProgressScheduleEntry = {
+export type ProgressScheduleEntry = {
   label: string;
   date: string;
+  startTime: string;
+  endTime: string;
 };
+
+function validProgressScheduleTime(value: unknown) {
+  const time = clean(value);
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time) ? time : "";
+}
 
 export function koreaTodayValue(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -1001,32 +1030,52 @@ export function parseProgressScheduleEntries(
   const datePattern =
     /(?:(\d{4})\s*(?:[-./]|년)\s*(\d{1,2})\s*(?:[-./]|월)\s*(\d{1,2})|(\d{1,2})\s*(?:[./]|월)\s*(\d{1,2}))\s*일?/g;
   const entries: ProgressScheduleEntry[] = [];
-  let cursor = 0;
-  let matched: RegExpExecArray | null;
+  const addEntry = (entry: ProgressScheduleEntry) => {
+    if (!entries.some((item) =>
+      item.label === entry.label &&
+      item.date === entry.date &&
+      item.startTime === entry.startTime &&
+      item.endTime === entry.endTime
+    )) entries.push(entry);
+  };
 
-  while ((matched = datePattern.exec(value)) !== null) {
-    const label =
-      value
-        .slice(cursor, matched.index)
-        .replace(/^[\s,;|:/-]+|[\s,;|:/-]+$/g, "")
-        .trim() || "진행";
-    const year = Number(matched[1] || currentYear);
-    const month = Number(matched[2] || matched[4]);
-    const day = Number(matched[3] || matched[5]);
-    const candidate = new Date(Date.UTC(year, month - 1, day));
-    cursor = matched.index + matched[0].length;
-    if (
-      candidate.getUTCFullYear() !== year ||
-      candidate.getUTCMonth() !== month - 1 ||
-      candidate.getUTCDate() !== day
-    ) {
-      continue;
+  value.split(/\r?\n/).forEach((line) => {
+    const columns = line.split("\t");
+    if (columns.length >= 2 && /^\d{4}-\d{2}-\d{2}$/.test(clean(columns[1]))) {
+      const label = clean(columns[0]) || "진행";
+      const date = clean(columns[1]);
+      const candidate = new Date(`${date}T00:00:00Z`);
+      if (!Number.isNaN(candidate.getTime()) && candidate.toISOString().slice(0, 10) === date) {
+        const startTime = validProgressScheduleTime(columns[2]);
+        const endTime = startTime ? validProgressScheduleTime(columns[3]) : "";
+        addEntry({ label, date, startTime, endTime });
+      }
+      return;
     }
-    const date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    if (!entries.some((entry) => entry.label === label && entry.date === date)) {
-      entries.push({ label, date });
+
+    datePattern.lastIndex = 0;
+    let cursor = 0;
+    let matched: RegExpExecArray | null;
+    while ((matched = datePattern.exec(line)) !== null) {
+      const label =
+        line
+          .slice(cursor, matched.index)
+          .replace(/^[\s,;|:/-]+|[\s,;|:/-]+$/g, "")
+          .trim() || "진행";
+      const year = Number(matched[1] || currentYear);
+      const month = Number(matched[2] || matched[4]);
+      const day = Number(matched[3] || matched[5]);
+      const candidate = new Date(Date.UTC(year, month - 1, day));
+      cursor = matched.index + matched[0].length;
+      if (
+        candidate.getUTCFullYear() !== year ||
+        candidate.getUTCMonth() !== month - 1 ||
+        candidate.getUTCDate() !== day
+      ) continue;
+      const date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      addEntry({ label, date, startTime: "", endTime: "" });
     }
-  }
+  });
   return entries.sort(
     (left, right) =>
       left.date.localeCompare(right.date) ||
@@ -1056,14 +1105,12 @@ export function mergeProgressSchedules(previous: unknown, incoming: unknown) {
   incomingItems.forEach((item) =>
     merged.set(progressScheduleLabelKey(item.label), item),
   );
-  return [...merged.values()]
+  return serializeProgressSchedule([...merged.values()]
     .sort(
       (left, right) =>
         left.date.localeCompare(right.date) ||
         left.label.localeCompare(right.label, "ko-KR"),
-    )
-    .map((item) => `${item.label}\t${item.date}`)
-    .join("\n");
+    ));
 }
 
 export function resolveProgressScheduleManagement(
@@ -1471,7 +1518,12 @@ export async function insertActivity(
   const previousBudgetsJson = serializeActivityBudgets(
     previousBusinessRoundBudgets,
   );
-  const inheritedPayload = inheritInstitutionState(payload, previousState);
+  const sourceChat = clean(payload.sourceChat) || defaultSource;
+  const aiInput = sourceChat === "사이트 AI 입력";
+  const inheritedPayload = inheritInstitutionState(payload, previousState, {
+    inheritFormDefaults: aiInput,
+    preventAwardStatusDowngrade: aiInput,
+  });
   await ensureBudgetNamesReady();
   const requestedProgressSchedule = serializeProgressSchedule(
     payload.progressSchedule,
@@ -1487,7 +1539,6 @@ export async function insertActivity(
   const managedPayload = { ...inheritedPayload, ...scheduleManagement };
   const award = resolveAward(managedPayload);
   const awardManagement = resolveAwardManagement(managedPayload);
-  const sourceChat = clean(payload.sourceChat) || defaultSource;
   const explicitPayloadBudgets = activityBudgetsFromRecord({
     budgets: payload.budgets,
     budgetType: payload.budgetType,

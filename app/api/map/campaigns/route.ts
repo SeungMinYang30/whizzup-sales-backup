@@ -34,26 +34,13 @@ import {
   ensureTrashReady,
 } from "../../../../lib/trash-store";
 import { ensureJointProjectsReady } from "../../../../lib/joint-projects";
-import { parseStoredActivityBudgetMoney } from "../../../../lib/activity-budgets";
+import {
+  activityBudgetsFromRecord,
+  parseStoredActivityBudgetMoney,
+} from "../../../../lib/activity-budgets";
 import { isPostgresDatabase } from "../../../../db";
 
 export const dynamic = "force-dynamic";
-
-let campaignBasicsBackfillPromise: Promise<void> | null = null;
-
-async function ensureCampaignBasicsBackfilled(
-  d1: Awaited<ReturnType<typeof ensureCampaignsReady>>,
-) {
-  if (!campaignBasicsBackfillPromise) {
-    campaignBasicsBackfillPromise = backfillCampaignInstitutionBasics(d1).catch(
-      (error) => {
-        campaignBasicsBackfillPromise = null;
-        throw error;
-      },
-    );
-  }
-  await campaignBasicsBackfillPromise;
-}
 
 type BusinessMatchMode = "auto" | "link-current" | "new" | "list-only";
 
@@ -83,6 +70,7 @@ type ExistingActivity = {
   budget_type: string;
   budget_original_name: string;
   budget_group_id: number | null;
+  budgets_json: string;
   award_status: string;
   progress_manager: string;
   contact_role: string;
@@ -278,6 +266,18 @@ async function backfillCampaignInstitutionBasics(d1: D1Database) {
   await runStatementsInChunks(d1, budgetRepairs);
 }
 
+let campaignInstitutionBackfillPromise: Promise<void> | null = null;
+
+function ensureCampaignInstitutionBackfill(d1: D1Database) {
+  if (!campaignInstitutionBackfillPromise) {
+    campaignInstitutionBackfillPromise = backfillCampaignInstitutionBasics(d1).catch((error) => {
+      campaignInstitutionBackfillPromise = null;
+      throw error;
+    });
+  }
+  return campaignInstitutionBackfillPromise;
+}
+
 async function removeCreatedActivities(
   d1: D1Database,
   activityIds: number[],
@@ -370,10 +370,8 @@ export async function GET() {
       ensureJointProjectsReady(),
     ]);
     const d1 = await ensureCampaignsReady();
-    // PostgreSQL receives already-normalized rows from the Sites backup.
-    // D1 keeps the legacy repair path, but only once per warm worker.
     if (!isPostgresDatabase()) {
-      await ensureCampaignBasicsBackfilled(d1);
+      await ensureCampaignInstitutionBackfill(d1);
     }
     const [campaigns, targets, members, budgetCatalog] = await Promise.all([
       d1
@@ -564,7 +562,7 @@ export async function GET() {
         .all(),
       d1
         .prepare(`
-          SELECT id, display_name, email
+          SELECT id, display_name, job_title, email
           FROM members
           WHERE status = 'approved' AND is_sales = 1
           ORDER BY display_name COLLATE NOCASE
@@ -853,7 +851,8 @@ export async function POST(request: Request) {
         .prepare(`
           SELECT
             id, organization, business_round, activity_date, region,
-            budget_type, budget_original_name, budget_group_id, award_status,
+            budget_type, budget_original_name, budget_group_id, budgets_json,
+            award_status,
             progress_manager, contact_role, contact_name, contact_phone,
             contact_email
           FROM activities
@@ -891,7 +890,8 @@ export async function POST(request: Request) {
         .prepare(`
           SELECT
             id, organization, business_round, activity_date, region,
-            budget_type, budget_original_name, budget_group_id, award_status,
+            budget_type, budget_original_name, budget_group_id, budgets_json,
+            award_status,
             progress_manager, contact_role, contact_name, contact_phone,
             contact_email
           FROM activities
@@ -941,11 +941,18 @@ export async function POST(request: Request) {
           ) === index,
       );
       const sameBudgetMatches = linkableBusinessRows.filter(
-        (row) =>
-          (budgetMetadata.budgetGroupId &&
-            Number(row.budget_group_id) === budgetMetadata.budgetGroupId) ||
-          cleanBudgetKey(row.budget_type) ===
-            cleanBudgetKey(budgetMetadata.storedName),
+        (row) => {
+          const linkedBudgets = activityBudgetsFromRecord(
+            row as unknown as Record<string, unknown>,
+          );
+          return linkedBudgets.some(
+            (budget) =>
+              (budgetMetadata.budgetGroupId &&
+                Number(budget.budgetGroupId) === budgetMetadata.budgetGroupId) ||
+              cleanBudgetKey(budget.budgetType || budget.budgetOriginalName) ===
+                cleanBudgetKey(budgetMetadata.storedName),
+          );
+        },
       );
       const currentPreAward = linkableBusinessRows.find(
         (row) => clean(row.award_status) === "미정",
@@ -987,9 +994,6 @@ export async function POST(request: Request) {
 
       const createdActivity =
         target.businessMatchMode !== "list-only" && !linked;
-      const latestProgressManager = usableProgressManager(
-        latestInstitutionActivity?.progress_manager,
-      );
       const linkedProgressManager = linked
         ? usableProgressManager(
             existingRows.find(
@@ -999,8 +1003,7 @@ export async function POST(request: Request) {
             )?.progress_manager,
           )
         : "";
-      const inheritedProgressManager =
-        linkedProgressManager || (createdActivity ? latestProgressManager : "");
+      const inheritedProgressManager = linkedProgressManager;
       const explicitAssignedMemberId =
         target.assignedMemberId &&
         approvedMemberIds.has(target.assignedMemberId)
@@ -1017,7 +1020,7 @@ export async function POST(request: Request) {
       const progressManager = String(
         (assignedMemberId &&
           approvedMemberNameById.get(assignedMemberId)) ||
-          (createdActivity ? inheritedProgressManager : ""),
+          inheritedProgressManager,
       );
       plans.push({
         target: {
@@ -1833,9 +1836,14 @@ export async function PUT(request: Request) {
                      progress_manager_locked = 0,
                      updated_by_member_id = ?, updated_by_name = ?,
                      updated_at = CURRENT_TIMESTAMP
-                 WHERE id = ?`,
+                 WHERE organization = ? AND business_round = ?`,
               )
-              .bind(actor.id, actor.displayName, latest.id)
+              .bind(
+                actor.id,
+                actor.displayName,
+                target.organization,
+                target.business_round,
+              )
               .run();
             await syncCampaignTargetsFromActivity(d1, latest.id);
           }

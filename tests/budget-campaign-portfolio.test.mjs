@@ -65,7 +65,7 @@ test("예산별 기관 목록의 공통 정보 보완 쿼리는 D1에서 실행�
     `)
     .get();
   assert.deepEqual({ ...sameRound }, {
-    progress_manager: "현재 담당자",
+    progress_manager: "",
     contact_role: "부장",
     contact_name: "현재 연락처",
     contact_phone: "010-2000-2000",
@@ -472,7 +472,7 @@ test("예산 명단은 기관 최신 기록의 진행 담당자와 수주 후 �
   );
 });
 
-test("새 사업 차수는 기관 공통 연락처와 진행 담당자만 최신 기록에서 이어받는다", async () => {
+test("새 사업 차수는 기관 공통 연락처만 이어받고 진행 담당자는 미지정으로 시작한다", async () => {
   const [route, institutionBasics] = await Promise.all([
     source("../app/api/map/campaigns/route.ts"),
     source("../lib/campaign-institution-basics.ts"),
@@ -486,7 +486,7 @@ test("새 사업 차수는 기관 공통 연락처와 진행 담당자만 최신
     /previous\.\$\{field\.name\} <> '해당 없음'/,
   );
   assert.match(route, /const latestInstitutionActivity = existingRows\[0\]/);
-  assert.match(route, /approvedMemberIdByName/);
+  assert.match(route, /const inheritedProgressManager = linkedProgressManager/);
   assert.match(
     route,
     /contactName:[\s\S]*latestInstitutionActivity\?\.contact_name/,
@@ -498,6 +498,10 @@ test("새 사업 차수는 기관 공통 연락처와 진행 담당자만 최신
   assert.match(route, /contactRole: plan\.inheritedContactRole/);
   assert.match(route, /contactEmail: plan\.inheritedContactEmail/);
   assert.match(route, /progressManager: plan\.progressManager/);
+  assert.doesNotMatch(
+    route,
+    /linkedProgressManager \|\| \(createdActivity \? latestProgressManager/,
+  );
   assert.match(route, /status: "재접촉 필요"/);
   assert.match(route, /awardStatus: "미정"/);
   assert.match(route, /nextAction: "담당자 배정 및 첫 컨택"/);
@@ -581,6 +585,8 @@ test("기존 사업을 선택하면 정확한 기관명과 해당 사업 담당�
   );
   assert.match(route, /const linkedProgressManager = linked/);
   assert.match(route, /const inheritedProgressManager =/);
+  assert.match(route, /activityBudgetsFromRecord/);
+  assert.match(route, /budgets_json/);
   assert.match(
     institutionBasics,
     /WHERE created_activity = 0[\s\S]*activity_id IS NOT NULL/,
@@ -596,6 +602,8 @@ test("예산 명단은 대표관리자가 일괄 배정하고 잘못된 명단 �
   assert.match(map, /현재 검색 결과 전체 선택/);
   assert.match(map, /담당자 미지정만 선택/);
   assert.match(map, /담당자 일괄 변경/);
+  assert.match(map, /<option value="unassigned">미지정<\/option>/);
+  assert.match(map, /budgetBulkAssigneeId === "unassigned"[\s\S]*\? null/);
   assert.match(map, /잘못 등록된 기관 제외/);
   assert.match(map, /기관 자체와 지도·영업·수주 기록은 삭제되지 않습니다/);
   assert.doesNotMatch(map, /선택 예산 변경/);
@@ -606,6 +614,37 @@ test("예산 명단은 대표관리자가 일괄 배정하고 잘못된 명단 �
   assert.match(route, /sales_campaign_targets: selectedTargets/);
   assert.match(route, /명단 연결은 30일 동안 복원할 수 있습니다/);
   assert.match(route, /budgetCatalog: budgetCatalog\.results/);
+});
+
+test("같은 기관은 예산별 명단에 각각 연결되고 전체 통계에서는 고유 기관과 참여 건수를 구분한다", async () => {
+  const [map, store] = await Promise.all([
+    source("../app/sales-map.tsx"),
+    source("../lib/campaign-store.ts"),
+  ]);
+  const database = new DatabaseSync(":memory:");
+  database.exec(`
+    CREATE TABLE sales_campaign_targets (
+      id INTEGER PRIMARY KEY,
+      campaign_id INTEGER NOT NULL,
+      organization TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX sales_campaign_targets_campaign_org_idx
+      ON sales_campaign_targets (campaign_id, organization);
+    INSERT INTO sales_campaign_targets (campaign_id, organization) VALUES
+      (1, '김포 모담초중학교'),
+      (2, '김포 모담초중학교');
+  `);
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM sales_campaign_targets").get().count,
+    2,
+  );
+  database.close();
+
+  assert.match(store, /campaign_id, organization/);
+  assert.match(map, /예산별 기관 전체 통계/);
+  assert.match(map, /학교·기관 중복 제외/);
+  assert.match(map, /예산 참여/);
+  assert.match(map, /복수 예산 기관/);
 });
 
 test("PDF·엑셀·직접 등록은 활성 표준 예산 선택만 허용한다", async () => {

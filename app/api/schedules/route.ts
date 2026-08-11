@@ -8,6 +8,7 @@ import {
   addConstructionScheduleProject,
   deleteOrganizationSchedule,
   listConstructionScheduleBoard,
+  listConstructionStageOptions,
   listOrganizationSchedules,
   removeConstructionScheduleProject,
   replaceOrganizationSchedules,
@@ -69,6 +70,9 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     if (url.searchParams.get("scope") === "construction-board") {
       return Response.json(await listConstructionScheduleBoard());
+    }
+    if (url.searchParams.get("scope") === "construction-stages") {
+      return Response.json({ stages: await listConstructionStageOptions() });
     }
     if (url.searchParams.get("scope") === "calendar") {
       const start = url.searchParams.get("start") ?? "";

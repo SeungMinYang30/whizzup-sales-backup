@@ -9,10 +9,13 @@ function source(relativePath) {
 
 test("복제된 승인 구성원은 Sites 실시간 조회 없이 로컬 이메일로 연결한다", () => {
   const collaboration = source("../lib/collaboration.ts");
+  const appAuth = source("../lib/app-auth.ts");
 
   assert.match(collaboration, /lower\(email\) = lower\(\?\)/);
-  assert.match(collaboration, /SET auth_user_id = \?/);
   assert.match(collaboration, /WHERE lower\(email\) = lower\(\?\)/);
+  assert.match(collaboration, /getApplicationIdentity/);
+  assert.match(appAuth, /getDirectSessionIdentity/);
+  assert.match(appAuth, /source: "direct"/);
   assert.doesNotMatch(collaboration, /fetchApprovedPrimaryMember/);
   assert.doesNotMatch(collaboration, /primary-member-access/);
   assert.doesNotMatch(collaboration, /\/api\/standby-export/);

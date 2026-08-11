@@ -1,9 +1,14 @@
 import { getD1, isPostgresDatabase } from "../db";
 import { ensureEquipmentReady } from "./equipment-store";
-import { isConstructionStage } from "./construction-stages";
+import {
+  CONSTRUCTION_STAGES,
+  isConstructionStage,
+  isValidConstructionStage,
+} from "./construction-stages";
 import {
   clean,
   parseProgressScheduleEntries,
+  serializeProgressSchedule,
 } from "./records-store";
 
 export type OrganizationSchedule = {
@@ -30,7 +35,7 @@ export type OrganizationSchedule = {
   googleEventId: string;
   googleOrigin: boolean;
   syncStatus: "pending" | "synced" | "failed" | "local_only";
-  syncOperation: "upsert" | "delete" | "unlink";
+  syncOperation: "upsert" | "delete" | "unlink" | "move-construction";
   syncError: string;
   syncAttempts: number;
   lastSyncedAt: string;
@@ -40,13 +45,18 @@ export type OrganizationScheduleInput = {
   id?: number;
   label: string;
   scheduledDate: string;
+  startTime?: string;
+  endTime?: string;
   completed?: boolean;
 };
 
 export type ConstructionScheduleInput = {
+  id?: number;
   stage: string;
   scheduledDate: string;
   endDate?: string;
+  startTime?: string;
+  endTime?: string;
   vendorName?: string;
   details?: string;
   completed?: boolean;
@@ -139,6 +149,115 @@ const schemaStatements = [
   )`,
 ];
 
+const activeLocalScheduleIdentityIndex = "organization_schedules_active_local_identity_idx";
+const activeLocalScheduleSemanticIdentityIndex = "organization_schedules_active_local_semantic_identity_idx";
+
+function compactScheduleOrganizationSql(column: string) {
+  return `REPLACE(LOWER(TRIM(${column})), ' ', '')`;
+}
+
+function administrativeFreeScheduleOrganizationSql(column: string) {
+  return ["특별자치도", "특별자치시", "광역시", "특별시", "도", "시", "군", "구"]
+    .reduce((expression, suffix) => `REPLACE(${expression}, '${suffix}', '')`, compactScheduleOrganizationSql(column));
+}
+
+function semanticScheduleLabelSql(organizationColumn: string, labelColumn: string) {
+  const compactOrganization = compactScheduleOrganizationSql(organizationColumn);
+  const administrativeFreeOrganization = administrativeFreeScheduleOrganizationSql(organizationColumn);
+  const labelWithoutCategoryPrefix = `CASE
+    WHEN INSTR(TRIM(${labelColumn}), ']') BETWEEN 1 AND 12
+      THEN SUBSTR(TRIM(${labelColumn}), INSTR(TRIM(${labelColumn}), ']') + 1)
+    ELSE TRIM(${labelColumn})
+  END`;
+  const compactLabel = `REPLACE(LOWER(${labelWithoutCategoryPrefix}), ' ', '')`;
+  return `REPLACE(REPLACE(${compactLabel}, ${compactOrganization}, ''), ${administrativeFreeOrganization}, '')`;
+}
+
+const duplicateSemanticLabel = semanticScheduleLabelSql("duplicate.organization", "duplicate.label");
+const keeperSemanticLabel = semanticScheduleLabelSql("keeper.organization", "keeper.label");
+
+const removeDuplicateLocalSchedulesSql = `
+  DELETE FROM organization_schedules
+  WHERE id IN (
+    SELECT duplicate.id
+    FROM organization_schedules duplicate
+    WHERE COALESCE(duplicate.category, 'general') <> 'construction'
+      AND TRIM(COALESCE(duplicate.deleted_at, '')) = ''
+      AND TRIM(COALESCE(duplicate.google_event_id, '')) = ''
+      AND EXISTS (
+        SELECT 1
+        FROM organization_schedules keeper
+        WHERE LOWER(TRIM(keeper.organization)) = LOWER(TRIM(duplicate.organization))
+          AND keeper.business_round = duplicate.business_round
+          AND LOWER(TRIM(keeper.label)) = LOWER(TRIM(duplicate.label))
+          AND keeper.scheduled_date = duplicate.scheduled_date
+          AND LOWER(TRIM(COALESCE(keeper.category, 'general'))) = LOWER(TRIM(COALESCE(duplicate.category, 'general')))
+          AND COALESCE(keeper.category, 'general') <> 'construction'
+          AND TRIM(COALESCE(keeper.deleted_at, '')) = ''
+          AND (
+            TRIM(COALESCE(keeper.google_event_id, '')) <> ''
+            OR (
+              TRIM(COALESCE(keeper.google_event_id, '')) = ''
+              AND keeper.id < duplicate.id
+            )
+          )
+      )
+  )`;
+
+const createActiveLocalScheduleIdentityIndexSql = `
+  CREATE UNIQUE INDEX IF NOT EXISTS ${activeLocalScheduleIdentityIndex}
+  ON organization_schedules (
+    LOWER(TRIM(organization)),
+    business_round,
+    LOWER(TRIM(label)),
+    scheduled_date,
+    LOWER(TRIM(COALESCE(category, 'general')))
+  )
+  WHERE COALESCE(category, 'general') <> 'construction'
+    AND TRIM(COALESCE(deleted_at, '')) = ''
+    AND TRIM(COALESCE(google_event_id, '')) = ''`;
+
+const removeSemanticallyDuplicateLocalSchedulesSql = `
+  DELETE FROM organization_schedules
+  WHERE id IN (
+    SELECT duplicate.id
+    FROM organization_schedules duplicate
+    WHERE COALESCE(duplicate.category, 'general') <> 'construction'
+      AND TRIM(COALESCE(duplicate.deleted_at, '')) = ''
+      AND TRIM(COALESCE(duplicate.google_event_id, '')) = ''
+      AND EXISTS (
+        SELECT 1
+        FROM organization_schedules keeper
+        WHERE LOWER(TRIM(keeper.organization)) = LOWER(TRIM(duplicate.organization))
+          AND keeper.business_round = duplicate.business_round
+          AND ${keeperSemanticLabel} = ${duplicateSemanticLabel}
+          AND keeper.scheduled_date = duplicate.scheduled_date
+          AND LOWER(TRIM(COALESCE(keeper.category, 'general'))) = LOWER(TRIM(COALESCE(duplicate.category, 'general')))
+          AND COALESCE(keeper.category, 'general') <> 'construction'
+          AND TRIM(COALESCE(keeper.deleted_at, '')) = ''
+          AND (
+            TRIM(COALESCE(keeper.google_event_id, '')) <> ''
+            OR (
+              TRIM(COALESCE(keeper.google_event_id, '')) = ''
+              AND keeper.id < duplicate.id
+            )
+          )
+      )
+  )`;
+
+const createActiveLocalScheduleSemanticIdentityIndexSql = `
+  CREATE UNIQUE INDEX IF NOT EXISTS ${activeLocalScheduleSemanticIdentityIndex}
+  ON organization_schedules (
+    LOWER(TRIM(organization)),
+    business_round,
+    ${semanticScheduleLabelSql("organization", "label")},
+    scheduled_date,
+    LOWER(TRIM(COALESCE(category, 'general')))
+  )
+  WHERE COALESCE(category, 'general') <> 'construction'
+    AND TRIM(COALESCE(deleted_at, '')) = ''
+    AND TRIM(COALESCE(google_event_id, '')) = ''`;
+
 let schedulesReadyPromise: Promise<ReturnType<typeof getD1>> | null = null;
 
 async function initializeOrganizationSchedules() {
@@ -183,6 +302,24 @@ async function initializeOrganizationSchedules() {
       await d1.prepare(`ALTER TABLE organization_schedules ADD COLUMN ${name} ${definition}`).run();
     }
   }
+  const identityIndex = await d1.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ? LIMIT 1",
+  ).bind(activeLocalScheduleIdentityIndex).first<{ name: string }>();
+  if (!identityIndex) {
+    // Keep the original/Google-linked row, remove only redundant local rows, then
+    // let SQLite prevent concurrent requests from recreating the same schedule.
+    await d1.prepare(removeDuplicateLocalSchedulesSql).run();
+    await d1.prepare(createActiveLocalScheduleIdentityIndexSql).run();
+  }
+  const semanticIdentityIndex = await d1.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ? LIMIT 1",
+  ).bind(activeLocalScheduleSemanticIdentityIndex).first<{ name: string }>();
+  if (!semanticIdentityIndex) {
+    // Treat minor institution-name variations inside generated titles as the
+    // same schedule (for example 광주/광주시) while preserving distinct work.
+    await d1.prepare(removeSemanticallyDuplicateLocalSchedulesSql).run();
+    await d1.prepare(createActiveLocalScheduleSemanticIdentityIndexSql).run();
+  }
   await d1.batch([
     d1.prepare(
       `CREATE INDEX IF NOT EXISTS organization_schedules_sync_idx
@@ -200,6 +337,44 @@ async function initializeOrganizationSchedules() {
   if (!projectColumns.results.some((column) => column.name === "hidden_at")) {
     await d1.prepare("ALTER TABLE construction_schedule_projects ADD COLUMN hidden_at TEXT NOT NULL DEFAULT ''").run();
   }
+  const duplicateLegacyScheduleIds = `
+    SELECT legacy.id
+    FROM organization_schedules legacy
+    WHERE COALESCE(legacy.category, 'general') <> 'construction'
+      AND legacy.source_activity_id IS NOT NULL
+      AND TRIM(COALESCE(legacy.deleted_at, '')) = ''
+      AND EXISTS (
+        SELECT 1 FROM organization_schedules construction
+        WHERE construction.organization = legacy.organization
+          AND construction.business_round = legacy.business_round
+          AND construction.category = 'construction'
+          AND construction.source_activity_id = legacy.source_activity_id
+          AND construction.stage = legacy.label
+          AND construction.scheduled_date = legacy.scheduled_date
+          AND COALESCE(construction.start_time, '') = COALESCE(legacy.start_time, '')
+          AND COALESCE(construction.end_time, '') = COALESCE(legacy.end_time, '')
+          AND TRIM(COALESCE(construction.deleted_at, '')) = ''
+      )`;
+  await d1.batch([
+    d1.prepare(
+      `INSERT OR IGNORE INTO organization_schedule_import_state (organization, business_round)
+       SELECT DISTINCT organization, business_round
+       FROM organization_schedules
+       WHERE category = 'construction'`,
+    ),
+    d1.prepare(
+      `UPDATE organization_schedules
+       SET deleted_at = CURRENT_TIMESTAMP, sync_status = 'pending', sync_operation = 'delete',
+           sync_error = '', updated_at = CURRENT_TIMESTAMP
+       WHERE id IN (${duplicateLegacyScheduleIds})
+         AND TRIM(COALESCE(google_event_id, '')) <> ''`,
+    ),
+    d1.prepare(
+      `DELETE FROM organization_schedules
+       WHERE id IN (${duplicateLegacyScheduleIds})
+         AND TRIM(COALESCE(google_event_id, '')) = ''`,
+    ),
+  ]);
   return d1;
 }
 
@@ -233,6 +408,40 @@ function validTime(value: unknown) {
   return `${match[1]}:${match[2]}`;
 }
 
+function normalizeScheduleLabel(value: unknown) {
+  return clean(value)
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+function normalizeScheduleSemanticLabel(organization: unknown, label: unknown) {
+  const compactOrganization = normalizeScheduleLabel(organization)
+    .toLocaleLowerCase("ko-KR")
+    .replace(/\s+/g, "");
+  const administrativeFreeOrganization = compactOrganization
+    .replace(/특별자치도|특별자치시|광역시|특별시|도|시|군|구/g, "");
+  let compactLabel = normalizeScheduleLabel(label)
+    .toLocaleLowerCase("ko-KR")
+    .replace(/^\s*\[[^\]]{1,10}\]\s*/u, "")
+    .replace(/\s+/g, "");
+  if (compactOrganization) compactLabel = compactLabel.replaceAll(compactOrganization, "");
+  if (administrativeFreeOrganization) {
+    compactLabel = compactLabel.replaceAll(administrativeFreeOrganization, "");
+  }
+  return compactLabel;
+}
+
+function scheduleNaturalKey(scheduledDate: unknown, label: unknown, category: unknown = "general") {
+  return [
+    clean(scheduledDate),
+    normalizeScheduleLabel(label).toLocaleLowerCase("ko-KR"),
+    normalizeScheduleCategory(category),
+  ].join("\u001f");
+}
+
 function normalizeScheduleCategory(value: unknown) {
   const category = clean(value);
   return ["general", "meeting", "showroom", "other", "personal"].includes(category)
@@ -246,13 +455,17 @@ export function normalizeOrganizationScheduleInputs(value: unknown) {
   value.slice(0, 100).forEach((entry) => {
     if (!entry || typeof entry !== "object") return;
     const input = entry as Record<string, unknown>;
-    const label = clean(input.label).slice(0, 120);
+    const label = normalizeScheduleLabel(input.label);
     const scheduledDate = validDate(input.scheduledDate ?? input.date);
+    const startTime = validTime(input.startTime);
+    const endTime = startTime ? validTime(input.endTime) : "";
     if (!label || !scheduledDate) return;
-    unique.set(`${scheduledDate}\u001f${label.toLocaleLowerCase("ko-KR")}`, {
+    unique.set(scheduleNaturalKey(scheduledDate, label), {
       id: Number.isSafeInteger(Number(input.id)) && Number(input.id) > 0 ? Number(input.id) : undefined,
       label,
       scheduledDate,
+      startTime,
+      endTime,
       completed: input.completed === true,
     });
   });
@@ -297,8 +510,8 @@ function scheduleJson(row: Record<string, unknown>): OrganizationSchedule {
     syncStatus: ["synced", "failed", "local_only"].includes(String(row.sync_status))
       ? String(row.sync_status) as "synced" | "failed" | "local_only"
       : "pending",
-    syncOperation: ["delete", "unlink"].includes(String(row.sync_operation))
-      ? String(row.sync_operation) as "delete" | "unlink"
+    syncOperation: ["delete", "unlink", "move-construction"].includes(String(row.sync_operation))
+      ? String(row.sync_operation) as "delete" | "unlink" | "move-construction"
       : "upsert",
     syncError: String(row.sync_error ?? ""),
     syncAttempts: Math.max(0, Number(row.sync_attempts) || 0),
@@ -397,23 +610,46 @@ async function importLegacyScheduleIfNeeded(
     )
     .bind(organization, businessRound)
     .first<{ id: number; progress_schedule: string }>();
-  const entries = latest ? parseProgressScheduleEntries(latest.progress_schedule) : [];
+  const entries = normalizeOrganizationScheduleInputs(
+    latest ? parseProgressScheduleEntries(latest.progress_schedule).map((entry) => ({
+      label: entry.label,
+      scheduledDate: entry.date,
+      startTime: entry.startTime,
+      endTime: entry.endTime,
+    })) : [],
+  );
   const sourceActivityId = latest ? Number(latest.id) : null;
   await d1.batch([
     ...entries.map((entry) =>
       d1
         .prepare(
-          `INSERT INTO organization_schedules (
-             organization, business_round, label, scheduled_date,
+          `INSERT OR IGNORE INTO organization_schedules (
+             organization, business_round, label, scheduled_date, start_time, end_time,
              completed, source_activity_id
-           ) VALUES (?, ?, ?, ?, 0, ?)`,
+           )
+           SELECT ?, ?, ?, ?, ?, ?, 0, ?
+           WHERE NOT EXISTS (
+             SELECT 1 FROM organization_schedules
+             WHERE LOWER(TRIM(organization)) = LOWER(TRIM(?))
+               AND business_round = ?
+               AND ${semanticScheduleLabelSql("organization", "label")} = ?
+               AND scheduled_date = ?
+               AND LOWER(TRIM(COALESCE(category, 'general'))) = 'general'
+               AND TRIM(COALESCE(deleted_at, '')) = ''
+           )`,
         )
         .bind(
           organization,
           businessRound,
-          entry.label,
-          entry.date,
-          sourceActivityId,
+           normalizeScheduleSemanticLabel(organization, entry.label),
+           entry.scheduledDate,
+           entry.startTime || "",
+           entry.endTime || "",
+           sourceActivityId,
+           organization,
+           businessRound,
+           entry.label,
+           entry.scheduledDate,
         ),
     ),
     d1.prepare(
@@ -433,6 +669,23 @@ export async function listOrganizationSchedules(
   if (!organization) return [];
   await importLegacyScheduleIfNeeded(organization, businessRound);
   return listStoredOrganizationSchedules(organization, businessRound);
+}
+
+export async function listConstructionStageOptions() {
+  const d1 = await ensureOrganizationSchedulesReady();
+  const result = await d1.prepare(
+    `SELECT DISTINCT TRIM(COALESCE(NULLIF(stage, ''), label)) AS stage
+     FROM organization_schedules
+     WHERE category = 'construction'
+       AND TRIM(COALESCE(deleted_at, '')) = ''
+       AND TRIM(COALESCE(NULLIF(stage, ''), label)) <> ''
+     ORDER BY stage COLLATE NOCASE ASC
+     LIMIT 100`,
+  ).all<{ stage: string }>();
+  return [...new Set([
+    ...CONSTRUCTION_STAGES,
+    ...result.results.map((row) => clean(row.stage).slice(0, 40)).filter(Boolean),
+  ])];
 }
 
 async function listStoredOrganizationSchedules(
@@ -463,16 +716,29 @@ function normalizeConstructionScheduleInputs(value: unknown) {
     const stage = clean(input.stage ?? input.label).slice(0, 40);
     const scheduledDate = validDate(input.scheduledDate ?? input.startDate);
     const endDate = validDate(input.endDate) || scheduledDate;
-    if (!isConstructionStage(stage) || !scheduledDate || endDate < scheduledDate) return;
+    const startTime = validTime(input.startTime);
+    const endTime = startTime ? validTime(input.endTime) : "";
+    if (
+      !isValidConstructionStage(stage) ||
+      !scheduledDate ||
+      endDate < scheduledDate ||
+      (startTime && endTime && endDate === scheduledDate && endTime <= startTime)
+    ) return;
     const normalized = {
+      id: Math.max(0, Number(input.id) || 0) || undefined,
       stage,
       scheduledDate,
       endDate,
+      startTime,
+      endTime,
       vendorName: clean(input.vendorName).slice(0, 120),
       details: clean(input.details).slice(0, 500),
       completed: input.completed === true,
     } satisfies ConstructionScheduleInput;
-    unique.set(`${stage}\u001f${scheduledDate}\u001f${endDate}`, normalized);
+    unique.set(
+      `${stage}\u001f${scheduledDate}\u001f${endDate}\u001f${startTime}\u001f${endTime}`,
+      normalized,
+    );
   });
   return [...unique.values()];
 }
@@ -598,7 +864,7 @@ export async function addOrganizationSchedule(input: {
   const organization = clean(input.organization).slice(0, 120);
   const linked = input.linked !== false;
   const businessRound = linked ? Math.max(1, Number(input.businessRound) || 1) : 0;
-  const label = clean(input.label).slice(0, 120);
+  const label = normalizeScheduleLabel(input.label);
   const scheduledDate = validDate(input.scheduledDate);
   const category = normalizeScheduleCategory(input.category);
   const rawStartTime = clean(input.startTime);
@@ -616,21 +882,24 @@ export async function addOrganizationSchedule(input: {
   }
   if (endTime && !startTime) throw new Error("종료 시간보다 시작 시간을 먼저 입력해 주세요.");
   if (startTime && endTime && endTime < startTime) throw new Error("종료 시간은 시작 시간 이후여야 합니다.");
+  const semanticLabel = normalizeScheduleSemanticLabel(organization, label);
   const d1 = await ensureOrganizationSchedulesReady();
-  const existing = await d1.prepare(
-    `SELECT id FROM organization_schedules
-     WHERE organization = ? AND business_round = ? AND label = ?
-       AND scheduled_date = ? AND start_time = ? AND completed = 0
-       AND TRIM(COALESCE(deleted_at, '')) = ''
-     LIMIT 1`,
-  ).bind(organization, businessRound, label, scheduledDate, startTime).first<{ id: number }>();
-  if (!existing) {
-    await d1.prepare(
-      `INSERT INTO organization_schedules (
+  await d1.prepare(
+      `INSERT OR IGNORE INTO organization_schedules (
          organization, business_round, label, scheduled_date, start_time, end_time, category, details, completed,
          created_by, created_by_name, updated_by, updated_by_name,
          assignee_member_id, assignee_name, sync_status
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?
+        WHERE NOT EXISTS (
+          SELECT 1 FROM organization_schedules
+          WHERE LOWER(TRIM(organization)) = LOWER(TRIM(?))
+            AND business_round = ?
+            AND ${semanticScheduleLabelSql("organization", "label")} = ?
+            AND scheduled_date = ?
+            AND LOWER(TRIM(COALESCE(category, 'general'))) = LOWER(TRIM(?))
+            AND TRIM(COALESCE(deleted_at, '')) = ''
+        )`,
     ).bind(
       organization,
       businessRound,
@@ -647,8 +916,12 @@ export async function addOrganizationSchedule(input: {
       Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0 ? assigneeMemberId : null,
       assigneeName,
       category === "personal" ? "local_only" : "pending",
+      organization,
+      businessRound,
+      semanticLabel,
+      scheduledDate,
+      category,
     ).run();
-  }
   if (!linked) return [];
   const general = await listOrganizationSchedules(organization, businessRound);
   const construction = await d1.prepare(
@@ -687,27 +960,39 @@ export async function saveConstructionSchedules(input: {
      ORDER BY id ASC`,
   ).bind(organization, businessRound).all<Record<string, unknown>>();
   const existingByKey = new Map<string, Record<string, unknown>[]>();
+  const existingById = new Map<number, Record<string, unknown>>();
   existingSchedules.results.forEach((row) => {
-    const key = `${String(row.stage || row.label)}\u001f${String(row.scheduled_date)}\u001f${String(row.end_date || row.scheduled_date)}`;
+    existingById.set(Number(row.id), row);
+    const key = `${String(row.stage || row.label)}\u001f${String(row.scheduled_date)}\u001f${String(row.end_date || row.scheduled_date)}\u001f${String(row.start_time || "")}\u001f${String(row.end_time || "")}`;
     existingByKey.set(key, [...(existingByKey.get(key) || []), row]);
   });
   const retainedIds = new Set<number>();
   const scheduleStatements = schedules.map((schedule) => {
-    const key = `${schedule.stage}\u001f${schedule.scheduledDate}\u001f${schedule.endDate || schedule.scheduledDate}`;
-    const existing = existingByKey.get(key)?.shift();
+    const key = `${schedule.stage}\u001f${schedule.scheduledDate}\u001f${schedule.endDate || schedule.scheduledDate}\u001f${schedule.startTime || ""}\u001f${schedule.endTime || ""}`;
+    let existing = schedule.id ? existingById.get(schedule.id) : undefined;
+    if (existing && retainedIds.has(Number(existing.id))) existing = undefined;
+    while (!existing) {
+      const candidate = existingByKey.get(key)?.shift();
+      if (!candidate || !retainedIds.has(Number(candidate.id))) {
+        existing = candidate;
+        break;
+      }
+    }
     if (existing) {
       const id = Number(existing.id);
       retainedIds.add(id);
       return d1.prepare(
         `UPDATE organization_schedules
-         SET label = ?, scheduled_date = ?, stage = ?, end_date = ?, vendor_name = ?, details = ?, completed = ?,
+         SET label = ?, scheduled_date = ?, start_time = ?, end_time = ?, stage = ?, end_date = ?, vendor_name = ?, details = ?, completed = ?,
              sync_status = 'pending', sync_operation = 'upsert', sync_error = '', deleted_at = '',
              updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
       ).bind(
-        schedule.stage,
-        schedule.scheduledDate,
-        schedule.stage,
+         schedule.stage,
+         schedule.scheduledDate,
+         schedule.startTime || "",
+         schedule.endTime || "",
+         schedule.stage,
         schedule.endDate || schedule.scheduledDate,
         schedule.vendorName || "",
         schedule.details || "",
@@ -719,15 +1004,17 @@ export async function saveConstructionSchedules(input: {
     }
     return d1.prepare(
       `INSERT INTO organization_schedules (
-         organization, business_round, label, scheduled_date, category, stage,
+         organization, business_round, label, scheduled_date, start_time, end_time, category, stage,
          end_date, vendor_name, details, completed,
          created_by, created_by_name, updated_by, updated_by_name
-       ) VALUES (?, ?, ?, ?, 'construction', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, 'construction', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       organization,
       businessRound,
       schedule.stage,
       schedule.scheduledDate,
+      schedule.startTime || "",
+      schedule.endTime || "",
       schedule.stage,
       schedule.endDate || schedule.scheduledDate,
       schedule.vendorName || "",
@@ -777,7 +1064,7 @@ export async function saveConstructionSchedules(input: {
     ...removedStatements,
   ]);
   const hasInspection = schedules.some((schedule) => schedule.stage === "검수");
-  const hasConstructionWork = schedules.some((schedule) => isConstructionStage(schedule.stage));
+  const hasConstructionWork = schedules.some((schedule) => isValidConstructionStage(schedule.stage));
   if (hasInspection && projectCompleted) {
     await d1.prepare(
       `UPDATE activities
@@ -803,11 +1090,13 @@ export async function saveConstructionSchedules(input: {
   const general = await listOrganizationSchedules(organization, businessRound);
   await mirrorOpenSchedulesToLatestActivity(d1, organization, businessRound, [
     ...general,
-    ...schedules.map((schedule) => ({
-      label: schedule.stage,
-      scheduledDate: schedule.scheduledDate,
-      completed: schedule.completed || projectCompleted,
-    })),
+      ...schedules.map((schedule) => ({
+        label: schedule.stage,
+        scheduledDate: schedule.scheduledDate,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+        completed: schedule.completed || projectCompleted,
+      })),
   ]);
   const [projectRow, scheduleRows, productRows] = await Promise.all([
     d1.prepare(
@@ -920,10 +1209,16 @@ async function mirrorOpenSchedulesToLatestActivity(
   businessRound: number,
   schedules: OrganizationScheduleInput[],
 ) {
-  const progressSchedule = schedules
-    .filter((schedule) => !schedule.completed)
-    .map((schedule) => `${schedule.label}\t${schedule.scheduledDate}`)
-    .join("\n");
+  const progressSchedule = serializeProgressSchedule(
+    schedules
+      .filter((schedule) => !schedule.completed)
+      .map((schedule) => ({
+        label: schedule.label,
+        date: schedule.scheduledDate,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+      })),
+  );
   await d1
     .prepare(
       `UPDATE activities
@@ -982,26 +1277,34 @@ export async function replaceOrganizationSchedules(input: {
   ).bind(organization, businessRound).all<Record<string, unknown>>();
   const byId = new Map(existingResult.results.map((row) => [Number(row.id), row]));
   const byNaturalKey = new Map(existingResult.results.map((row) => [
-    `${String(row.scheduled_date)}\u001f${String(row.label).toLocaleLowerCase("ko-KR")}`,
+    scheduleNaturalKey(
+      row.scheduled_date,
+      normalizeScheduleSemanticLabel(organization, row.label),
+    ),
     row,
   ]));
   const retained = new Set<number>();
   const statements = schedules.map((schedule) => {
     const existing = (schedule.id ? byId.get(schedule.id) : undefined)
-      || byNaturalKey.get(`${schedule.scheduledDate}\u001f${schedule.label.toLocaleLowerCase("ko-KR")}`);
+      || byNaturalKey.get(scheduleNaturalKey(
+        schedule.scheduledDate,
+        normalizeScheduleSemanticLabel(organization, schedule.label),
+      ));
     if (existing) {
       const id = Number(existing.id);
       retained.add(id);
       return d1.prepare(
         `UPDATE organization_schedules
-         SET label = ?, scheduled_date = ?, end_date = ?, completed = ?,
+         SET label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, completed = ?,
              sync_status = 'pending', sync_operation = 'upsert', sync_error = '',
              updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
       ).bind(
-        schedule.label,
-        schedule.scheduledDate,
-        schedule.scheduledDate,
+         schedule.label,
+         schedule.scheduledDate,
+         schedule.startTime || "",
+         schedule.endTime || "",
+         schedule.scheduledDate,
         schedule.completed ? 1 : 0,
         input.memberId,
         input.memberName,
@@ -1009,15 +1312,17 @@ export async function replaceOrganizationSchedules(input: {
       );
     }
     return d1.prepare(
-      `INSERT INTO organization_schedules (
-         organization, business_round, label, scheduled_date, category, completed,
+      `INSERT OR IGNORE INTO organization_schedules (
+         organization, business_round, label, scheduled_date, start_time, end_time, category, completed,
          created_by, created_by_name, updated_by, updated_by_name
-       ) VALUES (?, ?, ?, ?, 'general', ?, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, 'general', ?, ?, ?, ?, ?)`,
     ).bind(
       organization,
       businessRound,
       schedule.label,
       schedule.scheduledDate,
+      schedule.startTime || "",
+      schedule.endTime || "",
       schedule.completed ? 1 : 0,
       input.memberId,
       input.memberName,
@@ -1131,10 +1436,13 @@ export async function updateOrganizationSchedule(input: {
   member: ScheduleActor;
 }) {
   const { d1, row, id } = await requireEditableSchedule(input.id, input.member);
-  const label = clean(input.label).slice(0, 120);
+  const label = normalizeScheduleLabel(input.label);
   const scheduledDate = validDate(input.scheduledDate);
   if (!label || !scheduledDate) throw new Error("일정 제목과 날짜를 확인해 주세요.");
-  const category = normalizeScheduleCategory(input.category);
+  const requestedCategory = clean(input.category);
+  const category = requestedCategory === "construction"
+    ? "construction"
+    : normalizeScheduleCategory(requestedCategory);
   const rawStartTime = clean(input.startTime);
   const rawEndTime = clean(input.endTime);
   const startTime = validTime(rawStartTime);
@@ -1147,9 +1455,41 @@ export async function updateOrganizationSchedule(input: {
   const assigneeMemberId = Number(input.assigneeMemberId);
   const assigneeName = clean(input.assigneeName).slice(0, 120) || input.member.displayName;
   const details = clean(input.details).slice(0, 500);
+  if (category === "construction") {
+    if (!isValidConstructionStage(label)) {
+      throw new Error("시공 공정명을 40자 이내로 입력해 주세요.");
+    }
+    const organization = String(row.organization ?? "");
+    const businessRound = Math.max(0, Number(row.business_round) || 0);
+    if (!organization || businessRound <= 0) throw new Error("시공 일정은 연결된 기관이 필요합니다.");
+    const project = await d1.prepare(
+      `SELECT id FROM construction_schedule_projects
+       WHERE organization = ? AND business_round = ? AND TRIM(COALESCE(hidden_at, '')) = '' LIMIT 1`,
+    ).bind(organization, businessRound).first<{ id: number }>();
+    if (!project) throw new Error("시공·납품 일정표에 해당 기관을 먼저 추가해 주세요.");
+  }
+  const duplicate = await d1.prepare(
+    `SELECT id FROM organization_schedules
+     WHERE id <> ?
+       AND LOWER(TRIM(organization)) = LOWER(TRIM(?))
+       AND business_round = ?
+       AND ${semanticScheduleLabelSql("organization", "label")} = ?
+       AND scheduled_date = ?
+       AND LOWER(TRIM(COALESCE(category, 'general'))) = LOWER(TRIM(?))
+       AND TRIM(COALESCE(deleted_at, '')) = ''
+     LIMIT 1`,
+  ).bind(
+    id,
+    String(row.organization ?? ""),
+    Math.max(0, Number(row.business_round) || 0),
+    normalizeScheduleSemanticLabel(String(row.organization ?? ""), label),
+    scheduledDate,
+    category,
+  ).first<{ id: number }>();
+  if (duplicate) throw new Error("같은 기관·날짜·제목의 일정이 이미 등록되어 있습니다.");
   await d1.prepare(
     `UPDATE organization_schedules
-     SET label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, category = ?, details = ?, completed = ?,
+     SET label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, category = ?, stage = ?, details = ?, completed = ?,
          assignee_member_id = ?, assignee_name = ?,
          sync_status = CASE
            WHEN ? = 'personal' AND TRIM(COALESCE(google_event_id, '')) <> '' THEN 'pending'
@@ -1158,6 +1498,7 @@ export async function updateOrganizationSchedule(input: {
          END,
          sync_operation = CASE
            WHEN ? = 'personal' AND TRIM(COALESCE(google_event_id, '')) <> '' THEN 'unlink'
+           WHEN ? = 'construction' AND TRIM(COALESCE(google_event_id, '')) <> '' THEN 'move-construction'
            ELSE 'upsert'
          END,
          sync_error = '',
@@ -1170,10 +1511,12 @@ export async function updateOrganizationSchedule(input: {
     endTime,
     scheduledDate,
     category,
+    category === "construction" ? label : "",
     details,
     input.completed === true ? 1 : 0,
     Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0 ? assigneeMemberId : null,
     assigneeName,
+    category,
     category,
     category,
     category,
@@ -1193,7 +1536,7 @@ export async function updateOrganizationSchedule(input: {
   }
   return scheduleJson({ ...row, id, label, scheduled_date: scheduledDate, start_time: startTime,
     end_time: endTime, end_date: scheduledDate,
-    category, completed: input.completed === true ? 1 : 0,
+    category, stage: category === "construction" ? label : "", details, completed: input.completed === true ? 1 : 0,
     assignee_member_id: Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0 ? assigneeMemberId : null,
     assignee_name: assigneeName, updated_by_name: input.member.displayName });
 }
@@ -1236,6 +1579,11 @@ export async function mergeActivityProgressSchedule(input: {
   const incoming = parseProgressScheduleEntries(clean(input.progressSchedule));
   if (!organization || !incoming.length) return;
   const d1 = await ensureOrganizationSchedulesReady();
+  await d1.prepare(
+    `INSERT OR IGNORE INTO organization_schedule_import_state (
+       organization, business_round
+     ) VALUES (?, ?)`,
+  ).bind(organization, businessRound).run();
   const whizzupScope = await isWhizzupAwardScope(d1, organization, businessRound);
   const constructionIncoming = whizzupScope
     ? incoming.filter((schedule) => isConstructionStage(schedule.label))
@@ -1243,26 +1591,28 @@ export async function mergeActivityProgressSchedule(input: {
   const generalIncoming = incoming.filter(
     (schedule) => !whizzupScope || !isConstructionStage(schedule.label),
   );
-  const current = await listOrganizationSchedules(organization, businessRound);
+  const current = await listStoredOrganizationSchedules(organization, businessRound);
   const merged = new Map(
     current.filter((schedule) => schedule.category !== "construction").map((schedule: OrganizationSchedule) => [
-      `${schedule.scheduledDate}\u001f${schedule.label.toLocaleLowerCase("ko-KR")}`,
+      scheduleNaturalKey(schedule.scheduledDate, schedule.label),
       {
         label: schedule.label,
         scheduledDate: schedule.scheduledDate,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
         completed: schedule.completed,
       },
     ]),
   );
   generalIncoming.forEach((schedule) => {
-    const key = `${schedule.date}\u001f${schedule.label.toLocaleLowerCase("ko-KR")}`;
-    if (!merged.has(key)) {
-      merged.set(key, {
-        label: schedule.label,
-        scheduledDate: schedule.date,
-        completed: false,
-      });
-    }
+    const key = scheduleNaturalKey(schedule.date, schedule.label);
+    merged.set(key, {
+      label: schedule.label,
+      scheduledDate: schedule.date,
+      startTime: schedule.startTime,
+      endTime: schedule.endTime,
+      completed: false,
+    });
   });
   if (generalIncoming.length) {
     await replaceOrganizationSchedules({
@@ -1295,24 +1645,27 @@ export async function mergeActivityProgressSchedule(input: {
     ).run();
 
     await d1.batch(constructionIncoming.map((schedule) => d1.prepare(
-      `INSERT INTO organization_schedules (
-         organization, business_round, label, scheduled_date, category, stage,
-         end_date, completed, source_activity_id,
-         created_by, created_by_name, updated_by, updated_by_name
-       )
-       SELECT ?, ?, ?, ?, 'construction', ?, ?, 0, ?, ?, ?, ?, ?
-       WHERE NOT EXISTS (
-         SELECT 1 FROM organization_schedules
-         WHERE organization = ? AND business_round = ? AND category = 'construction'
-           AND stage = ? AND scheduled_date = ?
-           AND COALESCE(NULLIF(end_date, ''), scheduled_date) = ?
-       )`,
+       `INSERT INTO organization_schedules (
+          organization, business_round, label, scheduled_date, start_time, end_time, category, stage,
+          end_date, completed, source_activity_id,
+          created_by, created_by_name, updated_by, updated_by_name
+        )
+        SELECT ?, ?, ?, ?, ?, ?, 'construction', ?, ?, 0, ?, ?, ?, ?, ?
+        WHERE NOT EXISTS (
+          SELECT 1 FROM organization_schedules
+          WHERE organization = ? AND business_round = ? AND category = 'construction'
+            AND stage = ? AND scheduled_date = ?
+            AND COALESCE(NULLIF(end_date, ''), scheduled_date) = ?
+            AND COALESCE(start_time, '') = ? AND COALESCE(end_time, '') = ?
+        )`,
     ).bind(
       organization,
       businessRound,
-      schedule.label,
-      schedule.date,
-      schedule.label,
+       schedule.label,
+       schedule.date,
+       schedule.startTime,
+       schedule.endTime,
+       schedule.label,
       schedule.date,
       input.activityId,
       input.memberId,
@@ -1323,8 +1676,51 @@ export async function mergeActivityProgressSchedule(input: {
       businessRound,
       schedule.label,
       schedule.date,
-      schedule.date,
-    )));
+       schedule.date,
+       schedule.startTime,
+       schedule.endTime,
+     )));
+
+    const duplicateGeneralWhere = `
+      organization = ? AND business_round = ?
+      AND COALESCE(category, 'general') <> 'construction'
+      AND source_activity_id = ?
+      AND EXISTS (
+        SELECT 1 FROM organization_schedules construction
+        WHERE construction.organization = organization_schedules.organization
+          AND construction.business_round = organization_schedules.business_round
+          AND construction.category = 'construction'
+          AND construction.source_activity_id = ?
+          AND construction.stage = organization_schedules.label
+          AND construction.scheduled_date = organization_schedules.scheduled_date
+          AND COALESCE(construction.start_time, '') = COALESCE(organization_schedules.start_time, '')
+          AND COALESCE(construction.end_time, '') = COALESCE(organization_schedules.end_time, '')
+          AND TRIM(COALESCE(construction.deleted_at, '')) = ''
+      )`;
+    await d1.batch([
+      d1.prepare(
+        `UPDATE organization_schedules
+         SET deleted_at = CURRENT_TIMESTAMP, sync_status = 'pending', sync_operation = 'delete',
+             sync_error = '', updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE ${duplicateGeneralWhere} AND TRIM(COALESCE(google_event_id, '')) <> ''`,
+      ).bind(
+        input.memberId,
+        input.memberName,
+        organization,
+        businessRound,
+        input.activityId,
+        input.activityId,
+      ),
+      d1.prepare(
+        `DELETE FROM organization_schedules
+         WHERE ${duplicateGeneralWhere} AND TRIM(COALESCE(google_event_id, '')) = ''`,
+      ).bind(
+        organization,
+        businessRound,
+        input.activityId,
+        input.activityId,
+      ),
+    ]);
 
     await d1.prepare(
       `UPDATE activities
@@ -1339,11 +1735,17 @@ export async function mergeActivityProgressSchedule(input: {
        ) AND COALESCE(award_stage_manual, 0) = 0`,
     ).bind(organization, businessRound).run();
 
+    const openSchedules = await d1.prepare(
+      `SELECT * FROM organization_schedules
+       WHERE organization = ? AND business_round = ?
+         AND TRIM(COALESCE(deleted_at, '')) = ''
+       ORDER BY scheduled_date ASC, id ASC`,
+    ).bind(organization, businessRound).all<Record<string, unknown>>();
     await mirrorOpenSchedulesToLatestActivity(
       d1,
       organization,
       businessRound,
-      await listOrganizationSchedules(organization, businessRound),
+      openSchedules.results.map(scheduleJson),
     );
   }
 }

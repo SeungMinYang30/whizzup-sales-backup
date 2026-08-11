@@ -20,10 +20,39 @@ test("complex projects reuse canonical budgets and items across accounting and a
   assert.match(store, /await syncAllWhizzupBudgetLinks\(d1\);[\s\S]*const \[projectResult/);
   assert.match(store, /INSERT OR IGNORE INTO complex_project_budget_links/);
   assert.match(store, /UPDATE activities SET progress_manager = \?, progress_manager_locked = \?/);
-  assert.match(page, /기존 표준 예산과 품목 카드를 그대로 사용해 통계·회계 이중 집계를 막습니다/);
+  assert.match(page, /기관 상세의 같은 차수에 등록된 예산을 자동으로 불러옵니다/);
   assert.match(page, /기관 상세와 같은 사업 기록을 사용합니다/);
   assert.match(page, /어느 화면에서 수정해도 함께 반영됩니다/);
   assert.match(crm, /"complex-projects": "공간재구조화 사업 관리"/);
+  assert.match(store, /readCanonicalBusinessRoundBudgets/);
+  assert.match(store, /summarizeActivityBudgets/);
+  assert.match(store, /equipmentSettlementQuantity/);
+  assert.match(store, /calculateEquipmentFinance/);
+  assert.match(store, /quotation_amount: finance\.quotationAmount/);
+  assert.match(store, /const project = await requireProject\(d1, projectId\);/);
+  assert.match(store, /resolvedProtectionState/);
+  assert.match(store, /synchronizeBusinessRoundBudgets/);
+  assert.match(page, /<summary>기본정보 수정<\/summary>/);
+  assert.match(page, /if \(ok\) \{[\s\S]{0,100}setBasicInfoOpen\(false\)/);
+  assert.match(page, /await props\.onRecordsChanged\?\.\(\)/);
+  assert.doesNotMatch(page, /name="totalBudget"/);
+  assert.doesNotMatch(page, /name="allocatedAmount"/);
+  assert.match(page, /<small>전체예산<\/small>/);
+  assert.match(page, /setSummaryDialog\("protection"\)/);
+  assert.match(page, /complex-summary-dialog/);
+});
+
+test("complex project workbook exports the unified institution budget and item values", async () => {
+  const workbook = await read("../app/complex-project-xlsx.ts");
+
+  assert.match(workbook, /budget\.budget_amount/);
+  assert.match(workbook, /item\.quotation_amount/);
+  assert.match(workbook, /item\.settlement_quantity/);
+  assert.match(workbook, /계약·집행금액/);
+  assert.match(workbook, /등록된 품목이 없습니다/);
+  assert.match(workbook, /cachedValue/);
+  assert.doesNotMatch(workbook, /money\(budget\.allocated_amount\)/);
+  assert.doesNotMatch(workbook, /money\(project\.total_budget\).*총 관리예산/);
 });
 
 test("partial delivery changes stay linked to the schedule board and remain editable", async () => {
@@ -36,8 +65,8 @@ test("partial delivery changes stay linked to the schedule board and remain edit
   assert.match(store, /complex_delivery_id/);
   assert.match(store, /sync_status = 'pending', sync_operation = 'upsert'/);
   assert.match(store, /refreshOrganizationScheduleMirror/);
-  assert.match(store, /plannedQty < (?:awardedQty|settlementQuantity)[\s\S]*"수량 미배정"/);
-  assert.match(store, /plannedQty > (?:awardedQty|settlementQuantity)[\s\S]*"수량 초과"/);
+  assert.match(store, /plannedQty < settlementQuantity[\s\S]*"수량 미배정"/);
+  assert.match(store, /plannedQty > settlementQuantity[\s\S]*"수량 초과"/);
   assert.match(store, /refreshDeliveredQuantity/);
   assert.match(page, /deliveryId: editDelivery\?\.id/);
   assert.match(page, />수정<\/button><button type="button" onClick=\{\(\) => void removeEntity\("delivery"/);
@@ -77,58 +106,20 @@ test("complex project activation uses searched institution rounds and approved s
   assert.match(records, /existingActivityChangeItemIds/);
 });
 
-test("complex project activation carries existing budgets items and financial totals without duplicating them", async () => {
+test("new rounds keep institution identity without copying old round budgets or items", async () => {
   const [store, page] = await Promise.all([
     read("../lib/complex-projects.ts"),
     read("../app/complex-project-page.tsx"),
   ]);
-  assert.match(store, /readCanonicalBusinessRoundBudgets/);
-  assert.match(store, /activityBudgetsFromRecord/);
-  assert.match(store, /INSERT INTO complex_project_budget_links/);
-  assert.match(store, /ON CONFLICT\(complex_project_id, equipment_project_id\) DO (?:NOTHING|UPDATE)/);
-  assert.match(store, /item_quote_amount/);
-  assert.match(store, /construction_amount/);
-  assert.match(store, /export async function cancelComplexProject/);
-  assert.match(store, /const updatedNotes = \[previousNotes, reasonLine\]\.filter\(Boolean\)\.join\("\\n"\)/);
-  assert.doesNotMatch(store, /notes \|\| CHAR\(10\) \|\|/);
-  assert.match(store, /equipmentSettlementQuantity/);
-  assert.match(store, /calculateEquipmentFinance/);
-  assert.match(store, /supplier_display_name/);
-  assert.match(page, /원본 수량 미입력/);
-  assert.match(page, /제품 기준/);
-  assert.match(page, /공간재구조화 사업을 취소/);
-  assert.match(page, /연결 품목 금액/);
-  assert.match(page, /연결 공사비/);
-});
 
-test("complex project writes are atomic and refresh failures cannot be mistaken for failed writes", async () => {
-  const [store, page, route] = await Promise.all([
-    read("../lib/complex-projects.ts"),
-    read("../app/complex-project-page.tsx"),
-    read("../app/api/complex-projects/route.ts"),
-  ]);
-
-  for (const action of [
-    "createComplexProject",
-    "updateComplexProject",
-    "addComplexBudget",
-    "saveComplexZone",
-    "saveComplexItem",
-    "saveComplexDelivery",
-    "deleteComplexEntity",
-  ]) {
-    const start = store.indexOf(`export async function ${action}`);
-    assert.ok(start >= 0, `${action} must exist`);
-    const end = store.indexOf("\nexport async function ", start + 1);
-    const block = store.slice(start, end >= 0 ? end : undefined);
-    assert.match(block, /\.transaction\(async \(transaction\) =>/);
-    assert.doesNotMatch(block, /return listComplexProjects\(\)/);
-  }
-  assert.match(store, /const \[projectResult,[\s\S]*= await d1\.batch\(/);
-  assert.match(store, /export async function listComplexProjects[\s\S]*await syncAllWhizzupBudgetLinks\(d1\);[\s\S]*const \[projectResult/);
-  assert.match(page, /resilientFetch\("\/api\/complex-projects"/);
-  assert.match(page, /최신 화면 갱신이 지연되고 있어/);
-  assert.match(route, /isDatabaseUnavailableError/);
+  assert.match(store, /const createNewRound = payload\.createNewRound === true/);
+  assert.match(store, /WHERE organization = \? AND business_round = \?/);
+  assert.match(store, /await d1\.batch\(statements\)/);
+  assert.doesNotMatch(store, /d1\.transaction/);
+  assert.match(page, /새 차수 만들기/);
+  assert.match(page, /기관 정보만 이어받고 과거 예산·품목은 복사하지 않습니다/);
+  assert.match(page, /기존 차수 연결/);
+  assert.match(page, /진행 담당자/);
 });
 
 test("complex project items preserve selection protection and site requirements", async () => {

@@ -76,7 +76,48 @@ export async function PUT(request: Request) {
     const values = fields.map((field) => clean(payload[field], field === "notes" ? 2000 : 500));
     if (!values[0]) return Response.json({ error: "업체명을 입력해 주세요." }, { status: 400 });
     const d1 = await ensureAwardVendorsReady();
-    await d1.prepare(`UPDATE award_vendors SET ${fields.map((f) => `${columns[f]} = ?`).join(", ")}, is_active = 1, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(...values, member.id, id).run();
+    const current = await d1
+      .prepare("SELECT company_name FROM award_vendors WHERE id = ? LIMIT 1")
+      .bind(id)
+      .first<{ company_name: string }>();
+    if (!current) return Response.json({ error: "업체를 찾지 못했습니다." }, { status: 404 });
+    const tables = await d1
+      .prepare(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'table' AND name IN ('product_vendor_links', 'equipment_items')`,
+      )
+      .all<{ name: string }>();
+    const tableNames = new Set(tables.results.map((table) => table.name));
+    const nextCompanyName = values[0];
+    const statements = [
+      d1
+        .prepare(`UPDATE award_vendors SET ${fields.map((f) => `${columns[f]} = ?`).join(", ")}, is_active = 1, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+        .bind(...values, member.id, id),
+    ];
+    if (tableNames.has("product_vendor_links")) {
+      statements.push(
+        d1
+          .prepare(
+            `UPDATE product_vendor_links
+             SET vendor_name_snapshot = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+             WHERE vendor_id = ?`,
+          )
+          .bind(nextCompanyName, member.id, id),
+      );
+    }
+    if (tableNames.has("equipment_items")) {
+      statements.push(
+        d1
+          .prepare(
+            `UPDATE equipment_items
+             SET supplier_vendor_id = ?, supplier_vendor_name = ?, updated_at = CURRENT_TIMESTAMP
+             WHERE supplier_vendor_id = ?
+                OR (supplier_vendor_id IS NULL AND LOWER(TRIM(supplier_vendor_name)) = LOWER(TRIM(?)))`,
+          )
+          .bind(id, nextCompanyName, id, current.company_name),
+      );
+    }
+    await d1.batch(statements);
     return Response.json({ vendor: await fullVendor(d1, id) });
   } catch (error) { return accessErrorResponse(error); }
 }

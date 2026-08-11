@@ -27,12 +27,14 @@ import { ensureOrganizationSchedulesReady } from "./organization-schedules";
 import { ensureAuthoredQuotationsReady } from "./authored-quotations";
 import { ensureComplexProjectsReady } from "./complex-projects";
 import { ensureResourceLibraryReady } from "./resource-library";
+import { ensureYouTubeResourceLibraryReady } from "./youtube-resource-library";
 import { ensureProductComparisonDocumentsReady } from "./product-comparison-documents";
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-08-09-product-resource-import";
+export const BACKUP_SCHEMA_VERSION = "2026-08-11-youtube-resource-links";
 const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
+  "2026-08-09-product-resource-import",
   "2026-08-09-google-drive-library",
   "2026-08-07-complex-project-controls",
   "2026-08-07-complex-projects",
@@ -121,6 +123,7 @@ const COMPLEX_PROJECT_BACKUP_TABLES = new Set([
 const DRIVE_LIBRARY_BACKUP_TABLES = new Set([
   "resource_posts",
   "resource_attachments",
+  "youtube_resource_links",
   "product_comparison_documents",
 ]);
 
@@ -161,7 +164,6 @@ export const BACKUP_TABLES = [
       "permissions",
       "status",
       "is_sales",
-      "current_view",
       "created_at",
       "approved_at",
       "approved_by",
@@ -208,7 +210,6 @@ export const BACKUP_TABLES = [
       "execution_type",
       "consortium_company",
       "award_stage",
-      "award_stage_manual",
       "award_completed_date",
       "progress_manager",
       "progress_manager_locked",
@@ -631,6 +632,23 @@ export const BACKUP_TABLES = [
     orderBy: "id",
   },
   {
+    name: "youtube_resource_links",
+    columns: [
+      "id",
+      "video_id",
+      "youtube_url",
+      "title",
+      "description",
+      "thumbnail_url",
+      "kind",
+      "published_at",
+      "created_by",
+      "created_by_name",
+      "created_at",
+    ],
+    orderBy: "id",
+  },
+  {
     name: "product_comparison_documents",
     columns: [
       "id",
@@ -738,6 +756,9 @@ export const BACKUP_TABLES = [
     columns: [
       "id",
       "quote_number",
+      "revision_root_id",
+      "revision_parent_id",
+      "revision_number",
       "organization",
       "business_round",
       "project_title",
@@ -749,6 +770,7 @@ export const BACKUP_TABLES = [
       "consortium_rate",
       "discount_amount",
       "extra_amount",
+      "additional_internal_construction_cost",
       "subtotal_amount",
       "supply_amount",
       "tax_amount",
@@ -760,6 +782,15 @@ export const BACKUP_TABLES = [
       "include_stamp",
       "memo",
       "items_json",
+      "drive_pdf_file_id",
+      "drive_pdf_name",
+      "drive_xlsx_file_id",
+      "drive_xlsx_name",
+      "drive_sync_status",
+      "drive_sync_error",
+      "deleted_at",
+      "deleted_by",
+      "deleted_by_name",
       "created_by",
       "created_by_name",
       "updated_by",
@@ -791,7 +822,6 @@ export const BACKUP_TABLES = [
       "assignee_name",
       "google_event_id",
       "google_event_etag",
-      "google_origin",
       "sync_status",
       "sync_operation",
       "sync_error",
@@ -839,12 +869,18 @@ export const BACKUP_TABLES = [
   },
   {
     name: "complex_project_budget_links",
-    columns: ["id", "complex_project_id", "equipment_project_id", "allocated_amount", "sort_order", "created_at", "updated_at"],
+    columns: [
+      "id", "complex_project_id", "equipment_project_id",
+      "allocated_amount", "sort_order", "created_at", "updated_at",
+    ],
     orderBy: "id",
   },
   {
     name: "complex_project_zones",
-    columns: ["id", "complex_project_id", "building", "floor", "room", "name", "notes", "sort_order", "created_at", "updated_at"],
+    columns: [
+      "id", "complex_project_id", "building", "floor", "room", "name",
+      "notes", "sort_order", "created_at", "updated_at",
+    ],
     orderBy: "id",
   },
   {
@@ -861,12 +897,20 @@ export const BACKUP_TABLES = [
   },
   {
     name: "complex_project_deliveries",
-    columns: ["id", "complex_project_id", "equipment_item_id", "schedule_id", "kind", "planned_qty", "completed_qty", "start_date", "end_date", "vendor_name", "location", "status", "notes", "created_by", "created_by_name", "updated_by", "updated_by_name", "created_at", "updated_at"],
+    columns: [
+      "id", "complex_project_id", "equipment_item_id", "schedule_id", "kind",
+      "planned_qty", "completed_qty", "start_date", "end_date", "vendor_name",
+      "location", "status", "notes", "created_by", "created_by_name",
+      "updated_by", "updated_by_name", "created_at", "updated_at",
+    ],
     orderBy: "id",
   },
   {
     name: "complex_project_events",
-    columns: ["id", "complex_project_id", "action", "detail_json", "changed_by", "changed_by_name", "created_at"],
+    columns: [
+      "id", "complex_project_id", "action", "detail_json", "changed_by",
+      "changed_by_name", "created_at",
+    ],
     orderBy: "id",
   },
   {
@@ -1162,9 +1206,6 @@ export class BackupValidationError extends Error {
 async function ensureBackupReady() {
   if (isPostgresDatabase()) {
     const d1 = getD1();
-    // Vercel's versioned Postgres migration already reconciles every backup
-    // table. Re-running each legacy SQLite bootstrap serially can exceed the
-    // serverless timeout and is unnecessary once that migration is current.
     await d1.prepare("SELECT 1").run();
     return d1;
   }
@@ -1191,6 +1232,7 @@ async function ensureBackupReady() {
   await ensureAuthoredQuotationsReady();
   await ensureComplexProjectsReady();
   await ensureResourceLibraryReady();
+  await ensureYouTubeResourceLibraryReady();
   await ensureProductComparisonDocumentsReady();
   const d1 = getD1();
   await ensureInstitutionDecisionsReady(d1);
@@ -1253,17 +1295,14 @@ async function checksumBackup(backup: Omit<FullBackup, "checksum">) {
 function replicaChecksumData(data: FullBackup["data"]) {
   return {
     ...data,
-    // Online-presence heartbeats update this field every few seconds. They
-    // should still be present in the backup, but must not trigger a full
-    // 5,000+ row replica restore when no business data changed.
     members: data.members.map(({ last_seen_at: _lastSeenAt, ...member }) => {
       let permissions = member.permissions;
       if (typeof permissions === "string") {
         try {
           permissions = JSON.parse(permissions);
         } catch {
-          // Validation reports malformed permissions separately. Keeping the
-          // original value here makes the checksum deterministic meanwhile.
+          // Malformed permissions are reported by validation. Keep the source
+          // value here so the replica checksum remains deterministic.
         }
       }
       return { ...member, permissions };
@@ -1300,10 +1339,7 @@ function nullableInteger(value: unknown, label: string) {
   return asInteger(value, label);
 }
 
-function normalizeEquipmentProjectRows(
-  rows: unknown[],
-  fallbackCreatedBy: number | null,
-) {
+function normalizeEquipmentProjectRows(rows: unknown[]) {
   const occupiedNames = new Set<string>();
   rows.forEach((row) => {
     if (!isPlainObject(row)) return;
@@ -1335,10 +1371,6 @@ function normalizeEquipmentProjectRows(
     return {
       ...row,
       name,
-      created_by:
-        Number(row.created_by) === 0 && fallbackCreatedBy
-          ? fallbackCreatedBy
-          : row.created_by,
       activity_id: "activity_id" in row ? row.activity_id : null,
       business_round: "business_round" in row ? row.business_round : 1,
       construction_amount:
@@ -1479,66 +1511,6 @@ function repairBrokenActivityReferences(
     return { ...project, activity_id: null };
   });
 
-  let reconnectedCampaignTargets = 0;
-  let detachedCampaignTargets = 0;
-  data.sales_campaign_targets = data.sales_campaign_targets.map((target) => {
-    const activityId = target.activity_id;
-    if (
-      activityId === null ||
-      activityId === "" ||
-      activityIds.has(String(activityId))
-    ) {
-      return target;
-    }
-    const candidates = [
-      ...(activitiesByBusiness.get(activityBusinessKey(target)) ?? []),
-    ].sort((left, right) => {
-      const dateDifference =
-        Date.parse(String(right.activity_date ?? "")) -
-        Date.parse(String(left.activity_date ?? ""));
-      if (Number.isFinite(dateDifference) && dateDifference) {
-        return dateDifference;
-      }
-      return Number(right.id ?? 0) - Number(left.id ?? 0);
-    });
-    if (candidates.length) {
-      reconnectedCampaignTargets += 1;
-      return { ...target, activity_id: candidates[0].id };
-    }
-    detachedCampaignTargets += 1;
-    return { ...target, activity_id: null, created_activity: 0 };
-  });
-
-  const campaignTargetIds = new Set(
-    data.sales_campaign_targets.map((row) => String(row.id)),
-  );
-  const jointProjectStatus = new Map(
-    data.joint_projects.map((row) => [String(row.id), String(row.status ?? "")]),
-  );
-  let detachedInactiveJointLinks = 0;
-  data.joint_project_members = data.joint_project_members.map((member) => {
-    const missingActivity =
-      member.activity_id !== null &&
-      member.activity_id !== "" &&
-      !activityIds.has(String(member.activity_id));
-    const missingCampaignTarget =
-      member.campaign_target_id !== null &&
-      member.campaign_target_id !== "" &&
-      !campaignTargetIds.has(String(member.campaign_target_id));
-    if (!missingActivity && !missingCampaignTarget) return member;
-    if (jointProjectStatus.get(String(member.project_id)) !== "inactive") {
-      return member;
-    }
-    detachedInactiveJointLinks += 1;
-    return {
-      ...member,
-      activity_id: missingActivity ? null : member.activity_id,
-      campaign_target_id: missingCampaignTarget
-        ? null
-        : member.campaign_target_id,
-    };
-  });
-
   const historyEntryIds = new Set(
     data.accounting_commission_entry_history.map((row) =>
       String(row.entry_id),
@@ -1574,21 +1546,6 @@ function repairBrokenActivityReferences(
   if (detachedProjects) {
     notices.push(
       `연결할 현재 기록이 없는 사업 ${detachedProjects}건은 사업 정보는 보존하고 활동 연결만 해제했습니다.`,
-    );
-  }
-  if (reconnectedCampaignTargets) {
-    notices.push(
-      `삭제된 활동을 가리키던 예산별 기관 ${reconnectedCampaignTargets}건을 같은 기관·사업 차수의 현재 기록으로 다시 연결했습니다.`,
-    );
-  }
-  if (detachedCampaignTargets) {
-    notices.push(
-      `연결할 현재 기록이 없는 예산별 기관 ${detachedCampaignTargets}건은 기관 정보는 보존하고 활동 연결만 해제했습니다.`,
-    );
-  }
-  if (detachedInactiveJointLinks) {
-    notices.push(
-      `종료된 공동사업의 삭제된 활동·대상기관 연결 ${detachedInactiveJointLinks}건은 공동사업 이력은 보존하고 끊어진 연결만 해제했습니다.`,
     );
   }
   if (discardedAccountingEntries.length) {
@@ -1832,6 +1789,16 @@ function validateRows(
     "자료실 Google Drive 파일 ID",
   );
   assertUnique(
+    data.youtube_resource_links,
+    (row) => String(asInteger(row.id, "youtube_resource_links.id")),
+    "유튜브 자료 ID",
+  );
+  assertUnique(
+    data.youtube_resource_links,
+    (row) => requiredText(row.video_id, "youtube_resource_links.video_id"),
+    "유튜브 영상 ID",
+  );
+  assertUnique(
     data.organization_school_links,
     (row) => requiredText(row.link_key, "organization_school_links.link_key"),
     "기관 학교 연결 키",
@@ -2005,19 +1972,10 @@ function validateRows(
   );
   assertUnique(
     projects,
-    (row) => {
-      const organization = requiredText(
-        row.organization,
-        "equipment_projects.organization",
-      );
-      const businessRound = asInteger(
-        row.business_round ?? 1,
-        "equipment_projects.business_round",
-      );
-      const name = String(row.name ?? "").trim();
-      const fallbackName = `사업 #${asInteger(row.id, "equipment_projects.id")}`;
-      return `${organization}|${businessRound}|${name || fallbackName}`;
-    },
+    (row) =>
+      `${requiredText(row.organization, "equipment_projects.organization")}|${String(
+        row.name ?? "",
+      ).trim() || `legacy-${asInteger(row.id, "equipment_projects.id")}`}`,
     "기관별 사업명",
   );
   assertUnique(
@@ -2124,8 +2082,16 @@ function validateRows(
     "sales_campaign_targets",
   );
   const projectIds = rowSet(projects, "id", "equipment_projects");
-  const complexProjectIds = rowSet(data.complex_projects, "id", "complex_projects");
-  const complexZoneIds = rowSet(data.complex_project_zones, "id", "complex_project_zones");
+  const complexProjectIds = rowSet(
+    data.complex_projects,
+    "id",
+    "complex_projects",
+  );
+  const complexZoneIds = rowSet(
+    data.complex_project_zones,
+    "id",
+    "complex_project_zones",
+  );
   const jointProjectIds = rowSet(jointProjects, "id", "joint_projects");
   const vendorIds = rowSet(vendors, "id", "award_vendors");
   const inventoryProductIds = rowSet(
@@ -2449,6 +2415,9 @@ function validateRows(
     assertReference(row.post_id, resourcePostIds, "resource_attachments.post_id");
     assertReference(row.created_by, memberIds, "resource_attachments.created_by", true);
   });
+  data.youtube_resource_links.forEach((row) => {
+    assertReference(row.created_by, memberIds, "youtube_resource_links.created_by", true);
+  });
   data.authored_quotations.forEach((row) => {
     assertReference(
       row.created_by,
@@ -2539,12 +2508,7 @@ function validateRows(
     );
   });
   projects.forEach((row) => {
-    // Budget cards created automatically by the legacy Sites app use 0 as the
-    // system actor. Preserve that sentinel instead of attributing the record
-    // to an arbitrary member during a full restore.
-    if (Number(row.created_by) !== 0) {
-      assertReference(row.created_by, memberIds, "equipment_projects.created_by");
-    }
+    assertReference(row.created_by, memberIds, "equipment_projects.created_by");
     assertReference(
       row.activity_id,
       activityIds,
@@ -2567,7 +2531,11 @@ function validateRows(
   data.equipment_items.forEach((row) =>
     assertReference(row.project_id, projectIds, "equipment_items.project_id"),
   );
-  const equipmentItemIds = rowSet(data.equipment_items, "id", "equipment_items");
+  const equipmentItemIds = rowSet(
+    data.equipment_items,
+    "id",
+    "equipment_items",
+  );
   data.complex_projects.forEach((row) => {
     assertReference(row.created_by, memberIds, "complex_projects.created_by", true);
     assertReference(row.updated_by, memberIds, "complex_projects.updated_by", true);
@@ -2652,10 +2620,12 @@ function validateRows(
     );
     if (
       !backupAdmin ||
+      Number(backupAdmin.id) !== currentAdmin.id ||
+      String(backupAdmin.role) !== "admin" ||
       String(backupAdmin.status) !== "approved"
     ) {
       throw new BackupValidationError(
-        "현재 복원 담당자 이메일이 승인된 구성원으로 포함된 백업만 복원할 수 있습니다.",
+        "현재 운영자 계정이 같은 ID의 승인된 운영자로 포함된 백업만 복원할 수 있습니다.",
       );
     }
   }
@@ -2666,16 +2636,10 @@ export async function createFullBackup(): Promise<FullBackup> {
   const data = {} as Record<BackupTableName, BackupRow[]>;
   const counts = {} as Record<BackupTableName, number>;
 
-  const tableResults = await Promise.all(
-    BACKUP_TABLES.map(async (table) => {
-      const result = await d1
-        .prepare(`SELECT * FROM ${table.name} ORDER BY ${table.orderBy}`)
-        .all<BackupRow>();
-      return { table, rows: result.results };
-    }),
-  );
-  for (const { table, rows } of tableResults) {
-    const result = { results: rows };
+  for (const table of BACKUP_TABLES) {
+    const result = await d1
+      .prepare(`SELECT * FROM ${table.name} ORDER BY ${table.orderBy}`)
+      .all<BackupRow>();
     data[table.name] = result.results;
     counts[table.name] = result.results.length;
   }
@@ -2773,28 +2737,6 @@ export async function validateFullBackup(
   const restoresBudgetNameCatalog =
     Array.isArray(input.data.budget_name_groups) &&
     Array.isArray(input.data.budget_name_aliases);
-  const backupMembers = Array.isArray(input.data.members)
-    ? input.data.members.filter(isPlainObject)
-    : [];
-  const currentAdminEmail = String(currentAdmin?.email ?? "")
-    .trim()
-    .toLowerCase();
-  const fallbackEquipmentProjectCreator =
-    backupMembers.find(
-      (row) =>
-        currentAdminEmail &&
-        String(row.email ?? "").trim().toLowerCase() === currentAdminEmail,
-    ) ??
-    backupMembers.find(
-      (row) =>
-        String(row.status ?? "") === "approved" &&
-        String(row.role ?? "") === "admin",
-    ) ??
-    backupMembers.find((row) => String(row.status ?? "") === "approved") ??
-    backupMembers[0];
-  const fallbackEquipmentProjectCreatedBy = fallbackEquipmentProjectCreator
-    ? Number(fallbackEquipmentProjectCreator.id)
-    : null;
   for (const table of BACKUP_TABLES) {
     const rows = input.data[table.name];
     if (
@@ -2828,15 +2770,10 @@ export async function validateFullBackup(
       throw new BackupValidationError(`${table.name} 데이터가 없습니다.`);
     }
     data[table.name] = (
-      table.name === "members"
+      table.name === "members" && input.schemaVersion === "2026-07-18"
         ? rows.map((row) =>
-            isPlainObject(row)
-              ? {
-                  ...row,
-                  is_sales: "is_sales" in row ? row.is_sales : 0,
-                  job_title: "job_title" in row ? row.job_title : "",
-                  current_view: "current_view" in row ? row.current_view : "",
-                }
+            isPlainObject(row) && !("is_sales" in row)
+              ? { ...row, is_sales: 0 }
               : row,
           )
         : table.name === "activities"
@@ -2931,7 +2868,9 @@ export async function validateFullBackup(
                   ? {
                       ...row,
                       complex_delivery_id:
-                        "complex_delivery_id" in row ? row.complex_delivery_id : null,
+                        "complex_delivery_id" in row
+                          ? row.complex_delivery_id
+                          : null,
                     }
                   : row,
               )
@@ -3027,13 +2966,7 @@ export async function validateFullBackup(
                   : row,
               )
           : table.name === "equipment_projects"
-            ? normalizeEquipmentProjectRows(
-                rows,
-                Number.isSafeInteger(fallbackEquipmentProjectCreatedBy) &&
-                  Number(fallbackEquipmentProjectCreatedBy) > 0
-                  ? Number(fallbackEquipmentProjectCreatedBy)
-                  : null,
-              )
+            ? normalizeEquipmentProjectRows(rows)
           : table.name === "equipment_items" &&
               input.schemaVersion !== BACKUP_SCHEMA_VERSION
             ? rows.map((row) =>
@@ -3161,6 +3094,33 @@ export async function validateFullBackup(
       compatibilityNotices,
     },
   };
+}
+
+function insertStatement(
+  d1: ReturnType<typeof getD1>,
+  table: (typeof BACKUP_TABLES)[number],
+  row: BackupRow,
+) {
+  const placeholders = table.columns.map(() => "?").join(", ");
+  return d1
+    .prepare(
+      `INSERT INTO ${table.name} (${table.columns.join(", ")}) VALUES (${placeholders})`,
+    )
+    .bind(...table.columns.map((column) => {
+      if (table.name === "complex_projects" && column === "source_type") {
+        return row[column] ?? "whizzup";
+      }
+      if (table.name === "complex_projects" && column === "source_award_status") {
+        return row[column] ?? "위즈업 수주";
+      }
+      if (
+        table.name === "resource_attachments" &&
+        (column === "source_fingerprint" || column === "source_relative_path")
+      ) {
+        return row[column] ?? "";
+      }
+      return row[column] ?? null;
+    }));
 }
 
 const RESTORE_INSERT_CHUNK_SIZE = 100;
@@ -3331,6 +3291,7 @@ async function replaceDatabaseFromBackup(
     ...(restoresDriveLibrary
       ? [
           d1.prepare("DELETE FROM product_comparison_documents"),
+          d1.prepare("DELETE FROM youtube_resource_links"),
           d1.prepare("DELETE FROM resource_attachments"),
           d1.prepare("DELETE FROM resource_posts"),
         ]
@@ -3421,6 +3382,7 @@ async function replaceDatabaseFromBackup(
     "members",
     "resource_posts",
     "resource_attachments",
+    "youtube_resource_links",
     "product_comparison_documents",
     "inventory_products",
     "inventory_transactions",
@@ -3433,6 +3395,7 @@ async function replaceDatabaseFromBackup(
     "budget_name_requests",
     "manager_alert_acknowledgements",
     "activities",
+    "ai_recommendations",
     "organization_schedules",
     "construction_schedule_projects",
     "complex_projects",
@@ -3592,6 +3555,7 @@ async function replaceDatabaseFromBackup(
     "members",
     "resource_posts",
     "resource_attachments",
+    "youtube_resource_links",
     "product_comparison_documents",
     "activities",
     "award_vendors",
@@ -3636,9 +3600,326 @@ export async function restoreFullBackup(
   input: unknown,
   currentAdmin?: Pick<Member, "id" | "email">,
 ) {
-  const presence = restorePresenceFromInput(input);
-  const { backup, inspection } = await validateFullBackup(input, currentAdmin);
-  await replaceDatabaseFromBackup(backup, presence);
+  const restoresLegacySchema =
+    isPlainObject(input) &&
+    input.schemaVersion !== BACKUP_SCHEMA_VERSION;
+  const rawData =
+    isPlainObject(input) && isPlainObject(input.data) ? input.data : null;
+  const restoresAwardVendors = Array.isArray(rawData?.award_vendors);
+  const restoresAwardVendorDocuments = Array.isArray(
+    rawData?.award_vendor_documents,
+  );
+  const restoresQuotationDocuments = Array.isArray(
+    rawData?.quotation_documents,
+  );
+  const restoresResourceLibrary =
+    Array.isArray(rawData?.resource_posts) &&
+    Array.isArray(rawData?.resource_attachments);
+  const restoresYoutubeResourceLinks = Array.isArray(
+    rawData?.youtube_resource_links,
+  );
+  const restoresAuthoredQuotations = Array.isArray(
+    rawData?.authored_quotations,
+  );
+  const restoresOrganizationSchoolLinks = Array.isArray(
+    rawData?.organization_school_links,
+  );
+  const restoresDeletionBatches = Array.isArray(rawData?.deletion_batches);
+  const restoresHoldemScores = Array.isArray(rawData?.holdem_weekly_scores);
+  const restoresProductVendorLinks = Array.isArray(
+    rawData?.product_vendor_links,
+  );
+  const restoresProductSupplySettings = Array.isArray(
+    rawData?.product_supply_settings,
+  );
+  const restoresBudgetNameCatalog =
+    Array.isArray(rawData?.budget_name_groups) &&
+    Array.isArray(rawData?.budget_name_aliases);
+  const restoresJointProjects =
+    Array.isArray(rawData?.joint_projects) &&
+    Array.isArray(rawData?.joint_project_members) &&
+    Array.isArray(rawData?.joint_project_events);
+  const restoresInventory =
+    Array.isArray(rawData?.inventory_products) &&
+    Array.isArray(rawData?.inventory_transactions);
+  const restoresComplexProjects =
+    Array.isArray(rawData?.complex_projects) &&
+    Array.isArray(rawData?.complex_project_budget_links) &&
+    Array.isArray(rawData?.complex_project_zones) &&
+    Array.isArray(rawData?.complex_project_item_details) &&
+    Array.isArray(rawData?.complex_project_deliveries) &&
+    Array.isArray(rawData?.complex_project_events);
+  const { backup, inspection } = await validateFullBackup(
+    input,
+    currentAdmin,
+  );
+  const d1 = await ensureBackupReady();
+  const statements = [
+    ...(restoresResourceLibrary
+      ? [
+          d1.prepare("DELETE FROM resource_attachments"),
+          d1.prepare("DELETE FROM resource_posts"),
+        ]
+      : []),
+    ...(restoresYoutubeResourceLinks
+      ? [d1.prepare("DELETE FROM youtube_resource_links")]
+      : []),
+    ...(restoresComplexProjects
+      ? [
+          d1.prepare("DELETE FROM complex_project_events"),
+          d1.prepare("DELETE FROM complex_project_deliveries"),
+          d1.prepare("DELETE FROM complex_project_item_details"),
+          d1.prepare("DELETE FROM complex_project_zones"),
+          d1.prepare("DELETE FROM complex_project_budget_links"),
+          d1.prepare("DELETE FROM complex_projects"),
+        ]
+      : []),
+    ...(restoresInventory
+      ? [
+          d1.prepare("DELETE FROM inventory_transactions"),
+          d1.prepare("DELETE FROM inventory_products"),
+        ]
+      : []),
+    ...(restoresJointProjects
+      ? [
+          d1.prepare("DELETE FROM joint_project_events"),
+          d1.prepare("DELETE FROM joint_project_members"),
+          d1.prepare("DELETE FROM joint_projects"),
+        ]
+      : []),
+    ...(restoresAwardVendorDocuments
+      ? [d1.prepare("DELETE FROM award_vendor_documents")]
+      : []),
+    ...(restoresQuotationDocuments
+      ? [d1.prepare("DELETE FROM quotation_documents")]
+      : []),
+    ...(restoresAuthoredQuotations
+      ? [d1.prepare("DELETE FROM authored_quotations")]
+      : []),
+    ...(restoresOrganizationSchoolLinks
+      ? [d1.prepare("DELETE FROM organization_school_links")]
+      : []),
+    ...(restoresDeletionBatches
+      ? [d1.prepare("DELETE FROM deletion_batches")]
+      : []),
+    ...(restoresHoldemScores
+      ? [d1.prepare("DELETE FROM holdem_weekly_scores")]
+      : []),
+    d1.prepare("DELETE FROM activity_change_items"),
+    d1.prepare("DELETE FROM activity_change_batches"),
+    d1.prepare("DELETE FROM data_control_events"),
+    d1.prepare("DELETE FROM budget_name_request_records"),
+    d1.prepare("DELETE FROM budget_name_requests"),
+    d1.prepare("DELETE FROM budget_name_events"),
+    d1.prepare("DELETE FROM budget_name_members"),
+    ...(restoresBudgetNameCatalog
+      ? [
+          d1.prepare("DELETE FROM budget_name_aliases"),
+          d1.prepare("DELETE FROM budget_name_groups"),
+        ]
+      : []),
+    d1.prepare("DELETE FROM accounting_collection_receipts"),
+    d1.prepare("DELETE FROM accounting_commission_entry_history"),
+    d1.prepare("DELETE FROM accounting_settlement_history"),
+    d1.prepare("DELETE FROM accounting_commission_entries"),
+    d1.prepare("DELETE FROM accounting_settlements"),
+    d1.prepare("DELETE FROM activity_authors"),
+    d1.prepare("DELETE FROM activity_assignment_history"),
+    d1.prepare("DELETE FROM activity_review_acknowledgements"),
+    d1.prepare("DELETE FROM manager_alert_acknowledgements"),
+    d1.prepare("DELETE FROM ai_recommendations"),
+    ...(restoresProductVendorLinks
+      ? [d1.prepare("DELETE FROM product_vendor_links")]
+      : []),
+    d1.prepare("DELETE FROM product_supply_settings"),
+    d1.prepare("DELETE FROM equipment_items"),
+    ...(restoresAwardVendors ? [d1.prepare("DELETE FROM award_vendors")] : []),
+    d1.prepare("DELETE FROM sales_campaign_targets"),
+    d1.prepare("DELETE FROM organization_locations"),
+    d1.prepare("DELETE FROM equipment_projects"),
+    d1.prepare("DELETE FROM sales_campaigns"),
+    d1.prepare("DELETE FROM app_settings"),
+    d1.prepare("DELETE FROM institution_name_decisions"),
+    d1.prepare("DELETE FROM construction_schedule_projects"),
+    d1.prepare("DELETE FROM organization_schedules"),
+    d1.prepare("DELETE FROM activities"),
+    d1.prepare("DELETE FROM members"),
+  ];
+
+  const insertOrder: BackupTableName[] = [
+    "members",
+    "resource_posts",
+    "resource_attachments",
+    "youtube_resource_links",
+    "inventory_products",
+    "inventory_transactions",
+    "award_vendors",
+    "award_vendor_documents",
+    "product_supply_settings",
+    "product_vendor_links",
+    "budget_name_groups",
+    "budget_name_aliases",
+    "budget_name_requests",
+    "manager_alert_acknowledgements",
+    "activities",
+    "organization_schedules",
+    "construction_schedule_projects",
+    "complex_projects",
+    "activity_change_batches",
+    "activity_change_items",
+    "data_control_events",
+    "accounting_settlements",
+    "accounting_commission_entries",
+    "accounting_collection_receipts",
+    "accounting_settlement_history",
+    "accounting_commission_entry_history",
+    "activity_assignment_history",
+    "activity_review_acknowledgements",
+    "app_settings",
+    "institution_name_decisions",
+    "organization_school_links",
+    "organization_locations",
+    "quotation_documents",
+    "authored_quotations",
+    "sales_campaigns",
+    "equipment_projects",
+    "complex_project_budget_links",
+    "activity_authors",
+    "sales_campaign_targets",
+    "joint_projects",
+    "joint_project_members",
+    "joint_project_events",
+    "equipment_items",
+    "complex_project_zones",
+    "complex_project_item_details",
+    "complex_project_deliveries",
+    "complex_project_events",
+    "budget_name_request_records",
+    "budget_name_members",
+    "budget_name_events",
+    "deletion_batches",
+    "holdem_weekly_scores",
+  ];
+
+  insertOrder.forEach((tableName) => {
+    if (
+      (tableName === "resource_posts" || tableName === "resource_attachments") &&
+      !restoresResourceLibrary
+    ) {
+      return;
+    }
+    if (tableName === "youtube_resource_links" && !restoresYoutubeResourceLinks) {
+      return;
+    }
+    if (
+      (tableName === "inventory_products" ||
+        tableName === "inventory_transactions") &&
+      !restoresInventory
+    ) {
+      return;
+    }
+    if (
+      (tableName === "joint_projects" ||
+        tableName === "joint_project_members" ||
+        tableName === "joint_project_events") &&
+      !restoresJointProjects
+    ) {
+      return;
+    }
+    if (COMPLEX_PROJECT_BACKUP_TABLES.has(tableName) && !restoresComplexProjects) {
+      return;
+    }
+    if (tableName === "award_vendors" && !restoresAwardVendors) return;
+    if (
+      tableName === "award_vendor_documents" &&
+      !restoresAwardVendorDocuments
+    ) {
+      return;
+    }
+    if (tableName === "quotation_documents" && !restoresQuotationDocuments) {
+      return;
+    }
+    if (tableName === "authored_quotations" && !restoresAuthoredQuotations) {
+      return;
+    }
+    if (
+      tableName === "organization_school_links" &&
+      !restoresOrganizationSchoolLinks
+    ) {
+      return;
+    }
+    if (tableName === "deletion_batches" && !restoresDeletionBatches) return;
+    if (tableName === "holdem_weekly_scores" && !restoresHoldemScores) return;
+    if (
+      (tableName === "budget_name_groups" ||
+        tableName === "budget_name_aliases") &&
+      !restoresBudgetNameCatalog
+    ) {
+      return;
+    }
+    if (
+      tableName === "product_vendor_links" &&
+      !restoresProductVendorLinks
+    ) {
+      return;
+    }
+    if (
+      tableName === "product_supply_settings" &&
+      !restoresProductSupplySettings
+    ) {
+      return;
+    }
+    const table = BACKUP_TABLES.find((item) => item.name === tableName);
+    if (!table) return;
+    backup.data[tableName].forEach((row) => {
+      statements.push(insertStatement(d1, table, row));
+    });
+  });
+  if (!restoresProductSupplySettings) {
+    statements.push(
+      d1.prepare(
+        `INSERT INTO product_supply_settings (
+           product_id, supply_type, margin_rate, updated_by
+         ) VALUES ('quote-62', 'direct', 0.5545454545454546, 0)`,
+      ),
+    );
+  }
+  statements.push(
+    d1.prepare(
+      `DELETE FROM product_vendor_links
+       WHERE product_id IN (
+         SELECT product_id
+         FROM product_supply_settings
+         WHERE supply_type = 'direct'
+      )`,
+    ),
+  );
+  if (restoresLegacySchema) {
+    statements.push(
+      d1.prepare(
+        `UPDATE equipment_items
+         SET supply_type = 'direct',
+             margin_rate = (
+               SELECT margin_rate
+               FROM product_supply_settings
+               WHERE product_id = equipment_items.catalog_item_id
+             ),
+             commission_rate = NULL,
+             supplier_vendor_id = NULL,
+             supplier_vendor_name = '',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE status IN ('제안 예정', '제안', '견적')
+           AND COALESCE(supply_type, 'partner') = 'partner'
+           AND catalog_item_id IN (
+             SELECT product_id
+             FROM product_supply_settings
+             WHERE supply_type = 'direct'
+           )`,
+      ),
+    );
+  }
+
+  await d1.batch(statements);
   return inspection;
 }
 

@@ -3,6 +3,7 @@
 import {
   type ChangeEvent,
   type FormEvent,
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -25,11 +26,17 @@ import {
 import QuotationManagementPage, {
   type QuotationInstitutionOption,
 } from "./quotation-management-page";
+import AwardVendorPage from "./award-vendor-page";
+
+type ProductWorkspaceTab = "quotations" | "products" | "vendors";
 
 type ProductCatalogPageProps = {
   search: string;
   onSearchChange: (value: string) => void;
   institutions: QuotationInstitutionOption[];
+  isPrimaryOwner?: boolean;
+  onOpenOrganization?: (organization: string, businessRound: number) => void;
+  initialTab?: ProductWorkspaceTab;
 };
 
 type ProductForm = {
@@ -42,6 +49,10 @@ type ProductForm = {
   supplyType: "partner" | "direct";
   reference: string;
   supplierVendorId: string;
+  procurement: boolean;
+  procurementChannel: string;
+  procurementNumber: string;
+  procurementFeeRate: string;
 };
 
 type ProductVendorOption = {
@@ -170,6 +181,10 @@ function toForm(product: ProductCatalogItem): ProductForm {
       product.supplyType === "partner" && product.supplierVendorId
       ? String(product.supplierVendorId)
       : "",
+    procurement: product.procurement === true,
+    procurementChannel: product.procurementChannel || "G2B",
+    procurementNumber: product.procurementNumber || "",
+    procurementFeeRate: product.procurementFeeRate == null ? "0.54" : String(Number((product.procurementFeeRate * 100).toFixed(2))),
   };
 }
 
@@ -184,6 +199,10 @@ function createEmptyProductForm(): ProductForm {
     supplyType: "partner",
     reference: "",
     supplierVendorId: "",
+    procurement: false,
+    procurementChannel: "G2B",
+    procurementNumber: "",
+    procurementFeeRate: "0.54",
   };
 }
 
@@ -337,7 +356,22 @@ export default function ProductCatalogPage({
   search,
   onSearchChange,
   institutions,
+  isPrimaryOwner = false,
+  onOpenOrganization,
+  initialTab,
 }: ProductCatalogPageProps) {
+  const [workspaceTab, setWorkspaceTabState] = useState<ProductWorkspaceTab>(() => {
+    if (initialTab) return initialTab;
+    if (typeof window === "undefined") return "quotations";
+    const requested = new URLSearchParams(window.location.search).get("productTab");
+    return requested === "products" || requested === "vendors" ? requested : "quotations";
+  });
+  const [quotationCount, setQuotationCount] = useState(0);
+  const [vendorCount, setVendorCount] = useState(0);
+  const updateQuotationCount = useCallback(
+    ({ active }: { active: number; trash: number }) => setQuotationCount(active),
+    [],
+  );
   const [products, setProducts] =
     useState<ProductCatalogItem[]>(PRODUCT_CATALOG);
   const [loading, setLoading] = useState(true);
@@ -363,6 +397,33 @@ export default function ProductCatalogPage({
   const [draggedProductId, setDraggedProductId] = useState<string | null>(null);
   const [searchDraft, setSearchDraft] = useState(search);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const stickyColumnHeaderRef = useRef<HTMLDivElement>(null);
+
+  function setWorkspaceTab(tab: ProductWorkspaceTab, replace = false) {
+    setWorkspaceTabState(tab);
+    const url = new URL(window.location.href);
+    url.searchParams.set("productTab", tab);
+    window.history[replace ? "replaceState" : "pushState"](
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }
+
+  useEffect(() => {
+    if (initialTab) setWorkspaceTab(initialTab, true);
+  // initialTab is only used when entering through a legacy route.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTab]);
+
+  useEffect(() => {
+    const restoreTab = () => {
+      const requested = new URLSearchParams(window.location.search).get("productTab");
+      setWorkspaceTabState(requested === "products" || requested === "vendors" ? requested : "quotations");
+    };
+    window.addEventListener("popstate", restoreTab);
+    return () => window.removeEventListener("popstate", restoreTab);
+  }, []);
 
   useEffect(() => {
     setSearchDraft(search);
@@ -875,6 +936,10 @@ export default function ProductCatalogPage({
                 (vendor) => String(vendor.id) === form.supplierVendorId,
               )?.companyName ?? ""
             : "",
+        procurement: form.procurement,
+        procurementChannel: form.procurement ? form.procurementChannel : "",
+        procurementNumber: form.procurement ? form.procurementNumber.trim() : "",
+        procurementFeeRate: form.procurement ? (parseOptionalNumber(form.procurementFeeRate, "rate") ?? 0.0054) : null,
       };
       nextProduct.needsReview = calculateNeedsReview(nextProduct);
       const nextProducts = editing
@@ -1133,12 +1198,25 @@ export default function ProductCatalogPage({
 
   return (
     <>
-      <QuotationManagementPage
-        institutions={institutions}
-        products={products}
-      />
+      <nav className="product-workspace-tabs" aria-label="제품·견적·협력사 관리 화면">
+        <button type="button" className={workspaceTab === "quotations" ? "active" : ""} onClick={() => setWorkspaceTab("quotations")}>
+          <span>견적서 관리</span><b>{quotationCount.toLocaleString()}</b>
+        </button>
+        <button type="button" className={workspaceTab === "products" ? "active" : ""} onClick={() => setWorkspaceTab("products")}>
+          <span>제품 기준정보</span><b>{products.length.toLocaleString()}</b>
+        </button>
+        <button type="button" className={workspaceTab === "vendors" ? "active" : ""} onClick={() => setWorkspaceTab("vendors")}>
+          <span>협력사 관리</span><b>{vendorCount.toLocaleString()}</b>
+        </button>
+      </nav>
 
-      <section className="panel product-catalog-panel">
+      {workspaceTab === "quotations" && <QuotationManagementPage
+        institutions={institutions}
+        onOpenOrganization={onOpenOrganization}
+        onCountChange={updateQuotationCount}
+      />}
+
+      {workspaceTab === "products" && <section className="panel product-catalog-panel">
         <div className="product-catalog-sticky-controls">
         <div className="panel-header product-catalog-header">
           <div>
@@ -1254,7 +1332,6 @@ export default function ProductCatalogPage({
             </small>
           </div>
         </div>
-        </div>
 
         <div className="product-catalog-bulk-vendor">
           <label className="product-catalog-bulk-select-all">
@@ -1305,30 +1382,34 @@ export default function ProductCatalogPage({
           )}
         </div>
 
-        <div className="product-catalog-table-wrap">
-          <table className="product-catalog-table">
-            <thead>
-              <tr>
-                <th>
-                  <span className="product-catalog-name-heading">선택 · 품명</span>
-                </th>
-                <th>규격</th>
-                <th className="numeric">단가</th>
-                <th>비고</th>
-                <th className="numeric">수수료율 / 마진율</th>
-                <th>공급 구분</th>
-                <th>참고사항</th>
-                <th aria-label="관리">관리</th>
-              </tr>
-            </thead>
+        <div className="product-catalog-column-head-scroll" ref={stickyColumnHeaderRef} aria-hidden="true">
+          <div className="product-catalog-column-head">
+            <span>선택 · 품명</span>
+            <span>규격</span>
+            <span>단가</span>
+            <span>비고</span>
+            <span>수수료율 / 마진율</span>
+            <span>공급 구분</span>
+            <span>참고사항</span>
+            <span>관리</span>
+          </div>
+        </div>
+        </div>
+
+        <div
+          className="product-catalog-table-wrap"
+          onScroll={(event) => {
+            if (stickyColumnHeaderRef.current) {
+              stickyColumnHeaderRef.current.scrollLeft = event.currentTarget.scrollLeft;
+            }
+          }}
+        >
+          <table className="product-catalog-table" aria-label="제품 기준정보 목록">
             <tbody>
               {productPageItems.map((product) => (
                 <tr
                   key={product.id}
                   className={`${product.needsReview ? "needs-review" : ""} ${favoriteProductIdSet.has(product.id) ? "favorite" : ""} ${draggedProductId === product.id ? "dragging" : ""}`.trim()}
-                  draggable={canReorder && catalogView === "all" && !normalizedSearch && !saving}
-                  onDragStart={() => setDraggedProductId(product.id)}
-                  onDragEnd={() => setDraggedProductId(null)}
                   onDragOver={(event) => {
                     if (
                       canReorder &&
@@ -1371,7 +1452,20 @@ export default function ProductCatalogPage({
                       >
                         {favoriteProductIdSet.has(product.id) ? "★" : "☆"}
                       </button>
-                      <span className="product-drag-handle" aria-hidden="true">⋮⋮</span>
+                      <span
+                        className="product-drag-handle"
+                        draggable={canReorder && catalogView === "all" && !normalizedSearch && !saving}
+                        onDragStart={(event) => {
+                          event.stopPropagation();
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", product.id);
+                          setDraggedProductId(product.id);
+                        }}
+                        onDragEnd={() => setDraggedProductId(null)}
+                        aria-hidden="true"
+                      >
+                        ⋮⋮
+                      </span>
                       <div className="product-order-buttons">
                         <button
                           type="button"
@@ -1480,7 +1574,9 @@ export default function ProductCatalogPage({
             </button>
           </nav>
         )}
-      </section>
+      </section>}
+
+      {workspaceTab === "vendors" && <AwardVendorPage onCountChange={setVendorCount} />}
 
       {(editing || creating) && form && (
         <div
@@ -1636,6 +1732,18 @@ export default function ProductCatalogPage({
                   placeholder="옵션, 예외, 영업보호, 내부 메모"
                 />
               </label>
+              <label className="product-procurement-toggle">
+                <span>조달 제품</span>
+                <label className="quotation-stamp-toggle">
+                  <input type="checkbox" checked={form.procurement} onChange={(event) => setForm({ ...form, procurement: event.target.checked })} />
+                  <span>나라장터·학교장터 등 조달 제품으로 관리</span>
+                </label>
+              </label>
+              {form.procurement && <>
+                <label><span>조달 채널</span><select value={form.procurementChannel} onChange={(event) => setForm({ ...form, procurementChannel: event.target.value })}><option>G2B</option><option>S2B</option><option>디지털서비스몰</option><option>혁신장터</option><option>기타</option></select></label>
+                <label><span>물품식별번호</span><input value={form.procurementNumber} onChange={(event) => setForm({ ...form, procurementNumber: event.target.value.replace(/[^0-9-]/g, "") })} placeholder="조달 식별번호" /></label>
+                <label><span>조달 수수료율 (내부용)</span><div className="product-field-with-unit"><input inputMode="decimal" value={form.procurementFeeRate} onChange={(event) => setForm({ ...form, procurementFeeRate: event.target.value.replace(",", ".") })} /><span>%</span></div><small>고객용 견적서에는 비율은 숨기고 수수료 금액만 표시합니다.</small></label>
+              </>}
             </div>
             <div className="product-catalog-dialog-actions">
               <button
