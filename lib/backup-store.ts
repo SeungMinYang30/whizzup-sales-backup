@@ -211,6 +211,7 @@ export const BACKUP_TABLES = [
       "execution_type",
       "consortium_company",
       "award_stage",
+      "award_stage_manual",
       "award_completed_date",
       "progress_manager",
       "progress_manager_locked",
