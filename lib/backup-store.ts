@@ -1520,14 +1520,28 @@ function repairBrokenActivityReferences(
 
   let reconnectedJointMembers = 0;
   let detachedJointMembers = 0;
+  let detachedJointCampaignTargets = 0;
+  const campaignTargetIds = new Set(
+    data.sales_campaign_targets.map((row) => String(row.id)),
+  );
   data.joint_project_members = data.joint_project_members.map((member) => {
+    const campaignTargetId = member.campaign_target_id;
+    let normalizedMember = member;
+    if (
+      campaignTargetId !== null &&
+      campaignTargetId !== "" &&
+      !campaignTargetIds.has(String(campaignTargetId))
+    ) {
+      detachedJointCampaignTargets += 1;
+      normalizedMember = { ...normalizedMember, campaign_target_id: null };
+    }
     const activityId = member.activity_id;
     if (
       activityId === null ||
       activityId === "" ||
       activityIds.has(String(activityId))
     ) {
-      return member;
+      return normalizedMember;
     }
     const candidates = [
       ...(activitiesByBusiness.get(activityBusinessKey(member)) ?? []),
@@ -1542,10 +1556,10 @@ function repairBrokenActivityReferences(
     });
     if (candidates.length) {
       reconnectedJointMembers += 1;
-      return { ...member, activity_id: candidates[0].id };
+      return { ...normalizedMember, activity_id: candidates[0].id };
     }
     detachedJointMembers += 1;
-    return { ...member, activity_id: null };
+    return { ...normalizedMember, activity_id: null };
   });
 
   const historyEntryIds = new Set(
@@ -3188,6 +3202,11 @@ function parseMemberPermissions(row: BackupRow) {
   if (detachedJointMembers) {
     notices.push(
       `연결할 현재 기록이 없는 공동사업 기관 ${detachedJointMembers}건은 기관 정보는 보존하고 활동 연결만 해제했습니다.`,
+    );
+  }
+  if (detachedJointCampaignTargets) {
+    notices.push(
+      `삭제된 영업 지도 대상을 가리키던 공동사업 기관 ${detachedJointCampaignTargets}건은 기관 정보는 보존하고 지도 대상 연결만 해제했습니다.`,
     );
   }
 }
