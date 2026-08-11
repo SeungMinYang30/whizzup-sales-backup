@@ -168,6 +168,7 @@ export const BACKUP_TABLES = [
       "approved_at",
       "approved_by",
       "last_seen_at",
+      "current_view",
     ],
     orderBy: "id",
   },
