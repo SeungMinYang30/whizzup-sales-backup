@@ -1,7 +1,7 @@
 export const VERCEL_SCHEMA_VERSION =
-  "202608120001_sites_v487_exact_clone";
+  "202608120002_vercel_cutover_guard";
 export const VERCEL_PREVIOUS_SCHEMA_VERSION =
-  "202608100001_sites_email_auth_replication";
+  "202608120001_sites_v487_exact_clone";
 export const VERCEL_BASE_SCHEMA_VERSION = "202608060007_full_backup_columns";
 
 const COMPLEX_PROJECT_BACKFILL_SQL = `
@@ -145,6 +145,15 @@ REVOKE ALL ON public.member_credentials FROM anon, authenticated;
 REVOKE ALL ON public.resource_posts FROM anon, authenticated;
 REVOKE ALL ON public.resource_attachments FROM anon, authenticated;
 REVOKE ALL ON public.product_comparison_documents FROM anon, authenticated;
+`;
+
+const VERCEL_CUTOVER_SCHEMA_SQL = `
+ALTER TABLE public.replication_sync_state
+  ADD COLUMN IF NOT EXISTS operating_mode text NOT NULL DEFAULT 'replica';
+ALTER TABLE public.replication_sync_state
+  ADD COLUMN IF NOT EXISTS cutover_at timestamptz;
+ALTER TABLE public.replication_sync_state
+  ADD COLUMN IF NOT EXISTS cutover_by bigint;
 `;
 
 const SITES_V487_SCHEMA_SQL = `
@@ -308,6 +317,7 @@ REVOKE ALL ON public.member_account_archives FROM anon, authenticated;
 ${SITES_V416_SCHEMA_SQL}
 ${SITES_V487_SCHEMA_SQL}
 ${COMPLEX_PROJECT_BACKFILL_SQL}
+${VERCEL_CUTOVER_SCHEMA_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
@@ -1233,6 +1243,7 @@ WHERE status IN ('제안 예정', '제안', '견적')
 ${SITES_V416_SCHEMA_SQL}
 ${SITES_V487_SCHEMA_SQL}
 ${COMPLEX_PROJECT_BACKFILL_SQL}
+${VERCEL_CUTOVER_SCHEMA_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
@@ -1496,6 +1507,7 @@ WHERE status IN ('제안 예정', '제안', '견적')
 ${SITES_V416_SCHEMA_SQL}
 ${SITES_V487_SCHEMA_SQL}
 ${COMPLEX_PROJECT_BACKFILL_SQL}
+${VERCEL_CUTOVER_SCHEMA_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;

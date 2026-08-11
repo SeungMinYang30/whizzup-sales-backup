@@ -12,6 +12,33 @@ type CronJobRow = {
   jobid: number;
 };
 
+export async function getStandbyScheduleStatus() {
+  try {
+    const jobs = await getD1()
+      .prepare(
+        `SELECT jobid
+         FROM cron.job
+         WHERE jobname = ?
+         ORDER BY jobid DESC`,
+      )
+      .bind(JOB_NAME)
+      .all<CronJobRow>();
+    return {
+      configured: jobs.results.length > 0,
+      jobIds: jobs.results.map((job) => job.jobid),
+      jobName: JOB_NAME,
+      schedule: CRON_EXPRESSION,
+    };
+  } catch {
+    return {
+      configured: false,
+      jobIds: [] as number[],
+      jobName: JOB_NAME,
+      schedule: CRON_EXPRESSION,
+    };
+  }
+}
+
 export async function configureStandbySchedule(input: {
   syncUrl: string;
   syncSecret: string;

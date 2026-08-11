@@ -29,6 +29,14 @@ const vercelSchema = await readFile(
   new URL("../db/vercel-schema.ts", import.meta.url),
   "utf8",
 );
+const cutoverRoute = await readFile(
+  new URL("../app/api/standby-cutover/route.ts", import.meta.url),
+  "utf8",
+);
+const replicationStore = await readFile(
+  new URL("../lib/replication-store.ts", import.meta.url),
+  "utf8",
+);
 
 test("standby sync is one-way, authenticated, bounded, and uncached", () => {
   assert.match(syncRoute, /STANDBY_SYNC_SECRET/);
@@ -113,4 +121,18 @@ test("Supabase sync can only be scheduled after an explicit server-side opt in",
   assert.match(syncRoute, /export async function DELETE/);
   assert.match(scheduler, /removeStandbySchedule/);
   assert.match(scheduler, /cron\.unschedule/);
+});
+
+test("Vercel cutover performs a final verified sync and permanently blocks replica overwrite", () => {
+  assert.match(cutoverRoute, /requirePrimaryOwner/);
+  assert.match(cutoverRoute, /VERCEL 운영 전환/);
+  assert.match(cutoverRoute, /removeStandbySchedule/);
+  assert.match(cutoverRoute, /force:\s*true/);
+  assert.match(cutoverRoute, /localChecksum !== state\.source_checksum/);
+  assert.match(cutoverRoute, /markVercelPrimaryMode/);
+  assert.match(syncRoute, /isVercelPrimaryMode/);
+  assert.match(syncRoute, /replica overwrite is blocked/);
+  assert.match(replicationStore, /operating_mode = 'primary'/);
+  assert.match(vercelSchema, /VERCEL_CUTOVER_SCHEMA_SQL/);
+  assert.match(vercelSchema, /ADD COLUMN IF NOT EXISTS operating_mode/);
 });

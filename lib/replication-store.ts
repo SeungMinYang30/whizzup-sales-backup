@@ -11,6 +11,9 @@ export type ReplicationSyncState = {
   last_success_at: string | null;
   duration_ms: number | null;
   error_message: string;
+  operating_mode: "replica" | "primary";
+  cutover_at: string | null;
+  cutover_by: number | null;
 };
 
 export async function getReplicationSyncState() {
@@ -18,11 +21,31 @@ export async function getReplicationSyncState() {
     .prepare(
       `SELECT id, source_origin, source_created_at, source_checksum,
               source_counts_json, status, last_attempt_at, last_success_at,
-              duration_ms, error_message
+              duration_ms, error_message, operating_mode, cutover_at, cutover_by
        FROM replication_sync_state
        WHERE id = 1`,
     )
     .first<ReplicationSyncState>();
+}
+
+export async function isVercelPrimaryMode() {
+  const state = await getReplicationSyncState();
+  return state?.operating_mode === "primary";
+}
+
+export async function markVercelPrimaryMode(memberId: number) {
+  await getD1()
+    .prepare(
+      `INSERT INTO replication_sync_state (
+         id, operating_mode, cutover_at, cutover_by
+       ) VALUES (1, 'primary', CURRENT_TIMESTAMP, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         operating_mode = 'primary',
+         cutover_at = CURRENT_TIMESTAMP,
+         cutover_by = excluded.cutover_by`,
+    )
+    .bind(memberId)
+    .run();
 }
 
 export async function markReplicationAttempt(sourceOrigin: string) {

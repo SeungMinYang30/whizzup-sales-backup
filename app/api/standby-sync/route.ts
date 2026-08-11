@@ -7,6 +7,7 @@ import {
 } from "../../../lib/backup-store";
 import {
   getReplicationSyncState,
+  isVercelPrimaryMode,
   markReplicationAttempt,
   markReplicationFailure,
   markReplicationSuccess,
@@ -133,6 +134,16 @@ export async function POST(request: Request) {
       { status: 409 },
     );
   }
+  if (await isVercelPrimaryMode()) {
+    return Response.json(
+      {
+        ok: false,
+        cutoverComplete: true,
+        error: "Vercel is already the primary system; replica overwrite is blocked",
+      },
+      { status: 409 },
+    );
+  }
 
   const force = await forceRequested(request);
   const startedAt = Date.now();
@@ -251,6 +262,16 @@ export async function PUT(request: Request) {
         ok: false,
         disabled: true,
         error: "Set AUTOMATIC_STANDBY_SYNC_ENABLED=true before scheduling",
+      },
+      { status: 409 },
+    );
+  }
+  if (await isVercelPrimaryMode()) {
+    return Response.json(
+      {
+        ok: false,
+        cutoverComplete: true,
+        error: "Vercel is already the primary system; scheduling is blocked",
       },
       { status: 409 },
     );
