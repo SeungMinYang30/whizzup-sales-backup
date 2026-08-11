@@ -1518,6 +1518,36 @@ function repairBrokenActivityReferences(
     return { ...project, activity_id: null };
   });
 
+  let reconnectedJointMembers = 0;
+  let detachedJointMembers = 0;
+  data.joint_project_members = data.joint_project_members.map((member) => {
+    const activityId = member.activity_id;
+    if (
+      activityId === null ||
+      activityId === "" ||
+      activityIds.has(String(activityId))
+    ) {
+      return member;
+    }
+    const candidates = [
+      ...(activitiesByBusiness.get(activityBusinessKey(member)) ?? []),
+    ].sort((left, right) => {
+      const dateDifference =
+        Date.parse(String(right.activity_date ?? "")) -
+        Date.parse(String(left.activity_date ?? ""));
+      if (Number.isFinite(dateDifference) && dateDifference) {
+        return dateDifference;
+      }
+      return Number(right.id ?? 0) - Number(left.id ?? 0);
+    });
+    if (candidates.length) {
+      reconnectedJointMembers += 1;
+      return { ...member, activity_id: candidates[0].id };
+    }
+    detachedJointMembers += 1;
+    return { ...member, activity_id: null };
+  });
+
   const historyEntryIds = new Set(
     data.accounting_commission_entry_history.map((row) =>
       String(row.entry_id),
@@ -3148,6 +3178,16 @@ function parseMemberPermissions(row: BackupRow) {
   } catch {
     throw new BackupValidationError(
       "members.permissions 값이 권한 배열 형식이 아닙니다.",
+    );
+  }
+  if (reconnectedJointMembers) {
+    notices.push(
+      `삭제된 활동을 가리키던 공동사업 기관 ${reconnectedJointMembers}건을 같은 기관·사업 차수의 현재 기록으로 다시 연결했습니다.`,
+    );
+  }
+  if (detachedJointMembers) {
+    notices.push(
+      `연결할 현재 기록이 없는 공동사업 기관 ${detachedJointMembers}건은 기관 정보는 보존하고 활동 연결만 해제했습니다.`,
     );
   }
 }
