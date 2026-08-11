@@ -1980,10 +1980,13 @@ function validateRows(
   assertUnique(
     projects,
     (row) =>
-      `${requiredText(row.organization, "equipment_projects.organization")}|${String(
+      `${requiredText(row.organization, "equipment_projects.organization")}|${asInteger(
+        row.business_round,
+        "equipment_projects.business_round",
+      )}|${String(
         row.name ?? "",
       ).trim() || `legacy-${asInteger(row.id, "equipment_projects.id")}`}`,
-    "기관별 사업명",
+    "기관·차수별 사업명",
   );
   assertUnique(
     data.equipment_items,
