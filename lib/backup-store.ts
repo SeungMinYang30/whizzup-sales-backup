@@ -1518,6 +1518,28 @@ function repairBrokenActivityReferences(
     return { ...project, activity_id: null };
   });
 
+  let reconnectedCampaignTargets = 0;
+  let detachedCampaignTargets = 0;
+  data.sales_campaign_targets = data.sales_campaign_targets.map((target) => {
+    const activityId = target.activity_id;
+    if (
+      activityId === null ||
+      activityId === "" ||
+      activityIds.has(String(activityId))
+    ) {
+      return target;
+    }
+    const candidates = [
+      ...(activitiesByBusiness.get(activityBusinessKey(target)) ?? []),
+    ].sort((left, right) => Number(right.id ?? 0) - Number(left.id ?? 0));
+    if (candidates.length) {
+      reconnectedCampaignTargets += 1;
+      return { ...target, activity_id: candidates[0].id };
+    }
+    detachedCampaignTargets += 1;
+    return { ...target, activity_id: null };
+  });
+
   let reconnectedJointMembers = 0;
   let detachedJointMembers = 0;
   let detachedJointCampaignTargets = 0;
@@ -3192,6 +3214,16 @@ function parseMemberPermissions(row: BackupRow) {
   } catch {
     throw new BackupValidationError(
       "members.permissions 값이 권한 배열 형식이 아닙니다.",
+    );
+  }
+  if (reconnectedCampaignTargets) {
+    notices.push(
+      `삭제된 활동을 가리키던 영업 지도 대상 ${reconnectedCampaignTargets}건을 같은 기관·사업 차수의 현재 기록으로 다시 연결했습니다.`,
+    );
+  }
+  if (detachedCampaignTargets) {
+    notices.push(
+      `연결할 현재 기록이 없는 영업 지도 대상 ${detachedCampaignTargets}건은 대상 정보는 보존하고 활동 연결만 해제했습니다.`,
     );
   }
   if (reconnectedJointMembers) {
