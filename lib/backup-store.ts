@@ -1346,7 +1346,11 @@ function nullableInteger(value: unknown, label: string) {
   return asInteger(value, label);
 }
 
-function normalizeEquipmentProjectRows(rows: unknown[]) {
+function normalizeEquipmentProjectRows(
+  rows: unknown[],
+  fallbackCreatedBy: number,
+  validMemberIds: Set<number>,
+) {
   const occupiedNames = new Set<string>();
   rows.forEach((row) => {
     if (!isPlainObject(row)) return;
@@ -1374,10 +1378,18 @@ function normalizeEquipmentProjectRows(rows: unknown[]) {
       key = `${organization.toLowerCase()}|${name.toLowerCase()}`;
     }
     occupiedNames.add(key);
+    const sourceCreatedBy = Number(row.created_by);
+    const createdBy =
+      Number.isSafeInteger(sourceCreatedBy) &&
+      sourceCreatedBy > 0 &&
+      validMemberIds.has(sourceCreatedBy)
+        ? sourceCreatedBy
+        : fallbackCreatedBy;
 
     return {
       ...row,
       name,
+      created_by: createdBy,
       activity_id: "activity_id" in row ? row.activity_id : null,
       business_round: "business_round" in row ? row.business_round : 1,
       construction_amount:
@@ -3042,7 +3054,23 @@ export async function validateFullBackup(
                   : row,
               )
           : table.name === "equipment_projects"
-            ? normalizeEquipmentProjectRows(rows)
+            ? normalizeEquipmentProjectRows(
+                rows,
+                currentAdmin?.id ??
+                  Number(
+                    data.members.find(
+                      (member) => String(member.role) === "admin",
+                    )?.id ?? data.members[0]?.id ?? 1,
+                  ),
+                new Set(
+                  data.members
+                    .map((member) => Number(member.id))
+                    .filter(
+                      (memberId) =>
+                        Number.isSafeInteger(memberId) && memberId > 0,
+                    ),
+                ),
+              )
           : table.name === "equipment_items" &&
               input.schemaVersion !== BACKUP_SCHEMA_VERSION
             ? rows.map((row) =>
