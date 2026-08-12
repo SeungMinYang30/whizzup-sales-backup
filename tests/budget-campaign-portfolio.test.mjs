@@ -309,10 +309,9 @@ test("명단 등록은 같은 연도 위즈업 사업을 단계와 관계없이 
     route,
     /Number\(row\.id\) === target\.linkedActivityId/,
   );
-  assert.match(
-    route,
-    /correctBudget = Boolean\(linked && target\.updateLinkedBudget\)/,
-  );
+  assert.match(route, /correctBudget = false/);
+  assert.match(route, /upsertCampaignBudget/);
+  assert.match(route, /synchronizeBusinessRoundBudgets/);
   assert.match(route, /같은 예산의 기존 사업이 여러 건입니다/);
   assert.match(route, /target\.businessMatchMode !== "new"/);
   assert.match(route, /activityId: linked \? Number\(linked\.id\) : null/);
@@ -370,14 +369,15 @@ test("예산별 기관 화면은 지도와 같은 등록창을 쓰고 모바일 
   assert.match(map, /예산·공고별 기관 명단/);
   assert.match(map, /campaignPdfRef\.current\?\.click\(\)/);
   assert.match(map, /campaignFileRef\.current\?\.click\(\)/);
-  assert.match(map, /onClick=\{beginManualCampaignImport\}/);
+  assert.match(map, /onClick=\{beginBudgetCardCreate\}/);
+  assert.match(map, /예산카드 직접 등록/);
+  assert.match(map, /예산카드 수정/);
   assert.match(map, /기관 직접 등록/);
   assert.match(map, /\+ 기관 한 곳 추가/);
   assert.match(map, /campaignLatestRecord/);
   assert.match(map, /단계와 관계없이 선택 가능/);
   assert.match(map, /campaignBusinessStageLabel/);
-  assert.match(map, /이번 명단 예산명으로 변경/);
-  assert.match(map, /기존 진행 단계·완료일·제품·회계 기록은 유지됩니다/);
+  assert.match(map, /기존 예산은 유지하고 이번 카드 예산을 같은 사업 차수에 함께 추가합니다/);
   assert.match(map, /신규 사업으로 등록 · 새 사업 차수 생성/);
   assert.match(map, /연결 가능한 동일 연도 기존 사업 없음/);
   assert.match(map, /campaign-institution-suggestions/);
@@ -658,7 +658,7 @@ test("PDF·엑셀·직접 등록은 활성 표준 예산 선택만 허용한다"
   assert.match(selector, /standardOnly = false/);
   assert.match(
     route,
-    /budgetMetadata\.budgetGroupId !== requestedBudgetGroupId/,
+    /Number\(budgetMetadata\.budgetGroupId\) !== requestedBudgetGroupId/,
   );
   assert.match(route, /관리자가 등록한 활성 표준 예산명을 선택해 주세요/);
 });

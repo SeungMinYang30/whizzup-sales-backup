@@ -180,6 +180,7 @@ type SalesCampaignTarget = {
   assignedMemberId: number | null;
   assignedMemberName: string;
   budgetAmount: number | null;
+  budgetAmountSource: "institution" | "card-default" | "missing";
   schoolLevel: string;
   supplyItems: string;
   reviewNote: string;
@@ -202,6 +203,8 @@ type SalesCampaignTarget = {
   jointProjectRound: number | null;
   jointProjectMemberBudgetAmount: number | null;
 };
+
+type CampaignCardMode = "create" | "edit" | null;
 
 type CampaignMember = {
   id: number;
@@ -367,8 +370,6 @@ const CampaignImportRowEditor = memo(function CampaignImportRowEditor({
   const selectedRecord = linkableRecords.find(
     (record) => record.id === row.linkedActivityId,
   );
-  const selectedBudgetDiffers =
-    selectedRecord && !campaignBudgetMatches(selectedRecord, budget);
   const selectedValue =
     row.businessMatchMode === "link-current" && row.linkedActivityId
       ? `link:${row.linkedActivityId}`
@@ -523,21 +524,9 @@ const CampaignImportRowEditor = memo(function CampaignImportRowEditor({
           ))}
           <option value="new">신규 사업으로 등록 · 새 사업 차수 생성</option>
         </select>
-        {selectedBudgetDiffers && (
-          <label className="campaign-budget-update-option">
-            <input
-              type="checkbox"
-              checked={Boolean(row.updateLinkedBudget)}
-              onChange={(event) =>
-                onUpdate(index, "updateLinkedBudget", event.target.checked)
-              }
-            />
-            <span>이번 명단 예산명으로 변경</span>
-          </label>
-        )}
         {selectedRecord && (
           <small className="campaign-link-preserve-note">
-            연결해도 기존 진행 단계·완료일·제품·회계 기록은 유지됩니다.
+            기존 예산은 유지하고 이번 카드 예산을 같은 사업 차수에 함께 추가합니다.
           </small>
         )}
         {latestRecord && (
@@ -874,6 +863,12 @@ function normalizeCampaignTarget(
       value("budgetAmount", "budget_amount") === ""
         ? null
         : Number(value("budgetAmount", "budget_amount")),
+    budgetAmountSource:
+      value("budgetAmountSource", "budget_amount_source") === "institution"
+        ? "institution"
+        : value("budgetAmountSource", "budget_amount_source") === "card-default"
+          ? "card-default"
+          : "missing",
     schoolLevel: String(value("schoolLevel", "school_level")),
     supplyItems: String(value("supplyItems", "supply_items")),
     reviewNote: String(value("reviewNote", "review_note")),
@@ -973,6 +968,12 @@ function formatWon(value: number | null) {
   return value === null || !Number.isFinite(value)
     ? "금액 미입력"
     : `${Math.round(value).toLocaleString("ko-KR")}원`;
+}
+
+function budgetAmountSourceLabel(target: SalesCampaignTarget) {
+  if (target.budgetAmountSource === "institution") return "기관 상세 입력";
+  if (target.budgetAmountSource === "card-default") return "카드 기본금액";
+  return "금액 미입력";
 }
 
 function budgetTargetStatus(target: SalesCampaignTarget) {
@@ -1330,6 +1331,8 @@ export default function SalesMapPage({
   );
   const [campaignImport, setCampaignImport] =
     useState<CampaignImportPreview | null>(null);
+  const [campaignCardMode, setCampaignCardMode] =
+    useState<CampaignCardMode>(null);
   const [campaignName, setCampaignName] = useState("");
   const [campaignNotes, setCampaignNotes] = useState("");
   const [campaignSelectionDate, setCampaignSelectionDate] =
@@ -2845,6 +2848,50 @@ export default function SalesMapPage({
     );
   }
 
+  function beginBudgetCardCreate() {
+    beginCampaignImport(
+      {
+        fileName: "예산카드 직접 등록",
+        rows: [],
+        source: "manual",
+      },
+      "",
+      "",
+      localDate(),
+      "create",
+    );
+  }
+
+  function beginBudgetCardEdit(campaign: SalesCampaign) {
+    beginCampaignImport(
+      {
+        fileName: "예산카드 수정",
+        rows: [],
+        source: "manual",
+      },
+      campaign.name,
+      campaign.notes,
+      campaign.selectionDate,
+      "edit",
+    );
+    setCampaignDefaultBudgetAmount(
+      campaign.defaultBudgetAmount === null
+        ? ""
+        : String(campaign.defaultBudgetAmount),
+    );
+    setCampaignBudget({
+      budgetType: campaign.budgetType,
+      budgetOriginalName: campaign.budgetType,
+      budgetGroupId: campaign.budgetGroupId,
+      budgetMatchStatus: campaign.budgetMatchStatus,
+      budgetMatchMethod: campaign.budgetMatchMethod,
+      budgetRequestId: campaign.budgetRequestId,
+      budgetKind: campaign.budgetKind,
+      budgetAmountMode: campaign.budgetAmountMode,
+      defaultBudgetAmount: campaign.defaultBudgetAmount,
+    });
+  }
+
   function addManualCampaignRow() {
     setCampaignImport((current) =>
       current
@@ -2900,7 +2947,9 @@ export default function SalesMapPage({
     suggestedName: string,
     notes = "",
     selectionDate = "",
+    cardMode: CampaignCardMode = null,
   ) {
+    setCampaignCardMode(cardMode);
     setCampaignInstitutionSearch(null);
     setCampaignImport({
       ...preview,
@@ -3195,6 +3244,58 @@ export default function SalesMapPage({
     }
     try {
       setCampaignImporting(true);
+      if (campaignCardMode) {
+        const editingCampaign =
+          campaignCardMode === "edit" ? activeCampaign : null;
+        if (campaignCardMode === "edit" && !editingCampaign) {
+          throw new Error("수정할 예산카드를 다시 선택해 주세요.");
+        }
+        const response = await fetch("/api/map/campaigns", {
+          method: campaignCardMode === "edit" ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(campaignCardMode === "edit"
+              ? {
+                  action: "update-campaign",
+                  campaignId: editingCampaign?.id,
+                }
+              : {
+                  cardOnly: true,
+                  importSource: "manual",
+                  sourceFileName: campaignImport.fileName,
+                }),
+            name: campaignName.trim(),
+            notes: campaignNotes.trim(),
+            selectionDate: campaignSelectionDate,
+            defaultBudgetAmount: campaignDefaultBudgetAmount,
+            ...campaignBudget,
+            targets: [],
+          }),
+        });
+        const payload = (await response.json()) as {
+          campaign?: Record<string, unknown>;
+          message?: string;
+          error?: string;
+        };
+        if (!response.ok || !payload.campaign) {
+          throw new Error(payload.error || "예산카드를 저장하지 못했습니다.");
+        }
+        const campaign = normalizeCampaign(payload.campaign);
+        setCampaignImport(null);
+        setCampaignCardMode(null);
+        setCampaignName("");
+        setCampaignNotes("");
+        setCampaignDefaultBudgetAmount("");
+        setActiveCampaignId(campaign.id);
+        setNotice(
+          payload.message ||
+            (campaignCardMode === "edit"
+              ? `${campaign.name} 예산카드를 수정했습니다.`
+              : `${campaign.name} 예산카드를 만들었습니다. 이제 기존 기관을 추가할 수 있습니다.`),
+        );
+        await loadCampaigns();
+        return;
+      }
       const memberByName = new Map(
         campaignMembers.flatMap((member) => [
           [
@@ -3271,6 +3372,7 @@ export default function SalesMapPage({
         : pendingCampaignImportRows;
       const targetCount = payload.targetCount ?? pendingCampaignImportRows.length;
       setCampaignImport(null);
+      setCampaignCardMode(null);
       setCampaignName("");
       setCampaignNotes("");
       setCampaignDefaultBudgetAmount("");
@@ -4732,6 +4834,15 @@ export default function SalesMapPage({
               </p>
             </div>
             <div className="budget-board-actions">
+              {activeCampaign && isOwner && (
+                <button
+                  type="button"
+                  className="campaign-card-edit-button"
+                  onClick={() => beginBudgetCardEdit(activeCampaign)}
+                >
+                  예산카드 수정
+                </button>
+              )}
               {activeCampaign && canManageCampaigns && (
                 <button
                   type="button"
@@ -4744,9 +4855,9 @@ export default function SalesMapPage({
               <button
                 type="button"
                 className="campaign-manual-button"
-                onClick={beginManualCampaignImport}
+                onClick={beginBudgetCardCreate}
               >
-                직접 등록
+                예산카드 등록
               </button>
               <button
                 type="button"
@@ -5095,8 +5206,9 @@ export default function SalesMapPage({
                           </span>
                         </td>
                         <td>
-                          {group.projectId
-                            ? formatWon(
+                          <div className="budget-amount-with-source">
+                            <strong>{group.projectId
+                              ? formatWon(
                                 group.members
                                   .filter((member) => member.jointProjectRole !== "sponsor")
                                   .reduce(
@@ -5105,7 +5217,11 @@ export default function SalesMapPage({
                                     0,
                                   ),
                               )
-                            : formatWon(target.budgetAmount)}
+                              : formatWon(target.budgetAmount)}</strong>
+                            {!group.projectId && (
+                              <small>{budgetAmountSourceLabel(target)}</small>
+                            )}
+                          </div>
                         </td>
                         <td>
                           <div className="budget-status-stack">
@@ -5255,8 +5371,9 @@ export default function SalesMapPage({
                       <div>
                         <dt>기관별 금액</dt>
                         <dd>
-                          {group.projectId
-                            ? formatWon(
+                          <span className="budget-amount-with-source">
+                            <strong>{group.projectId
+                              ? formatWon(
                                 group.members
                                   .filter((member) => member.jointProjectRole !== "sponsor")
                                   .reduce(
@@ -5265,7 +5382,11 @@ export default function SalesMapPage({
                                     0,
                                   ),
                               )
-                            : formatWon(target.budgetAmount)}
+                              : formatWon(target.budgetAmount)}</strong>
+                            {!group.projectId && (
+                              <small>{budgetAmountSourceLabel(target)}</small>
+                            )}
+                          </span>
                         </dd>
                       </div>
                       <div>
@@ -6336,7 +6457,7 @@ export default function SalesMapPage({
           <button
             type="button"
             className="map-location-backdrop"
-            aria-label="영업 카테고리 등록 닫기"
+            aria-label={campaignCardMode ? "예산카드 편집 닫기" : "영업 카테고리 등록 닫기"}
             onClick={() => undefined}
           />
           <form
@@ -6349,21 +6470,31 @@ export default function SalesMapPage({
             <header>
               <div>
                 <span className="section-kicker">
-                  {campaignImport.source === "pdf"
+                  {campaignCardMode
+                    ? "BUDGET CARD"
+                    : campaignImport.source === "pdf"
                     ? "PDF REVIEW"
                     : campaignImport.source === "manual"
                       ? "MANUAL ENTRY"
                       : "EXCEL IMPORT"}
                 </span>
                 <h2>
-                  {campaignImport.source === "pdf"
+                  {campaignCardMode === "edit"
+                    ? "예산카드 수정"
+                    : campaignCardMode === "create"
+                      ? "예산카드 직접 등록"
+                    : campaignImport.source === "pdf"
                     ? "PDF 분석 결과 확인"
                     : campaignImport.source === "manual"
                       ? "기관 직접 등록"
                       : "엑셀 명단 확인"}
                 </h2>
                 <p>
-                  {campaignImport.source === "manual"
+                  {campaignCardMode === "edit"
+                    ? "카드 정보와 기본금액을 수정합니다. 기관별 실제 입력금액은 유지됩니다."
+                    : campaignCardMode === "create"
+                      ? "카드를 먼저 만든 뒤 기존 기관 추가에서 기관을 연결합니다."
+                    : campaignImport.source === "manual"
                     ? `기관을 한 곳씩 입력합니다 · 현재 ${campaignImport.rows.length}곳`
                     : `${campaignImport.fileName} · 기관 ${campaignImport.rows.length}곳`}
                 </p>
@@ -6375,10 +6506,13 @@ export default function SalesMapPage({
                   if (
                     !campaignImporting &&
                     window.confirm(
-                      "아직 저장하지 않은 명단 확인 내용을 닫을까요?",
+                      campaignCardMode
+                        ? "아직 저장하지 않은 예산카드 내용을 닫을까요?"
+                        : "아직 저장하지 않은 명단 확인 내용을 닫을까요?",
                     )
                   ) {
                     setCampaignImport(null);
+                    setCampaignCardMode(null);
                   }
                 }}
                 disabled={campaignImporting}
@@ -6388,7 +6522,7 @@ export default function SalesMapPage({
             </header>
             <div className="campaign-import-fields">
               <label>
-                <span>명단 이름</span>
+                <span>{campaignCardMode ? "예산카드 이름" : "명단 이름"}</span>
                 <input
                   value={campaignName}
                   onChange={(event) => setCampaignName(event.target.value)}
@@ -6403,7 +6537,7 @@ export default function SalesMapPage({
                   value={campaignBudget}
                   onChange={setCampaignBudget}
                   onToast={setNotice}
-                  disabled={campaignImporting}
+                  disabled={campaignImporting || campaignCardMode === "edit"}
                   standardOnly
                 />
               </label>
@@ -6440,7 +6574,15 @@ export default function SalesMapPage({
               </label>
             </div>
             <div className="campaign-import-guide">
-              {campaignImport.source === "pdf" ? (
+              {campaignCardMode ? (
+                <>
+                  <strong>
+                    {campaignCardMode === "edit" ? "기존 기관 금액 보호" : "카드 먼저 등록"}
+                  </strong>{" "}
+                  기관 상세의 실제 금액이 우선이며, 미입력 기관만 카드 기본금액을
+                  사용합니다. 표준 예산명을 바꾸려면 새 카드를 만들어 주세요.
+                </>
+              ) : campaignImport.source === "pdf" ? (
                 <>
                   <strong>아직 저장되지 않았습니다.</strong> 예산명과 기관별
                   연결 방식을 확인한 뒤 최종 등록해 주세요.
@@ -6485,7 +6627,7 @@ export default function SalesMapPage({
                 )}
               </section>
             )}
-            {campaignImport.source === "manual" && (
+            {campaignImport.source === "manual" && !campaignCardMode && (
               <div className="campaign-manual-toolbar">
                 <span>
                   같은 기관도 다른 예산에는 추가할 수 있습니다. 이 명단 안의
@@ -6563,10 +6705,13 @@ export default function SalesMapPage({
                 onClick={() => {
                   if (
                     window.confirm(
-                      "아직 저장하지 않은 명단 확인 내용을 닫을까요?",
+                      campaignCardMode
+                        ? "아직 저장하지 않은 예산카드 내용을 닫을까요?"
+                        : "아직 저장하지 않은 명단 확인 내용을 닫을까요?",
                     )
                   ) {
                     setCampaignImport(null);
+                    setCampaignCardMode(null);
                   }
                 }}
                 disabled={campaignImporting}
@@ -6581,12 +6726,18 @@ export default function SalesMapPage({
                   !campaignSelectionDate ||
                   !campaignBudget.budgetType.trim() ||
                   !campaignBudget.budgetGroupId ||
-                  !campaignImportPartition.pending.length ||
+                  (!campaignCardMode && !campaignImportPartition.pending.length) ||
                   campaignImporting
                 }
               >
                 {campaignImporting
-                  ? "기관·위치 등록 중"
+                  ? campaignCardMode
+                    ? "예산카드 저장 중"
+                    : "기관·위치 등록 중"
+                  : campaignCardMode === "edit"
+                    ? "예산카드 수정 저장"
+                    : campaignCardMode === "create"
+                      ? "예산카드 등록"
                   : campaignImportUsesActiveList &&
                       campaignImportPartition.pending.length === 0
                     ? "추가할 누락 기관 없음"
