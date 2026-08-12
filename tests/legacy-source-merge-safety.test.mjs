@@ -30,6 +30,14 @@ test("member restore matches email, preserves locked or assigned work, and repoi
   assert.match(helper, /UPDATE complex_projects SET manager_member_id/);
 });
 
+test("comparison uses the same unclassified budget filters as the management screen", async () => {
+  const helper = await readFile(helperPath, "utf8");
+  assert.match(helper, /excludedAwards/);
+  assert.match(helper, /allowedStatuses/);
+  assert.match(helper, /budget_match_status/);
+  assert.match(helper, /activity_id/);
+});
+
 test("admin can change own sales flag while persisted value is verified", async () => {
   const route = await readFile(memberRoutePath, "utf8");
   const salesBranch = route.slice(route.indexOf('if (typeof payload.isSales === "boolean")'), route.indexOf("const displayName", route.indexOf('if (typeof payload.isSales === "boolean")')));

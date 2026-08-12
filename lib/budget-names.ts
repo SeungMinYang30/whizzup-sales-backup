@@ -1038,7 +1038,7 @@ export async function resolveCanonicalBudgetName(
        FROM budget_name_aliases a
        JOIN budget_name_groups g ON g.id = a.group_id
        WHERE a.active = 1 AND g.active = 1 AND a.alias_key = ?
-       ORDER BY groupId`,
+       ORDER BY "groupId"`,
     )
     .bind(aliasKey, aliasKey)
     .all<{
@@ -1585,7 +1585,7 @@ export async function listBudgetNameManagement() {
       d1
         .prepare(
           `WITH activity_counts AS (
-             SELECT budget_type AS name, COUNT(*) AS activityCount
+             SELECT budget_type AS name, COUNT(*) AS activity_count
              FROM activities
              WHERE TRIM(budget_type) <> ''
                AND COALESCE(award_status, '미정')
@@ -1596,7 +1596,7 @@ export async function listBudgetNameManagement() {
              GROUP BY budget_type
            ),
            project_counts AS (
-             SELECT p.budget_type AS name, COUNT(*) AS projectCount
+             SELECT p.budget_type AS name, COUNT(*) AS project_count
              FROM equipment_projects p
              LEFT JOIN activities a ON a.id = p.activity_id
              WHERE TRIM(p.budget_type) <> ''
@@ -1616,14 +1616,14 @@ export async function listBudgetNameManagement() {
              SELECT name FROM project_counts
            )
            SELECT budget.name,
-                  COALESCE(activity.activityCount, 0) AS activityCount,
-                  COALESCE(project.projectCount, 0) AS projectCount
+                  COALESCE(activity.activity_count, 0) AS activityCount,
+                  COALESCE(project.project_count, 0) AS projectCount
            FROM all_budget_names budget
            LEFT JOIN activity_counts activity ON activity.name = budget.name
            LEFT JOIN project_counts project ON project.name = budget.name
            ORDER BY
-             (COALESCE(activity.activityCount, 0) +
-               COALESCE(project.projectCount, 0)) DESC,
+             (COALESCE(activity.activity_count, 0) +
+               COALESCE(project.project_count, 0)) DESC,
              budget.name`,
         )
         .all<{ name: string; activityCount: number; projectCount: number }>(),

@@ -193,8 +193,23 @@ function assignmentCounts(backup: FullBackup) {
 
 function unclassifiedNames(backup: FullBackup) {
   const names = new Set<string>();
-  for (const row of [...rows(backup, "activities"), ...rows(backup, "equipment_projects")]) {
+  const excludedAwards = new Set(["\ud611\ub825\uc0ac \uc218\uc8fc", "\ud0c0\uc5c5\uccb4 \uc218\uc8fc"]);
+  const allowedStatuses = new Set(["review", "unclassified", "legacy"]);
+  const activitiesById = new Map(
+    rows(backup, "activities").map((activity) => [integer(activity.id), activity] as const),
+  );
+  for (const row of rows(backup, "activities")) {
     if (integer(row.budget_group_id) > 0) continue;
+    if (excludedAwards.has(text(row.award_status))) continue;
+    if (!allowedStatuses.has(text(row.budget_match_status) || "unclassified")) continue;
+    const name = text(row.budget_original_name || row.budget_type);
+    if (name) names.add(key(name));
+  }
+  for (const row of rows(backup, "equipment_projects")) {
+    if (integer(row.budget_group_id) > 0) continue;
+    if (!allowedStatuses.has(text(row.budget_match_status) || "unclassified")) continue;
+    const activity = activitiesById.get(integer(row.activity_id));
+    if (activity && excludedAwards.has(text(activity.award_status))) continue;
     const name = text(row.budget_original_name || row.budget_type);
     if (name) names.add(key(name));
   }

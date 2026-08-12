@@ -13,3 +13,12 @@ test("PostgreSQL SQL normalization preserves camelCase result aliases", async ()
   );
   assert.match(source, /'AS "\$1"'/);
 });
+
+test("budget queries do not reference quoted camelCase CTE aliases as lowercase identifiers", async () => {
+  const source = await readFile(new URL("lib/budget-names.ts", root), "utf8");
+
+  assert.match(source, /COUNT\(\*\) AS activity_count/);
+  assert.match(source, /COUNT\(\*\) AS project_count/);
+  assert.doesNotMatch(source, /activity\.activityCount|project\.projectCount/);
+  assert.match(source, /ORDER BY "groupId"/);
+});
