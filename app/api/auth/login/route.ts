@@ -1,39 +1,12 @@
 import {
   createDirectSession,
   findMemberByEmail,
-  setMemberPassword,
   verifyMemberPassword,
 } from "../../../../lib/app-auth";
+import { createPasswordSetupTicket } from "../../../../lib/password-setup-ticket";
 
 export const dynamic = "force-dynamic";
 const AUTH_STEP_TIMEOUT_MS = 12_000;
-
-async function verifyAgainstPrimarySite(
-  email: string,
-  password: string,
-  remember: boolean,
-) {
-  const primaryOrigin = String(process.env.PRIMARY_SITE_ORIGIN ?? "").trim();
-  const appOrigin = String(process.env.APP_ORIGIN ?? "").trim();
-  if (!primaryOrigin || primaryOrigin === appOrigin) return false;
-
-  const endpoint = new URL("/api/auth/login", primaryOrigin);
-  if (endpoint.protocol !== "https:") return false;
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({ email, password, remember }),
-    cache: "no-store",
-    redirect: "error",
-    signal: AbortSignal.timeout(AUTH_STEP_TIMEOUT_MS),
-  });
-  if (!response.ok) return false;
-  const result = (await response.json().catch(() => null)) as { ok?: boolean } | null;
-  return result?.ok === true;
-}
 
 class AuthStepTimeoutError extends Error {
   constructor(readonly stage: string) {
@@ -73,58 +46,36 @@ export async function POST(request: Request) {
     const member = await withAuthTimeout(stage, findMemberByEmail(email));
     if (!member || String(member.status) !== "approved") {
       return Response.json(
-        { error: "이메일 또는 비밀번호를 확인해 주세요." },
+        { error: "등록되었거나 승인된 직원 이메일인지 확인해 주세요." },
         { status: 401 },
       );
     }
+
     stage = "password_verification";
     const verified = await withAuthTimeout(
       stage,
       verifyMemberPassword(Number(member.id), password),
     );
     if (!verified.ok) {
-      if (verified.reason !== "locked") {
-        stage = "primary_site_verification";
-        const primaryVerified = await withAuthTimeout(
-          stage,
-          verifyAgainstPrimarySite(
-            email,
-            password,
-            Boolean(payload.remember),
-          ),
-        );
-        if (primaryVerified) {
-          stage = "standby_credential_creation";
-          await withAuthTimeout(
-            stage,
-            setMemberPassword(Number(member.id), password),
-          );
-          stage = "session_creation";
-          await withAuthTimeout(
-            stage,
-            createDirectSession(Number(member.id), Boolean(payload.remember)),
-          );
-          return Response.json({ ok: true, migrated: true });
-        }
-      }
-      const error =
-        verified.reason === "not-set"
-          ? "아직 비밀번호가 설정되지 않았습니다. 기존 ChatGPT 로그인으로 접속해 최초 비밀번호를 설정해 주세요."
-          : verified.reason === "locked"
-            ? "로그인 시도가 많아 잠시 보호 중입니다. 15분 후 다시 시도해 주세요."
-            : "이메일 또는 비밀번호를 확인해 주세요.";
+      stage = "password_setup_ticket";
+      await withAuthTimeout(
+        stage,
+        createPasswordSetupTicket(Number(member.id), email),
+      );
       return Response.json(
         {
-          error,
-          code: verified.reason === "not-set" ? "PASSWORD_NOT_SET" : undefined,
+          ok: false,
+          code: "PASSWORD_SETUP_REQUIRED",
+          message: "새 로그인 비밀번호를 설정해 주세요.",
         },
-        { status: 401 },
+        { status: 409 },
       );
     }
+
     stage = "session_creation";
     await withAuthTimeout(
       stage,
-      createDirectSession(Number(member.id), Boolean(payload.remember)),
+      createDirectSession(Number(member.id), payload.remember !== false),
     );
     return Response.json({ ok: true });
   } catch (error) {
@@ -146,3 +97,4 @@ export async function POST(request: Request) {
     );
   }
 }
+
