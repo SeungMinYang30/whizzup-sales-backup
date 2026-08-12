@@ -53,6 +53,14 @@ test("budget manager exposes the latest safe merge audit", async () => {
   assert.match(manager, /differentEmployeeOverwrite/);
 });
 
+test("safe merge uses an accessible in-page confirmation instead of a blocking browser dialog", async () => {
+  const manager = await readFile(managerPath, "utf8");
+  assert.match(manager, /legacyMergeConfirmOpen/);
+  assert.match(manager, /aria-labelledby="legacy-merge-confirm-title"/);
+  assert.match(manager, /백업 후 안전 병합/);
+  assert.doesNotMatch(manager.slice(manager.indexOf("async function mergeLegacyData"), manager.indexOf("async function auditLegacyData")), /window\.confirm/);
+});
+
 test("primary owner refresh preserves the persisted sales flag", async () => {
   const collaboration = await readFile(collaborationPath, "utf8");
   const ownerRefresh = collaboration.slice(

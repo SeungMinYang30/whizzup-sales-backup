@@ -569,6 +569,7 @@ export default function BudgetNameManager({
   const [legacyReport, setLegacyReport] = useState<LegacyMergeReport | null>(null);
   const [legacyAudit, setLegacyAudit] = useState<LegacyMergeAudit | null>(null);
   const [legacyBusy, setLegacyBusy] = useState(false);
+  const [legacyMergeConfirmOpen, setLegacyMergeConfirmOpen] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -619,7 +620,7 @@ export default function BudgetNameManager({
 
   async function mergeLegacyData() {
     if (legacyBusy) return;
-    if (!window.confirm("버셀 관련 테이블을 먼저 백업한 뒤 원본에서 누락된 표준 예산명과 담당자 연결만 안전하게 병합합니다. 기존 데이터는 삭제하지 않습니다. 계속할까요?")) return;
+    setLegacyMergeConfirmOpen(false);
     setLegacyBusy(true);
     setError("");
     try {
@@ -989,6 +990,41 @@ export default function BudgetNameManager({
 
   return (
     <section className="budget-name-manager">
+      {legacyMergeConfirmOpen && (
+        <div className="institution-confirmation-overlay" role="presentation">
+          <div
+            className="institution-confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="legacy-merge-confirm-title"
+          >
+            <span className="institution-confirmation-eyebrow">SAFE SOURCE MERGE</span>
+            <h2 id="legacy-merge-confirm-title">백업 후 누락 데이터만 병합할까요?</h2>
+            <p className="institution-confirmation-description">
+              버셀의 구성원·업무 연결·표준 예산 관련 테이블을 먼저 백업한 뒤,
+              원본 사이트에서 확인되는 누락 연결만 이메일과 안정적인 업무 기준으로 복구합니다.
+              기존 버셀 데이터는 삭제하거나 초기화하지 않습니다.
+            </p>
+            <div className="institution-confirmation-actions">
+              <button
+                type="button"
+                className="institution-confirmation-secondary"
+                onClick={() => setLegacyMergeConfirmOpen(false)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="institution-confirmation-primary"
+                onClick={() => void mergeLegacyData()}
+                disabled={legacyBusy}
+              >
+                {legacyBusy ? "백업·병합 중…" : "백업 후 안전 병합"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="panel" style={{ marginBottom: 16 }}>
         <div className="panel-header">
           <div>
@@ -1003,7 +1039,7 @@ export default function BudgetNameManager({
             <button type="button" onClick={() => void auditLegacyData()} disabled={legacyBusy}>
               최근 복구 검증
             </button>
-            <button type="button" className="primary" onClick={() => void mergeLegacyData()} disabled={legacyBusy || !legacyReport}>
+            <button type="button" className="primary" onClick={() => setLegacyMergeConfirmOpen(true)} disabled={legacyBusy || !legacyReport}>
               백업 후 누락 병합
             </button>
           </div>
