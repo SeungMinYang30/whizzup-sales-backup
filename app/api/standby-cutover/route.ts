@@ -96,6 +96,10 @@ async function credentialStatus() {
        FROM members member
        LEFT JOIN member_credentials credential ON credential.member_id = member.id
        WHERE member.status = 'approved'
+         AND LOWER(member.email) NOT LIKE '%-noreply@chatgpt.com'
+         AND LOWER(member.email) NOT LIKE 'sites-%'
+         AND LOWER(member.display_name) NOT LIKE '%screenshot service%'
+         AND LOWER(member.display_name) NOT LIKE '%system service%'
        ORDER BY member.id ASC`,
     )
     .all<{

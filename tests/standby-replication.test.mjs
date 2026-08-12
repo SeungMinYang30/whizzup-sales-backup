@@ -128,6 +128,7 @@ test("Vercel cutover performs a final verified sync and permanently blocks repli
   assert.match(cutoverRoute, /authorizedByServerSecret/);
   assert.match(cutoverRoute, /CUTOVER_API_SECRET/);
   assert.match(cutoverRoute, /missingMembers/);
+  assert.match(cutoverRoute, /screenshot service/);
   assert.match(cutoverRoute, /STANDBY_SYNC_SECRET/);
   assert.match(cutoverRoute, /VERCEL 운영 전환/);
   assert.match(cutoverRoute, /removeStandbySchedule/);
