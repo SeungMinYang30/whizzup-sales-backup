@@ -22,4 +22,6 @@ test("저장 PDF의 교구 별첨은 에어패스 공급자와 직인을 사용�
   assert.match(pdf, /AIRPASS_COMPANY\.address/);
   assert.match(pdf, /loadImage\("\/airpass-seal\.png"\)/);
   assert.match(pdf, /context\.drawImage\(airpassSeal/);
+  assert.doesNotMatch(pdf, /\$\{quote\.projectTitle \|\| "제품 공급"\} 교구 세부견적/);
+  assert.doesNotMatch(page, /equipment-kit-print-band">에어패스 교구 세부내역 · 수량 0 품목 제외/);
 });

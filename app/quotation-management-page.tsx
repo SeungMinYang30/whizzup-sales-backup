@@ -2393,10 +2393,10 @@ export default function QuotationManagementPage({
           {equipmentKitPrintPages.map((kitPage, kitPageIndex) => <article className="quotation-print-sheet equipment-kit-print-sheet" key={`kit-print-${kitPage.item.id}-${kitPage.page}`}>
             <header className="equipment-kit-print-header">
               <img src="/whizzup-logo.png" alt="WHIZZUP" />
-              <div><h1>교 구 세 부 견 적</h1><p>{draft.organization || "미지정"} · {kitPage.item.equipmentKit?.plan === "two" ? "표준 2세트" : "표준 1세트"} 기준안</p></div>
+              <div><h1>교 구 세 부 견 적</h1><p>{draft.organization || "미지정"}</p></div>
               <dl><dt>견적번호</dt><dd>{draft.quoteNumber || "저장 시 발급"}</dd><dt>작성일</dt><dd>{draft.quoteDate}</dd></dl>
             </header>
-            <div className="equipment-kit-print-band">에어패스 교구 세부내역 · 수량 0 품목 제외</div>
+            <div className="equipment-kit-print-band">에어패스 교구 세부내역</div>
             <table className="equipment-kit-print-table">
               <colgroup><col className="no" /><col className="name" /><col className="quantity" /><col className="unit" /><col className="price" /><col className="amount" /><col className="note" /></colgroup>
               <thead><tr><th>No</th><th>품명</th><th>수량</th><th>단위</th><th>단가</th><th>금액</th><th>비고</th></tr></thead>

@@ -354,7 +354,7 @@ async function renderPages(quote: AuthoredQuotation) {
       context.textAlign = "left";
       const partyRows = [
         ["수신", quote.organization, "상호", AIRPASS_COMPANY.name],
-        ["견적명", `${quote.projectTitle || "제품 공급"} 교구 세부견적`, "사업자번호", AIRPASS_COMPANY.businessNumber],
+        ["견적명", quote.projectTitle || "제품 공급", "사업자번호", AIRPASS_COMPANY.businessNumber],
         ["계약구분", "수의계약", "대표자", AIRPASS_COMPANY.representative],
         ["납품조건", "발주 후 일정 협의", "주소", AIRPASS_COMPANY.address],
         ["유효기간", quote.validUntil ? `${quote.validUntil}까지` : "견적일로부터 30일", "업태·종목", `${AIRPASS_COMPANY.businessType} / ${AIRPASS_COMPANY.businessItems}`],

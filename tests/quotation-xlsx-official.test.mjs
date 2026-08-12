@@ -83,6 +83,13 @@ test("교구 견적은 에어패스 공급자 정보와 직인을 사용하고 �
   assert.match(detailSheet, /220-86-23479/);
   assert.match(detailSheet, /임종호/);
   assert.match(detailSheet, /하남테크노밸리 U1 CENTER/);
+  assert.doesNotMatch(detailSheet, /표준 [12]세트 기준안/);
+  assert.doesNotMatch(detailSheet, /수량 0 품목 제외/);
+  assert.doesNotMatch(detailSheet, /자체예산 교구 세부견적/);
+  assert.match(detailSheet, /<c r="B6"[^>]*>/);
+  assert.match(detailSheet, /<c r="D6"[^>]*>/);
+  assert.match(detailSheet, /<c r="H6"[^>]*>/);
+  assert.match(detailSheet, /<c r="I6"[^>]*>/);
   assert.match(detailSheet, /<c r="G16"[^>]*>.*금액/s);
   assert.match(detailSheet, /<c r="I16"[^>]*>.*비고/s);
   assert.doesNotMatch(detailSheet, /<c r="J16"/);
