@@ -4190,6 +4190,7 @@ tr:hover .row-actions { opacity: 1; }
 .budget-board-actions { display: flex; gap: 8px; }
 .budget-board-actions button { min-height: 40px; padding: 0 15px; border: 1px solid #dce3ed; border-radius: 9px; background: #fff; color: #506079; font-size: 12px; font-weight: 850; cursor: pointer; }
 .budget-board-actions .campaign-existing-add-button { border-color: #aab4ff; background: #f4f5ff; color: #353bc4; }
+.budget-board-actions .campaign-card-edit-button { border-color: #c8d1df; background: #f8fafc; color: #42516a; }
 .budget-board-actions .campaign-manual-button { border-color: #98a3f5; background: #f1f2ff; color: #3738c9; }
 .budget-board-actions .campaign-pdf-button { border-color: #80b5a6; background: #eef9f5; color: #286452; }
 .budget-portfolio-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 14px 16px 0; }
@@ -4259,6 +4260,9 @@ tr:hover .row-actions { opacity: 1; }
 .budget-institution-table td > span, .budget-institution-table td > strong + span { margin-top: 4px; color: #8a96a8; font-size: 11px; }
 .budget-institution-table select { width: 100%; min-width: 100px; height: 36px; border: 1px solid #dce3ed; border-radius: 7px; background: #fff; color: #43526a; font-size: 11px; }
 .budget-institution-table td > button { min-height: 34px; border: 1px solid #d9e0eb; border-radius: 7px; background: #fff; color: #3d48bf; font-size: 11px; font-weight: 800; cursor: pointer; }
+.budget-amount-with-source { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.budget-amount-with-source strong { color: #35445d; font-size: 12px; }
+.budget-amount-with-source small { color: #8793a7; font-size: 10px; font-weight: 700; }
 .budget-institution-table tbody tr.budget-selection-row.whizzup { background: #f5f9ff; }
 .budget-institution-table tbody tr.budget-selection-row.other { background: #fff5f3; }
 .budget-institution-table tbody tr.budget-selection-row.whizzup > td:first-child { box-shadow: inset 3px 0 #5368e7; }
