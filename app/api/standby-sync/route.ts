@@ -125,13 +125,16 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!automaticSyncEnabled()) {
+    const schedule = (await isVercelPrimaryMode())
+      ? await removeStandbySchedule()
+      : null;
     return Response.json(
       {
-        ok: false,
+        ok: true,
         disabled: true,
-        error: "Automatic full-database synchronization is disabled",
+        schedule,
       },
-      { status: 409 },
+      { status: 200 },
     );
   }
   if (await isVercelPrimaryMode()) {
