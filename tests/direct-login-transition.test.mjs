@@ -37,7 +37,7 @@ test("direct login transition keeps protected screens behind authentication", as
   assert.match(login, /REQUEST_TIMEOUT_MS = 15_000/);
   assert.match(login, /payload\.code === "PASSWORD_NOT_SET"/);
   assert.match(login, /window\.location\.assign\(CHATGPT_PASSWORD_SETUP_URL\)/);
-  assert.match(login, /return_to=%2Fpassword-setup/);
+  assert.match(login, /\/auth\/google\?return_to=%2Fpassword-setup/);
   assert.match(login, /ChatGPT로 비밀번호 설정·재설정/);
 
   assert.match(setup, /src="\/whizzup-logo\.png"/);

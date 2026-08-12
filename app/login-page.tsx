@@ -5,7 +5,7 @@ import { FormEvent, useState } from "react";
 type Mode = "login" | "signup" | "reset";
 const REQUEST_TIMEOUT_MS = 15_000;
 const CHATGPT_PASSWORD_SETUP_URL =
-  "/signin-with-chatgpt?return_to=%2Fpassword-setup";
+  "/auth/google?return_to=%2Fpassword-setup";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("login");
