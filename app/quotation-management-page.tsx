@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+const PDF_WORKER_URL = "/pdf.worker.min.mjs";
 import type {
   AuthoredQuotation,
   AuthoredQuotationBudget,
@@ -119,6 +120,12 @@ type Draft = {
 type EquipmentKitEditor = {
   item: DraftItem;
   editingItemId?: string;
+};
+
+type GeneratedPdfPreview = {
+  title: string;
+  file: File;
+  pageUrls: string[];
 };
 
 const won = new Intl.NumberFormat("ko-KR");
@@ -379,6 +386,41 @@ function downloadBlob(blob: Blob, name: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
+async function renderGeneratedPdfPages(file: File) {
+  const { GlobalWorkerOptions, getDocument } = await import("pdfjs-dist");
+  GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
+  const source = new Uint8Array(await file.arrayBuffer());
+  const pdf = await getDocument({ data: source }).promise;
+  const pageUrls: string[] = [];
+  try {
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const natural = page.getViewport({ scale: 1 });
+      const scale = Math.min(2.2, 1500 / Math.max(natural.width, natural.height));
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.ceil(viewport.width));
+      canvas.height = Math.max(1, Math.ceil(viewport.height));
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) throw new Error("PDF 미리보기 화면을 준비하지 못했습니다.");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvas, canvasContext: context, viewport }).promise;
+      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("PDF 페이지 이미지를 만들지 못했습니다.")), "image/jpeg", 0.92));
+      pageUrls.push(URL.createObjectURL(blob));
+      page.cleanup();
+      canvas.width = 1;
+      canvas.height = 1;
+    }
+    return pageUrls;
+  } catch (error) {
+    pageUrls.forEach((url) => URL.revokeObjectURL(url));
+    throw error;
+  } finally {
+    await pdf.destroy();
+  }
+}
+
 function EditableRateInput({ value, onChange, max = 100, step = 0.1, disabled = false, label }: { value: number; onChange: (value: number) => void; max?: number; step?: number; disabled?: boolean; label: string }) {
   const displayValue = (rate: number) => String(Number((Math.max(0, rate) * 100).toFixed(2)));
   const [text, setText] = useState(() => displayValue(value));
@@ -497,6 +539,8 @@ export default function QuotationManagementPage({
   const [importSourceFile, setImportSourceFile] = useState<File | null>(null);
   const [internalReportOpen, setInternalReportOpen] = useState(false);
   const [equipmentFileRefreshRunning, setEquipmentFileRefreshRunning] = useState(false);
+  const [pdfPreview, setPdfPreview] = useState<GeneratedPdfPreview | null>(null);
+  const [pdfPreviewPreparing, setPdfPreviewPreparing] = useState("");
   const draftRef = useRef<Draft | null>(null);
   const draggedItemIdRef = useRef("");
   const editorHistoryActiveRef = useRef(false);
@@ -505,6 +549,19 @@ export default function QuotationManagementPage({
   const productSearchResultsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => { draftRef.current = draft; }, [draft]);
+
+  useEffect(() => () => {
+    pdfPreview?.pageUrls.forEach((url) => URL.revokeObjectURL(url));
+  }, [pdfPreview]);
+
+  async function openGeneratedPdfPreview(file: File, title: string) {
+    const pageUrls = await renderGeneratedPdfPages(file);
+    setPdfPreview({ title, file, pageUrls });
+  }
+
+  function closeGeneratedPdfPreview() {
+    setPdfPreview(null);
+  }
 
   useEffect(() => {
     if (!productResultsOpen) return;
@@ -586,14 +643,7 @@ export default function QuotationManagementPage({
 
   async function printQuotation() {
     if (!draft?.items.length) return;
-    const preview = window.open("", "_blank");
-    if (!preview) {
-      setMessage("PDF 미리보기 창이 차단되었습니다. 브라우저 팝업을 허용해 주세요.");
-      return;
-    }
-    preview.opener = null;
-    preview.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>PDF 준비 중</title></head><body style="font-family:Arial,\'Noto Sans KR\',sans-serif;padding:32px;color:#17233d">PDF 미리보기를 준비하고 있습니다.</body></html>');
-    preview.document.close();
+    setPdfPreviewPreparing("견적서 PDF 미리보기를 준비하고 있습니다.");
     try {
       const pdf = await createAuthoredQuotationPdf({
         organization: draft.organization,
@@ -620,13 +670,12 @@ export default function QuotationManagementPage({
           equipmentKit: item.equipmentKit,
         })),
       });
-      const url = URL.createObjectURL(pdf);
-      preview.location.replace(url);
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      setMessage("저장 PDF와 동일한 양식으로 PDF 미리보기를 열었습니다.");
+      await openGeneratedPdfPreview(pdf, `${draft.organization} 견적서`);
+      setMessage("견적서 PDF 미리보기를 열었습니다.");
     } catch (error) {
-      preview.close();
       setMessage(error instanceof Error ? error.message : "견적서 PDF를 만들지 못했습니다.");
+    } finally {
+      setPdfPreviewPreparing("");
     }
   }
 
@@ -2115,12 +2164,15 @@ export default function QuotationManagementPage({
   async function exportConsortiumSettlementPdf() {
     const output = consortiumSettlementOutputInput();
     if (!output) return;
+    setPdfPreviewPreparing("업체 정산서 PDF 미리보기를 준비하고 있습니다.");
     try {
       const pdf = await createConsortiumSettlementPdf(output);
-      downloadBlob(pdf, pdf.name);
-      setMessage("정산서 PDF를 만들었습니다.");
+      await openGeneratedPdfPreview(pdf, `${output.consortiumCompany} 정산서`);
+      setMessage("업체 정산서 PDF 미리보기를 열었습니다.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "정산서 PDF를 만들지 못했습니다.");
+    } finally {
+      setPdfPreviewPreparing("");
     }
   }
 
@@ -2216,7 +2268,7 @@ export default function QuotationManagementPage({
           <nav aria-label="견적서 작업">
             <div className="quote-topbar-action-group quote-topbar-output-actions">
               <button type="button" onClick={exportExcel} disabled={!draft.items.length}>Excel 출력</button>
-              <button type="button" onClick={printQuotation} disabled={!draft.items.length}>PDF 출력</button>
+              <button type="button" onClick={printQuotation} disabled={!draft.items.length || Boolean(pdfPreviewPreparing)}>PDF 출력</button>
             </div>
             <div className="quote-topbar-action-group quote-topbar-navigation-actions">
               {institutions.some((item) => item.organization === draft.organization && item.businessRound === draft.businessRound) && <button className="app-button app-button-secondary" type="button" onClick={() => { closeEditor(); onOpenOrganization?.(draft.organization, draft.businessRound); }}>기관 상세 보기</button>}
@@ -2426,7 +2478,7 @@ export default function QuotationManagementPage({
                 </article>)}
                 {!draft.settlementAdjustments.length && <small>추가 지급이나 정산 차감이 생기면 항목을 추가해 주세요.</small>}
               </div>
-              <div className="quotation-settlement-output-actions"><button type="button" onClick={() => void exportConsortiumSettlementExcel()} disabled={!draft.items.length}>정산서 Excel 출력</button><button type="button" onClick={() => void exportConsortiumSettlementPdf()} disabled={!draft.items.length}>정산서 PDF 출력</button></div>
+              <div className="quotation-settlement-output-actions"><button type="button" onClick={() => void exportConsortiumSettlementExcel()} disabled={!draft.items.length}>정산서 Excel 출력</button><button type="button" onClick={() => void exportConsortiumSettlementPdf()} disabled={!draft.items.length || Boolean(pdfPreviewPreparing)}>정산서 PDF 출력</button></div>
               <p>품목별 지급률과 비용 처리 방식, 정산 조정 내역을 표시하며 위즈업 수익·마진은 포함하지 않습니다. 직인 포함 설정도 동일하게 적용됩니다.</p>
             </section>}
             {directPurchaseWarning && <section className="quotation-procurement-warning quotation-direct-purchase-warning" role="alert"><strong>물품 수의계약 한도 확인</strong><div><b>수의계약 · 학교장터 합산</b><span>{won.format(directPurchaseWarning.totalAmount)}원 · {directPurchaseWarning.itemCount}개 품목</span><small>부가세 포함 2,200만원을 초과했습니다. 공사비와 일반 조달·디지털서비스몰·혁신장터 품목은 제외한 참고 경고입니다.</small></div></section>}
@@ -2454,6 +2506,16 @@ export default function QuotationManagementPage({
             <footer><button type="button" onClick={downloadInternalProfitCsv}>Excel용 CSV</button><button type="button" onClick={printInternalProfitReport}>인쇄·PDF</button><button className="primary" type="button" onClick={() => setInternalReportOpen(false)}>닫기</button></footer>
           </section>
         </div>}
+
+        {(pdfPreviewPreparing || pdfPreview) && createPortal(<div className="generated-pdf-preview-shell no-print" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target && pdfPreview) closeGeneratedPdfPreview(); }}>
+          <section className={`generated-pdf-preview${pdfPreviewPreparing ? " preparing" : ""}`} role="dialog" aria-modal="true" aria-labelledby="generated-pdf-preview-title">
+            <header>
+              <div><span className="section-kicker">PDF PREVIEW</span><h3 id="generated-pdf-preview-title">{pdfPreview?.title || "PDF 미리보기"}</h3>{pdfPreview && <p>{pdfPreview.pageUrls.length}페이지 · 화면 확인 후 필요한 경우 다운로드해 주세요.</p>}</div>
+              {pdfPreview && <div><button type="button" className="download" onClick={() => downloadBlob(pdfPreview.file, pdfPreview.file.name)}>PDF 다운로드</button><button type="button" aria-label="PDF 미리보기 닫기" onClick={closeGeneratedPdfPreview}>×</button></div>}
+            </header>
+            {pdfPreviewPreparing ? <div className="generated-pdf-preview-loading"><span /><strong>{pdfPreviewPreparing}</strong><p>완성된 문서를 화면에 표시하고 있습니다.</p></div> : <div className="generated-pdf-preview-pages">{pdfPreview?.pageUrls.map((url, index) => <figure key={url}><figcaption>{index + 1} / {pdfPreview.pageUrls.length}</figcaption><img src={url} alt={`${pdfPreview.title} ${index + 1}페이지`} /></figure>)}</div>}
+          </section>
+        </div>, document.body)}
 
         {importMode && createPortal(<QuotationImportDialog
           mode={importMode}

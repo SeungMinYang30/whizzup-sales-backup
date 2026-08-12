@@ -163,10 +163,11 @@ test("PDF output uses the same saved generator and retains the print fallback", 
   assert.doesNotMatch(styles, /@media print\{body \*\{visibility:hidden!important\}/);
   assert.match(page, /async function printQuotation\(\)/);
   assert.match(page, /createAuthoredQuotationPdf\(/);
-  assert.match(page, /const preview = window\.open\("", "_blank"\)/);
-  assert.match(page, /preview\.location\.replace\(url\)/);
-  assert.match(page, /저장 PDF와 동일한 양식으로 PDF 미리보기를 열었습니다/);
+  assert.match(page, /renderGeneratedPdfPages/);
+  assert.match(page, /PDF_WORKER_URL/);
+  assert.match(page, /견적서 PDF 미리보기를 열었습니다/);
   assert.doesNotMatch(page.slice(page.indexOf("async function printQuotation"), page.indexOf("function startQuotation")), /downloadBlob\(pdf/);
+  assert.doesNotMatch(page.slice(page.indexOf("async function printQuotation"), page.indexOf("function startQuotation")), /window\.open/);
   assert.match(page, /onClick=\{printQuotation\}/);
   assert.match(page, /beforeprint/);
   assert.match(page, /afterprint/);
@@ -191,6 +192,11 @@ test("정산서 PDF는 조정 내역·최종 지급액·직인을 포함한다",
   assert.match(settlementPdf, /최종 지급 예정액 \(VAT 포함\)/);
   assert.match(settlementPdf, /whizzup-seal\.png/);
   assert.match(page, /정산서 PDF/);
+  assert.match(page, /업체 정산서 PDF 미리보기를 열었습니다/);
+  assert.doesNotMatch(page.slice(page.indexOf("async function exportConsortiumSettlementPdf"), page.indexOf("const regularDraftItems")), /downloadBlob\(pdf/);
+  assert.match(page, /generated-pdf-preview-pages/);
+  assert.match(page, /PDF 다운로드/);
+  assert.match(styles, /\.generated-pdf-preview-shell/);
 });
 
 test("직접 바꾼 견적명은 기관·차수 갱신 뒤에도 보존하고 목록에 예산과 구분해 표시한다", () => {
