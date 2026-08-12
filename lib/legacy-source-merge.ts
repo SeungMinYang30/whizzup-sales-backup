@@ -149,7 +149,9 @@ function memberIndexes(backup: FullBackup, preferredMemberId = 0) {
 function assignmentCounts(backup: FullBackup) {
   const members = memberIndexes(backup);
   const result = new Map<string, Record<string, number>>();
-  const increment = (email: string, field: string) => {
+  const seenByEmail = new Map<string, Set<string>>();
+  const seenByField = new Map<string, Set<string>>();
+  const increment = (email: string, field: string, workloadKey: string) => {
     if (!email) return;
     const counts = result.get(email) ?? {
       activities: 0,
@@ -160,33 +162,44 @@ function assignmentCounts(backup: FullBackup) {
       complexProjects: 0,
       total: 0,
     };
-    counts[field] = (counts[field] ?? 0) + 1;
-    counts.total += 1;
+    const fieldKey = `${email}|${field}`;
+    const fieldSeen = seenByField.get(fieldKey) ?? new Set<string>();
+    if (!fieldSeen.has(workloadKey)) {
+      fieldSeen.add(workloadKey);
+      seenByField.set(fieldKey, fieldSeen);
+      counts[field] = (counts[field] ?? 0) + 1;
+    }
+    const totalSeen = seenByEmail.get(email) ?? new Set<string>();
+    if (!totalSeen.has(workloadKey)) {
+      totalSeen.add(workloadKey);
+      seenByEmail.set(email, totalSeen);
+      counts.total += 1;
+    }
     result.set(email, counts);
   };
   for (const activity of rows(backup, "activities")) {
-    increment(members.emailByAlias.get(key(activity.progress_manager)) ?? "", "activities");
+    increment(members.emailByAlias.get(key(activity.progress_manager)) ?? "", "activities", `activity:${integer(activity.id)}`);
   }
   for (const author of rows(backup, "activity_authors")) {
-    increment(text(members.byId.get(integer(author.member_id))?.email).toLowerCase(), "authoredActivities");
+    increment(text(members.byId.get(integer(author.member_id))?.email).toLowerCase(), "authoredActivities", `activity:${integer(author.activity_id)}`);
   }
   for (const history of rows(backup, "activity_assignment_history")) {
-    increment(text(members.byId.get(integer(history.to_member_id))?.email).toLowerCase(), "assignmentHistory");
+    increment(text(members.byId.get(integer(history.to_member_id))?.email).toLowerCase(), "assignmentHistory", `activity:${integer(history.activity_id)}`);
   }
   for (const schedule of rows(backup, "organization_schedules")) {
     const email = text(members.byId.get(integer(schedule.assignee_member_id))?.email).toLowerCase()
       || members.emailByAlias.get(key(schedule.assignee_name))
       || "";
-    increment(email, "schedules");
+    increment(email, "schedules", `schedule:${integer(schedule.id)}`);
   }
   for (const target of rows(backup, "sales_campaign_targets")) {
-    increment(text(members.byId.get(integer(target.assigned_member_id))?.email).toLowerCase(), "campaignTargets");
+    increment(text(members.byId.get(integer(target.assigned_member_id))?.email).toLowerCase(), "campaignTargets", `campaign-target:${integer(target.id)}`);
   }
   for (const project of rows(backup, "complex_projects")) {
     const email = text(members.byId.get(integer(project.manager_member_id))?.email).toLowerCase()
       || members.emailByAlias.get(key(project.manager_name))
       || "";
-    increment(email, "complexProjects");
+    increment(email, "complexProjects", `complex-project:${integer(project.id)}`);
   }
   return result;
 }
@@ -306,6 +319,139 @@ async function ensureSnapshotTable() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `).run();
+}
+
+function asSnapshotBackup(snapshot: unknown, current: FullBackup) {
+  let parsed = snapshot;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      throw new Error("병합 백업 스냅샷을 읽을 수 없습니다.");
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("병합 백업 스냅샷 형식이 올바르지 않습니다.");
+  }
+  return { ...current, data: parsed } as FullBackup;
+}
+
+function mapRowsById(backup: FullBackup, table: BackupTableName) {
+  return new Map(rows(backup, table).map((row) => [integer(row.id), row] as const));
+}
+
+function changedIdRows(before: FullBackup, after: FullBackup, table: BackupTableName, fields: string[]) {
+  const beforeRows = mapRowsById(before, table);
+  const afterRows = mapRowsById(after, table);
+  return [...afterRows.entries()].flatMap(([id, afterRow]) => {
+    const beforeRow = beforeRows.get(id);
+    if (!beforeRow) return [];
+    const changedFields = fields.filter((field) => text(beforeRow[field]) !== text(afterRow[field]));
+    return changedFields.length ? [{ id, before: beforeRow, after: afterRow, changedFields }] : [];
+  });
+}
+
+export async function auditLatestLegacyMerge() {
+  await ensureSnapshotTable();
+  const latest = await getD1().prepare(`
+    SELECT id, scope, source_origin, snapshot_json, created_at
+    FROM legacy_source_merge_backups
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).first<Row>();
+  if (!latest) throw new Error("검증할 병합 백업이 없습니다.");
+
+  const current = await createFullBackup();
+  const before = asSnapshotBackup(latest.snapshot_json, current);
+  const beforeMembers = memberIndexes(before);
+  const afterMembers = memberIndexes(current);
+  const memberEmails = new Set([...beforeMembers.byEmail.keys(), ...afterMembers.byEmail.keys()]);
+  const memberChanges = [...memberEmails].flatMap((email) => {
+    const previous = beforeMembers.byEmail.get(email);
+    const next = afterMembers.byEmail.get(email);
+    const changed = integer(previous?.id) !== integer(next?.id)
+      || text(previous?.status) !== text(next?.status)
+      || integer(previous?.is_sales) !== integer(next?.is_sales)
+      || text(previous?.display_name) !== text(next?.display_name);
+    return changed ? [{
+      email,
+      before: previous ? {
+        id: integer(previous.id),
+        displayName: text(previous.display_name),
+        status: text(previous.status),
+        isSales: integer(previous.is_sales) === 1,
+      } : null,
+      after: next ? {
+        id: integer(next.id),
+        displayName: text(next.display_name),
+        status: text(next.status),
+        isSales: integer(next.is_sales) === 1,
+      } : null,
+    }] : [];
+  });
+
+  const activityChanges = changedIdRows(before, current, "activities", ["progress_manager", "progress_manager_locked"]);
+  const restoredActivities = activityChanges.filter(({ before: previous, after: next }) => {
+    const previousManager = text(previous.progress_manager);
+    return (!previousManager || previousManager === "미지정") && Boolean(text(next.progress_manager));
+  });
+  const restoredByManager = restoredActivities.reduce<Record<string, number>>((result, { after }) => {
+    const manager = text(after.progress_manager) || "미지정";
+    result[manager] = (result[manager] ?? 0) + 1;
+    return result;
+  }, {});
+  const changedWhileLocked = activityChanges.filter(({ before: previous }) => integer(previous.progress_manager_locked) === 1).length;
+  const overwrittenAssigned = activityChanges.filter(({ before: previous }) => {
+    const manager = text(previous.progress_manager);
+    return Boolean(manager && manager !== "미지정");
+  }).length;
+
+  const relationCount = (backup: FullBackup, table: BackupTableName) => rows(backup, table).length;
+  const yang = afterMembers.byEmail.get("freeyang30@gmail.com");
+  return {
+    ok: true,
+    backup: {
+      id: text(latest.id),
+      scope: text(latest.scope),
+      sourceOrigin: text(latest.source_origin),
+      createdAt: text(latest.created_at),
+    },
+    members: {
+      changes: memberChanges,
+      yangSeungmin: yang ? {
+        id: integer(yang.id),
+        email: text(yang.email).toLowerCase(),
+        displayName: text(yang.display_name),
+        status: text(yang.status),
+        isSales: integer(yang.is_sales) === 1,
+      } : null,
+      approvedBefore: memberSummary(before).length,
+      approvedAfter: memberSummary(current).length,
+    },
+    assignments: {
+      activityRowsChanged: activityChanges.length,
+      restoredFromUnassigned: restoredActivities.length,
+      restoredByManager,
+      changedWhileLocked,
+      overwrittenAssigned,
+      authorsAdded: relationCount(current, "activity_authors") - relationCount(before, "activity_authors"),
+      historyAdded: relationCount(current, "activity_assignment_history") - relationCount(before, "activity_assignment_history"),
+      scheduleRowsChanged: changedIdRows(before, current, "organization_schedules", ["assignee_member_id", "assignee_name"]).length,
+      campaignTargetRowsChanged: changedIdRows(before, current, "sales_campaign_targets", ["assigned_member_id"]).length,
+      complexProjectRowsChanged: changedIdRows(before, current, "complex_projects", ["manager_member_id", "manager_name"]).length,
+    },
+    budgets: {
+      groupsBefore: relationCount(before, "budget_name_groups"),
+      groupsAfter: relationCount(current, "budget_name_groups"),
+      aliasesBefore: relationCount(before, "budget_name_aliases"),
+      aliasesAfter: relationCount(current, "budget_name_aliases"),
+      linksBefore: relationCount(before, "budget_name_members"),
+      linksAfter: relationCount(current, "budget_name_members"),
+      eventsBefore: relationCount(before, "budget_name_events"),
+      eventsAfter: relationCount(current, "budget_name_events"),
+    },
+    auditedAt: new Date().toISOString(),
+  };
 }
 
 function snapshotData(backup: FullBackup) {

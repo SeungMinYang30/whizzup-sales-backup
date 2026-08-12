@@ -14,6 +14,8 @@ test("legacy merge is owner-only, backs up target data, and uses source export",
   assert.match(route, /requirePrimaryOwner\(\)/);
   assert.match(helper, /legacy_source_merge_backups/);
   assert.match(helper, /saveSnapshot\(/);
+  assert.match(helper, /auditLatestLegacyMerge/);
+  assert.match(route, /searchParams\.get\("audit"\) === "latest"/);
   assert.match(helper, /\/api\/standby-export/);
   assert.doesNotMatch(helper, /DELETE\s+FROM\s+members/i);
   assert.doesNotMatch(helper, /DELETE\s+FROM\s+activities/i);
@@ -24,10 +26,19 @@ test("member restore matches email, preserves locked or assigned work, and repoi
   assert.match(helper, /text\(sourceMember\.email\)\.toLowerCase\(\)/);
   assert.match(helper, /progress_manager_locked/);
   assert.match(helper, /conflictsPreserved/);
+  assert.match(helper, /changedWhileLocked/);
+  assert.match(helper, /overwrittenAssigned/);
   assert.match(helper, /duplicateAccountsRepointed/);
   assert.match(helper, /UPDATE organization_schedules SET assignee_member_id/);
   assert.match(helper, /UPDATE sales_campaign_targets SET assigned_member_id/);
   assert.match(helper, /UPDATE complex_projects SET manager_member_id/);
+});
+
+test("assignment comparison counts unique workload items instead of relationship edges", async () => {
+  const helper = await readFile(helperPath, "utf8");
+  assert.match(helper, /seenByEmail/);
+  assert.match(helper, /`activity:\$\{integer\(author\.activity_id\)\}`/);
+  assert.match(helper, /`activity:\$\{integer\(history\.activity_id\)\}`/);
 });
 
 test("comparison uses the same unclassified budget filters as the management screen", async () => {

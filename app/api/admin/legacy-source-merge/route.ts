@@ -1,5 +1,5 @@
 import { accessErrorResponse, requirePrimaryOwner } from "../../../../lib/collaboration";
-import { compareLegacySource, mergeLegacySource } from "../../../../lib/legacy-source-merge";
+import { auditLatestLegacyMerge, compareLegacySource, mergeLegacySource } from "../../../../lib/legacy-source-merge";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -7,6 +7,11 @@ export const maxDuration = 300;
 export async function GET(request: Request) {
   try {
     await requirePrimaryOwner();
+    if (new URL(request.url).searchParams.get("audit") === "latest") {
+      return Response.json(await auditLatestLegacyMerge(), {
+        headers: { "Cache-Control": "private, no-store, max-age=0" },
+      });
+    }
     return Response.json(await compareLegacySource(new URL(request.url).origin), {
       headers: { "Cache-Control": "private, no-store, max-age=0" },
     });
