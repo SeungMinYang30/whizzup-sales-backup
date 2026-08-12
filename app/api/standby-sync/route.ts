@@ -132,6 +132,7 @@ export async function POST(request: Request) {
       {
         ok: true,
         disabled: true,
+        message: "Automatic full-database synchronization is disabled",
         schedule,
       },
       { status: 200 },

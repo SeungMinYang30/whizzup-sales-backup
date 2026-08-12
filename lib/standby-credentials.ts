@@ -250,3 +250,74 @@ export async function restoreStandbyCredentials(
     createdAt: snapshot.createdAt,
   };
 }
+
+export async function mergeMissingStandbyCredentials(
+  snapshot: StandbyCredentialSnapshot,
+) {
+  const d1 = getD1();
+  const [members, existingCredentials] = await Promise.all([
+    d1
+      .prepare("SELECT id, lower(email) AS email FROM members ORDER BY id")
+      .all<{ id: number; email: string }>(),
+    d1
+      .prepare("SELECT member_id FROM member_credentials ORDER BY member_id")
+      .all<{ member_id: number }>(),
+  ]);
+  const targetMemberByEmail = new Map(
+    members.results.map((member) => [
+      String(member.email).trim().toLowerCase(),
+      Number(member.id),
+    ]),
+  );
+  const existingMemberIds = new Set(
+    existingCredentials.results.map((row) => Number(row.member_id)),
+  );
+
+  const pending: Array<StandbyCredential & { targetMemberId: number }> = [];
+  let alreadyPresent = 0;
+  let sourceOnly = 0;
+  for (const credential of snapshot.credentials) {
+    const targetMemberId = targetMemberByEmail.get(credential.email);
+    if (!targetMemberId) {
+      sourceOnly += 1;
+      continue;
+    }
+    if (existingMemberIds.has(targetMemberId)) {
+      alreadyPresent += 1;
+      continue;
+    }
+    pending.push({ ...credential, targetMemberId });
+  }
+
+  await d1.transaction(async (transaction) => {
+    for (const credential of pending) {
+      await transaction
+        .prepare(`
+          INSERT INTO member_credentials (
+            member_id, password_hash, password_salt, password_iterations,
+            password_set_at, failed_attempts, locked_until, updated_at
+          ) VALUES (?, ?, ?, ?, ?, 0, NULL, ?)
+          ON CONFLICT(member_id) DO NOTHING
+        `)
+        .bind(
+          credential.targetMemberId,
+          credential.passwordHash,
+          credential.passwordSalt,
+          credential.passwordIterations,
+          credential.passwordSetAt,
+          credential.updatedAt,
+        )
+        .run();
+    }
+  });
+
+  return {
+    sourceCount: snapshot.credentials.length,
+    matched: pending.length + alreadyPresent,
+    imported: pending.length,
+    alreadyPresent,
+    sourceOnly,
+    checksum: snapshot.checksum,
+    createdAt: snapshot.createdAt,
+  };
+}
