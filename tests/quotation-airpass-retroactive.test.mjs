@@ -12,6 +12,8 @@ test("관리자는 기존 교구 PDF와 Excel을 같은 견적 데이터로 소�
   assert.match(page, /formData\.set\("replaceExisting", "true"\)/);
   assert.match(filesRoute, /if \(replaceExisting\) await requireAdminMember\(\)/);
   assert.match(filesRoute, /!replaceExisting && row\.status === "final"/);
+  assert.match(filesRoute, /updated_at < \?\)`\)\s*\.bind\(id, staleUploadBefore\)/);
+  assert.doesNotMatch(filesRoute, /datetime\('now', '-10 minutes'\)/);
   assert.match(filesRoute, /removeDriveFile\(oldId\)/);
 });
 

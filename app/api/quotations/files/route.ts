@@ -137,11 +137,12 @@ export async function POST(request: Request) {
     if (!replaceExisting && row.status === "final" && existingPdfId && existingXlsxId && !sourceFile) {
       return Response.json({ quotation: authoredQuotationFromRow(row) });
     }
+    const staleUploadBefore = new Date(Date.now() - 10 * 60_000).toISOString();
     const lock = await d1.prepare(`UPDATE authored_quotations
       SET drive_sync_status='uploading', drive_sync_error='', updated_at=CURRENT_TIMESTAMP
       WHERE id=?
-        AND (drive_sync_status <> 'uploading' OR updated_at < datetime('now', '-10 minutes'))`)
-      .bind(id)
+        AND (drive_sync_status <> 'uploading' OR updated_at < ?)`)
+      .bind(id, staleUploadBefore)
       .run();
     if (Number(lock.meta.changes) !== 1) {
       const latest = await d1
