@@ -122,12 +122,6 @@ type EquipmentKitEditor = {
   editingItemId?: string;
 };
 
-type GeneratedPdfPreview = {
-  title: string;
-  file: File;
-  pageUrls: string[];
-};
-
 const won = new Intl.NumberFormat("ko-KR");
 const CONSTRUCTION_PRODUCT_ID = "__construction_cost__";
 
@@ -377,15 +371,6 @@ function downloadBytes(bytes: Uint8Array, name: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
-function downloadBlob(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-}
-
 async function renderGeneratedPdfPages(file: File) {
   const { GlobalWorkerOptions, getDocument } = await import("pdfjs-dist");
   GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
@@ -538,9 +523,8 @@ export default function QuotationManagementPage({
   const [importMode, setImportMode] = useState<QuotationImportMode | null>(null);
   const [importSourceFile, setImportSourceFile] = useState<File | null>(null);
   const [internalReportOpen, setInternalReportOpen] = useState(false);
-  const [equipmentFileRefreshRunning, setEquipmentFileRefreshRunning] = useState(false);
-  const [pdfPreview, setPdfPreview] = useState<GeneratedPdfPreview | null>(null);
-  const [pdfPreviewPreparing, setPdfPreviewPreparing] = useState("");
+  const [settlementPrintPages, setSettlementPrintPages] = useState<string[]>([]);
+  const [settlementPrintPreparing, setSettlementPrintPreparing] = useState(false);
   const draftRef = useRef<Draft | null>(null);
   const draggedItemIdRef = useRef("");
   const editorHistoryActiveRef = useRef(false);
@@ -550,18 +534,7 @@ export default function QuotationManagementPage({
 
   useEffect(() => { draftRef.current = draft; }, [draft]);
 
-  useEffect(() => () => {
-    pdfPreview?.pageUrls.forEach((url) => URL.revokeObjectURL(url));
-  }, [pdfPreview]);
-
-  async function openGeneratedPdfPreview(file: File, title: string) {
-    const pageUrls = await renderGeneratedPdfPages(file);
-    setPdfPreview({ title, file, pageUrls });
-  }
-
-  function closeGeneratedPdfPreview() {
-    setPdfPreview(null);
-  }
+  useEffect(() => () => settlementPrintPages.forEach((url) => URL.revokeObjectURL(url)), [settlementPrintPages]);
 
   useEffect(() => {
     if (!productResultsOpen) return;
@@ -627,11 +600,16 @@ export default function QuotationManagementPage({
   useEffect(() => {
     setPrintPortalReady(true);
     const preparePrint = () => {
+      if (document.body.classList.contains("settlement-printing")) return;
       if (document.querySelector(".quotation-print-portal")) {
         document.body.classList.add("quotation-printing");
       }
     };
-    const finishPrint = () => document.body.classList.remove("quotation-printing");
+    const finishPrint = () => {
+      const settlementPrinting = document.body.classList.contains("settlement-printing");
+      document.body.classList.remove("quotation-printing", "settlement-printing");
+      if (settlementPrinting) setSettlementPrintPages([]);
+    };
     window.addEventListener("beforeprint", preparePrint);
     window.addEventListener("afterprint", finishPrint);
     return () => {
@@ -641,42 +619,10 @@ export default function QuotationManagementPage({
     };
   }, []);
 
-  async function printQuotation() {
+  function printQuotation() {
     if (!draft?.items.length) return;
-    setPdfPreviewPreparing("견적서 PDF 미리보기를 준비하고 있습니다.");
-    try {
-      const pdf = await createAuthoredQuotationPdf({
-        organization: draft.organization,
-        projectTitle: draft.projectTitle,
-        quoteDate: draft.quoteDate,
-        quoteNumber: draft.quoteNumber || "저장 전",
-        validUntil: draft.validUntil,
-        includeStamp: draft.includeStamp,
-        discountAmount: draft.discountAmount,
-        extraAmount: draft.extraAmount,
-        memo: draft.memo,
-        items: draft.items.map((item) => ({
-          name: item.name,
-          specification: item.specification,
-          quantity: item.quantity,
-          unit: item.unit,
-          unitPrice: item.unitPrice,
-          note: item.note,
-          contractType: item.contractType,
-          procurement: item.procurement,
-          procurementChannel: item.procurementChannel,
-          procurementNumber: item.procurementNumber,
-          procurementFee: appliesProcurementFee(item) ? Math.floor(item.quantity * item.unitPrice * item.procurementFeeRate / 10) * 10 : 0,
-          equipmentKit: item.equipmentKit,
-        })),
-      });
-      await openGeneratedPdfPreview(pdf, `${draft.organization} 견적서`);
-      setMessage("견적서 PDF 미리보기를 열었습니다.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "견적서 PDF를 만들지 못했습니다.");
-    } finally {
-      setPdfPreviewPreparing("");
-    }
+    window.print();
+    setMessage("견적서 인쇄 창을 열었습니다. 프린터 출력 또는 PDF로 저장할 수 있습니다.");
   }
 
   function startQuotation() {
@@ -1883,32 +1829,6 @@ export default function QuotationManagementPage({
     return payload.quotation;
   }
 
-  async function refreshStoredEquipmentFiles() {
-    if (equipmentFileRefreshRunning) return;
-    const targets = quotes.filter((quote) => quote.status === "final" && quote.items.some((item) => item.equipmentKit));
-    if (!targets.length) {
-      setMessage("소급 갱신할 교구 견적 PDF·Excel이 없습니다.");
-      return;
-    }
-    if (!window.confirm(`교구가 포함된 기존 최종 견적 ${targets.length.toLocaleString()}건의 저장 PDF·Excel을 에어패스 양식으로 교체할까요?\n견적번호·금액·예산 연결은 그대로 유지됩니다.`)) return;
-    setEquipmentFileRefreshRunning(true);
-    setMessage(`교구 견적 파일 0 / ${targets.length.toLocaleString()}건 갱신 중…`);
-    let completed = 0;
-    try {
-      for (const quote of targets) {
-        await storeQuotationFiles(quote, { replaceExisting: true });
-        completed += 1;
-        setMessage(`교구 견적 파일 ${completed.toLocaleString()} / ${targets.length.toLocaleString()}건 갱신 중…`);
-      }
-      setMessage(`기존 교구 견적 ${completed.toLocaleString()}건의 PDF·Excel을 에어패스 양식으로 소급 갱신했습니다.`);
-      await load();
-    } catch (error) {
-      setMessage(`${completed.toLocaleString()}건 갱신 후 중단되었습니다. ${error instanceof Error ? error.message : "다시 시도해 주세요."}`);
-    } finally {
-      setEquipmentFileRefreshRunning(false);
-    }
-  }
-
   async function viewSavedPdf(quote: AuthoredQuotation) {
     if (!quote.pdfUrl) {
       setMessage("저장된 PDF 파일이 없습니다. 견적 수정에서 최종 저장하면 현재 PDF가 생성됩니다.");
@@ -2164,15 +2084,20 @@ export default function QuotationManagementPage({
   async function exportConsortiumSettlementPdf() {
     const output = consortiumSettlementOutputInput();
     if (!output) return;
-    setPdfPreviewPreparing("업체 정산서 PDF 미리보기를 준비하고 있습니다.");
+    setSettlementPrintPreparing(true);
     try {
       const pdf = await createConsortiumSettlementPdf(output);
-      await openGeneratedPdfPreview(pdf, `${output.consortiumCompany} 정산서`);
-      setMessage("업체 정산서 PDF 미리보기를 열었습니다.");
+      const pageUrls = await renderGeneratedPdfPages(pdf);
+      setSettlementPrintPages(pageUrls);
+      setSettlementPrintPreparing(false);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      document.body.classList.add("settlement-printing");
+      window.print();
+      setMessage("업체 정산서 인쇄 창을 열었습니다. 프린터 출력 또는 PDF로 저장할 수 있습니다.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "정산서 PDF를 만들지 못했습니다.");
     } finally {
-      setPdfPreviewPreparing("");
+      setSettlementPrintPreparing(false);
     }
   }
 
@@ -2189,9 +2114,6 @@ export default function QuotationManagementPage({
           : "제품 기준정보로 견적서를 만들고 최종 PDF·Excel을 Google Drive에 함께 보관합니다."}</p>
       </div>
       <div className="quotation-workspace-header-actions">
-        {!embedded && currentQuotes.some((quote) => quote.canPurge) && <button className="app-button app-button-neutral" type="button" onClick={() => void refreshStoredEquipmentFiles()} disabled={equipmentFileRefreshRunning}>
-          {equipmentFileRefreshRunning ? "교구 파일 갱신 중…" : "교구 PDF·Excel 소급 갱신"}
-        </button>}
         {scope && <button className="app-button app-button-primary" type="button" onClick={() => void startFromInstitutionItems()} disabled={equipmentLoading}>
           {equipmentLoading ? "품목 불러오는 중…" : "등록 품목으로 견적 만들기"}
         </button>}
@@ -2267,8 +2189,8 @@ export default function QuotationManagementPage({
           <div><span>{`${draft.quoteDate.slice(0, 4)}년 ${draft.quoteDate.slice(5, 7)}월 ${draft.quoteDate.slice(8, 10)}일`}</span><h3>{draft.id && draft.status === "final" ? "최종 견적 보기" : "견적 작성"}{draft.organization ? ` · ${draft.organization}` : ""}</h3></div>
           <nav aria-label="견적서 작업">
             <div className="quote-topbar-action-group quote-topbar-output-actions">
-              <button type="button" onClick={exportExcel} disabled={!draft.items.length}>Excel 출력</button>
-              <button type="button" onClick={printQuotation} disabled={!draft.items.length || Boolean(pdfPreviewPreparing)}>PDF 출력</button>
+              <button type="button" onClick={exportExcel} disabled={!draft.items.length}>Excel 다운로드</button>
+              <button type="button" onClick={printQuotation} disabled={!draft.items.length}>PDF 출력</button>
             </div>
             <div className="quote-topbar-action-group quote-topbar-navigation-actions">
               {institutions.some((item) => item.organization === draft.organization && item.businessRound === draft.businessRound) && <button className="app-button app-button-secondary" type="button" onClick={() => { closeEditor(); onOpenOrganization?.(draft.organization, draft.businessRound); }}>기관 상세 보기</button>}
@@ -2478,7 +2400,7 @@ export default function QuotationManagementPage({
                 </article>)}
                 {!draft.settlementAdjustments.length && <small>추가 지급이나 정산 차감이 생기면 항목을 추가해 주세요.</small>}
               </div>
-              <div className="quotation-settlement-output-actions"><button type="button" onClick={() => void exportConsortiumSettlementExcel()} disabled={!draft.items.length}>정산서 Excel 출력</button><button type="button" onClick={() => void exportConsortiumSettlementPdf()} disabled={!draft.items.length || Boolean(pdfPreviewPreparing)}>정산서 PDF 출력</button></div>
+              <div className="quotation-settlement-output-actions"><button type="button" onClick={() => void exportConsortiumSettlementExcel()} disabled={!draft.items.length}>정산서 Excel 다운로드</button><button type="button" onClick={() => void exportConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>정산서 PDF 출력</button></div>
               <p>품목별 지급률과 비용 처리 방식, 정산 조정 내역을 표시하며 위즈업 수익·마진은 포함하지 않습니다. 직인 포함 설정도 동일하게 적용됩니다.</p>
             </section>}
             {directPurchaseWarning && <section className="quotation-procurement-warning quotation-direct-purchase-warning" role="alert"><strong>물품 수의계약 한도 확인</strong><div><b>수의계약 · 학교장터 합산</b><span>{won.format(directPurchaseWarning.totalAmount)}원 · {directPurchaseWarning.itemCount}개 품목</span><small>부가세 포함 2,200만원을 초과했습니다. 공사비와 일반 조달·디지털서비스몰·혁신장터 품목은 제외한 참고 경고입니다.</small></div></section>}
@@ -2507,15 +2429,8 @@ export default function QuotationManagementPage({
           </section>
         </div>}
 
-        {(pdfPreviewPreparing || pdfPreview) && createPortal(<div className="generated-pdf-preview-shell no-print" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target && pdfPreview) closeGeneratedPdfPreview(); }}>
-          <section className={`generated-pdf-preview${pdfPreviewPreparing ? " preparing" : ""}`} role="dialog" aria-modal="true" aria-labelledby="generated-pdf-preview-title">
-            <header>
-              <div><span className="section-kicker">PDF PREVIEW</span><h3 id="generated-pdf-preview-title">{pdfPreview?.title || "PDF 미리보기"}</h3>{pdfPreview && <p>{pdfPreview.pageUrls.length}페이지 · 화면 확인 후 필요한 경우 다운로드해 주세요.</p>}</div>
-              {pdfPreview && <div><button type="button" className="download" onClick={() => downloadBlob(pdfPreview.file, pdfPreview.file.name)}>PDF 다운로드</button><button type="button" aria-label="PDF 미리보기 닫기" onClick={closeGeneratedPdfPreview}>×</button></div>}
-            </header>
-            {pdfPreviewPreparing ? <div className="generated-pdf-preview-loading"><span /><strong>{pdfPreviewPreparing}</strong><p>완성된 문서를 화면에 표시하고 있습니다.</p></div> : <div className="generated-pdf-preview-pages">{pdfPreview?.pageUrls.map((url, index) => <figure key={url}><figcaption>{index + 1} / {pdfPreview.pageUrls.length}</figcaption><img src={url} alt={`${pdfPreview.title} ${index + 1}페이지`} /></figure>)}</div>}
-          </section>
-        </div>, document.body)}
+        {settlementPrintPreparing && createPortal(<div className="settlement-print-preparing no-print" role="status"><span /><strong>업체 정산서 인쇄 화면을 준비하고 있습니다.</strong></div>, document.body)}
+        {settlementPrintPages.length > 0 && createPortal(<section className="settlement-print-portal print-only" aria-label="업체 정산서 인쇄본">{settlementPrintPages.map((url, index) => <img key={url} src={url} alt={`업체 정산서 ${index + 1}페이지`} />)}</section>, document.body)}
 
         {importMode && createPortal(<QuotationImportDialog
           mode={importMode}

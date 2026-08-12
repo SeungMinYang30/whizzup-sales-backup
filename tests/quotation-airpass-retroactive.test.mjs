@@ -6,9 +6,8 @@ const page = await readFile(new URL("../app/quotation-management-page.tsx", impo
 const filesRoute = await readFile(new URL("../app/api/quotations/files/route.ts", import.meta.url), "utf8");
 const pdf = await readFile(new URL("../app/authored-quotation-pdf.ts", import.meta.url), "utf8");
 
-test("관리자는 기존 교구 PDF와 Excel을 같은 견적 데이터로 소급 교체한다", () => {
-  assert.match(page, /교구 PDF·Excel 소급 갱신/);
-  assert.match(page, /storeQuotationFiles\(quote, \{ replaceExisting: true \}\)/);
+test("교구 파일 교체용 서버 기능은 유지하되 수동 소급 갱신 버튼은 노출하지 않는다", () => {
+  assert.doesNotMatch(page, /교구 PDF·Excel 소급 갱신/);
   assert.match(page, /formData\.set\("replaceExisting", "true"\)/);
   assert.match(filesRoute, /if \(replaceExisting\) await requireAdminMember\(\)/);
   assert.match(filesRoute, /!replaceExisting && row\.status === "final"/);
