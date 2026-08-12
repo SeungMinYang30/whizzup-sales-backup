@@ -401,10 +401,16 @@ export async function auditLatestLegacyMerge() {
     return result;
   }, {});
   const changedWhileLocked = activityChanges.filter(({ before: previous }) => integer(previous.progress_manager_locked) === 1).length;
-  const overwrittenAssigned = activityChanges.filter(({ before: previous }) => {
-    const manager = text(previous.progress_manager);
-    return Boolean(manager && manager !== "미지정");
-  }).length;
+  const managerIdentityChanges = activityChanges.reduce((result, { before: previous, after: next }) => {
+    const previousManager = text(previous.progress_manager);
+    if (!previousManager || previousManager === "미지정") return result;
+    const previousEmail = beforeMembers.emailByAlias.get(key(previousManager)) ?? "";
+    const nextEmail = afterMembers.emailByAlias.get(key(next.progress_manager)) ?? "";
+    if (previousEmail && nextEmail && previousEmail === nextEmail) result.sameEmployeeRename += 1;
+    else if (previousEmail && nextEmail && previousEmail !== nextEmail) result.differentEmployeeOverwrite += 1;
+    else result.unknownAssignedChanged += 1;
+    return result;
+  }, { sameEmployeeRename: 0, differentEmployeeOverwrite: 0, unknownAssignedChanged: 0 });
 
   const relationCount = (backup: FullBackup, table: BackupTableName) => rows(backup, table).length;
   const yang = afterMembers.byEmail.get("freeyang30@gmail.com");
@@ -433,7 +439,7 @@ export async function auditLatestLegacyMerge() {
       restoredFromUnassigned: restoredActivities.length,
       restoredByManager,
       changedWhileLocked,
-      overwrittenAssigned,
+      ...managerIdentityChanges,
       authorsAdded: relationCount(current, "activity_authors") - relationCount(before, "activity_authors"),
       historyAdded: relationCount(current, "activity_assignment_history") - relationCount(before, "activity_assignment_history"),
       scheduleRowsChanged: changedIdRows(before, current, "organization_schedules", ["assignee_member_id", "assignee_name"]).length,

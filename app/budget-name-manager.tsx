@@ -155,7 +155,9 @@ type LegacyMergeAudit = {
     restoredFromUnassigned?: number;
     restoredByManager?: Record<string, number>;
     changedWhileLocked?: number;
-    overwrittenAssigned?: number;
+    sameEmployeeRename?: number;
+    differentEmployeeOverwrite?: number;
+    unknownAssignedChanged?: number;
     authorsAdded?: number;
     historyAdded?: number;
     scheduleRowsChanged?: number;
@@ -1038,7 +1040,8 @@ export default function BudgetNameManager({
           <div className="budget-manager-summary-grid" style={{ marginTop: 12 }}>
             <div><strong>최근 백업</strong><span>{legacyAudit.backup?.id || "확인 필요"}</span></div>
             <div><strong>담당 복구</strong><span>미지정에서 {legacyAudit.assignments?.restoredFromUnassigned ?? 0}건</span></div>
-            <div><strong>보호 결과</strong><span>잠금 변경 {legacyAudit.assignments?.changedWhileLocked ?? 0}건 · 기존 담당 덮어쓰기 {legacyAudit.assignments?.overwrittenAssigned ?? 0}건</span></div>
+            <div><strong>보호 결과</strong><span>잠금 변경 {legacyAudit.assignments?.changedWhileLocked ?? 0}건 · 타 직원 덮어쓰기 {legacyAudit.assignments?.differentEmployeeOverwrite ?? 0}건</span></div>
+            <div><strong>이름 표기 정리</strong><span>동일 이메일 {legacyAudit.assignments?.sameEmployeeRename ?? 0}건 · 확인 필요 {legacyAudit.assignments?.unknownAssignedChanged ?? 0}건</span></div>
             <div><strong>양승민 계정</strong><span>{legacyAudit.members?.yangSeungmin?.status || "미확인"} · {legacyAudit.members?.yangSeungmin?.isSales ? "영업 담당자" : "사이트 이용만"}</span></div>
             <div><strong>연결 복구</strong><span>작성자 {legacyAudit.assignments?.authorsAdded ?? 0}건 · 이력 {legacyAudit.assignments?.historyAdded ?? 0}건</span></div>
             <div><strong>업무 연결</strong><span>일정 {legacyAudit.assignments?.scheduleRowsChanged ?? 0}건 · 캠페인 {legacyAudit.assignments?.campaignTargetRowsChanged ?? 0}건 · 수주 사업 {legacyAudit.assignments?.complexProjectRowsChanged ?? 0}건</span></div>

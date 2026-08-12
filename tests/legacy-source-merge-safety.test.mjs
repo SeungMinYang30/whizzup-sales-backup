@@ -6,6 +6,7 @@ const helperPath = new URL("../lib/legacy-source-merge.ts", import.meta.url);
 const routePath = new URL("../app/api/admin/legacy-source-merge/route.ts", import.meta.url);
 const memberRoutePath = new URL("../app/api/members/route.ts", import.meta.url);
 const managerPath = new URL("../app/budget-name-manager.tsx", import.meta.url);
+const collaborationPath = new URL("../lib/collaboration.ts", import.meta.url);
 
 test("legacy merge is owner-only, backs up target data, and uses source export", async () => {
   const [helper, route] = await Promise.all([
@@ -28,7 +29,7 @@ test("member restore matches email, preserves locked or assigned work, and repoi
   assert.match(helper, /progress_manager_locked/);
   assert.match(helper, /conflictsPreserved/);
   assert.match(helper, /changedWhileLocked/);
-  assert.match(helper, /overwrittenAssigned/);
+  assert.match(helper, /differentEmployeeOverwrite/);
   assert.match(helper, /duplicateAccountsRepointed/);
   assert.match(helper, /UPDATE organization_schedules SET assignee_member_id/);
   assert.match(helper, /UPDATE sales_campaign_targets SET assigned_member_id/);
@@ -46,7 +47,16 @@ test("budget manager exposes the latest safe merge audit", async () => {
   const manager = await readFile(managerPath, "utf8");
   assert.match(manager, /최근 복구 검증/);
   assert.match(manager, /changedWhileLocked/);
-  assert.match(manager, /overwrittenAssigned/);
+  assert.match(manager, /differentEmployeeOverwrite/);
+});
+
+test("primary owner refresh preserves the persisted sales flag", async () => {
+  const collaboration = await readFile(collaborationPath, "utf8");
+  const ownerRefresh = collaboration.slice(
+    collaboration.indexOf("STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS.has(email)"),
+    collaboration.indexOf("if (!row) throw", collaboration.indexOf("STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS.has(email)")),
+  );
+  assert.doesNotMatch(ownerRefresh, /is_sales\s*=\s*0/);
 });
 
 test("comparison uses the same unclassified budget filters as the management screen", async () => {
