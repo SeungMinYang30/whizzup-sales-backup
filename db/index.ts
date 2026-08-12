@@ -451,6 +451,10 @@ export function normalizeSqlForPostgres(query: string) {
     .replace(
       /\bADD\s+COLUMN\s+(?!IF\s+NOT\s+EXISTS\b)/gi,
       "ADD COLUMN IF NOT EXISTS ",
+    )
+    .replace(
+      /\bAS\s+([a-z_][A-Za-z0-9_]*[A-Z][A-Za-z0-9_]*)\b/g,
+      'AS "$1"',
     );
 
   const wasInsertOrIgnore = /\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(query);

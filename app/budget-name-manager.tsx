@@ -118,6 +118,34 @@ type BudgetManagementPayload = {
 type ManagerTab = "standards" | "unclassified" | "requests" | "history";
 type RequestDecision = "approve-new" | "approve-alias" | "hold" | "reject";
 
+type LegacyMergeReport = {
+  budgets?: {
+    sourceCount?: number;
+    targetCount?: number;
+    sourceUnclassifiedCount?: number;
+    targetUnclassifiedCount?: number;
+    missing?: Array<{ canonicalName?: string }>;
+  };
+  members?: {
+    sourceApprovedCount?: number;
+    targetApprovedCount?: number;
+    missingEmails?: string[];
+    duplicateEmails?: Array<{ email?: string; memberIds?: number[] }>;
+    source?: LegacyMemberComparison[];
+    target?: LegacyMemberComparison[];
+  };
+  backupId?: string;
+  after?: LegacyMergeReport;
+};
+
+type LegacyMemberComparison = {
+  email?: string;
+  displayName?: string;
+  status?: string;
+  isSales?: boolean;
+  assignments?: { total?: number };
+};
+
 function clean(value: unknown) {
   return String(value ?? "").normalize("NFKC").replace(/\s+/g, " ").trim();
 }
@@ -508,6 +536,8 @@ export default function BudgetNameManager({
     originalName?: string;
   } | null>(null);
   const [selectedRetrofit, setSelectedRetrofit] = useState<string[]>([]);
+  const [legacyReport, setLegacyReport] = useState<LegacyMergeReport | null>(null);
+  const [legacyBusy, setLegacyBusy] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -534,6 +564,52 @@ export default function BudgetNameManager({
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  async function compareLegacyData() {
+    if (legacyBusy) return;
+    setLegacyBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/legacy-source-merge", {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as LegacyMergeReport & { error?: string };
+      if (!response.ok) {
+        throw new Error(clean(payload.error) || "원본과 버셀 데이터를 비교하지 못했습니다.");
+      }
+      setLegacyReport(payload);
+      onToast("원본과 버셀의 표준 예산명·담당자 데이터를 비교했습니다.");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "원본 비교에 실패했습니다.");
+    } finally {
+      setLegacyBusy(false);
+    }
+  }
+
+  async function mergeLegacyData() {
+    if (legacyBusy) return;
+    if (!window.confirm("버셀 관련 테이블을 먼저 백업한 뒤 원본에서 누락된 표준 예산명과 담당자 연결만 안전하게 병합합니다. 기존 데이터는 삭제하지 않습니다. 계속할까요?")) return;
+    setLegacyBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/legacy-source-merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const payload = (await response.json()) as LegacyMergeReport & { error?: string };
+      if (!response.ok) {
+        throw new Error(clean(payload.error) || "원본 누락 데이터 병합에 실패했습니다.");
+      }
+      setLegacyReport(payload.after ?? payload);
+      await load();
+      onToast(`안전 병합이 완료되었습니다. 백업 ID: ${payload.backupId ?? "확인 가능"}`);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "원본 누락 데이터 병합에 실패했습니다.");
+    } finally {
+      setLegacyBusy(false);
+    }
+  }
 
   async function runAction(
     body: Record<string, unknown>,
@@ -861,6 +937,51 @@ export default function BudgetNameManager({
 
   return (
     <section className="budget-name-manager">
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <div className="panel-header">
+          <div>
+            <span className="section-kicker">SAFE SOURCE MERGE</span>
+            <h2>원본 데이터 안전 비교·병합</h2>
+            <p>표준 예산명과 전체 구성원·담당 업무 연결을 백업 후 이메일과 안정적인 업무 기준으로 대조합니다.</p>
+          </div>
+          <div className="panel-actions">
+            <button type="button" onClick={() => void compareLegacyData()} disabled={legacyBusy}>
+              {legacyBusy ? "확인 중…" : "원본과 비교"}
+            </button>
+            <button type="button" className="primary" onClick={() => void mergeLegacyData()} disabled={legacyBusy || !legacyReport}>
+              백업 후 누락 병합
+            </button>
+          </div>
+        </div>
+        {legacyReport && (
+          <>
+            <div className="budget-manager-summary-grid">
+              <div><strong>표준 예산명</strong><span>원본 {legacyReport.budgets?.sourceCount ?? 0}개 · 버셀 {legacyReport.budgets?.targetCount ?? 0}개</span></div>
+              <div><strong>미분류 예산명</strong><span>원본 {legacyReport.budgets?.sourceUnclassifiedCount ?? 0}개 · 버셀 {legacyReport.budgets?.targetUnclassifiedCount ?? 0}개</span></div>
+              <div><strong>승인 구성원</strong><span>원본 {legacyReport.members?.sourceApprovedCount ?? 0}명 · 버셀 {legacyReport.members?.targetApprovedCount ?? 0}명</span></div>
+              <div><strong>누락·중복</strong><span>예산 {legacyReport.budgets?.missing?.length ?? 0}개 · 이메일 누락 {legacyReport.members?.missingEmails?.length ?? 0}개 · 중복 {legacyReport.members?.duplicateEmails?.length ?? 0}개</span></div>
+            </div>
+            {!!legacyReport.members?.source?.length && (
+              <details className="budget-manager-compare-details">
+                <summary>직원별 영업 담당 상태·연결 건수 비교</summary>
+                <div className="budget-manager-member-compare">
+                  {legacyReport.members.source.map((sourceMember) => {
+                    const targetMember = legacyReport.members?.target?.find((member) => clean(member.email).toLowerCase() === clean(sourceMember.email).toLowerCase());
+                    return (
+                      <div key={sourceMember.email}>
+                        <strong>{sourceMember.displayName || sourceMember.email}</strong>
+                        <span>{sourceMember.email}</span>
+                        <span>원본 {sourceMember.isSales ? "영업" : "사이트 이용"} · 연결 {sourceMember.assignments?.total ?? 0}건</span>
+                        <span>버셀 {targetMember ? (targetMember.isSales ? "영업" : "사이트 이용") : "계정 누락"} · 연결 {targetMember?.assignments?.total ?? 0}건</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+            )}
+          </>
+        )}
+      </div>
       <nav className="budget-manager-tabs" aria-label="표준 예산명 관리">
         <button
           type="button"

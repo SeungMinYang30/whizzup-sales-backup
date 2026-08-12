@@ -267,6 +267,19 @@ export async function PATCH(request: Request) {
         .prepare("UPDATE members SET is_sales = ? WHERE id = ? RETURNING *")
         .bind(payload.isSales ? 1 : 0, id)
         .first();
+      if (!member) {
+        return Response.json({ error: "구성원을 찾을 수 없습니다." }, { status: 404 });
+      }
+      const persisted = await d1
+        .prepare("SELECT is_sales FROM members WHERE id = ?")
+        .bind(id)
+        .first<{ is_sales: number }>();
+      if (Number(persisted?.is_sales ?? -1) !== (payload.isSales ? 1 : 0)) {
+        return Response.json(
+          { error: "영업 담당자 설정이 저장되지 않았습니다. 다시 시도해 주세요." },
+          { status: 500 },
+        );
+      }
       return Response.json({ member });
     }
 

@@ -6378,6 +6378,77 @@ tr:hover .row-actions { opacity: 1; }
   font-size: 14px;
 }
 
+.budget-name-manager .panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.budget-manager-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.budget-manager-summary-grid > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #dbe4f3;
+  border-radius: 12px;
+  background: #f8faff;
+}
+
+.budget-manager-summary-grid span {
+  color: #64748b;
+}
+
+.budget-manager-compare-details {
+  margin-top: 12px;
+  border: 1px solid #dbe4f3;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.budget-manager-compare-details summary {
+  padding: 12px 14px;
+  cursor: pointer;
+  font-weight: 800;
+  color: #243654;
+}
+
+.budget-manager-member-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.budget-manager-member-compare > div {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f6f8fc;
+  font-size: 12px;
+}
+
+.budget-manager-member-compare span {
+  overflow-wrap: anywhere;
+  color: #64748b;
+}
+
+@media (max-width: 780px) {
+  .budget-manager-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .budget-manager-member-compare {
+    grid-template-columns: 1fr;
+  }
+}
+
 .budget-name-manager .panel-header p {
   margin: 8px 0 0;
   color: #7a879d;
