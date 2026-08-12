@@ -4,8 +4,6 @@ import { FormEvent, useState } from "react";
 
 type Mode = "login" | "signup" | "reset";
 const REQUEST_TIMEOUT_MS = 15_000;
-const CHATGPT_PASSWORD_SETUP_URL =
-  "/signin-with-chatgpt?return_to=%2Fpassword-setup";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("login");
@@ -62,9 +60,8 @@ export default function LoginPage() {
         code?: string;
       };
       if (!response.ok) {
-        if (mode === "login" && payload.code === "PASSWORD_NOT_SET") {
-          setMessage("ChatGPT 계정을 확인하고 있습니다.");
-          window.location.assign(CHATGPT_PASSWORD_SETUP_URL);
+        if (mode === "login" && payload.code === "PASSWORD_SETUP_REQUIRED") {
+          window.location.assign("/password-setup");
           return;
         }
         throw new Error(payload.error || "요청을 처리하지 못했습니다.");
@@ -73,7 +70,7 @@ export default function LoginPage() {
         window.location.assign("/");
         return;
       }
-      setMessage(payload.message || "요청이 등록되었습니다.");
+      setMessage(payload.message || "요청을 등록했습니다.");
       if (mode === "signup") {
         setPassword("");
         setPasswordConfirm("");
@@ -115,7 +112,7 @@ export default function LoginPage() {
                 ? "신규 가입"
                 : "비밀번호 재설정"}
           </h1>
-          {mode === "signup" && <p>가입 후 관리자 승인이 완료되면 사용할 수 있습니다.</p>}
+          {mode === "signup" && <p>가입은 관리자 승인 후 사용할 수 있습니다.</p>}
           {mode === "reset" && <p>등록된 이메일로 관리자에게 재설정 요청을 보냅니다.</p>}
         </div>
         <form onSubmit={submit} className="direct-login-form">
@@ -126,8 +123,8 @@ export default function LoginPage() {
                 <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} autoComplete="name" required />
               </label>
               <label>
-                <span>직책</span>
-                <input value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} placeholder="예: 이사, 대표" required />
+                <span>직급</span>
+                <input value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} placeholder="예: 이사, 대리" required />
               </label>
             </div>
           )}
@@ -161,14 +158,6 @@ export default function LoginPage() {
             </label>
           )}
           {error && <p className="direct-login-error" role="alert">{error}</p>}
-          {mode === "login" && (
-            <div className="direct-login-password-setup">
-              <p>최초 비밀번호가 없거나 다시 설정하려면 기존 ChatGPT 계정을 확인해 주세요.</p>
-              <a href={CHATGPT_PASSWORD_SETUP_URL}>
-                ChatGPT로 비밀번호 설정·재설정
-              </a>
-            </div>
-          )}
           {message && <p className="direct-login-message" role="status">{message}</p>}
           <button className="direct-login-submit" type="submit" disabled={busy}>
             {busy ? "처리 중" : mode === "login" ? "로그인" : mode === "signup" ? "가입 요청" : "재설정 요청"}
@@ -183,3 +172,4 @@ export default function LoginPage() {
     </main>
   );
 }
+
