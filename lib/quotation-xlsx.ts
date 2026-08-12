@@ -1,5 +1,6 @@
 import { zipSync } from "fflate";
 import { airpassEquipmentKitOutputLines, airpassEquipmentKitTotal, type AirpassEquipmentKit } from "./airpass-equipment-kit";
+import { AIRPASS_COMPANY, AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "./airpass-company";
 
 export type QuotationLine = {
   name: string;
@@ -12,6 +13,7 @@ export type QuotationLine = {
   procurementChannel?: string;
   procurementNumber?: string;
   procurementFeeRate?: number;
+  equipmentKit?: boolean;
 };
 
 export type QuotationWorkbookInput = {
@@ -26,6 +28,7 @@ export type QuotationWorkbookInput = {
   memo?: string;
   logoData?: Uint8Array;
   sealData?: Uint8Array;
+  airpassSealData?: Uint8Array;
   extraBlankRows?: number;
   equipmentKit?: AirpassEquipmentKit;
   lines: QuotationLine[];
@@ -89,6 +92,7 @@ function contractLabel(line: QuotationLine) {
 }
 
 function outputNote(line: QuotationLine) {
+  if (line.equipmentKit) return AIRPASS_EQUIPMENT_CONTRACT_NOTE;
   return contractLabel(line);
 }
 
@@ -246,54 +250,68 @@ function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
 </worksheet>`;
 }
 
-function equipmentKitSheetXml(input: QuotationWorkbookInput) {
+function equipmentKitSheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
   const equipmentKit = input.equipmentKit!;
   const lines = airpassEquipmentKitOutputLines(equipmentKit);
-  const firstRow = 12;
+  const firstRow = 17;
   const lineRows = lines.map((line, index) => {
     const row = firstRow + index;
     return `<row r="${row}" ht="31" customHeight="1">
       ${numeric(`A${row}`, index + 1, 7)}
-      ${inline(`B${row}`, line.name, 8)}${styledBlanks(row, ["C", "D"], 8)}
-      ${numeric(`E${row}`, line.quantity, 7)}
-      ${inline(`F${row}`, line.unit, 7)}
-      ${numeric(`G${row}`, line.unitPrice, 9)}
-      ${numeric(`H${row}`, line.quantity * line.unitPrice, 9)}${inline(`I${row}`, "", 9)}
-      ${inline(`J${row}`, "", 7)}
+      ${inline(`B${row}`, line.name, 8)}${styledBlanks(row, ["C"], 8)}
+      ${numeric(`D${row}`, line.quantity, 7)}
+      ${inline(`E${row}`, line.unit, 7)}
+      ${numeric(`F${row}`, line.unitPrice, 9)}
+      ${numeric(`G${row}`, line.quantity * line.unitPrice, 9)}${inline(`H${row}`, "", 9)}
+      ${inline(`I${row}`, "", 7)}
     </row>`;
   }).join("");
   const totalRow = firstRow + Math.max(1, lines.length) + 1;
-  const footerRow = totalRow + 3;
+  const noticeRow = totalRow + 2;
+  const signatureStartRow = noticeRow + 2;
+  const signatureEndRow = signatureStartRow + 2;
   const merges = [
-    "A1:J1", "C2:G3", "H2:J3", "H4:I4", "H5:I5", "A7:J7", "A8:J8",
-    "B10:D10", ...lines.map((_, index) => `B${firstRow + index}:D${firstRow + index}`),
-    `A${totalRow}:G${totalRow}`, `H${totalRow}:J${totalRow}`,
-    `A${footerRow}:J${footerRow}`,
+    "A1:I1", "B2:F3", "G2:I2", "H3:I3", "H4:I4",
+    "A5:D5", "E5:I5",
+    ...[6, 7, 8, 9, 10].flatMap((row) => [`A${row}:B${row}`, `C${row}:D${row}`, `E${row}:F${row}`, `G${row}:I${row}`]),
+    "A12:C12", "D12:F12", "G12:I12", "A14:I14", "B16:C16", "G16:H16",
+    ...lines.flatMap((_, index) => [`B${firstRow + index}:C${firstRow + index}`, `G${firstRow + index}:H${firstRow + index}`]),
+    `A${totalRow}:F${totalRow}`, `G${totalRow}:I${totalRow}`,
+    `A${noticeRow}:I${noticeRow}`,
+    `A${signatureStartRow}:E${signatureEndRow}`, `F${signatureStartRow}:H${signatureEndRow}`, `I${signatureStartRow}:I${signatureEndRow}`,
   ];
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
-  <dimension ref="A1:J${footerRow}"/>
-  <sheetViews><sheetView showGridLines="0" zoomScale="90" workbookViewId="0"/></sheetViews>
+  <dimension ref="A1:I${signatureEndRow}"/>
+  <sheetViews><sheetView showGridLines="0" zoomScale="85" workbookViewId="0"/></sheetViews>
   <sheetFormatPr defaultRowHeight="20"/>
-  <cols><col min="1" max="1" width="6" customWidth="1"/><col min="2" max="4" width="15" customWidth="1"/><col min="5" max="6" width="9" customWidth="1"/><col min="7" max="7" width="15" customWidth="1"/><col min="8" max="9" width="15" customWidth="1"/><col min="10" max="10" width="14" customWidth="1"/></cols>
+  <cols><col min="1" max="1" width="6" customWidth="1"/><col min="2" max="2" width="20" customWidth="1"/><col min="3" max="3" width="17" customWidth="1"/><col min="4" max="5" width="9" customWidth="1"/><col min="6" max="6" width="15" customWidth="1"/><col min="7" max="8" width="14" customWidth="1"/><col min="9" max="9" width="14" customWidth="1"/></cols>
   <sheetData>
     <row r="1" ht="5" customHeight="1">${inline("A1", "", 19)}</row>
-    <row r="2" ht="24" customHeight="1">${inline("C2", "교  구  세  부  견  적", 1)}${inline("H2", equipmentKit.plan === "two" ? "표준 2세트 기준안" : "표준 1세트 기준안", 18)}</row>
-    <row r="3" ht="24" customHeight="1"/>
-    <row r="4" ht="22" customHeight="1">${inline("H4", "견적번호", 3)}${inline("J4", input.quoteNumber || "저장 시 발급", 4)}</row>
-    <row r="5" ht="22" customHeight="1">${inline("H5", "작성일", 3)}${inline("J5", input.quoteDate, 4)}</row>
-    <row r="7" ht="28" customHeight="1">${inline("A7", "에어패스 교구 세부내역 · 수량 0 품목 제외", 2)}${styledBlanks(7, ["B", "C", "D", "E", "F", "G", "H", "I", "J"], 2)}</row>
-    <row r="8" ht="24" customHeight="1">${inline("A8", `${input.customerName || "미지정"} · ${equipmentKit.plan === "two" ? "표준 2세트" : "표준 1세트"} 구성`, 18)}</row>
-    <row r="10" ht="27" customHeight="1">${inline("A10", "No", 6)}${inline("B10", "품명", 6)}${inline("E10", "수량", 6)}${inline("F10", "단위", 6)}${inline("G10", "단가", 6)}${inline("H10", "금액", 6)}${inline("I10", "", 6)}${inline("J10", "비고", 6)}</row>
-    ${lineRows || `<row r="${firstRow}" ht="31" customHeight="1">${inline(`A${firstRow}`, "", 7)}${inline(`B${firstRow}`, "출력할 교구 품목이 없습니다.", 8)}${styledBlanks(firstRow, ["C", "D"], 8)}${styledBlanks(firstRow, ["E", "F", "G", "H", "I", "J"], 7)}</row>`}
-    <row r="${totalRow}" ht="32" customHeight="1">${inline(`A${totalRow}`, "합계금액 (VAT 포함)", 16)}${styledBlanks(totalRow, ["B", "C", "D", "E", "F", "G"], 16)}${numeric(`H${totalRow}`, airpassEquipmentKitTotal(equipmentKit), 17)}${styledBlanks(totalRow, ["I", "J"], 17)}</row>
-    <row r="${footerRow}" ht="25" customHeight="1">${inline(`A${footerRow}`, "주식회사 위즈업 · 본 세부견적은 본 견적서와 함께 제출됩니다.", 18)}</row>
+    <row r="2" ht="24" customHeight="1">${inline("B2", "교  구  세  부  견  적", 1)}${inline("G2", equipmentKit.plan === "two" ? "표준 2세트 기준안" : "표준 1세트 기준안", 18)}</row>
+    <row r="3" ht="22" customHeight="1">${inline("G3", "견적번호", 3)}${inline("H3", input.quoteNumber || "저장 시 발급", 4)}${inline("I3", "", 4)}</row>
+    <row r="4" ht="22" customHeight="1">${inline("G4", "작성일", 3)}${inline("H4", input.quoteDate, 4)}${inline("I4", "", 4)}</row>
+    <row r="5" ht="24" customHeight="1">${inline("A5", "받는 분", 2)}${styledBlanks(5, ["B", "C", "D"], 2)}${inline("E5", "공급자", 2)}${styledBlanks(5, ["F", "G", "H", "I"], 2)}</row>
+    <row r="6" ht="23" customHeight="1">${inline("A6", "수신", 3)}${inline("C6", input.customerName || "미지정", 4)}${inline("E6", "상호", 3)}${inline("G6", AIRPASS_COMPANY.name, 4)}</row>
+    <row r="7" ht="23" customHeight="1">${inline("A7", "견적명", 3)}${inline("C7", `${input.projectTitle || "제품 공급"} 교구 세부견적`, 4)}${inline("E7", "사업자번호", 3)}${inline("G7", AIRPASS_COMPANY.businessNumber, 4)}</row>
+    <row r="8" ht="23" customHeight="1">${inline("A8", "계약구분", 3)}${inline("C8", "수의계약", 4)}${inline("E8", "대표자", 3)}${inline("G8", AIRPASS_COMPANY.representative, 4)}</row>
+    <row r="9" ht="30" customHeight="1">${inline("A9", "납품조건", 3)}${inline("C9", "발주 후 일정 협의", 4)}${inline("E9", "주소", 3)}${inline("G9", AIRPASS_COMPANY.address, 5)}</row>
+    <row r="10" ht="30" customHeight="1">${inline("A10", "유효기간", 3)}${inline("C10", input.validUntil ? `${input.validUntil}까지` : "견적일로부터 30일", 4)}${inline("E10", "업태·종목", 3)}${inline("G10", `${AIRPASS_COMPANY.businessType} / ${AIRPASS_COMPANY.businessItems}`, 5)}</row>
+    <row r="12" ht="42" customHeight="1">${inline("A12", "견적금액 (VAT 포함)", 10)}${styledBlanks(12, ["B", "C"], 10)}${inline("D12", koreanAmount(airpassEquipmentKitTotal(equipmentKit)), 11)}${styledBlanks(12, ["E", "F"], 11)}${numeric("G12", airpassEquipmentKitTotal(equipmentKit), 12)}${styledBlanks(12, ["H", "I"], 12)}</row>
+    <row r="14" ht="27" customHeight="1">${inline("A14", "에어패스 교구 세부내역 · 수량 0 품목 제외", 2)}${styledBlanks(14, ["B", "C", "D", "E", "F", "G", "H", "I"], 2)}</row>
+    <row r="16" ht="27" customHeight="1">${inline("A16", "No", 6)}${inline("B16", "품명", 6)}${inline("D16", "수량", 6)}${inline("E16", "단위", 6)}${inline("F16", "단가", 6)}${inline("G16", "금액", 6)}${inline("H16", "", 6)}${inline("I16", "비고", 6)}</row>
+    ${lineRows || `<row r="${firstRow}" ht="31" customHeight="1">${inline(`A${firstRow}`, "", 7)}${inline(`B${firstRow}`, "출력할 교구 품목이 없습니다.", 8)}${inline(`C${firstRow}`, "", 8)}${styledBlanks(firstRow, ["D", "E", "F", "G", "H", "I"], 7)}</row>`}
+    <row r="${totalRow}" ht="34" customHeight="1">${inline(`A${totalRow}`, "합계금액 (VAT 포함)", 16)}${styledBlanks(totalRow, ["B", "C", "D", "E", "F"], 16)}${numeric(`G${totalRow}`, airpassEquipmentKitTotal(equipmentKit), 17)}${styledBlanks(totalRow, ["H", "I"], 17)}</row>
+    <row r="${noticeRow}" ht="25" customHeight="1">${inline(`A${noticeRow}`, `${AIRPASS_COMPANY.name} · 본 세부견적은 본 견적서와 함께 제출됩니다.`, 18)}</row>
+    <row r="${signatureStartRow}" ht="26" customHeight="1">${inline(`A${signatureStartRow}`, `위와 같이 견적합니다.\n\n${koreanDate(input.quoteDate)}`, 18)}${inline(`F${signatureStartRow}`, `${AIRPASS_COMPANY.name}\n대표이사  ${AIRPASS_COMPANY.representative}`, 18)}${inline(`I${signatureStartRow}`, "", 18)}</row>
+    <row r="${signatureStartRow + 1}" ht="26" customHeight="1"/><row r="${signatureEndRow}" ht="26" customHeight="1"/>
   </sheetData>
   <mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells>
   <printOptions horizontalCentered="1" verticalCentered="0"/>
   <pageMargins left="0.3" right="0.3" top="0.4" bottom="0.4" header="0.15" footer="0.15"/>
-  <pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0" horizontalDpi="300" verticalDpi="300"/>
+  <pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="1" horizontalDpi="300" verticalDpi="300"/>
+  ${hasDrawing ? '<drawing r:id="rId1"/>' : ""}
 </worksheet>`;
 }
 
@@ -360,6 +378,10 @@ function drawingXml(hasLogo: boolean, hasSeal: boolean, signatureStartRow: numbe
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${anchors.join("")}</xdr:wsDr>`;
 }
 
+function airpassDrawingXml(signatureStartRow: number) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${pictureAnchor(2, "에어패스 직인", "rId1", 8, signatureStartRow - 1, 72, 72)}</xdr:wsDr>`;
+}
+
 export function createQuotationWorkbook(input: QuotationWorkbookInput) {
   const hasLogo = Boolean(input.logoData?.length);
   const hasSeal = Boolean(input.includeStamp && input.sealData?.length);
@@ -370,10 +392,12 @@ export function createQuotationWorkbook(input: QuotationWorkbookInput) {
   const signatureEndRow = signatureStartRow + 2;
   const now = new Date().toISOString();
   const hasEquipmentKit = Boolean(input.equipmentKit);
-  const equipmentKitFooterRow = hasEquipmentKit ? 12 + Math.max(1, airpassEquipmentKitOutputLines(input.equipmentKit).length) + 4 : 0;
+  const equipmentKitSignatureStartRow = hasEquipmentKit ? 17 + Math.max(1, airpassEquipmentKitOutputLines(input.equipmentKit).length) + 5 : 0;
+  const equipmentKitFooterRow = hasEquipmentKit ? equipmentKitSignatureStartRow + 2 : 0;
+  const hasAirpassDrawing = Boolean(hasEquipmentKit && input.airpassSealData?.length);
   const drawingRels = hasDrawing ? `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${hasLogo ? '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/logo.png"/>' : ""}${hasSeal ? `<Relationship Id="rId${hasLogo ? 2 : 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/seal.png"/>` : ""}</Relationships>` : "";
   const files: Record<string, Uint8Array> = {
-    "[Content_Types].xml": bytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>${hasEquipmentKit ? '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' : ""}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${hasDrawing ? '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>' : ""}<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`),
+    "[Content_Types].xml": bytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>${hasEquipmentKit ? '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' : ""}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${hasDrawing ? '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>' : ""}${hasAirpassDrawing ? '<Override PartName="/xl/drawings/drawing2.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>' : ""}<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`),
     "_rels/.rels": bytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`),
     "xl/workbook.xml": bytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView xWindow="0" yWindow="0" windowWidth="24000" windowHeight="12000"/></bookViews><sheets><sheet name="견적서" sheetId="1" r:id="rId1"/>${hasEquipmentKit ? '<sheet name="교구 세부견적" sheetId="2" r:id="rId2"/>' : ""}</sheets><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">'견적서'!$A$1:$J$${signatureEndRow}</definedName>${hasEquipmentKit ? `<definedName name="_xlnm.Print_Area" localSheetId="1">'교구 세부견적'!$A$1:$J$${equipmentKitFooterRow}</definedName>` : ""}</definedNames><calcPr calcId="191029" calcMode="auto" fullCalcOnLoad="1" forceFullCalc="1"/></workbook>`),
     "xl/_rels/workbook.xml.rels": bytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>${hasEquipmentKit ? '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>' : ""}<Relationship Id="rId${hasEquipmentKit ? 3 : 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`),
@@ -382,13 +406,19 @@ export function createQuotationWorkbook(input: QuotationWorkbookInput) {
     "docProps/core.xml": bytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${xml(input.customerName)} 견적서</dc:title><dc:creator>WHIZZUP</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created></cp:coreProperties>`),
     "docProps/app.xml": bytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>WHIZZUP Sales Hub</Application></Properties>`),
   };
-  if (hasEquipmentKit) files["xl/worksheets/sheet2.xml"] = bytes(equipmentKitSheetXml(input));
+  if (hasEquipmentKit) files["xl/worksheets/sheet2.xml"] = bytes(equipmentKitSheetXml(input, hasAirpassDrawing));
   if (hasDrawing) {
     files["xl/worksheets/_rels/sheet1.xml.rels"] = bytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>`);
     files["xl/drawings/drawing1.xml"] = bytes(drawingXml(hasLogo, hasSeal, signatureStartRow));
     files["xl/drawings/_rels/drawing1.xml.rels"] = bytes(drawingRels);
     if (hasLogo) files["xl/media/logo.png"] = input.logoData!;
     if (hasSeal) files["xl/media/seal.png"] = input.sealData!;
+  }
+  if (hasAirpassDrawing) {
+    files["xl/worksheets/_rels/sheet2.xml.rels"] = bytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing2.xml"/></Relationships>`);
+    files["xl/drawings/drawing2.xml"] = bytes(airpassDrawingXml(equipmentKitSignatureStartRow));
+    files["xl/drawings/_rels/drawing2.xml.rels"] = bytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/airpass-seal.png"/></Relationships>`);
+    files["xl/media/airpass-seal.png"] = input.airpassSealData!;
   }
   return zipSync(files, { level: 6 });
 }

@@ -6,6 +6,9 @@ import type { AuthoredQuotation, AuthoredQuotationBudget, AuthoredQuotationItem 
 import type { ProductCatalogItem } from "../lib/product-catalog";
 import { parseBudgetMoney } from "../lib/activity-budgets";
 import { createQuotationWorkbook } from "../lib/quotation-xlsx";
+import { AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "../lib/airpass-company";
+import { calculateConsortiumSettlement } from "../lib/consortium-settlement";
+import { createConsortiumSettlementWorkbook } from "../lib/consortium-settlement-xlsx";
 import { hasProcurementSignal, procurementNumbersFromText } from "../lib/procurement-product";
 import { createAuthoredQuotationPdf, quotationFileStem } from "./authored-quotation-pdf";
 import { quotationInternalCostDefaults, quotationInternalCostKind } from "../lib/quotation-internal-costs";
@@ -133,6 +136,7 @@ function contractLabel(item: DraftItem) {
 }
 
 function outputNote(item: DraftItem) {
+  if (item.equipmentKit) return AIRPASS_EQUIPMENT_CONTRACT_NOTE;
   return contractLabel(item);
 }
 
@@ -156,6 +160,7 @@ function constructionDraftItem(amount = 0, projectTitle = "") : DraftItem {
     consortiumRate: 0,
     internalCostEnabled: false,
     internalCostAmount: 0,
+    internalCostBearer: "consortium",
   };
 }
 
@@ -168,6 +173,7 @@ function internalCostFields(name: string, specification = "") {
   return {
     internalCostEnabled: defaults.enabled,
     internalCostAmount: defaults.amount,
+    internalCostBearer: "consortium" as const,
   };
 }
 
@@ -466,6 +472,7 @@ export default function QuotationManagementPage({
   const [importMode, setImportMode] = useState<QuotationImportMode | null>(null);
   const [importSourceFile, setImportSourceFile] = useState<File | null>(null);
   const [internalReportOpen, setInternalReportOpen] = useState(false);
+  const [equipmentFileRefreshRunning, setEquipmentFileRefreshRunning] = useState(false);
   const draftRef = useRef<Draft | null>(null);
   const draggedItemIdRef = useRef("");
   const editorHistoryActiveRef = useRef(false);
@@ -734,42 +741,49 @@ export default function QuotationManagementPage({
   const editingTargetLabel = draft?.id ? "현재 견적" : "";
 
   const numbers = useMemo(() => {
-    if (!draft) return { subtotal: 0, adjusted: 0, supply: 0, tax: 0, procurementFee: 0, total: 0, earning: 0, consortium: 0, projectorInstallationCost: 0, yogaMatServiceCost: 0, itemInternalCost: 0, additionalConstructionCost: 0, internalCost: 0, margin: 0, marginRate: 0 };
+    if (!draft) return { subtotal: 0, adjusted: 0, supply: 0, tax: 0, procurementFee: 0, total: 0, earning: 0, consortiumGross: 0, consortiumCost: 0, consortium: 0, projectorInstallationCost: 0, yogaMatServiceCost: 0, itemInternalCost: 0, additionalConstructionCost: 0, internalCost: 0, margin: 0, marginRate: 0 };
     const subtotal = draft.items.reduce((sum, item) => sum + Math.max(0, item.quantity) * Math.max(0, item.unitPrice), 0);
     const adjusted = Math.max(0, subtotal - Math.max(0, draft.discountAmount) + Math.max(0, draft.extraAmount));
     const supply = Math.round(adjusted / 1.1);
     const tax = adjusted - supply;
     const procurementFee = draft.items.reduce((sum, item) => sum + (appliesProcurementFee(item) ? Math.floor(item.quantity * item.unitPrice * item.procurementFeeRate / 10) * 10 : 0), 0);
     const earning = draft.items.reduce((sum, item) => sum + Math.floor(item.quantity * item.unitPrice * item.earningRate / 10) * 10, 0);
-    const consortium = draft.executionType === "컨소" ? draft.items.reduce((sum, item) => {
-      const lineAmount = item.quantity * item.unitPrice;
-      const lineEarning = Math.floor(lineAmount * item.earningRate / 10) * 10;
-      return sum + Math.min(lineEarning, Math.floor(lineAmount * item.consortiumRate / 10) * 10);
-    }, 0) : 0;
+    const settlement = calculateConsortiumSettlement(draft.items, draft.executionType);
+    const consortiumGross = settlement.grossPayment;
+    const consortiumCost = settlement.consortiumCost;
+    const consortium = settlement.finalPayment;
     const projectorInstallationCost = draft.items.reduce((sum, item) => sum + (
       quotationInternalCostKind(item.name, item.specification) === "projector-installation" && item.internalCostEnabled
+        && (draft.executionType !== "컨소" || item.internalCostBearer === "whizzup")
         ? Math.max(0, item.internalCostAmount)
         : 0
     ), 0);
     const yogaMatServiceCost = draft.items.reduce((sum, item) => sum + (
       quotationInternalCostKind(item.name, item.specification) === "aifit-yoga-mat" && item.internalCostEnabled
+        && (draft.executionType !== "컨소" || item.internalCostBearer === "whizzup")
         ? Math.max(0, item.internalCostAmount)
         : 0
     ), 0);
-    const itemInternalCost = draft.items.reduce((sum, item) => sum + (item.internalCostEnabled ? Math.max(0, item.internalCostAmount) : 0), 0);
+    const itemInternalCost = settlement.whizzupCost;
     const additionalConstructionCost = Math.max(0, draft.additionalInternalConstructionCost);
     const internalCost = itemInternalCost + additionalConstructionCost;
     const margin = Math.max(0, earning - consortium - internalCost);
-    return { subtotal, adjusted, supply, tax, procurementFee, total: adjusted + procurementFee, earning, consortium, projectorInstallationCost, yogaMatServiceCost, itemInternalCost, additionalConstructionCost, internalCost, margin, marginRate: subtotal ? margin / subtotal : 0 };
+    return { subtotal, adjusted, supply, tax, procurementFee, total: adjusted + procurementFee, earning, consortiumGross, consortiumCost, consortium, projectorInstallationCost, yogaMatServiceCost, itemInternalCost, additionalConstructionCost, internalCost, margin, marginRate: subtotal ? margin / subtotal : 0 };
   }, [draft]);
 
   const internalReportRows = useMemo(() => (draft?.items ?? []).map((item, index) => {
     const lineAmount = Math.max(0, item.quantity) * Math.max(0, item.unitPrice);
     const earning = Math.floor(lineAmount * Math.max(0, item.earningRate) / 10) * 10;
-    const consortium = draft?.executionType === "컨소"
+    const grossConsortium = draft?.executionType === "컨소"
       ? Math.min(earning, Math.floor(lineAmount * Math.max(0, item.consortiumRate) / 10) * 10)
       : 0;
-    const internalCost = item.internalCostEnabled ? Math.max(0, item.internalCostAmount) : 0;
+    const consortiumCost = draft?.executionType === "컨소" && item.internalCostEnabled && item.internalCostBearer === "consortium"
+      ? Math.max(0, item.internalCostAmount)
+      : 0;
+    const consortium = Math.max(0, grossConsortium - consortiumCost);
+    const internalCost = item.internalCostEnabled && (draft?.executionType !== "컨소" || item.internalCostBearer === "whizzup")
+      ? Math.max(0, item.internalCostAmount)
+      : 0;
     return {
       number: index + 1,
       name: item.name || "미등록 품목",
@@ -1402,7 +1416,7 @@ export default function QuotationManagementPage({
         unit: "EA", unitPrice: 0, note: "", supplyType: "direct", earningRate: 0, contractType: "direct",
         supplierVendorId: null, supplierVendorName: "",
         procurement: false, procurementChannel: "", procurementNumber: "", procurementFeeRate: 0, consortiumRate: 0,
-        internalCostEnabled: false, internalCostAmount: 0,
+        internalCostEnabled: false, internalCostAmount: 0, internalCostBearer: "consortium",
       }, ...(construction ? [construction] : [])],
     });
   }
@@ -1640,12 +1654,14 @@ export default function QuotationManagementPage({
   }
 
   async function quotationWorkbookFile(quote: AuthoredQuotation) {
-    const [logoResponse, sealResponse] = await Promise.all([
+    const [logoResponse, sealResponse, airpassSealResponse] = await Promise.all([
       fetch("/whizzup-logo.png"),
       quote.includeStamp ? fetch("/whizzup-seal.png") : Promise.resolve(null),
+      quote.items.some((item) => item.equipmentKit) ? fetch("/airpass-seal.png") : Promise.resolve(null),
     ]);
     const logoData = logoResponse.ok ? new Uint8Array(await logoResponse.arrayBuffer()) : undefined;
     const sealData = sealResponse?.ok ? new Uint8Array(await sealResponse.arrayBuffer()) : undefined;
+    const airpassSealData = airpassSealResponse?.ok ? new Uint8Array(await airpassSealResponse.arrayBuffer()) : undefined;
     const bytes = createQuotationWorkbook({
       customerName: quote.organization,
       quoteDate: quote.quoteDate,
@@ -1658,6 +1674,7 @@ export default function QuotationManagementPage({
       memo: quote.memo,
       logoData,
       sealData,
+      airpassSealData,
       equipmentKit: quote.items.find((item) => item.equipmentKit)?.equipmentKit,
       lines: quote.items.map((item) => ({
         name: item.name,
@@ -1670,6 +1687,7 @@ export default function QuotationManagementPage({
         procurementChannel: item.procurementChannel,
         procurementNumber: item.procurementNumber,
         procurementFeeRate: item.procurementFeeRate,
+        equipmentKit: Boolean(item.equipmentKit),
       })),
     });
     const workbookBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
@@ -1678,8 +1696,8 @@ export default function QuotationManagementPage({
     });
   }
 
-  async function storeQuotationFiles(quote: AuthoredQuotation) {
-    if (quote.pdfUrl && quote.excelUrl && quote.driveSyncStatus === "ready" && !importSourceFile) return quote;
+  async function storeQuotationFiles(quote: AuthoredQuotation, options: { replaceExisting?: boolean } = {}) {
+    if (!options.replaceExisting && quote.pdfUrl && quote.excelUrl && quote.driveSyncStatus === "ready" && !importSourceFile) return quote;
     const [pdf, xlsx] = await Promise.all([
       createAuthoredQuotationPdf(quote),
       quotationWorkbookFile(quote),
@@ -1688,7 +1706,8 @@ export default function QuotationManagementPage({
     formData.set("quotationId", String(quote.id));
     formData.set("pdf", pdf);
     formData.set("xlsx", xlsx);
-    if (importSourceFile) formData.set("sourceFile", importSourceFile);
+    if (options.replaceExisting) formData.set("replaceExisting", "true");
+    if (!options.replaceExisting && importSourceFile) formData.set("sourceFile", importSourceFile);
     const response = await fetch("/api/quotations/files", { method: "POST", body: formData });
     const payload = await response.json() as { quotation?: AuthoredQuotation; error?: string };
     if (!response.ok || !payload.quotation) {
@@ -1702,6 +1721,32 @@ export default function QuotationManagementPage({
       },
     }));
     return payload.quotation;
+  }
+
+  async function refreshStoredEquipmentFiles() {
+    if (equipmentFileRefreshRunning) return;
+    const targets = quotes.filter((quote) => quote.status === "final" && quote.items.some((item) => item.equipmentKit));
+    if (!targets.length) {
+      setMessage("소급 갱신할 교구 견적 PDF·Excel이 없습니다.");
+      return;
+    }
+    if (!window.confirm(`교구가 포함된 기존 최종 견적 ${targets.length.toLocaleString()}건의 저장 PDF·Excel을 에어패스 양식으로 교체할까요?\n견적번호·금액·예산 연결은 그대로 유지됩니다.`)) return;
+    setEquipmentFileRefreshRunning(true);
+    setMessage(`교구 견적 파일 0 / ${targets.length.toLocaleString()}건 갱신 중…`);
+    let completed = 0;
+    try {
+      for (const quote of targets) {
+        await storeQuotationFiles(quote, { replaceExisting: true });
+        completed += 1;
+        setMessage(`교구 견적 파일 ${completed.toLocaleString()} / ${targets.length.toLocaleString()}건 갱신 중…`);
+      }
+      setMessage(`기존 교구 견적 ${completed.toLocaleString()}건의 PDF·Excel을 에어패스 양식으로 소급 갱신했습니다.`);
+      await load();
+    } catch (error) {
+      setMessage(`${completed.toLocaleString()}건 갱신 후 중단되었습니다. ${error instanceof Error ? error.message : "다시 시도해 주세요."}`);
+    } finally {
+      setEquipmentFileRefreshRunning(false);
+    }
   }
 
   async function viewSavedPdf(quote: AuthoredQuotation) {
@@ -1868,12 +1913,14 @@ export default function QuotationManagementPage({
 
   async function exportExcel() {
     if (!draft || !draft.items.length) return;
-    const [logoResponse, sealResponse] = await Promise.all([
+    const [logoResponse, sealResponse, airpassSealResponse] = await Promise.all([
       fetch("/whizzup-logo.png"),
       draft.includeStamp ? fetch("/whizzup-seal.png") : Promise.resolve(null),
+      draft.items.some((item) => item.equipmentKit) ? fetch("/airpass-seal.png") : Promise.resolve(null),
     ]);
     const logoData = logoResponse.ok ? new Uint8Array(await logoResponse.arrayBuffer()) : undefined;
     const sealData = sealResponse?.ok ? new Uint8Array(await sealResponse.arrayBuffer()) : undefined;
+    const airpassSealData = airpassSealResponse?.ok ? new Uint8Array(await airpassSealResponse.arrayBuffer()) : undefined;
     const bytes = createQuotationWorkbook({
       customerName: draft.organization,
       quoteDate: draft.quoteDate,
@@ -1886,6 +1933,7 @@ export default function QuotationManagementPage({
       memo: draft.memo,
       logoData,
       sealData,
+      airpassSealData,
       extraBlankRows: outputBlankRows,
       equipmentKit: draft.items.find((item) => item.equipmentKit)?.equipmentKit,
       lines: draft.items.map((item) => ({
@@ -1899,9 +1947,46 @@ export default function QuotationManagementPage({
         procurementChannel: item.procurementChannel,
         procurementNumber: item.procurementNumber,
         procurementFeeRate: item.procurementFeeRate,
+        equipmentKit: Boolean(item.equipmentKit),
       })),
     });
     downloadBytes(bytes, `견적서_${safeFileName(draft.organization)}_${draft.quoteDate}.xlsx`);
+  }
+
+  async function exportConsortiumSettlementExcel() {
+    if (!draft || draft.executionType !== "컨소" || !draft.items.length) return;
+    if (!draft.consortiumCompany.trim()) {
+      setMessage("컨소 정산서를 만들려면 컨소 업체명을 입력해 주세요.");
+      return;
+    }
+    const settlement = calculateConsortiumSettlement(draft.items, draft.executionType);
+    const [logoResponse, sealResponse] = await Promise.all([
+      fetch("/whizzup-logo.png"),
+      draft.includeStamp ? fetch("/whizzup-seal.png") : Promise.resolve(null),
+    ]);
+    const logoData = logoResponse.ok ? new Uint8Array(await logoResponse.arrayBuffer()) : undefined;
+    const sealData = sealResponse?.ok ? new Uint8Array(await sealResponse.arrayBuffer()) : undefined;
+    const bytes = createConsortiumSettlementWorkbook({
+      organization: draft.organization,
+      businessRound: draft.businessRound,
+      projectTitle: draft.projectTitle,
+      quoteDate: draft.quoteDate,
+      quoteNumber: draft.quoteNumber,
+      consortiumCompany: draft.consortiumCompany,
+      includeStamp: draft.includeStamp,
+      logoData,
+      sealData,
+      items: draft.items.map((item, index) => ({
+        name: item.name || `${index + 1}번 품목`,
+        contractLabel: contractLabel(item),
+        lineAmount: settlement.items[index]?.lineAmount ?? 0,
+        consortiumRate: settlement.items[index]?.consortiumRate ?? 0,
+        grossPayment: settlement.items[index]?.grossPayment ?? 0,
+      })),
+      costs: settlement.costs,
+    });
+    downloadBytes(bytes, `${safeFileName(draft.organization)}_${draft.quoteNumber || "견적"}_정산서.xlsx`);
+    setMessage("정산서 Excel을 만들었습니다.");
   }
 
   const regularDraftItems = draft?.items.filter((item) => !isConstructionItem(item)) ?? [];
@@ -1917,6 +2002,9 @@ export default function QuotationManagementPage({
           : "제품 기준정보로 견적서를 만들고 최종 PDF·Excel을 Google Drive에 함께 보관합니다."}</p>
       </div>
       <div className="quotation-workspace-header-actions">
+        {!embedded && currentQuotes.some((quote) => quote.canPurge) && <button className="app-button app-button-neutral" type="button" onClick={() => void refreshStoredEquipmentFiles()} disabled={equipmentFileRefreshRunning}>
+          {equipmentFileRefreshRunning ? "교구 파일 갱신 중…" : "교구 PDF·Excel 소급 갱신"}
+        </button>}
         {scope && <button className="app-button app-button-primary" type="button" onClick={() => void startFromInstitutionItems()} disabled={equipmentLoading}>
           {equipmentLoading ? "품목 불러오는 중…" : "등록 품목으로 견적 만들기"}
         </button>}
@@ -2137,9 +2225,10 @@ export default function QuotationManagementPage({
                       {draft.executionType === "컨소" ? <label><span>컨소 지급률</span><div className="quotation-rate-input"><EditableRateInput label="컨소 지급률" value={item.consortiumRate} max={item.earningRate * 100} onChange={(consortiumRate) => updateItem(item.id, { consortiumRate })} /><b>%</b></div></label> : null}
                       <div className="quotation-item-margin"><span>당사 마진</span><strong>{won.format(companyMargin)}원</strong>{internalCost > 0 ? <small>내부 원가 {won.format(internalCost)}원 차감</small> : draft.executionType === "컨소" ? <small>컨소 지급 {won.format(consortiumPayment)}원 차감</small> : <small>예상 수익 기준</small>}</div>
                       {internalCostDefaults.kind && <div className="quotation-item-internal-cost">
-                        <label><input type="checkbox" checked={item.internalCostEnabled} onChange={(event) => updateItem(item.id, { internalCostEnabled: event.target.checked })} /><span>{internalCostDefaults.label} 차감</span></label>
+                        <label><input type="checkbox" checked={item.internalCostEnabled} onChange={(event) => updateItem(item.id, { internalCostEnabled: event.target.checked })} /><span>{internalCostDefaults.label} 발생</span></label>
                         <span className="quotation-money-input"><FormattedMoneyInput value={item.internalCostAmount} onChange={(internalCostAmount) => updateItem(item.id, { internalCostAmount })} label={`${internalCostDefaults.label} 내부 원가`} /><b>원</b></span>
-                        <small>내부 총이익에서만 차감되며 고객 견적·PDF·Excel 금액에는 반영되지 않습니다.</small>
+                        {draft.executionType === "컨소" ? <div className="quotation-cost-bearer"><span>비용 처리 방식</span><div><button type="button" className={item.internalCostBearer === "consortium" ? "active" : ""} onClick={() => updateItem(item.id, { internalCostBearer: "consortium" })}>정산서 반영</button><button type="button" className={item.internalCostBearer === "whizzup" ? "active" : ""} onClick={() => updateItem(item.id, { internalCostBearer: "whizzup" })}>위즈업 별도 처리</button></div></div> : null}
+                        <small>{draft.executionType === "컨소" && item.internalCostBearer === "consortium" ? "컨소 정산서의 비용 내역과 최종 지급 예정액에 반영됩니다." : "위즈업 내부 비용으로 처리되며 고객 견적 금액에는 반영되지 않습니다."}</small>
                       </div>}
                     </div>
                     <label className="quotation-item-card-note"><span>비고</span><input value={item.note} onChange={(event) => updateItem(item.id, { note: event.target.value })} placeholder="품목별 비고" /></label>
@@ -2172,6 +2261,7 @@ export default function QuotationManagementPage({
             <label>협업 구분<select value={draft.executionType} onChange={(event) => setDraft({ ...draft, executionType: event.target.value === "컨소" ? "컨소" : "직영" })}><option>직영</option><option>컨소</option></select></label>
             {draft.executionType === "컨소" && <><label>컨소 업체<input value={draft.consortiumCompany} onChange={(event) => setDraft({ ...draft, consortiumCompany: event.target.value })} placeholder="업체명" /></label><p>컨소 지급률은 품목마다 다르게 입력합니다. 각 품목의 지급률은 위즈업 수수료율을 넘을 수 없습니다.</p></>}
             <section className="quote-profit-box"><header><strong>수익 분석</strong><small>내부용</small></header><dl><dt>예상 수익</dt><dd>{won.format(numbers.earning)}원</dd><dt>컨소 지급</dt><dd>{numbers.consortium > 0 ? `-${won.format(numbers.consortium)}원` : "0원"}</dd>{numbers.projectorInstallationCost > 0 && <><dt>빔프로젝터 설치</dt><dd className="deduction">-{won.format(numbers.projectorInstallationCost)}원</dd></>}{numbers.yogaMatServiceCost > 0 && <><dt>요가매트 제공</dt><dd className="deduction">-{won.format(numbers.yogaMatServiceCost)}원</dd></>}{numbers.additionalConstructionCost > 0 && <><dt>추가 공사 원가</dt><dd className="deduction">-{won.format(numbers.additionalConstructionCost)}원</dd></>}{numbers.internalCost > 0 && <><dt>내부 원가 합계</dt><dd className="deduction">-{won.format(numbers.internalCost)}원</dd></>}<dt>최종 총이익</dt><dd>{won.format(numbers.margin)}원</dd><dt>마진%</dt><dd>{(numbers.marginRate * 100).toFixed(1)}%</dd></dl></section>
+            {draft.executionType === "컨소" && <section className="quote-consortium-settlement"><header><div><strong>정산서</strong><small>업체 공유용 · 내부 마진 제외</small></div><span>Excel</span></header><dl><dt>기본 정산액</dt><dd>{won.format(numbers.consortiumGross)}원</dd><dt>정산 반영 비용</dt><dd>{numbers.consortiumCost ? `-${won.format(numbers.consortiumCost)}원` : "0원"}</dd><dt>최종 지급 예정액</dt><dd>{won.format(numbers.consortium)}원</dd></dl><button type="button" onClick={() => void exportConsortiumSettlementExcel()} disabled={!draft.items.length}>정산서 Excel 출력</button><p>품목별 지급률과 비용 처리 방식을 표시하며 위즈업 수익·마진은 포함하지 않습니다. 직인 포함 설정도 동일하게 적용됩니다.</p></section>}
             {procurementWarnings.length > 0 && <section className="quotation-procurement-warning" role="alert"><strong>조달 계약 금액 확인</strong>{procurementWarnings.map((warning) => <div key={warning.key}><b>{warning.vendorName}</b><span>{won.format(warning.totalAmount)}원 · {warning.itemCount}개 품목</span><small>{warning.unspecified ? "공급처를 지정해야 업체별 1억 원 기준을 정확히 판단할 수 있습니다." : "동일 공급처의 조달 계약 품목 합계가 1억 원 이상입니다."}</small></div>)}</section>}
             <div className="quote-internal-report-actions"><button type="button" onClick={() => void copyInternalProfitReport()}>수익 보고 복사</button><button type="button" onClick={() => setInternalReportOpen(true)}>내부 수익표 보기</button></div>
             <label className="quotation-stamp-toggle"><input type="checkbox" checked={draft.includeStamp} onChange={(event) => setDraft({ ...draft, includeStamp: event.target.checked })} /><span>출력물에 직인 포함</span></label>

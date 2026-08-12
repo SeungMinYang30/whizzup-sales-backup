@@ -105,8 +105,8 @@ test("teaching aids imports match by normalized item text and output only contra
   assert.doesNotMatch(teachingAidsImport, /quantity \+ imported\.quantity/);
   assert.match(page, /\? \(isS2BChannel\(item\.procurementChannel\) \? "학교장터" : "조달 계약"\)/);
   assert.match(page, /: "수의계약"/);
-  assert.match(page, /function outputNote\(item: DraftItem\) \{\s*return contractLabel\(item\);\s*\}/);
-  assert.match(workbook, /function outputNote\(line: QuotationLine\) \{\s*return contractLabel\(line\);\s*\}/);
+  assert.match(page, /if \(item\.equipmentKit\) return AIRPASS_EQUIPMENT_CONTRACT_NOTE/);
+  assert.match(workbook, /if \(line\.equipmentKit\) return AIRPASS_EQUIPMENT_CONTRACT_NOTE/);
 });
 
 test("quotation editor uses responsive item cards without exposing internal settlement in print", () => {

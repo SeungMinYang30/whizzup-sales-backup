@@ -1,5 +1,6 @@
 import {
   accessErrorResponse,
+  requireAdminMember,
   requireApprovedMember,
 } from "../../../../lib/collaboration";
 import {
@@ -95,6 +96,8 @@ export async function POST(request: Request) {
     const xlsx = formData.get("xlsx");
     const sourceCandidate = formData.get("sourceFile");
     const sourceFile = sourceCandidate instanceof File && sourceCandidate.size > 0 ? sourceCandidate : null;
+    const replaceExisting = formData.get("replaceExisting") === "true";
+    if (replaceExisting) await requireAdminMember();
     if (!id) return Response.json({ error: "올바른 견적서 ID가 필요합니다." }, { status: 400 });
     if (!(pdf instanceof File) || !pdf.name.toLowerCase().endsWith(".pdf") || pdf.size < 1 || pdf.size > 20 * 1024 * 1024) {
       return Response.json({ error: "PDF 견적서는 20MB 이하 파일만 저장할 수 있습니다." }, { status: 400 });
@@ -130,7 +133,7 @@ export async function POST(request: Request) {
     const existingPdfId = String(row.drive_pdf_file_id ?? "");
     const existingXlsxId = String(row.drive_xlsx_file_id ?? "");
     const existingSourceId = String(row.source_file_id ?? "");
-    if (row.status === "final" && existingPdfId && existingXlsxId && !sourceFile) {
+    if (!replaceExisting && row.status === "final" && existingPdfId && existingXlsxId && !sourceFile) {
       return Response.json({ quotation: authoredQuotationFromRow(row) });
     }
     const lock = await d1.prepare(`UPDATE authored_quotations

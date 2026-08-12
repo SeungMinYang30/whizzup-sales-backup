@@ -6,6 +6,7 @@ import { strFromU8, unzipSync } from "fflate";
 
 register(new URL("./typescript-resolver.mjs", import.meta.url));
 const { createQuotationWorkbook } = await import("../lib/quotation-xlsx.ts");
+const { createAirpassEquipmentKit } = await import("../lib/airpass-equipment-kit.ts");
 
 test("관공서 견적서는 VAT 포함 금액, 조달 수수료, 세로 한 페이지 열 맞춤을 사용한다", async () => {
   const logoData = new Uint8Array(await readFile(new URL("../public/whizzup-logo.png", import.meta.url)));
@@ -59,4 +60,32 @@ test("출력 빈 행은 요청한 수만큼만 Excel 품목표에 추가한다",
   assert.match(sheet, /<row r="19" ht="34"/);
   assert.match(sheet, /<row r="20" ht="34"/);
   assert.doesNotMatch(sheet, /<row r="21" ht="34"/);
+});
+
+test("교구 견적은 에어패스 공급자 정보와 직인을 사용하고 금액 다음에 비고가 바로 온다", async () => {
+  const airpassSealData = new Uint8Array(await readFile(new URL("../public/airpass-seal.png", import.meta.url)));
+  const equipmentKit = createAirpassEquipmentKit("one");
+  const workbook = createQuotationWorkbook({
+    customerName: "북대초등학교 병설유치원",
+    quoteDate: "2026-08-12",
+    projectTitle: "자체예산",
+    quoteNumber: "WZ-20260812064512-D320",
+    equipmentKit,
+    airpassSealData,
+    lines: [
+      { name: "교구 세트", specification: "별첨 교구 세부견적", quantity: 1, unit: "SET", unitPrice: 1_500_000, note: "", equipmentKit: true },
+    ],
+  });
+  const files = unzipSync(workbook);
+  const mainSheet = strFromU8(files["xl/worksheets/sheet1.xml"]);
+  const detailSheet = strFromU8(files["xl/worksheets/sheet2.xml"]);
+  assert.match(mainSheet, /수의계약\n\(주\)에어패스/);
+  assert.match(detailSheet, /220-86-23479/);
+  assert.match(detailSheet, /임종호/);
+  assert.match(detailSheet, /하남테크노밸리 U1 CENTER/);
+  assert.match(detailSheet, /<c r="G16"[^>]*>.*금액/s);
+  assert.match(detailSheet, /<c r="I16"[^>]*>.*비고/s);
+  assert.doesNotMatch(detailSheet, /<c r="J16"/);
+  assert.ok(files["xl/media/airpass-seal.png"]);
+  assert.ok(files["xl/drawings/drawing2.xml"]);
 });

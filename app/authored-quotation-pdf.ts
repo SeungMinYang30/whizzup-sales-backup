@@ -1,6 +1,7 @@
 import type { AuthoredQuotation, AuthoredQuotationItem } from "../lib/authored-quotations";
 import { airpassEquipmentKitOutputLines, airpassEquipmentKitTotal } from "../lib/airpass-equipment-kit";
 import { quotationFileStem } from "../lib/quotation-file-name";
+import { AIRPASS_COMPANY, AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "../lib/airpass-company";
 
 export { quotationFileStem } from "../lib/quotation-file-name";
 
@@ -27,21 +28,23 @@ function concatBytes(chunks: Uint8Array[]) {
 function splitText(context: CanvasRenderingContext2D, value: string, maxWidth: number, maxLines = 2) {
   const source = String(value ?? "").trim();
   if (!source) return [""];
-  const characters = Array.from(source);
   const lines: string[] = [];
-  let line = "";
-  for (const character of characters) {
-    const next = line + character;
-    if (!line || context.measureText(next).width <= maxWidth) {
-      line = next;
-      continue;
+  for (const paragraph of source.split(/\r?\n/u)) {
+    let line = "";
+    for (const character of Array.from(paragraph)) {
+      const next = line + character;
+      if (!line || context.measureText(next).width <= maxWidth) {
+        line = next;
+        continue;
+      }
+      lines.push(line);
+      line = character;
+      if (lines.length >= maxLines) break;
     }
-    lines.push(line);
-    line = character;
+    if (line && lines.length < maxLines) lines.push(line);
     if (lines.length >= maxLines) break;
   }
-  if (line && lines.length < maxLines) lines.push(line);
-  if (lines.length === maxLines && lines.join("").length < source.length) {
+  if (lines.length === maxLines && lines.join("").length < source.replace(/\r?\n/gu, "").length) {
     while (lines[maxLines - 1] && context.measureText(`${lines[maxLines - 1]}…`).width > maxWidth) {
       lines[maxLines - 1] = lines[maxLines - 1].slice(0, -1);
     }
@@ -75,6 +78,7 @@ function contractLabel(item: AuthoredQuotationItem) {
 }
 
 function outputNote(item: AuthoredQuotationItem) {
+  if (item.equipmentKit) return AIRPASS_EQUIPMENT_CONTRACT_NOTE;
   return contractLabel(item);
 }
 
@@ -146,9 +150,10 @@ async function canvasJpeg(canvas: HTMLCanvasElement) {
 }
 
 async function renderPages(quote: AuthoredQuotation) {
-  const [logo, seal] = await Promise.all([
+  const [logo, seal, airpassSeal] = await Promise.all([
     loadImage("/whizzup-logo.png"),
     quote.includeStamp ? loadImage("/whizzup-seal.png") : Promise.resolve(null),
+    quote.items.some((item) => item.equipmentKit) ? loadImage("/airpass-seal.png") : Promise.resolve(null),
   ]);
   const pageCount = Math.max(1, Math.ceil(quote.items.length / ITEMS_PER_PAGE));
   const total = amounts(quote);
@@ -315,7 +320,8 @@ async function renderPages(quote: AuthoredQuotation) {
   }
   for (const parentItem of quote.items.filter((item) => item.equipmentKit)) {
     const detailLines = airpassEquipmentKitOutputLines(parentItem.equipmentKit);
-    const detailPageCount = Math.max(1, Math.ceil(detailLines.length / 15));
+    const detailItemsPerPage = 10;
+    const detailPageCount = Math.max(1, Math.ceil(detailLines.length / detailItemsPerPage));
     for (let detailPageIndex = 0; detailPageIndex < detailPageCount; detailPageIndex += 1) {
       const canvas = document.createElement("canvas");
       canvas.width = PAGE_WIDTH * PDF_RENDER_SCALE;
@@ -328,37 +334,60 @@ async function renderPages(quote: AuthoredQuotation) {
       context.strokeStyle = "#3154df";
       context.lineWidth = 3;
       context.beginPath(); context.moveTo(72, 42); context.lineTo(1168, 42); context.stroke();
-      drawLogo(context, logo, 78, 62, 125);
       context.fillStyle = "#17233f";
       context.textAlign = "center";
       context.font = '700 43px "Malgun Gothic", "Noto Sans KR", sans-serif';
-      context.fillText("교 구 세 부 견 적", 620, 112);
+      context.fillText("교 구 세 부 견 적", 500, 112);
       context.textAlign = "left";
       context.font = '400 16px "Malgun Gothic", "Noto Sans KR", sans-serif';
       context.fillStyle = "#52617d";
-      context.fillText(`견적번호  ${quote.quoteNumber}`, 870, 82);
-      context.fillText(`작성일  ${quote.quoteDate}`, 870, 110);
+      context.fillText(`견적번호  ${quote.quoteNumber}`, 820, 82);
+      context.fillText(`작성일  ${quote.quoteDate}`, 820, 110);
       context.fillText(`별첨 ${detailPageIndex + 1} / ${detailPageCount}`, 1030, 140);
       context.fillStyle = "#17233f";
-      context.fillRect(72, 176, 1096, 42);
+      context.fillRect(72, 170, 1096, 38);
       context.fillStyle = "#fff";
       context.font = '700 17px "Malgun Gothic", sans-serif';
-      context.fillText("에어패스 교구 세부내역 · 수량 0 품목 제외", 92, 203);
-      context.fillStyle = "#52617d";
-      context.font = '500 16px "Malgun Gothic", sans-serif';
-      context.fillText(`${quote.organization} · ${parentItem.equipmentKit?.plan === "two" ? "표준 2세트" : "표준 1세트"} 구성`, 72, 250);
+      context.textAlign = "center";
+      context.fillText("받는 분", 346, 195);
+      context.fillText("공급자", 894, 195);
+      context.textAlign = "left";
+      const partyRows = [
+        ["수신", quote.organization, "상호", AIRPASS_COMPANY.name],
+        ["견적명", `${quote.projectTitle || "제품 공급"} 교구 세부견적`, "사업자번호", AIRPASS_COMPANY.businessNumber],
+        ["계약구분", "수의계약", "대표자", AIRPASS_COMPANY.representative],
+        ["납품조건", "발주 후 일정 협의", "주소", AIRPASS_COMPANY.address],
+        ["유효기간", quote.validUntil ? `${quote.validUntil}까지` : "견적일로부터 30일", "업태·종목", `${AIRPASS_COMPANY.businessType} / ${AIRPASS_COMPANY.businessItems}`],
+      ];
+      partyRows.forEach((row, index) => {
+        const y = 208 + index * 40;
+        context.fillStyle = "#f1f4fa";
+        context.fillRect(72, y, 102, 40);
+        context.fillRect(620, y, 112, 40);
+        drawCell(context, row[0], 72, y, 102, 40, { bold: true, align: "center", maxLines: 1, fontSize: 14 });
+        drawCell(context, row[1], 174, y, 446, 40, { align: "center", maxLines: 2, fontSize: 14 });
+        drawCell(context, row[2], 620, y, 112, 40, { bold: true, align: "center", maxLines: 1, fontSize: 14 });
+        drawCell(context, row[3], 732, y, 436, 40, { align: "center", maxLines: 2, fontSize: 13 });
+        context.strokeStyle = "#cfd8ea";
+        context.strokeRect(72, y, 1096, 40);
+      });
+      const amountY = 420;
+      context.fillStyle = "#eaf0ff";
+      context.fillRect(72, amountY, 1096, 60);
+      drawCell(context, "견적금액 (VAT 포함)", 72, amountY, 350, 60, { bold: true, align: "center", maxLines: 1, fontSize: 17 });
+      drawCell(context, `${won.format(airpassEquipmentKitTotal(parentItem.equipmentKit))}원`, 422, amountY, 746, 60, { bold: true, align: "right", maxLines: 1, fontSize: 27 });
 
-      const tableTop = 278;
+      const tableTop = 500;
       const columns = [72, 118, 560, 650, 730, 900, 1060, 1168];
       const headings = ["No", "품명", "수량", "단위", "단가", "금액", "비고"];
       context.fillStyle = "#eaf0ff";
       context.fillRect(72, tableTop, 1096, 46);
       headings.forEach((heading, index) => drawCell(context, heading, columns[index], tableTop, columns[index + 1] - columns[index], 46, { bold: true, align: "center", maxLines: 1, fontSize: 14 }));
-      const pageLines = detailLines.slice(detailPageIndex * 15, (detailPageIndex + 1) * 15);
-      const rowHeight = 72;
+      const pageLines = detailLines.slice(detailPageIndex * detailItemsPerPage, (detailPageIndex + 1) * detailItemsPerPage);
+      const rowHeight = 68;
       pageLines.forEach((line, rowIndex) => {
         const y = tableTop + 46 + rowIndex * rowHeight;
-        const values = [String(detailPageIndex * 15 + rowIndex + 1), line.name, String(line.quantity), line.unit, `${won.format(line.unitPrice)}원`, `${won.format(line.quantity * line.unitPrice)}원`, ""];
+        const values = [String(detailPageIndex * detailItemsPerPage + rowIndex + 1), line.name, String(line.quantity), line.unit, `${won.format(line.unitPrice)}원`, `${won.format(line.quantity * line.unitPrice)}원`, ""];
         values.forEach((value, index) => drawCell(context, value, columns[index], y, columns[index + 1] - columns[index], rowHeight, {
           align: [0, 2, 3, 6].includes(index) ? "center" : [4, 5].includes(index) ? "right" : "left",
           maxLines: index === 1 ? 3 : 1,
@@ -373,10 +402,19 @@ async function renderPages(quote: AuthoredQuotation) {
         context.fillStyle = "#eaf0ff"; context.fillRect(72, totalY, 1096, 58);
         drawCell(context, "합계금액 (VAT 포함)", 72, totalY, 760, 58, { bold: true, align: "center", maxLines: 1, fontSize: 18 });
         drawCell(context, `${won.format(airpassEquipmentKitTotal(parentItem.equipmentKit))}원`, 832, totalY, 336, 58, { bold: true, align: "right", maxLines: 1, fontSize: 23 });
+        const signatureY = totalY + 105;
+        context.fillStyle = "#17233f";
+        context.font = '500 17px "Malgun Gothic", sans-serif';
+        context.fillText("위와 같이 견적합니다.", 185, signatureY);
+        context.font = '700 17px "Malgun Gothic", sans-serif';
+        context.fillText(quote.quoteDate.replace(/-(0?\d+)-(0?\d+)$/u, "년 $1월 $2일"), 205, signatureY + 35);
+        context.fillText(AIRPASS_COMPANY.name, 825, signatureY);
+        context.fillText(`대표이사   ${AIRPASS_COMPANY.representative}`, 825, signatureY + 35);
+        if (airpassSeal) context.drawImage(airpassSeal, 1000, signatureY - 38, 112, 112);
       }
       context.fillStyle = "#6c7890";
       context.font = '500 15px "Malgun Gothic", sans-serif';
-      context.fillText("주식회사 위즈업 · 본 세부견적은 본 견적서와 함께 제출됩니다.", 72, 1690);
+      context.fillText(`${AIRPASS_COMPANY.name} · 본 세부견적은 본 견적서와 함께 제출됩니다.`, 72, 1690);
       pages.push({
         blob: await canvasJpeg(canvas),
         width: PAGE_WIDTH * PDF_RENDER_SCALE,
@@ -388,6 +426,7 @@ async function renderPages(quote: AuthoredQuotation) {
   }
   logo?.close();
   seal?.close();
+  airpassSeal?.close();
   return pages;
 }
 

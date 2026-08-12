@@ -4,6 +4,7 @@ import { personDisplayLabel } from "./person-label";
 import { hasProcurementSignal, procurementNumbersFromText, resolveProcurementFeeRate } from "./procurement-product";
 import { normalizeAirpassEquipmentKit, type AirpassEquipmentKit } from "./airpass-equipment-kit";
 import { quotationInternalCostDefaults } from "./quotation-internal-costs";
+import { calculateConsortiumSettlement, type InternalCostBearer } from "./consortium-settlement";
 
 export type AuthoredQuotationItem = {
   id: string;
@@ -30,6 +31,7 @@ export type AuthoredQuotationItem = {
   consortiumPayment: number;
   internalCostEnabled: boolean;
   internalCostAmount: number;
+  internalCostBearer?: InternalCostBearer;
   equipmentKit?: AirpassEquipmentKit;
 };
 
@@ -255,6 +257,8 @@ function parseItems(value: unknown) {
     const internalCostAmount = item.internalCostAmount === undefined || item.internalCostAmount === null
       ? internalCostDefaults.amount
       : amount(item.internalCostAmount);
+    // 부담 주체 필드가 생기기 전 저장된 견적은 기존 계산을 보존하기 위해 위즈업 부담으로 읽습니다.
+    const internalCostBearer = item.internalCostBearer === "consortium" ? "consortium" as const : "whizzup" as const;
     return [{
       id: text(item.id, 160) || `line-${index + 1}`,
       productId: text(item.productId, 160),
@@ -282,6 +286,7 @@ function parseItems(value: unknown) {
       consortiumPayment,
       internalCostEnabled,
       internalCostAmount,
+      internalCostBearer,
       ...(equipmentKit ? { equipmentKit } : {}),
     }];
   });
@@ -404,14 +409,9 @@ function normalized(value: Record<string, unknown>) {
   const expectedEarning = items.reduce((sum, item) => sum + item.expectedEarning, 0);
   const executionType = value.executionType === "컨소" ? "컨소" as const : "직영" as const;
   const consortiumRate = 0;
-  const consortiumPayment = executionType === "컨소"
-    ? items.reduce((sum, item) => sum + item.consortiumPayment, 0)
-    : 0;
-  const itemInternalCost = items.reduce(
-    (sum, item) => sum + (item.internalCostEnabled ? item.internalCostAmount : 0),
-    0,
-  );
-  const marginAmount = Math.max(0, expectedEarning - consortiumPayment - itemInternalCost - additionalInternalConstructionCost);
+  const settlement = calculateConsortiumSettlement(items, executionType);
+  const consortiumPayment = settlement.finalPayment;
+  const marginAmount = Math.max(0, expectedEarning - consortiumPayment - settlement.whizzupCost - additionalInternalConstructionCost);
   return {
     organization, businessRound: Math.max(1, Number(value.businessRound) || 1),
     projectTitle: text(value.projectTitle, 500), quoteDate,
