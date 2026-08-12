@@ -22,6 +22,40 @@ function serverValue(name: string) {
   return String(process.env[name] ?? "").trim();
 }
 
+function secureEqual(left: string, right: string) {
+  const leftBytes = new TextEncoder().encode(left);
+  const rightBytes = new TextEncoder().encode(right);
+  if (leftBytes.length !== rightBytes.length) return false;
+  let difference = 0;
+  for (let index = 0; index < leftBytes.length; index += 1) {
+    difference |= leftBytes[index] ^ rightBytes[index];
+  }
+  return difference === 0;
+}
+
+function authorizedBySyncSecret(request: Request) {
+  const secret = serverValue("STANDBY_SYNC_SECRET");
+  const authorization = request.headers.get("authorization") ?? "";
+  return Boolean(secret) && secureEqual(authorization, `Bearer ${secret}`);
+}
+
+async function cutoverActorId(request: Request) {
+  if (!authorizedBySyncSecret(request)) {
+    return (await requirePrimaryOwner()).id;
+  }
+  const owner = await getD1()
+    .prepare(
+      `SELECT id
+       FROM members
+       WHERE role = 'admin' AND status = 'approved'
+       ORDER BY id ASC
+       LIMIT 1`,
+    )
+    .first<{ id: number }>();
+  if (!owner?.id) throw new Error("Vercel 운영 전환을 기록할 운영자 계정이 없습니다.");
+  return Number(owner.id);
+}
+
 function standbyOrigin() {
   return (
     serverValue("APP_ORIGIN") || "https://whizzup-sales-hub.vercel.app"
@@ -108,7 +142,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const member = await requirePrimaryOwner();
+    const actorId = await cutoverActorId(request);
     const body = (await request.json().catch(() => ({}))) as {
       confirmation?: unknown;
     };
@@ -167,7 +201,7 @@ export async function POST(request: Request) {
         throw new Error("최종 동기화 뒤 DB 체크섬이 일치하지 않습니다.");
       }
 
-      await markVercelPrimaryMode(member.id);
+      await markVercelPrimaryMode(actorId);
     } catch (error) {
       await configureStandbySchedule({
         syncUrl: `${standbyOrigin()}/api/standby-sync`,
