@@ -15,6 +15,8 @@ export type AuthoredQuotationItem = {
   unitPrice: number;
   note: string;
   supplyType: "partner" | "direct";
+  supplierVendorId?: number | null;
+  supplierVendorName?: string;
   earningRate: number;
   amount: number;
   expectedEarning: number;
@@ -263,6 +265,10 @@ function parseItems(value: unknown) {
       unitPrice,
       note: text(item.note, 1_000),
       supplyType: item.supplyType === "direct" ? "direct" as const : "partner" as const,
+      supplierVendorId: Number.isSafeInteger(Number(item.supplierVendorId)) && Number(item.supplierVendorId) > 0
+        ? Number(item.supplierVendorId)
+        : null,
+      supplierVendorName: text(item.supplierVendorName, 300),
       earningRate,
       amount: lineAmount,
       expectedEarning,
@@ -389,6 +395,12 @@ function normalized(value: Record<string, unknown>) {
   const procurementFeeAmount = items.reduce((sum, item) => sum + item.procurementFee, 0);
   const totalAmount = adjustedItemAmount + procurementFeeAmount;
   const budgets = parseBudgets(value.budgets, totalAmount);
+  if ((value.status === "final" || value.validateFinal === true) && budgets.length > 0) {
+    const allocatedTotal = budgets.reduce((sum, budget) => sum + budget.allocatedAmount, 0);
+    if (allocatedTotal !== totalAmount) {
+      throw new Error(`예산 배분 합계 ${allocatedTotal.toLocaleString("ko-KR")}원이 견적 최종 합계 ${totalAmount.toLocaleString("ko-KR")}원과 일치해야 합니다.`);
+    }
+  }
   const expectedEarning = items.reduce((sum, item) => sum + item.expectedEarning, 0);
   const executionType = value.executionType === "컨소" ? "컨소" as const : "직영" as const;
   const consortiumRate = 0;

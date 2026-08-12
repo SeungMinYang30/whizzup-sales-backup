@@ -1,4 +1,5 @@
 import "server-only";
+import { googleCalendarTitle } from "./google-calendar-title";
 
 export type GoogleCalendarApiEvent = {
   id: string;
@@ -203,16 +204,8 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
   const end = allDay
     ? { date: addDays(endDate, 1) }
     : { dateTime: `${fallbackEnd.date}T${fallbackEnd.time}:00+09:00`, timeZone: "Asia/Seoul" };
-  const category = schedule.category === "general" && /^영업\s*[·•-]\s*/.test(schedule.label)
-    ? "sales"
-    : schedule.category;
-  const categoryLabel: Record<string, string> = {
-    sales: "영업",
-    meeting: "회의",
-    construction: "시공",
-    showroom: "쇼룸",
-    other: "기타",
-  };
+  const title = googleCalendarTitle(schedule);
+  const category = title.category;
   const colorId: Record<string, string> = {
     sales: "9",
     meeting: "3",
@@ -220,22 +213,22 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
     showroom: "4",
     other: "8",
   };
-  const cleanLabel = schedule.label
-    .replace(/^(영업|회의|시공|쇼룸|기타)\s*[·•-]\s*/, "")
-    .trim();
+  const cleanLabel = title.cleanLabel;
   const required = (value: string | undefined) => value?.trim() || "[입력 필요]";
-  const summary = `[${categoryLabel[category] || "기타"}] ${schedule.organization} · ${cleanLabel}`;
+  const summary = title.summary;
   const description = category === "construction"
     ? [
         `담당자: ${required(schedule.assigneeName)}`,
         `시공 단계: ${required(schedule.constructionStage || cleanLabel)}`,
         `시공업체: ${required(schedule.vendorName)}`,
         `공사·품목: ${required(schedule.productSummary)}`,
+        `원본 제목: ${required(schedule.label)}`,
         `메모: ${schedule.details.trim()}`,
       ].join("\n")
     : [
         `담당자: ${required(schedule.assigneeName)}`,
         `일정 내용: ${required(cleanLabel)}`,
+        `원본 제목: ${required(schedule.label)}`,
         `메모: ${schedule.details.trim()}`,
       ].join("\n");
   return {

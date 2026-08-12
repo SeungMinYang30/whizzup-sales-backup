@@ -6342,8 +6342,8 @@ export default function CrmApp({
   const [followupDueSoonOnly, setFollowupDueSoonOnly] = useState(false);
   const [managerIssueFilter, setManagerIssueFilter] =
     useState<ManagerIssueFilter>("attention");
-  const [managerAdminSection, setManagerAdminSection] =
-    useState<"alerts" | "budgets">("alerts");
+  const [budgetWorkspaceSection, setBudgetWorkspaceSection] =
+    useState<"institutions" | "names">("institutions");
   const [managerSearch, setManagerSearch] = useState("");
   const deferredManagerSearch = useDeferredValue(managerSearch);
   const [teamPeriodDays, setTeamPeriodDays] = useState<TeamPeriod>(30);
@@ -11901,8 +11901,10 @@ export default function CrmApp({
     if (nextView === "organizations") {
       setManagerIssueFilter("attention");
       setManagerSearch("");
-      setManagerAdminSection("alerts");
       setSelectedOrganizations([]);
+    }
+    if (nextView === "budget-institutions") {
+      setBudgetWorkspaceSection("institutions");
     }
     navigateTo(nextView);
     setMobileNav(false);
@@ -16417,7 +16419,30 @@ export default function CrmApp({
             </>
           )}
 
-          {(view === "map" || view === "budget-institutions") && (
+          {view === "budget-institutions" && canManageRecords ? (
+            <nav className="budget-workspace-tabs" aria-label="예산별 기관 메뉴">
+              <button
+                type="button"
+                className={budgetWorkspaceSection === "institutions" ? "active" : ""}
+                onClick={() => setBudgetWorkspaceSection("institutions")}
+              >
+                예산별 기관
+              </button>
+              <button
+                type="button"
+                className={budgetWorkspaceSection === "names" ? "active" : ""}
+                onClick={() => setBudgetWorkspaceSection("names")}
+              >
+                표준 예산명 관리
+              </button>
+            </nav>
+          ) : null}
+
+          {view === "budget-institutions" && budgetWorkspaceSection === "names" && canManageRecords ? (
+            <BudgetNameManager onToast={setToast} />
+          ) : null}
+
+          {(view === "map" || (view === "budget-institutions" && budgetWorkspaceSection === "institutions")) && (
             <Suspense fallback={<DeferredPageFallback />}>
               <SalesMapPage
                 active
@@ -17515,26 +17540,6 @@ export default function CrmApp({
             </section>
           ) : view === "organizations" ? (
             <div className="manager-inspection-page">
-              <nav className="manager-admin-tabs" aria-label="관리자 영업 점검 메뉴">
-                <button
-                  type="button"
-                  className={managerAdminSection === "alerts" ? "active" : ""}
-                  onClick={() => setManagerAdminSection("alerts")}
-                >
-                  영업 점검
-                </button>
-                <button
-                  type="button"
-                  className={managerAdminSection === "budgets" ? "active" : ""}
-                  onClick={() => setManagerAdminSection("budgets")}
-                >
-                  표준 예산명 관리
-                </button>
-              </nav>
-              {managerAdminSection === "budgets" ? (
-                <BudgetNameManager onToast={setToast} />
-              ) : (
-                <>
               <section className="manager-kpi-grid" aria-label="관리자 영업 점검 요약">
                 {managerIssueCards.map((item) => (
                   <button
@@ -18066,8 +18071,6 @@ export default function CrmApp({
                   onPageChange={setManagerPage}
                 />
               </section>
-                </>
-              )}
             </div>
           ) : view === "followup" ? (
             <section className="panel records-panel followup-management">

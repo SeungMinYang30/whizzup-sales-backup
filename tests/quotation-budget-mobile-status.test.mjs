@@ -14,7 +14,7 @@ const styles = await readFile(new URL("../app/globals.css", import.meta.url), "u
 test("quotation budgets are durable, searchable and summarized without construction double counting", () => {
   assert.match(store, /budgets_json TEXT NOT NULL DEFAULT '\[\]'/);
   assert.match(store, /JSON\.stringify\(data\.budgets\)/);
-  assert.match(store, /budgets_json LIKE \?/);
+  assert.match(store, /instr\(lower\(q\.budgets_json\), lower\(\?\)\)/);
   assert.match(schema, /budgetsJson/);
   assert.match(migration, /ALTER TABLE authored_quotations ADD COLUMN budgets_json/);
   assert.match(route, /regularItems/);

@@ -18,6 +18,7 @@ import {
 import {
   ensureOrganizationSchedulesReady,
   refreshOrganizationScheduleMirror,
+  resolveScheduleAssignee,
 } from "./organization-schedules";
 
 type SyncRow = {
@@ -430,11 +431,13 @@ export async function linkGoogleCalendarSchedule(input: {
   const categoryLabel = category === "sales" ? "영업" : category === "meeting" ? "회의"
     : category === "showroom" ? "쇼룸" : category === "other" ? "기타" : "";
   if (categoryLabel) title = `${categoryLabel} · ${title.replace(/^(영업|회의|쇼룸|기타)\s*[·•-]\s*/, "")}`;
-  const assigneeMemberId = Number(input.assigneeMemberId);
-  const assigneeName = text(input.assigneeName).slice(0, 120) || input.member.displayName;
+  const assignee = await resolveScheduleAssignee(d1, input.assigneeMemberId, input.member.displayName);
   const details = typeof input.details === "string"
     ? input.details.trim().slice(0, 500)
     : memoFromGoogleDescription(event.description || "");
+  const originalGoogleTitle = text(event.summary).slice(0, 120);
+  const storedDetails = [details, originalGoogleTitle ? `원본 Google 제목: ${originalGoogleTitle}` : ""]
+    .filter(Boolean).join("\n").slice(0, 500);
   const completed = input.completed === true
     || input.completed === 1
     || input.completed === "1"
@@ -458,15 +461,15 @@ export async function linkGoogleCalendarSchedule(input: {
       values.endDate || values.scheduledDate,
       storedCategory,
       category === "construction" ? title : "",
-      details,
+      storedDetails,
       category === "construction" ? structured.vendor : "",
       completed ? 1 : 0,
       input.member.id,
       input.member.displayName,
       input.member.id,
       input.member.displayName,
-      Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0 ? assigneeMemberId : null,
-      assigneeName,
+      assignee.memberId,
+      assignee.name,
       googleEventId,
       event.etag || "",
       event.updated || "",
@@ -649,7 +652,7 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
         await d1.prepare(
           `UPDATE organization_schedules
            SET assignee_name = CASE
-                 WHEN TRIM(COALESCE(assignee_name, '')) = '' AND ? <> ''
+                 WHEN assignee_member_id IS NULL AND TRIM(COALESCE(assignee_name, '')) = '' AND ? <> ''
                   AND NOT EXISTS (
                     SELECT 1 FROM activities a
                     WHERE a.organization = organization_schedules.organization
@@ -740,7 +743,7 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
         await d1.prepare(
           `UPDATE organization_schedules
            SET organization = ?, label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, details = ?,
-               assignee_name = CASE WHEN ? <> '' THEN ? ELSE assignee_name END,
+               assignee_name = CASE WHEN assignee_member_id IS NULL AND ? <> '' THEN ? ELSE assignee_name END,
                google_event_id = ?, google_event_etag = ?, google_updated_at = ?, sync_error = '',
                last_synced_at = CURRENT_TIMESTAMP, updated_by_name = 'Google Calendar', updated_at = CURRENT_TIMESTAMP
            WHERE id = ? AND category <> 'construction'`,

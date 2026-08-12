@@ -7171,6 +7171,40 @@ tr:hover .row-actions { opacity: 1; }
   font-weight: 700;
 }
 
+.product-procurement-toggle {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  color: #3d4b65;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.product-procurement-toggle > label {
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #dce2ed;
+  border-radius: 9px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  background: #f7f9ff;
+  color: #40506b;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.product-catalog-form-grid .product-procurement-toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  flex: 0 0 18px;
+  accent-color: #3155e7;
+}
+
 .product-catalog-form-grid input,
 .product-catalog-form-grid select,
 .product-catalog-form-grid textarea {
@@ -13087,3 +13121,320 @@ button:is(
     grid-template-columns: 1fr;
   }
 }
+
+/* 2026-08 수정 1·3: 예산 관리 위치와 내 기록 점검 읽기성 */
+.budget-workspace-tabs {
+  margin-bottom: 16px;
+  padding: 6px;
+  border: 1px solid #dce4f1;
+  border-radius: 12px;
+  display: flex;
+  gap: 6px;
+  background: #f5f8fd;
+}
+
+.budget-workspace-tabs button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #62718a;
+  font-size: 13px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.budget-workspace-tabs button.active {
+  border-color: #ced9ff;
+  background: #fff;
+  color: #3153db;
+  box-shadow: 0 4px 12px rgba(48, 77, 170, .09);
+}
+
+.protection-review-item {
+  min-height: 94px;
+  padding: 15px 16px;
+  border-radius: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.protection-review-item span {
+  color: #7c684d;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.protection-review-item strong {
+  margin-top: 6px;
+  color: #263650;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.protection-review-item small {
+  margin-top: 5px;
+  color: #697790;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.protection-review-actions button {
+  min-width: 96px;
+  min-height: 42px;
+  padding: 0 14px;
+  font-size: 12px;
+}
+
+@media (max-width: 700px) {
+  .budget-workspace-tabs button { flex: 1; padding-inline: 10px; }
+  .protection-review-item { grid-template-columns: 1fr; }
+  .protection-review-actions { width: 100%; }
+}
+
+/* 2026-08 수정 2: 시공·납품 일정표 크게 보기 */
+.construction-schedule-workspace.is-expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  width: 100vw;
+  height: 100dvh;
+  border: 0;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  box-shadow: none;
+}
+
+.construction-schedule-workspace.is-expanded .construction-schedule-header {
+  flex: 0 0 auto;
+  padding: 14px 20px;
+}
+
+.construction-schedule-workspace.is-expanded .construction-schedule-header h2 {
+  margin-block: 2px;
+  font-size: 22px;
+}
+
+.construction-schedule-workspace.is-expanded .construction-schedule-toolbar {
+  flex: 0 0 auto;
+  padding: 10px 16px;
+}
+
+.construction-schedule-workspace.is-expanded .construction-timeline {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overscroll-behavior: contain;
+}
+
+.construction-schedule-workspace.is-expanded .construction-timeline-head,
+.construction-schedule-workspace.is-expanded .construction-timeline-row {
+  grid-template-columns: 740px minmax(2604px, 1fr);
+  min-width: 3344px;
+}
+
+.construction-schedule-workspace.is-expanded .construction-fixed-head,
+.construction-schedule-workspace.is-expanded .construction-fixed-cells {
+  grid-template-columns: 135px 255px 230px 120px;
+}
+
+.construction-schedule-workspace.is-expanded .construction-days {
+  grid-template-columns: repeat(31, 84px);
+}
+
+.construction-schedule-workspace.is-expanded .construction-fixed-cells {
+  min-height: 82px;
+  align-items: stretch;
+}
+
+.construction-schedule-workspace.is-expanded .construction-fixed-cells > span,
+.construction-schedule-workspace.is-expanded .construction-fixed-cells > button {
+  display: flex;
+  align-items: center;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.construction-schedule-workspace.is-expanded .construction-institution-main {
+  justify-content: center;
+}
+
+.construction-schedule-workspace.is-expanded .construction-row-days,
+.construction-schedule-workspace.is-expanded .construction-row-days > span {
+  min-height: 82px;
+}
+
+.construction-schedule-workspace.is-expanded .construction-event {
+  min-height: 32px;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+@media (max-width: 1000px) {
+  .construction-schedule-workspace.is-expanded .construction-timeline { display: block; }
+  .construction-schedule-workspace.is-expanded .construction-mobile-list { display: none; }
+}
+
+@media (max-width: 700px) {
+  .construction-schedule-workspace.is-expanded .construction-schedule-header { padding: 10px 12px; }
+  .construction-schedule-workspace.is-expanded .construction-schedule-header > div:first-child p,
+  .construction-schedule-workspace.is-expanded .construction-schedule-header .section-kicker { display: none; }
+  .construction-schedule-workspace.is-expanded .construction-schedule-actions { width: 100%; justify-content: flex-start; }
+  .construction-schedule-workspace.is-expanded .construction-schedule-actions > button,
+  .construction-schedule-workspace.is-expanded .construction-settings-wrap > button { min-height: 38px; padding-inline: 10px; }
+  .construction-schedule-workspace.is-expanded .construction-schedule-toolbar { grid-template-columns: 1fr; gap: 8px; }
+}
+.comparison-preview-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 190;
+  display: grid;
+  place-items: center;
+  padding: 3vh 2vw;
+}
+
+.comparison-preview-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(11, 22, 46, 0.74);
+}
+
+.comparison-preview-panel {
+  position: relative;
+  width: min(1440px, 96vw);
+  height: 94vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #dbe3f2;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 30px 80px rgba(9, 23, 52, 0.34);
+}
+
+.comparison-preview-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e4eaf4;
+}
+
+.comparison-preview-panel > header h3 {
+  max-width: min(760px, 55vw);
+  margin: 2px 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comparison-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.comparison-preview-actions button,
+.comparison-preview-actions a {
+  min-height: 36px;
+  padding: 8px 11px;
+  border: 1px solid #cbd6e9;
+  border-radius: 9px;
+  background: #fff;
+  color: #243656;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.comparison-preview-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #eef2f8;
+}
+
+.comparison-preview-content > iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.comparison-preview-notice {
+  width: min(560px, calc(100% - 32px));
+  margin: 56px auto;
+  padding: 24px;
+  border: 1px solid #d7e0ef;
+  border-radius: 14px;
+  background: #fff;
+  text-align: center;
+}
+
+.comparison-preview-notice a { color: #3158d5; font-weight: 800; }
+
+.comparison-preview-workbook,
+.comparison-xlsx-preview {
+  display: grid;
+  gap: 22px;
+  padding: 22px;
+  transform-origin: top left;
+}
+
+.comparison-preview-sheet {
+  overflow: auto;
+  padding: 16px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 4px 18px rgba(24, 45, 84, 0.1);
+}
+
+.comparison-preview-sheet table { border-collapse: collapse; font-size: 12px; }
+.comparison-preview-sheet th,
+.comparison-preview-sheet td { min-width: 92px; padding: 7px 9px; border: 1px solid #d6deeb; text-align: left; vertical-align: top; }
+.comparison-preview-sheet th { background: #edf3ff; }
+.comparison-xlsx-preview > section { overflow: auto; padding: 16px; border-radius: 12px; background: #fff; box-shadow: 0 4px 18px rgba(24, 45, 84, 0.1); }
+.comparison-xlsx-preview h4 { margin: 0 0 10px; color: #243656; }
+.comparison-xlsx-preview table { border-collapse: collapse; font-size: 12px; }
+.comparison-xlsx-preview td { min-width: 92px; padding: 7px 9px; border: 1px solid #d6deeb; text-align: left; vertical-align: top; }
+.comparison-xlsx-images > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.comparison-xlsx-images figure { margin: 0; }
+.comparison-xlsx-images img { width: 100%; max-height: 520px; object-fit: contain; border-radius: 10px; background: #fff; }
+.comparison-xlsx-images figcaption { margin-top: 6px; color: #66758e; font-size: 11px; }
+.comparison-preview-images { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; padding: 0 22px 22px; }
+.comparison-preview-images img { width: 100%; max-height: 520px; object-fit: contain; border-radius: 10px; background: #fff; }
+.comparison-preview-truncated { margin: 0; padding: 11px 14px; border-radius: 9px; background: #fff4d8; color: #755400; font-weight: 700; }
+
+@media (max-width: 720px) {
+  .comparison-preview-layer { padding: 0; }
+  .comparison-preview-panel { width: 100vw; height: 100dvh; border-radius: 0; }
+  .comparison-preview-panel > header { align-items: flex-start; flex-direction: column; }
+  .comparison-preview-actions { width: 100%; overflow-x: auto; }
+}
+.quotation-procurement-warning {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 2px solid #e5533d;
+  border-radius: 12px;
+  background: #fff1ee;
+  color: #792819;
+}
+
+.quotation-procurement-warning > strong { font-size: 15px; }
+.quotation-procurement-warning > div { display: grid; gap: 3px; padding-top: 9px; border-top: 1px solid #f1b6aa; }
+.quotation-procurement-warning span { font-weight: 800; }
+.quotation-procurement-warning small { line-height: 1.45; }

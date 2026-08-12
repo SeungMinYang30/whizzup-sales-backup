@@ -6,6 +6,7 @@ import {
   constructionStageIndex,
 } from "../lib/construction-stages";
 import { resilientFetch } from "./resilient-fetch";
+import { personDisplayLabel } from "../lib/person-label";
 
 type ScheduleCategory = "sales" | "meeting" | "construction" | "showroom" | "other" | "personal" | "google";
 type CalendarFilter = "all" | ScheduleCategory;
@@ -43,7 +44,7 @@ type Institution = {
   contactEmail?: string;
 };
 type InstitutionRecord = Institution & { activityDate?: string; id?: number };
-type Member = { id: number; display_name: string; role: string; status: string };
+type Member = { id: number; display_name: string; job_title?: string; role: string; status: string };
 type EditorKind = "영업" | "회의" | "시공" | "쇼룸" | "기타" | "내 일정";
 type InstitutionSearchState = "idle" | "debouncing" | "loading" | "success" | "empty" | "error";
 
@@ -415,14 +416,14 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
     setEditor((current) => ({
       ...current, organization: item.organization, businessRound: item.businessRound, organizationQuery: item.organization,
       linked: true, assigneeMemberId: member?.id || current.assigneeMemberId || currentMember.id,
-      assigneeName: member?.display_name || item.progressManager || current.assigneeName || currentMember.displayName,
+      assigneeName: member ? personDisplayLabel(member) : item.progressManager || current.assigneeName || currentMember.displayName,
     }));
     setInstitutions([]);
   }
   function changeAssignee(value: string) {
     const id = Number(value) || 0;
     const member = members.find((candidate) => candidate.id === id);
-    setEditor((current) => ({ ...current, assigneeMemberId: id, assigneeName: member?.display_name || "" }));
+    setEditor((current) => ({ ...current, assigneeMemberId: id, assigneeName: member ? personDisplayLabel(member) : "" }));
   }
 
   function scheduleValidationMessage(draft: CalendarEditor, institutionWillBeLinked = false) {
@@ -771,7 +772,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
             {!editor.linked && editor.kind !== "시공" && editor.organizationQuery.trim().length >= 2 ? <div className="home-schedule-institution-create"><button type="button" className="schedule-create-institution" disabled={institutionCreating || saving} onClick={() => void createInstitution()}>{institutionCreating ? "기관 등록 중…" : "+ 새 기관 등록 후 연결"}</button></div> : null}
           </div>
           {editor.kind === "시공" ? <label>시공 공정 <b>*</b><input list="construction-stage-options" maxLength={40} value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))} placeholder="목록에서 선택하거나 공정명 직접 입력" /><datalist id="construction-stage-options">{constructionStages.map((stage) => <option key={stage} value={stage} />)}</datalist><small>목록에 없어도 직접 입력하면 저장 후 다음 선택부터 재사용됩니다.</small></label> : <label>일정 제목 <b>*</b><input value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))} placeholder="예: 담당자 방문 미팅" /></label>}
-          <label>일정 담당자 <b>*</b><select value={editor.assigneeMemberId || ""} onChange={(event) => changeAssignee(event.target.value)}><option value="">담당자 선택</option>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}</option>)}</select></label>
+          <label>일정 담당자 <b>*</b><select value={editor.assigneeMemberId || ""} onChange={(event) => changeAssignee(event.target.value)}><option value="">담당자 선택</option>{members.map((member) => <option key={member.id} value={member.id}>{personDisplayLabel(member)}</option>)}</select></label>
           <div className="home-schedule-date-grid"><label>날짜 <b>*</b><input type="date" value={editor.scheduledDate} onChange={(event) => setEditor((current) => ({ ...current, scheduledDate: event.target.value }))} /></label>
             <label className="schedule-all-day"><input type="checkbox" checked={editor.allDay} onChange={(event) => setEditor((current) => ({ ...current, allDay: event.target.checked, startTime: event.target.checked ? "" : current.startTime, endTime: event.target.checked ? "" : current.endTime }))} /> 종일 일정</label>
           </div>

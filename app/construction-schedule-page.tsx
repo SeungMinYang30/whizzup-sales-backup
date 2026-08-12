@@ -127,6 +127,7 @@ export default function ConstructionSchedulePage({
   const [message, setMessage] = useState("");
   const [hideCompleted, setHideCompleted] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -186,6 +187,20 @@ export default function ConstructionSchedulePage({
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [expanded]);
 
   useEffect(() => {
     if (!onDashboardCounts || loading || !loadSucceeded) return;
@@ -523,7 +538,7 @@ export default function ConstructionSchedulePage({
   ].filter(Boolean).join(" ");
 
   return (
-    <section className={`construction-schedule-workspace${embedded ? " is-embedded" : ""}`}>
+    <section className={`construction-schedule-workspace${embedded ? " is-embedded" : ""}${expanded ? " is-expanded" : ""}`}>
       <header className="construction-schedule-header">
         <div>
           <span className="section-kicker">INSTALLATION · DELIVERY</span>
@@ -533,6 +548,7 @@ export default function ConstructionSchedulePage({
         <div className="construction-schedule-actions">
           <button type="button" className="primary-button" onClick={() => setAddOpen(true)}>+ 기관 추가</button>
           <button type="button" onClick={exportExcel}>엑셀 내보내기</button>
+          <button type="button" className="construction-expand-button" aria-pressed={expanded} onClick={() => setExpanded((current) => !current)}>{expanded ? "기본 보기" : "크게 보기"}</button>
           <div className="construction-settings-wrap">
             <button type="button" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((current) => !current)}>보기 설정</button>
             {settingsOpen ? <div className="construction-settings-popover">

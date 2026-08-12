@@ -10,6 +10,7 @@ import {
   parseProgressScheduleEntries,
   serializeProgressSchedule,
 } from "./records-store";
+import { personDisplayLabel } from "./person-label";
 
 export type OrganizationSchedule = {
   id: number;
@@ -846,6 +847,22 @@ export async function addConstructionScheduleProject(input: {
   return listConstructionScheduleBoard();
 }
 
+export async function resolveScheduleAssignee(
+  d1: Awaited<ReturnType<typeof ensureOrganizationSchedulesReady>>,
+  memberIdValue: unknown,
+  fallbackName: string,
+) {
+  const memberId = Number(memberIdValue);
+  if (!Number.isSafeInteger(memberId) || memberId <= 0) {
+    return { memberId: null, name: fallbackName.trim().slice(0, 120) };
+  }
+  const member = await d1.prepare(
+    "SELECT id, display_name, job_title FROM members WHERE id = ? AND status = 'approved' LIMIT 1",
+  ).bind(memberId).first<{ id: number; display_name: string; job_title: string }>();
+  if (!member) throw new Error("선택한 일정 담당자를 찾지 못했습니다. 구성원 목록을 새로고침해 주세요.");
+  return { memberId: Number(member.id), name: personDisplayLabel(member).slice(0, 120) };
+}
+
 export async function addOrganizationSchedule(input: {
   organization: unknown;
   businessRound: unknown;
@@ -871,8 +888,6 @@ export async function addOrganizationSchedule(input: {
   const rawEndTime = clean(input.endTime);
   const startTime = validTime(rawStartTime);
   const endTime = validTime(rawEndTime);
-  const assigneeMemberId = Number(input.assigneeMemberId);
-  const assigneeName = clean(input.assigneeName).slice(0, 120) || input.memberName;
   const details = clean(input.details).slice(0, 500);
   if (!organization || !label || !scheduledDate) {
     throw new Error("기관, 일정 제목, 날짜를 확인해 주세요.");
@@ -884,6 +899,7 @@ export async function addOrganizationSchedule(input: {
   if (startTime && endTime && endTime < startTime) throw new Error("종료 시간은 시작 시간 이후여야 합니다.");
   const semanticLabel = normalizeScheduleSemanticLabel(organization, label);
   const d1 = await ensureOrganizationSchedulesReady();
+  const assignee = await resolveScheduleAssignee(d1, input.assigneeMemberId, input.memberName);
   await d1.prepare(
       `INSERT OR IGNORE INTO organization_schedules (
          organization, business_round, label, scheduled_date, start_time, end_time, category, details, completed,
@@ -913,8 +929,8 @@ export async function addOrganizationSchedule(input: {
       input.memberName,
       input.memberId,
       input.memberName,
-      Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0 ? assigneeMemberId : null,
-      assigneeName,
+      assignee.memberId,
+      assignee.name,
       category === "personal" ? "local_only" : "pending",
       organization,
       businessRound,
@@ -1452,9 +1468,8 @@ export async function updateOrganizationSchedule(input: {
   }
   if (endTime && !startTime) throw new Error("종료 시간보다 시작 시간을 먼저 입력해 주세요.");
   if (startTime && endTime && endTime < startTime) throw new Error("종료 시간은 시작 시간 이후여야 합니다.");
-  const assigneeMemberId = Number(input.assigneeMemberId);
-  const assigneeName = clean(input.assigneeName).slice(0, 120) || input.member.displayName;
   const details = clean(input.details).slice(0, 500);
+  const assignee = await resolveScheduleAssignee(d1, input.assigneeMemberId, input.member.displayName);
   if (category === "construction") {
     if (!isValidConstructionStage(label)) {
       throw new Error("시공 공정명을 40자 이내로 입력해 주세요.");
@@ -1514,8 +1529,8 @@ export async function updateOrganizationSchedule(input: {
     category === "construction" ? label : "",
     details,
     input.completed === true ? 1 : 0,
-    Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0 ? assigneeMemberId : null,
-    assigneeName,
+    assignee.memberId,
+    assignee.name,
     category,
     category,
     category,
@@ -1537,8 +1552,8 @@ export async function updateOrganizationSchedule(input: {
   return scheduleJson({ ...row, id, label, scheduled_date: scheduledDate, start_time: startTime,
     end_time: endTime, end_date: scheduledDate,
     category, stage: category === "construction" ? label : "", details, completed: input.completed === true ? 1 : 0,
-    assignee_member_id: Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0 ? assigneeMemberId : null,
-    assignee_name: assigneeName, updated_by_name: input.member.displayName });
+    assignee_member_id: assignee.memberId,
+    assignee_name: assignee.name, updated_by_name: input.member.displayName });
 }
 
 export async function deleteOrganizationSchedule(input: { id: unknown; member: ScheduleActor }) {

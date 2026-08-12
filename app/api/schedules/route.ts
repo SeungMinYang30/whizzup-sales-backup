@@ -1,5 +1,6 @@
 import { after } from "next/server";
 import {
+  AccessError,
   accessErrorResponse,
   requireApprovedMember,
 } from "../../../lib/collaboration";
@@ -32,6 +33,17 @@ import {
 } from "../../../lib/google-calendar-sync";
 
 export const dynamic = "force-dynamic";
+
+function scheduleErrorResponse(error: unknown) {
+  if (error instanceof AccessError) return accessErrorResponse(error);
+  if (error instanceof Error && /일정|기관|담당자|시간|날짜|달력|Google|캘린더|시공|구글/u.test(error.message)) {
+    return Response.json(
+      { error: error.message },
+      { status: /Google|구글|캘린더/u.test(error.message) ? 502 : 400 },
+    );
+  }
+  return accessErrorResponse(error);
+}
 
 function validCalendarDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -134,7 +146,7 @@ export async function GET(request: Request) {
       schedules: await listOrganizationSchedules(organization, businessRound),
     });
   } catch (error) {
-    return accessErrorResponse(error);
+    return scheduleErrorResponse(error);
   }
 }
 
@@ -203,7 +215,7 @@ export async function PUT(request: Request) {
       schedules: await listOrganizationSchedules(payload.organization, payload.businessRound),
     });
   } catch (error) {
-    return accessErrorResponse(error);
+    return scheduleErrorResponse(error);
   }
 }
 
@@ -274,7 +286,7 @@ export async function POST(request: Request) {
       memberName: member.displayName,
     }));
   } catch (error) {
-    return accessErrorResponse(error);
+    return scheduleErrorResponse(error);
   }
 }
 
@@ -300,7 +312,7 @@ export async function DELETE(request: Request) {
     await flushGoogleCalendarSync({ limit: 50 });
     return Response.json(board);
   } catch (error) {
-    return accessErrorResponse(error);
+    return scheduleErrorResponse(error);
   }
 }
 
@@ -315,6 +327,6 @@ export async function PATCH(request: Request) {
     if (schedule?.id) await flushGoogleCalendarSync({ ids: [schedule.id] });
     return Response.json({ schedule });
   } catch (error) {
-    return accessErrorResponse(error);
+    return scheduleErrorResponse(error);
   }
 }

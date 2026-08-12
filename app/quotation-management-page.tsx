@@ -9,6 +9,7 @@ import { createQuotationWorkbook } from "../lib/quotation-xlsx";
 import { hasProcurementSignal, procurementNumbersFromText } from "../lib/procurement-product";
 import { createAuthoredQuotationPdf, quotationFileStem } from "./authored-quotation-pdf";
 import { quotationInternalCostDefaults, quotationInternalCostKind } from "../lib/quotation-internal-costs";
+import { procurementContractWarnings } from "../lib/procurement-contract-warning";
 import {
   airpassEquipmentKitOutputLines,
   airpassEquipmentKitTotal,
@@ -63,6 +64,8 @@ type EquipmentQuoteItem = {
   unitPrice: number;
   note: string;
   supplyType: "partner" | "direct";
+  supplierVendorId: number | null;
+  supplierVendorName: string;
   earningRate: number;
   procurement: boolean;
   procurementChannel: string;
@@ -239,14 +242,14 @@ function budgetOptionsForInstitution(option?: QuotationInstitutionOption): Autho
       ? [{ budgetType: option.budgetType }]
       : [];
   const seen = new Set<string>();
-  return source.flatMap((budget, index) => {
+  return source.flatMap((budget) => {
     const name = String(budget.budgetType || budget.budgetOriginalName || "").trim();
     if (!name) return [];
     const groupId = Number(budget.budgetGroupId);
     const budgetGroupId = Number.isSafeInteger(groupId) && groupId > 0 ? groupId : null;
     const key = budgetGroupId
       ? `group:${budgetGroupId}`
-      : `name:${name.normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/\s+/g, "")}:${index}`;
+      : `name:${name.normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/\s+/g, "")}`;
     if (seen.has(key)) return [];
     seen.add(key);
     return [{
@@ -257,6 +260,25 @@ function budgetOptionsForInstitution(option?: QuotationInstitutionOption): Autho
       allocatedAmount: 0,
     }];
   });
+}
+
+function mergeInstitutionRounds(options: QuotationInstitutionOption[]) {
+  const rounds = new Map<number, QuotationInstitutionOption>();
+  options.forEach((option) => {
+    const current = rounds.get(option.businessRound);
+    if (!current) {
+      rounds.set(option.businessRound, { ...option, budgets: [...(option.budgets ?? [])] });
+      return;
+    }
+    const combined = [...(current.budgets?.length ? current.budgets : current.budgetType ? [{ budgetType: current.budgetType }] : []),
+      ...(option.budgets?.length ? option.budgets : option.budgetType ? [{ budgetType: option.budgetType }] : [])];
+    rounds.set(option.businessRound, {
+      ...current,
+      budgetType: "",
+      budgets: combined,
+    });
+  });
+  return Array.from(rounds.values()).sort((left, right) => left.businessRound - right.businessRound);
 }
 
 function draftForScope(scope?: QuotationScope): Draft {
@@ -680,14 +702,7 @@ export default function QuotationManagementPage({
   }
 
   const institutionRounds = useMemo(
-    () => Array.from(
-      new Map(
-        institutions
-          .filter((item) => normalizedInstitutionName(item.organization) === normalizedInstitutionName(draft?.organization ?? ""))
-          .sort((left, right) => left.businessRound - right.businessRound)
-          .map((item) => [item.businessRound, item]),
-      ).values(),
-    ),
+    () => mergeInstitutionRounds(institutions.filter((item) => normalizedInstitutionName(item.organization) === normalizedInstitutionName(draft?.organization ?? ""))),
     [draft?.organization, institutions],
   );
 
@@ -858,6 +873,8 @@ export default function QuotationManagementPage({
   }, [draft?.budgets, numbers.total]);
 
   const budgetAllocationTotal = effectiveBudgets.reduce((sum, budget) => sum + budget.allocatedAmount, 0);
+  const budgetAllocationMatches = effectiveBudgets.length === 0 || budgetAllocationTotal === numbers.total;
+  const procurementWarnings = useMemo(() => procurementContractWarnings(draft?.items ?? []), [draft?.items]);
 
   function toggleBudget(option: AuthoredQuotationBudget) {
     if (!draft) return;
@@ -874,7 +891,7 @@ export default function QuotationManagementPage({
     if (!draft) return;
     setDraft({
       ...draft,
-      budgets: draft.budgets.map((budget) => budget.key === key
+      budgets: effectiveBudgets.map((budget) => budget.key === key
         ? { ...budget, allocatedAmount: Math.max(0, Math.round(allocatedAmount)) }
         : budget),
     });
@@ -965,6 +982,7 @@ export default function QuotationManagementPage({
             const awardedQty = Number(itemValue("awardedQty", "awarded_qty")) || 0;
             const installedQty = Number(itemValue("installedQty", "installed_qty")) || 0;
             const supplyType = itemValue("supplyType", "supply_type") === "direct" ? "direct" as const : "partner" as const;
+            const supplierVendorIdValue = Number(itemValue("supplierVendorId", "supplier_vendor_id"));
             const earningRateValue = supplyType === "direct"
               ? itemValue("marginRate", "margin_rate")
               : itemValue("commissionRate", "commission_rate");
@@ -989,6 +1007,8 @@ export default function QuotationManagementPage({
               unitPrice: Math.max(0, Number(itemValue("catalogUnitPrice", "catalog_unit_price")) || 0),
               note: catalogNote || notes,
               supplyType,
+              supplierVendorId: Number.isSafeInteger(supplierVendorIdValue) && supplierVendorIdValue > 0 ? supplierVendorIdValue : null,
+              supplierVendorName: String(itemValue("supplierVendorName", "supplier_vendor_name")),
               earningRate: Math.min(1, Math.max(0, Number(earningRateValue) || 0)),
               procurement,
               procurementChannel,
@@ -1017,6 +1037,8 @@ export default function QuotationManagementPage({
           unitPrice: item.unitPrice,
           note: item.note,
           supplyType: item.supplyType,
+          supplierVendorId: item.supplierVendorId,
+          supplierVendorName: item.supplierVendorName,
           earningRate: item.earningRate,
           contractType: isS2BChannel(item.procurementChannel) ? "s2b" : item.procurement ? "g2b" : "direct",
           procurement: item.procurement,
@@ -1069,9 +1091,9 @@ export default function QuotationManagementPage({
 
   async function selectInstitution(option: QuotationInstitutionOption) {
     if (!draft) return;
-    const rounds = institutions.filter((item) => normalizedInstitutionName(item.organization) === normalizedInstitutionName(option.organization));
+    const rounds = mergeInstitutionRounds(institutions.filter((item) => normalizedInstitutionName(item.organization) === normalizedInstitutionName(option.organization)));
     const selectedRound = rounds.reduce((latest, item) => item.businessRound > latest.businessRound ? item : latest, option);
-      const targetDraft = {
+    const targetDraft = {
       ...draft,
       organization: selectedRound.organization,
       businessRound: selectedRound.businessRound,
@@ -1203,6 +1225,8 @@ export default function QuotationManagementPage({
         unitPrice: product.unitPrice ?? 0,
         note: "",
         supplyType: product.supplyType,
+        supplierVendorId: product.supplierVendorId ?? null,
+        supplierVendorName: product.supplierVendorName ?? "",
         earningRate,
         contractType: isS2BChannel(procurementChannel) ? "s2b" : procurement ? "g2b" : "direct",
         procurement,
@@ -1371,6 +1395,7 @@ export default function QuotationManagementPage({
       items: [...draft.items.filter((item) => !isConstructionItem(item)), {
         id: crypto.randomUUID(), productId: "", name: "", specification: "", quantity: 1,
         unit: "EA", unitPrice: 0, note: "", supplyType: "direct", earningRate: 0, contractType: "direct",
+        supplierVendorId: null, supplierVendorName: "",
         procurement: false, procurementChannel: "", procurementNumber: "", procurementFeeRate: 0, consortiumRate: 0,
         internalCostEnabled: false, internalCostAmount: 0,
       }, ...(construction ? [construction] : [])],
@@ -1466,6 +1491,8 @@ export default function QuotationManagementPage({
         ? (isS2BChannel(item.procurementChannel) ? "학교장터" : "조달 계약")
         : "수의계약",
       supplyType: item.supplyType,
+      supplierVendorId: null,
+      supplierVendorName: item.supplierName ?? "",
       earningRate: item.earningRate,
       contractType: item.procurement ? (isS2BChannel(item.procurementChannel) ? "s2b" : "g2b") : "direct",
       procurement: item.procurement,
@@ -1781,10 +1808,17 @@ export default function QuotationManagementPage({
     setSaving(true);
     setMessage("");
     try {
-      const exactInstitution = institutions.find((item) => item.organization.replace(/\s/g, "").toLocaleLowerCase("ko-KR") === draft.organization.replace(/\s/g, "").toLocaleLowerCase("ko-KR") && item.businessRound === draft.businessRound);
+      const exactInstitution = institutionRounds.find((item) => item.businessRound === draft.businessRound);
       const institutionBudgets = budgetOptionsForInstitution(exactInstitution);
       if (status === "final" && institutionBudgets.length > 0 && effectiveBudgets.length === 0) {
         throw new Error("이 견적에 사용할 예산을 한 개 이상 선택해 주세요.");
+      }
+      if (status === "final" && effectiveBudgets.length > 0 && !budgetAllocationMatches) {
+        throw new Error(`예산 배분 합계 ${won.format(budgetAllocationTotal)}원이 견적 최종 합계 ${won.format(numbers.total)}원과 일치해야 합니다.`);
+      }
+      if (status === "final" && procurementWarnings.length > 0) {
+        const warningText = procurementWarnings.map((warning) => `${warning.vendorName} ${won.format(warning.totalAmount)}원 (${warning.itemCount}개 품목)`).join("\n");
+        if (!window.confirm(`조달 계약 금액을 다시 확인해 주세요.\n${warningText}\n계속 최종 저장하시겠습니까?`)) return;
       }
       if (status === "final" && !exactInstitution && draft.status !== "final") {
         const createResponse = await fetch("/api/records", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ activityDate: draft.quoteDate, activityType: "기타", contactMethod: "기타", organization: draft.organization, confirmedOrganization: draft.organization, businessRound: draft.businessRound, region: newInstitution.region, contactName: newInstitution.contactName, contactPhone: newInstitution.contactPhone, contactEmail: newInstitution.contactEmail, topic: "견적 기관 등록", summary: `${draft.projectTitle || "견적서"} 작성과 함께 기관을 등록했습니다.`, sourceChat: "견적서", skipRelatedWrites: true }) });
@@ -1794,7 +1828,7 @@ export default function QuotationManagementPage({
       const response = await fetch("/api/quotations", {
         method: draft.id ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...draft, budgets: effectiveBudgets, status: "draft" }),
+        body: JSON.stringify({ ...draft, budgets: effectiveBudgets, status: "draft", validateFinal: status === "final" }),
       });
       const payload = await response.json() as { quotation?: AuthoredQuotation; error?: string };
       if (!response.ok || !payload.quotation) throw new Error(payload.error || "견적서를 저장하지 못했습니다.");
@@ -1976,7 +2010,7 @@ export default function QuotationManagementPage({
                 <label><span>수신 기관명 *</span><input readOnly={Boolean(scope)} value={scope ? draft.organization : institutionQuery} onChange={(event) => { setInstitutionQuery(event.target.value); setDraft({ ...draft, organization: event.target.value }); }} placeholder="기관명 또는 지역 검색" /></label>
                 {!scope && institutionQuery.trim().length >= 2 && <div className="quotation-institution-results no-print">{institutionOptions.filter((item) => `${item.organization} ${item.region || ""}`.includes(institutionQuery.trim())).slice(0, 8).map((item) => <button type="button" key={normalizedInstitutionName(item.organization)} disabled={equipmentLoading} onClick={() => void selectInstitution(item)}><b>{item.organization}</b><small>{item.region || "지역 미입력"} · 기관 선택 후 사업 차수 선택</small></button>)}{!institutions.some((item) => normalizedInstitutionName(item.organization) === normalizedInstitutionName(institutionQuery)) && <div className="quotation-new-institution"><strong>새 기관으로 등록 후 견적 연결</strong><input value={newInstitution.region} onChange={(event) => setNewInstitution({ ...newInstitution, region: event.target.value })} placeholder="지역 (선택)" /><input value={newInstitution.contactName} onChange={(event) => setNewInstitution({ ...newInstitution, contactName: event.target.value })} placeholder="담당자 (선택)" /></div>}</div>}
                 <label><span>사업 차수 *</span><select disabled={Boolean(scope) || equipmentLoading} value={draft.businessRound} onChange={(event) => void selectBusinessRound(Math.max(1, Number(event.target.value) || 1))}>
-                  {institutionRounds.map((item) => <option key={item.businessRound} value={item.businessRound}>{item.businessRound}차{item.budgetType ? ` · ${item.budgetType}` : ""}</option>)}
+                  {institutionRounds.map((item) => <option key={item.businessRound} value={item.businessRound}>{item.businessRound}차</option>)}
                   {!scope && <option value={institutionRounds.length ? nextInstitutionRound : Math.max(1, draft.businessRound)}>{institutionRounds.length ? nextInstitutionRound : Math.max(1, draft.businessRound)}차 · 새 차수 만들기</option>}
                 </select></label>
                 {availableBudgets.length > 0 && <section className="quotation-budget-linker no-print">
@@ -1989,7 +2023,7 @@ export default function QuotationManagementPage({
                       {selected && draft.budgets.length > 1 && <span className="quotation-money-input"><FormattedMoneyInput value={linked?.allocatedAmount ?? 0} onChange={(allocatedAmount) => updateBudgetAllocation(budget.key, allocatedAmount)} label={`${budget.name} 배분 금액`} /><b>원</b></span>}
                     </div>;
                   })}</div>
-                  {draft.budgets.length > 0 && <footer className={budgetAllocationTotal !== numbers.total ? "warning" : ""}><span>예산 배분 합계 {won.format(budgetAllocationTotal)}원</span><span>견적 최종 합계 {won.format(numbers.total)}원</span>{budgetAllocationTotal !== numbers.total && <small>공사비·수수료·추가비용 차이를 확인해 주세요. 저장은 가능합니다.</small>}</footer>}
+                  {draft.budgets.length > 0 && <footer className={!budgetAllocationMatches ? "warning" : ""}><span>예산 배분 합계 {won.format(budgetAllocationTotal)}원</span><span>견적 최종 합계 {won.format(numbers.total)}원</span>{!budgetAllocationMatches && <small>배분 합계가 견적 최종 합계와 정확히 일치해야 최종 저장할 수 있습니다.</small>}</footer>}
                 </section>}
                 <label><span>견적명</span><input value={draft.projectTitle} onChange={(event) => setDraft({ ...draft, projectTitle: event.target.value })} placeholder="예: 가상현실 스포츠실 구축" /></label>
               </div>
@@ -2090,6 +2124,7 @@ export default function QuotationManagementPage({
                     <div className="quotation-item-card-controls">
                       <div className="quotation-contract-type"><span>계약 구분</span><div><button type="button" className={!item.procurement ? "active" : ""} onClick={() => setItemContractType(item.id, "direct")}>수의계약</button><button type="button" className={item.procurement && !isS2BChannel(item.procurementChannel) ? "active" : ""} onClick={() => setItemContractType(item.id, "g2b")}>조달 계약</button><button type="button" className={item.procurement && isS2BChannel(item.procurementChannel) ? "active" : ""} onClick={() => setItemContractType(item.id, "s2b")}>학교장터</button></div></div>
                       {item.procurement ? <label><span>식별번호</span><input value={item.procurementNumber} onChange={(event) => updateItem(item.id, { procurementNumber: event.target.value.replace(/[^0-9-]/g, "") })} placeholder={isS2BChannel(item.procurementChannel) ? "S2B 번호" : "G2B 물품식별번호"} /></label> : null}
+                      {item.contractType === "g2b" ? <label><span>공급처</span><input value={item.supplierVendorName ?? ""} onChange={(event) => updateItem(item.id, { supplierVendorId: null, supplierVendorName: event.target.value })} placeholder="조달 공급처명" /></label> : null}
                       <label><span>조달 수수료율</span><div className="quotation-rate-input"><EditableRateInput label="조달 수수료율" value={item.procurementFeeRate} step={0.01} disabled={!appliesProcurementFee(item)} onChange={(procurementFeeRate) => updateItem(item.id, { procurementFeeRate })} /><b>%</b></div></label>
                       <label><span>당사 수수료율</span><div className="quotation-rate-input"><EditableRateInput label="당사 수수료율" value={item.earningRate} onChange={(earningRate) => updateItem(item.id, { earningRate, consortiumRate: Math.min(item.consortiumRate, earningRate) })} /><b>%</b></div></label>
                       {draft.executionType === "컨소" ? <label><span>컨소 지급률</span><div className="quotation-rate-input"><EditableRateInput label="컨소 지급률" value={item.consortiumRate} max={item.earningRate * 100} onChange={(consortiumRate) => updateItem(item.id, { consortiumRate })} /><b>%</b></div></label> : null}
@@ -2130,6 +2165,7 @@ export default function QuotationManagementPage({
             <label>협업 구분<select value={draft.executionType} onChange={(event) => setDraft({ ...draft, executionType: event.target.value === "컨소" ? "컨소" : "직영" })}><option>직영</option><option>컨소</option></select></label>
             {draft.executionType === "컨소" && <><label>컨소 업체<input value={draft.consortiumCompany} onChange={(event) => setDraft({ ...draft, consortiumCompany: event.target.value })} placeholder="업체명" /></label><p>컨소 지급률은 품목마다 다르게 입력합니다. 각 품목의 지급률은 위즈업 수수료율을 넘을 수 없습니다.</p></>}
             <section className="quote-profit-box"><header><strong>수익 분석</strong><small>내부용</small></header><dl><dt>예상 수익</dt><dd>{won.format(numbers.earning)}원</dd><dt>컨소 지급</dt><dd>{numbers.consortium > 0 ? `-${won.format(numbers.consortium)}원` : "0원"}</dd>{numbers.projectorInstallationCost > 0 && <><dt>빔프로젝터 설치</dt><dd className="deduction">-{won.format(numbers.projectorInstallationCost)}원</dd></>}{numbers.yogaMatServiceCost > 0 && <><dt>요가매트 제공</dt><dd className="deduction">-{won.format(numbers.yogaMatServiceCost)}원</dd></>}{numbers.additionalConstructionCost > 0 && <><dt>추가 공사 원가</dt><dd className="deduction">-{won.format(numbers.additionalConstructionCost)}원</dd></>}{numbers.internalCost > 0 && <><dt>내부 원가 합계</dt><dd className="deduction">-{won.format(numbers.internalCost)}원</dd></>}<dt>최종 총이익</dt><dd>{won.format(numbers.margin)}원</dd><dt>마진%</dt><dd>{(numbers.marginRate * 100).toFixed(1)}%</dd></dl></section>
+            {procurementWarnings.length > 0 && <section className="quotation-procurement-warning" role="alert"><strong>조달 계약 금액 확인</strong>{procurementWarnings.map((warning) => <div key={warning.key}><b>{warning.vendorName}</b><span>{won.format(warning.totalAmount)}원 · {warning.itemCount}개 품목</span><small>{warning.unspecified ? "공급처를 지정해야 업체별 1억 원 기준을 정확히 판단할 수 있습니다." : "동일 공급처의 조달 계약 품목 합계가 1억 원 이상입니다."}</small></div>)}</section>}
             <div className="quote-internal-report-actions"><button type="button" onClick={() => void copyInternalProfitReport()}>수익 보고 복사</button><button type="button" onClick={() => setInternalReportOpen(true)}>내부 수익표 보기</button></div>
             <label className="quotation-stamp-toggle"><input type="checkbox" checked={draft.includeStamp} onChange={(event) => setDraft({ ...draft, includeStamp: event.target.checked })} /><span>출력물에 직인 포함</span></label>
             <section className="quotation-output-spacing">

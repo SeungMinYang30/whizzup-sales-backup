@@ -27,6 +27,7 @@ import QuotationManagementPage, {
   type QuotationInstitutionOption,
 } from "./quotation-management-page";
 import AwardVendorPage from "./award-vendor-page";
+import { parseXlsxPreview, type XlsxPreview } from "./xlsx-preview";
 
 type ProductWorkspaceTab = "quotations" | "products" | "vendors";
 
@@ -390,6 +391,11 @@ export default function ProductCatalogPage({
   const [comparisonProduct, setComparisonProduct] = useState<ProductCatalogItem | null>(null);
   const [comparisonDocuments, setComparisonDocuments] = useState<ProductComparisonDocument[]>([]);
   const [comparisonBusy, setComparisonBusy] = useState(false);
+  const [comparisonPreview, setComparisonPreview] = useState<ProductComparisonDocument | null>(null);
+  const [comparisonPreviewWorkbook, setComparisonPreviewWorkbook] = useState<XlsxPreview | null>(null);
+  const [comparisonPreviewBusy, setComparisonPreviewBusy] = useState(false);
+  const [comparisonPreviewError, setComparisonPreviewError] = useState("");
+  const [comparisonPreviewZoom, setComparisonPreviewZoom] = useState(100);
   const [bulkVendorId, setBulkVendorId] = useState("__choose__");
   const [catalogView, setCatalogView] = useState<"all" | "favorites">("all");
   const [productPage, setProductPage] = useState(1);
@@ -1036,12 +1042,41 @@ export default function ProductCatalogPage({
       );
       const body = await response.json() as { documents?: ProductComparisonDocument[]; error?: string };
       if (!response.ok) throw new Error(body.error || "물품 비교표를 불러오지 못했습니다.");
-      setComparisonDocuments(body.documents ?? []);
+      const documents = body.documents ?? [];
+      setComparisonDocuments(documents);
+      return documents;
     } catch (error) {
       setComparisonDocuments([]);
       setMessage(error instanceof Error ? error.message : "물품 비교표를 불러오지 못했습니다.");
+      return [] as ProductComparisonDocument[];
     } finally {
       setComparisonBusy(false);
+    }
+  }
+
+  async function openComparisonPreview(document: ProductComparisonDocument) {
+    setComparisonPreview(document);
+    setComparisonPreviewWorkbook(null);
+    setComparisonPreviewError("");
+    setComparisonPreviewZoom(100);
+    const lowerName = document.original_name.toLocaleLowerCase();
+    if (lowerName.endsWith(".pdf") || document.mime_type === "application/pdf") return;
+    if (!lowerName.endsWith(".xlsx")) {
+      setComparisonPreviewError("이 파일 형식은 화면 미리보기를 지원하지 않습니다. 원본을 다운로드해 확인해 주세요.");
+      return;
+    }
+    setComparisonPreviewBusy(true);
+    try {
+      const response = await fetch(`/api/product-comparison-documents?id=${document.id}&download=1`, { cache: "no-store" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(payload.error || "Excel 미리보기 파일을 불러오지 못했습니다.");
+      }
+      setComparisonPreviewWorkbook(parseXlsxPreview(await response.arrayBuffer()));
+    } catch (error) {
+      setComparisonPreviewError(error instanceof Error ? error.message : "Excel 미리보기를 만들지 못했습니다.");
+    } finally {
+      setComparisonPreviewBusy(false);
     }
   }
 
@@ -1059,8 +1094,9 @@ export default function ProductCatalogPage({
       const result = await response.json() as { error?: string; replaced?: boolean };
       if (!response.ok) throw new Error(result.error || "물품 비교표를 저장하지 못했습니다.");
       formElement.reset();
-      await openProductComparison(comparisonProduct);
+      const documents = await openProductComparison(comparisonProduct);
       setMessage(result.replaced ? "물품 비교표를 교체했습니다." : "물품 비교표를 등록했습니다.");
+      if (documents[0]) await openComparisonPreview(documents[0]);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "물품 비교표를 저장하지 못했습니다.");
       setComparisonBusy(false);
@@ -1732,13 +1768,13 @@ export default function ProductCatalogPage({
                   placeholder="옵션, 예외, 영업보호, 내부 메모"
                 />
               </label>
-              <label className="product-procurement-toggle">
+              <div className="product-procurement-toggle">
                 <span>조달 제품</span>
-                <label className="quotation-stamp-toggle">
+                <label>
                   <input type="checkbox" checked={form.procurement} onChange={(event) => setForm({ ...form, procurement: event.target.checked })} />
                   <span>나라장터·학교장터 등 조달 제품으로 관리</span>
                 </label>
-              </label>
+              </div>
               {form.procurement && <>
                 <label><span>조달 채널</span><select value={form.procurementChannel} onChange={(event) => setForm({ ...form, procurementChannel: event.target.value })}><option>G2B</option><option>S2B</option><option>디지털서비스몰</option><option>혁신장터</option><option>기타</option></select></label>
                 <label><span>물품식별번호</span><input value={form.procurementNumber} onChange={(event) => setForm({ ...form, procurementNumber: event.target.value.replace(/[^0-9-]/g, "") })} placeholder="조달 식별번호" /></label>
@@ -1793,6 +1829,7 @@ export default function ProductCatalogPage({
                         <small>{Math.max(1, Math.round(document.size_bytes / 1024)).toLocaleString("ko-KR")}KB · {document.created_at.slice(0, 10)}</small>
                       </div>
                       <div>
+                        <button type="button" className="secondary-button" disabled={comparisonBusy} onClick={() => void openComparisonPreview(document)}>미리보기</button>
                         <a className="secondary-button" href={`/api/product-comparison-documents?id=${document.id}&download=1`}>다운로드</a>
                         <button type="button" className="product-delete-button" disabled={comparisonBusy} onClick={() => void deleteProductComparison(document.id)}>삭제</button>
                       </div>
@@ -1806,7 +1843,7 @@ export default function ProductCatalogPage({
                   )}
                 </div>
                 <div className="product-comparison-upload">
-                  <label><span>{comparisonDocuments.length ? "새 파일로 교체" : "비교표 파일 등록"}</span><input name="file" type="file" required disabled={comparisonBusy} /></label>
+                  <label><span>{comparisonDocuments.length ? "새 파일로 교체" : "비교표 파일 등록"}</span><input name="file" type="file" accept=".pdf,.xlsx,.hwp,.hwpx,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required disabled={comparisonBusy} /></label>
                   <small>엑셀, PDF, 한글 등 비교표 원본 파일을 등록할 수 있습니다.</small>
                 </div>
               </div>
@@ -1815,6 +1852,40 @@ export default function ProductCatalogPage({
                 <button type="submit" className="primary-button" disabled={comparisonBusy}>{comparisonBusy ? "저장 중…" : comparisonDocuments.length ? "비교표 교체" : "비교표 등록"}</button>
               </div>
             </form>
+          </section>
+        </div>
+      )}
+
+      {comparisonPreview && (
+        <div className="comparison-preview-layer" role="dialog" aria-modal="true" aria-label={`${comparisonPreview.original_name} 미리보기`}>
+          <button className="comparison-preview-backdrop" type="button" aria-label="미리보기 닫기" onClick={() => setComparisonPreview(null)} />
+          <section className="comparison-preview-panel">
+            <header>
+              <div><span className="section-kicker">READ ONLY PREVIEW</span><h3>{comparisonPreview.original_name}</h3><p>원본 파일은 변경하지 않고 읽기 전용으로 표시합니다.</p></div>
+              <div className="comparison-preview-actions">
+                <button type="button" aria-label="축소" onClick={() => setComparisonPreviewZoom((value) => Math.max(50, value - 25))}>−</button>
+                <b>{comparisonPreviewZoom}%</b>
+                <button type="button" aria-label="확대" onClick={() => setComparisonPreviewZoom((value) => Math.min(200, value + 25))}>＋</button>
+                <a href={`/api/product-comparison-documents?id=${comparisonPreview.id}&download=1`}>다운로드</a>
+                <button type="button" aria-label="닫기" onClick={() => setComparisonPreview(null)}>×</button>
+              </div>
+            </header>
+            <div className="comparison-preview-content">
+              {comparisonPreviewBusy ? <div className="empty-state">미리보기를 준비하고 있습니다.</div> : null}
+              {comparisonPreviewError ? <div className="comparison-preview-notice"><strong>미리보기 안내</strong><p>{comparisonPreviewError}</p><a href={`/api/product-comparison-documents?id=${comparisonPreview.id}&download=1`}>원본 다운로드</a></div> : null}
+              {!comparisonPreviewBusy && !comparisonPreviewError && (comparisonPreview.original_name.toLocaleLowerCase().endsWith(".pdf") || comparisonPreview.mime_type === "application/pdf") ? (
+                <iframe key={comparisonPreviewZoom} src={`/api/product-comparison-documents?id=${comparisonPreview.id}&preview=1#zoom=${comparisonPreviewZoom}`} title={`${comparisonPreview.original_name} PDF 페이지`} />
+              ) : null}
+              {!comparisonPreviewBusy && comparisonPreviewWorkbook ? (
+                <div className="comparison-xlsx-preview" style={{ fontSize: `${comparisonPreviewZoom}%` }}>
+                  {comparisonPreviewWorkbook.truncated ? <p className="comparison-preview-truncated">큰 파일은 화면 성능을 위해 일부 시트·행·열만 표시합니다. 전체 내용은 다운로드해서 확인해 주세요.</p> : null}
+                  {comparisonPreviewWorkbook.sheets.map((sheet) => (
+                    <section key={sheet.name}><h4>{sheet.name}</h4><div><table><tbody>{sheet.rows.map((row, rowIndex) => <tr key={`${sheet.name}-${rowIndex}`}>{row.map((cell, cellIndex) => <td key={`${rowIndex}-${cellIndex}`}>{cell}</td>)}</tr>)}</tbody></table></div></section>
+                  ))}
+                  {comparisonPreviewWorkbook.images.length ? <section className="comparison-xlsx-images"><h4>포함된 이미지</h4><div>{comparisonPreviewWorkbook.images.map((image) => <figure key={image.name}><img src={image.url} alt={image.name} /><figcaption>{image.name}</figcaption></figure>)}</div></section> : null}
+                </div>
+              ) : null}
+            </div>
           </section>
         </div>
       )}

@@ -40,7 +40,9 @@ export async function GET(request: Request) {
     await requireApprovedMember();
     const params = new URL(request.url).searchParams;
     const id = positiveInteger(params.get("id"));
-    if (id && params.get("download") === "1") {
+    const isDownload = params.get("download") === "1";
+    const isPreview = params.get("preview") === "1";
+    if (id && (isDownload || isPreview)) {
       const { row } = await findDocument(id);
       if (!row || row.archived_at) {
         return Response.json({ error: "물품 비교표를 찾지 못했습니다." }, { status: 404 });
@@ -60,7 +62,7 @@ export async function GET(request: Request) {
       return new Response(stored.body, {
         headers: {
           "Content-Type": contentType || row.mime_type || "application/octet-stream",
-          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(row.original_name)}`,
+          "Content-Disposition": `${isPreview ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(row.original_name)}`,
           "Cache-Control": "private, no-store",
           "X-Content-Type-Options": "nosniff",
         },

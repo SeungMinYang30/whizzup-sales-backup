@@ -18,6 +18,7 @@ const [api, sync, store, route, calendar, crm, migration, connectionMigration, c
   readFile(new URL("../drizzle/0088_organization_schedule_semantic_identity.sql", import.meta.url), "utf8"),
   readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
 ]);
+const title = await readFile(new URL("../lib/google-calendar-title.ts", import.meta.url), "utf8");
 
 test("사이트 일정은 Google 이벤트 식별자와 재시도 가능한 동기화 상태를 보존한다", () => {
   for (const column of [
@@ -145,7 +146,12 @@ test("Google에서 가져온 일정은 팀 연결함에서 기관에 연결하�
 });
 
 test("공유 업무만 Google로 보내고 기존 일정 제목과 개인 일정은 소급 정리한다", () => {
-  assert.match(api, /`\[\$\{categoryLabel\[category\] \|\| "기타"\}\] \$\{schedule\.organization\} · \$\{cleanLabel\}`/);
+  assert.match(api, /googleCalendarTitle\(schedule\)/);
+  assert.match(title, /`\[영업\] \$\{input\.organization\} 방문`/);
+  assert.match(title, /`\[회의\] \$\{input\.organization\} 회의`/);
+  assert.match(title, /`\[시공\] \$\{input\.organization\} · \$\{input\.productSummary/);
+  assert.match(title, /`\[쇼룸\] \$\{input\.organization\} 방문`/);
+  assert.match(title, /`\[기타\] \$\{input\.organization\} · \$\{cleanLabel\}`/);
   assert.match(api, /colorId: colorId\[category\]/);
   assert.match(sync, /applyGoogleSharingPolicy/);
   assert.match(sync, /sync_operation === "unlink"/);
