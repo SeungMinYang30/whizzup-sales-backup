@@ -12379,6 +12379,17 @@ button:is(
   background: linear-gradient(135deg, #3544ef, #5060f7);
   box-shadow: 0 8px 20px rgb(63 76 255 / 20%);
 }
+.quotation-editor-actions.is-single { grid-template-columns: 1fr; }
+.quotation-editor-save-message {
+  margin: 12px 18px 0;
+  border: 1px solid #a9dec8;
+  border-radius: 10px;
+  padding: 11px 14px;
+  color: #08734f;
+  background: #eefaf5;
+  font-size: 13px;
+  font-weight: 800;
+}
 
 .equipment-section-readonly .equipment-section-heading { align-items: center; }
 .equipment-readonly-badge { padding: 7px 10px; border-radius: 999px; color: #53627b; background: #eef2f8; font-size: 12px; font-weight: 800; }

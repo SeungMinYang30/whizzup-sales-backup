@@ -444,6 +444,7 @@ export default function QuotationManagementPage({
   const [importSourceFile, setImportSourceFile] = useState<File | null>(null);
   const [internalReportOpen, setInternalReportOpen] = useState(false);
   const draftRef = useRef<Draft | null>(null);
+  const savingRef = useRef(false);
   const draggedItemIdRef = useRef("");
   const editorHistoryActiveRef = useRef(false);
   const duplicateFileReconcileRef = useRef(false);
@@ -1791,13 +1792,14 @@ export default function QuotationManagementPage({
   }
 
   async function save(status: "draft" | "final") {
-    if (!draft || saving) return;
+    if (!draft || savingRef.current) return;
     if (
       status === "final"
       && draft.id
       && draft.status === "final"
       && !window.confirm("현재 견적을 같은 견적번호로 수정할까요? 기존 PDF·Excel도 새 내용으로 교체됩니다.")
     ) return;
+    savingRef.current = true;
     setSaving(true);
     setMessage("");
     try {
@@ -1841,6 +1843,7 @@ export default function QuotationManagementPage({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "견적서를 저장하지 못했습니다.");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
@@ -1985,6 +1988,8 @@ export default function QuotationManagementPage({
             </div>
           </nav>
         </header>
+
+        {message && <div className="quotation-editor-save-message no-print" role="status" aria-live="polite">{message}</div>}
 
         <div className="quotation-editor-layout quote-studio-layout">
           <main className="quotation-paper quote-document">
@@ -2157,10 +2162,9 @@ export default function QuotationManagementPage({
               <div><button type="button" aria-label="출력 빈 행 줄이기" disabled={outputBlankRows === 0} onClick={() => setOutputBlankRows((current) => Math.max(0, current - 1))}>−</button><b>{outputBlankRows}행</b><button type="button" aria-label="출력 빈 행 늘리기" disabled={outputBlankRows >= 5} onClick={() => setOutputBlankRows((current) => Math.min(5, current + 1))}>＋</button></div>
             </section>
             <p>내부 수익·수수료 정보는 인쇄 및 PDF 화면에 표시되지 않습니다.</p>
-            <div className="quotation-editor-actions">{draft.id && draft.status === "final"
-              ? <button className="app-button app-button-primary" type="button" onClick={() => void save("final")} disabled={saving}>{saving ? "저장 중…" : "견적 수정 저장"}</button>
-              : <><button className="app-button app-button-secondary" type="button" onClick={() => void save("draft")} disabled={saving}>임시 저장</button><button className="app-button app-button-primary" type="button" onClick={() => void save("final")} disabled={saving}>최종 저장</button></>}
-            </div>
+            {draft.status !== "final" && <div className="quotation-editor-actions is-single">
+              <button className="app-button app-button-secondary" type="button" onClick={() => void save("draft")} disabled={saving}>{saving ? "저장 중…" : "임시 저장"}</button>
+            </div>}
           </aside>
         </div>
 

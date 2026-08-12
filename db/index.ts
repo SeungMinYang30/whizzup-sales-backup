@@ -398,8 +398,9 @@ export function normalizeSqlForPostgres(query: string) {
     )
     .replace(/\s+COLLATE\s+NOCASE/gi, "")
     .replace(
-      /datetime\(\s*'now'\s*,\s*'-35 seconds'\s*\)/gi,
-      "(CURRENT_TIMESTAMP - INTERVAL '35 seconds')",
+      /datetime\(\s*'now'\s*,\s*'-(\d+)\s+(second|minute|hour|day)s?'\s*\)/gi,
+      (_match, amount: string, unit: string) =>
+        `(CURRENT_TIMESTAMP - INTERVAL '${amount} ${unit}s')`,
     )
     .replace(
       /date\(\s*'now'\s*,\s*'-7 day'\s*\)/gi,
