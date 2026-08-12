@@ -74,10 +74,10 @@ export default function InitialPasswordSetup({
           />
         </div>
         <h2 id="initial-password-title">
-          {mode === "reset" ? "로그인 비밀번호 다시 설정" : "최초 로그인 비밀번호 설정"}
+          {mode === "reset" ? "새 로그인 비밀번호 등록" : "최초 로그인 비밀번호 등록"}
         </h2>
         <p>
-          ChatGPT 계정 확인이 완료되었습니다. 새 비밀번호를 저장하면 다음부터 이메일과 비밀번호로 로그인할 수 있습니다.
+          승인된 직원 이메일을 확인했습니다. 지금 등록한 비밀번호로 다음부터 바로 로그인할 수 있습니다.
         </p>
         <form onSubmit={submit}>
           <label>
@@ -95,7 +95,7 @@ export default function InitialPasswordSetup({
           {error && <p className="direct-login-error" role="alert">{error}</p>}
           <div className="initial-password-actions">
             <button className="primary" type="submit" disabled={busy}>
-              {busy ? "저장 중" : mode === "reset" ? "새 비밀번호 저장" : "비밀번호 설정"}
+              {busy ? "저장 중" : "새 비밀번호 저장"}
             </button>
           </div>
         </form>
@@ -103,3 +103,4 @@ export default function InitialPasswordSetup({
     </div>
   );
 }
+
