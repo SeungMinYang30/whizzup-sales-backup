@@ -1,25 +1,38 @@
-import { getChatGPTUser } from "../../../chatgpt-auth";
 import {
   createDirectSession,
   findMemberByEmail,
   setMemberPassword,
   validatePassword,
 } from "../../../../lib/app-auth";
+import {
+  clearPasswordSetupTicket,
+  readPasswordSetupTicket,
+} from "../../../../lib/password-setup-ticket";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const chatgpt = await getChatGPTUser();
-  if (!chatgpt) {
+  const ticket = await readPasswordSetupTicket();
+  if (!ticket) {
     return Response.json(
-      { error: "최초 비밀번호 설정은 기존 ChatGPT 로그인 상태에서 진행해 주세요." },
+      { error: "비밀번호 설정 시간이 만료되었습니다. 로그인 화면에서 이메일을 다시 입력해 주세요." },
       { status: 401 },
     );
   }
-  const member = await findMemberByEmail(chatgpt.email);
-  if (!member || String(member.status) !== "approved") {
-    return Response.json({ error: "승인된 구성원 계정을 찾지 못했습니다." }, { status: 403 });
+
+  const member = await findMemberByEmail(ticket.email);
+  if (
+    !member ||
+    String(member.status) !== "approved" ||
+    Number(member.id) !== ticket.memberId
+  ) {
+    await clearPasswordSetupTicket();
+    return Response.json(
+      { error: "승인된 직원 계정을 확인하지 못했습니다." },
+      { status: 403 },
+    );
   }
+
   const payload = (await request.json()) as {
     password?: string;
     remember?: boolean;
@@ -27,11 +40,11 @@ export async function POST(request: Request) {
   const password = String(payload.password ?? "");
   const validation = validatePassword(password);
   if (validation) return Response.json({ error: validation }, { status: 400 });
+
   try {
-    // The ChatGPT identity header is the re-authentication proof. The member
-    // email always comes from that trusted header, never from the request body.
     await setMemberPassword(Number(member.id), password);
     await createDirectSession(Number(member.id), payload.remember !== false);
+    await clearPasswordSetupTicket();
     return Response.json({ ok: true });
   } catch (error) {
     console.error("Failed to set member password", error);
@@ -41,3 +54,4 @@ export async function POST(request: Request) {
     );
   }
 }
+
