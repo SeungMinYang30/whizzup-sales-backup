@@ -1,8 +1,10 @@
 import InitialPasswordSetup from "../initial-password-setup";
 import {
   chatGPTSignOutPath,
-  requireChatGPTUser,
+  getChatGPTUser,
+  googleSignInPath,
 } from "../chatgpt-auth";
+import { redirect } from "next/navigation";
 import {
   findMemberByEmail,
   memberHasPassword,
@@ -11,7 +13,8 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function PasswordSetupPage() {
-  const chatgpt = await requireChatGPTUser("/password-setup");
+  const chatgpt = await getChatGPTUser();
+  if (!chatgpt) redirect(googleSignInPath("/password-setup"));
   const email = chatgpt.email.trim().toLowerCase();
   const member = await findMemberByEmail(email);
 
@@ -35,14 +38,14 @@ export default async function PasswordSetupPage() {
           </div>
           <h2 id="password-setup-unavailable-title">승인 계정을 확인해 주세요</h2>
           <p>
-            현재 확인된 ChatGPT 이메일({email})과 일치하는 승인 계정이 없습니다.
+            현재 확인된 Google 이메일({email})과 일치하는 승인 계정이 없습니다.
           </p>
           <div className="initial-password-actions">
             <a
               className="initial-password-account-link"
               href={chatGPTSignOutPath("/password-setup")}
             >
-              다른 ChatGPT 계정으로 확인
+              다른 Google 계정으로 확인
             </a>
           </div>
         </section>

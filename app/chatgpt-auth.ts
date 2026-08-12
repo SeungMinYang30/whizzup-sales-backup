@@ -64,6 +64,11 @@ export function chatGPTSignInPath(returnTo: string): string {
   return `/login?return_to=${encodeURIComponent(safeReturnTo)}`;
 }
 
+export function googleSignInPath(returnTo: string): string {
+  const safeReturnTo = safeRelativeReturnPath(returnTo);
+  return `/auth/google?return_to=${encodeURIComponent(safeReturnTo)}`;
+}
+
 export function chatGPTSignOutPath(returnTo = "/"): string {
   const safeReturnTo = safeRelativeReturnPath(returnTo);
   return `/auth/signout?return_to=${encodeURIComponent(safeReturnTo)}`;

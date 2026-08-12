@@ -47,7 +47,8 @@ test("direct login transition keeps protected screens behind authentication", as
   assert.doesNotMatch(setup, />나중에</);
   assert.match(setup, /window\.location\.assign\("\/"\)/);
 
-  assert.match(passwordSetupPage, /requireChatGPTUser\("\/password-setup"\)/);
+  assert.match(passwordSetupPage, /getChatGPTUser\(\)/);
+  assert.match(passwordSetupPage, /redirect\(googleSignInPath\("\/password-setup"\)\)/);
   assert.match(passwordSetupPage, /memberHasPassword/);
   assert.match(passwordSetupPage, /mode=\{hasPassword \? "reset" : "initial"\}/);
   assert.doesNotMatch(setPasswordRoute, /currentPassword/);
