@@ -1459,7 +1459,6 @@ const memberAccessPresetDefinitions: Record<
     label: string;
     role: "member" | "assistant";
     permissions: MemberPermission[];
-    isSales: boolean;
     description: string;
   }
 > = {
@@ -1467,21 +1466,18 @@ const memberAccessPresetDefinitions: Record<
     label: "영업 담당자",
     role: "member",
     permissions: [],
-    isSales: true,
     description: "일상 영업 기록·기관·수주·지도 업무를 사용합니다.",
   },
   salesManager: {
     label: "영업 관리자",
     role: "assistant",
     permissions: ["records:manage"],
-    isSales: true,
     description: "영업 업무와 팀 업무 현황·관리자 영업 점검을 사용합니다.",
   },
   accounting: {
     label: "회계 담당자",
     role: "assistant",
     permissions: ["accounting:manage", "analytics:view"],
-    isSales: false,
     description: "입금 예정·실 수금·채권 관리와 수주·제품 통계를 사용합니다.",
   },
   operations: {
@@ -1490,7 +1486,6 @@ const memberAccessPresetDefinitions: Record<
     permissions: memberPermissionOptions
       .map((option) => option.id)
       .filter((permission) => permission !== "activity-history:manage"),
-    isSales: false,
     description: "구성원·회계·통계·물류·재고·휴지통·API·백업 등 모든 운영 도구를 사용합니다.",
   },
 };
@@ -1523,7 +1518,7 @@ function hasExactPermissions(
 }
 
 function memberAccessPreset(
-  member: Pick<TeamMember, "role" | "permissions" | "isSales">,
+  member: Pick<TeamMember, "role" | "permissions">,
 ): MemberAccessPreset {
   const matched = (
     Object.entries(memberAccessPresetDefinitions) as [
@@ -1533,7 +1528,6 @@ function memberAccessPreset(
   ).find(
     ([, definition]) =>
       member.role === definition.role &&
-      member.isSales === definition.isSales &&
       hasExactPermissions(member.permissions, definition.permissions),
   );
   return matched?.[0] ?? "custom";
@@ -6831,13 +6825,19 @@ export default function CrmApp({
 
   useEffect(() => {
     if (
-      (view === "dashboard" || view === "installation-schedule") &&
+      [
+        "dashboard",
+        "installation-schedule",
+        "followup",
+        "organizations",
+        "awards",
+      ].includes(view) &&
       sessionStatus === "approved" &&
       !activityReviewAssigneesLoadedRef.current
     ) {
       void loadActivityReviewAssignees();
     }
-  // 구성원 직책은 일정표 진입 시 한 번만 불러옵니다.
+  // 담당자 선택·표시가 있는 화면에 진입할 때 이름과 직책을 함께 불러옵니다.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionStatus, view]);
 
@@ -12087,7 +12087,6 @@ export default function CrmApp({
           status,
           role,
           permissions: member.permissions,
-          isSales: member.isSales,
         }),
       });
       const payload = (await response.json()) as { error?: string };
@@ -16946,9 +16945,6 @@ export default function CrmApp({
                                                     ),
                                                 ),
                                               ],
-                                              isSales:
-                                                memberAccessPresetDefinitions[preset]
-                                                  .isSales,
                                             }
                                         : item,
                                     ),
@@ -18287,7 +18283,11 @@ export default function CrmApp({
                         <label className="institution-bulk-toggle"><input type="checkbox" checked={institutionBulkManagerEnabled} onChange={(event) => setInstitutionBulkManagerEnabled(event.target.checked)} /><strong>진행 담당자</strong></label>
                         <select disabled={!institutionBulkManagerEnabled} value={institutionBulkProgressManager} onChange={(event) => setInstitutionBulkProgressManager(event.target.value)}>
                           <option value="">담당자 선택</option>
-                          {registeredSalesNames.map((name) => <option key={name}>{name}</option>)}
+                          {registeredSalesNames.map((name) => (
+                            <option key={name} value={name}>
+                              {displayProgressManager(name)}
+                            </option>
+                          ))}
                         </select>
                       </section>
                     )}
@@ -19195,7 +19195,7 @@ export default function CrmApp({
                     {session?.canViewPresence && (
                       <section className={awardBulkManagerEnabled || awardBulkLocksManager ? "enabled" : ""}>
                         <label className="institution-bulk-toggle"><input type="checkbox" checked={awardBulkLocksManager || awardBulkManagerEnabled} disabled={awardBulkLocksManager} onChange={(event) => setAwardBulkManagerEnabled(event.target.checked)} /><strong>진행 담당자</strong><small>{awardBulkLocksManager ? "협력사 수주는 해당 없음" : "미선택 시 유지"}</small></label>
-                        <select disabled={awardBulkLocksManager || !awardBulkManagerEnabled} value={awardBulkLocksManager ? "해당 없음" : awardBulkProgressManager} onChange={(event) => setAwardBulkProgressManager(event.target.value)}><option value="해당 없음">해당 없음</option>{registeredSalesNames.map((name) => <option key={name} value={name}>{name}</option>)}</select>
+                        <select disabled={awardBulkLocksManager || !awardBulkManagerEnabled} value={awardBulkLocksManager ? "해당 없음" : awardBulkProgressManager} onChange={(event) => setAwardBulkProgressManager(event.target.value)}><option value="해당 없음">해당 없음</option>{registeredSalesNames.map((name) => <option key={name} value={name}>{displayProgressManager(name)}</option>)}</select>
                       </section>
                     )}
                     <section className={awardBulkContactNameEnabled ? "enabled" : ""}>
@@ -19265,7 +19265,11 @@ export default function CrmApp({
                       <select value={awardManagerFilter} onChange={(event) => setAwardManagerFilter(event.target.value)} aria-label="진행 담당자 필터">
                         <option>전체 담당자</option>
                         <option>해당 없음</option>
-                        {registeredSalesNames.map((name) => <option key={name}>{name}</option>)}
+                        {registeredSalesNames.map((name) => (
+                          <option key={name} value={name}>
+                            {displayProgressManager(name)}
+                          </option>
+                        ))}
                       </select>
                       <select
                         className="sort-select"
@@ -21317,7 +21321,7 @@ export default function CrmApp({
                                             )}
                                           {registeredSalesNames.map((name) => (
                                             <option key={name} value={name}>
-                                              {name}
+                                              {displayProgressManager(name)}
                                             </option>
                                           ))}
                                         </select>

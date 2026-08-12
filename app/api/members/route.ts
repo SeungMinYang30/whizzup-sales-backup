@@ -132,7 +132,6 @@ export async function PUT(request: Request) {
       status?: string;
       role?: string;
       permissions?: unknown;
-      isSales?: boolean;
     };
     const id = Number(payload.id);
     if (!Number.isInteger(id) || id < 1 || id === actor.id) {
@@ -177,17 +176,12 @@ export async function PUT(request: Request) {
     );
     const permissions =
       role === "assistant" ? requestedPermissions : aiInputPermissions;
-    const isSales =
-      actor.role === "admin" && typeof payload.isSales === "boolean"
-        ? payload.isSales
-        : Number(target.is_sales) === 1;
     const result = await d1
       .prepare(`
         UPDATE members SET
           status = ?,
           role = ?,
           permissions = ${memberPermissionsJsonExpression(permissions)},
-          is_sales = ?,
           approved_at = CASE WHEN ? = 'approved' THEN COALESCE(approved_at, CURRENT_TIMESTAMP) ELSE approved_at END,
           approved_by = CASE WHEN ? = 'approved' THEN ? ELSE approved_by END
         WHERE id = ?
@@ -197,7 +191,6 @@ export async function PUT(request: Request) {
         status,
         role,
         ...permissions,
-        isSales ? 1 : 0,
         status,
         status,
         actor.id,

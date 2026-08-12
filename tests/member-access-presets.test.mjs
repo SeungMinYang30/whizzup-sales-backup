@@ -28,6 +28,33 @@ test("구성원 역할은 확정된 네 가지 역할과 직접 설정을 제공
   assert.match(crm, /id: "activity-history:manage"/);
 });
 
+test("역할과 기능 권한을 저장해도 영업 담당자 등록은 변경하지 않는다", () => {
+  const crm = source("../app/crm-app.tsx");
+  const membersRoute = source("../app/api/members/route.ts");
+  const presetDefinitions = crm.slice(
+    crm.indexOf("const memberAccessPresetDefinitions"),
+    crm.indexOf("const memberAccessPresetLabels"),
+  );
+  const updateMember = crm.slice(
+    crm.indexOf("async function updateMember("),
+    crm.indexOf("async function updateMemberSalesStatus("),
+  );
+  const updateAccess = membersRoute.slice(
+    membersRoute.indexOf("export async function PUT"),
+    membersRoute.indexOf("export async function PATCH"),
+  );
+  const updateSales = membersRoute.slice(
+    membersRoute.indexOf("export async function PATCH"),
+    membersRoute.indexOf("export async function DELETE"),
+  );
+
+  assert.doesNotMatch(presetDefinitions, /isSales/);
+  assert.doesNotMatch(updateMember, /isSales/);
+  assert.doesNotMatch(updateAccess, /is_sales\s*=|payload\.isSales/);
+  assert.match(updateSales, /typeof payload\.isSales === "boolean"/);
+  assert.match(updateSales, /UPDATE members SET is_sales = \?/);
+});
+
 test("직접 설정 권한은 왼쪽 운영 도구 순서와 동일하다", () => {
   const collaboration = source("../lib/collaboration.ts");
   const crm = source("../app/crm-app.tsx");
@@ -108,16 +135,12 @@ test("음성과 사진 분석은 대표관리자가 구성원별로 허용한다
   assert.match(crm, /\{canUseImageInput && \(/);
 });
 
-test("관리자는 이메일로 구성원을 미리 승인 등록할 수 있다", () => {
+test("서버는 이메일로 구성원을 미리 승인 등록할 수 있다", () => {
   const membersRoute = source("../app/api/members/route.ts");
-  const crm = source("../app/crm-app.tsx");
 
   assert.match(membersRoute, /export async function POST/);
   assert.match(membersRoute, /requireMemberPermission\("members:manage"\)/);
   assert.match(membersRoute, /trim\(\)\.toLowerCase\(\)/);
   assert.match(membersRoute, /status = 'approved'/);
   assert.match(membersRoute, /LOWER\(email\) = \?/);
-  assert.match(crm, /이메일로 구성원 바로 등록/);
-  assert.match(crm, /method: "POST"/);
-  assert.match(crm, /등록할 구성원 이메일/);
 });

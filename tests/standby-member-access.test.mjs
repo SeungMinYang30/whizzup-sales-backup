@@ -32,12 +32,24 @@ test("명시적으로 승인한 백업 운영 계정은 기존 승인 상태와 
     /permissions = \$\{memberPermissionsJsonExpression\(standbyPermissions\)\}/,
   );
   assert.match(collaboration, /\.bind\(\.\.\.standbyPermissions, Number\(row\.id\)\)/);
-  assert.match(collaboration, /is_sales = 0/);
+  assert.match(collaboration, /is_sales = 1/);
   assert.match(collaboration, /WHERE id = \?/);
   assert.doesNotMatch(
     collaboration,
     /STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS\.has\(email\)[\s\S]{0,80}status\) === "pending"/,
   );
+});
+
+test("기본 운영 계정은 로그인할 때 영업 담당자 등록도 함께 복구한다", () => {
+  const collaboration = source("../lib/collaboration.ts");
+  const ownerRecovery = collaboration.slice(
+    collaboration.indexOf("if (row && STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS.has(email))"),
+    collaboration.indexOf("if (!row) throw new Error", collaboration.indexOf("if (row && STANDBY_PREAPPROVED_PRIMARY_OWNER_EMAILS.has(email))")),
+  );
+
+  assert.match(ownerRecovery, /status = 'approved'/);
+  assert.match(ownerRecovery, /is_sales = 1/);
+  assert.doesNotMatch(ownerRecovery, /is_sales = 0/);
 });
 
 test("백업 지정 계정은 기존 대표관리자를 유지하면서 대표 전용 기능도 사용한다", () => {

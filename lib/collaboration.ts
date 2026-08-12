@@ -259,7 +259,7 @@ export async function getOrCreateMember(
           role = 'admin',
           permissions = ${memberPermissionsJsonExpression(standbyPermissions)},
           status = 'approved',
-          is_sales = 0,
+          is_sales = 1,
           approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
           last_seen_at = CURRENT_TIMESTAMP
         WHERE id = ?
