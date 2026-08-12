@@ -124,7 +124,8 @@ export async function POST(request: Request) {
   if (!authorized(request)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!automaticSyncEnabled()) {
+  const force = await forceRequested(request);
+  if (!automaticSyncEnabled() && !force) {
     const schedule = (await isVercelPrimaryMode())
       ? await removeStandbySchedule()
       : null;
@@ -148,7 +149,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const force = await forceRequested(request);
   const startedAt = Date.now();
   const sourceOrigin = primaryOrigin();
   try {

@@ -59,7 +59,8 @@ test("standby sync is one-way, authenticated, bounded, and uncached", () => {
   assert.match(syncRoute, /restoreStandbyCredentials/);
   assert.doesNotMatch(syncRoute, /fetch\([^)]*supabase/i);
   assert.match(syncRoute, /AUTOMATIC_STANDBY_SYNC_ENABLED/);
-  assert.match(syncRoute, /Automatic full-database synchronization is disabled/);
+  assert.match(syncRoute, /!automaticSyncEnabled\(\) && !force/);
+  assert.match(syncRoute, /disabled:\s*true/);
 });
 
 test("Sites password credentials are checksum-validated and restored separately", () => {
