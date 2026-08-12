@@ -13,6 +13,7 @@ const schema = await readFile(new URL("../db/schema.ts", import.meta.url), "utf8
 const migration = await readFile(new URL("../drizzle/0091_quotation_internal_costs.sql", import.meta.url), "utf8");
 const pdf = await readFile(new URL("../app/authored-quotation-pdf.ts", import.meta.url), "utf8");
 const workbook = await readFile(new URL("../lib/quotation-xlsx.ts", import.meta.url), "utf8");
+const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("projector and AiFit internal deductions use editable defaults", () => {
   assert.match(defaults, /PROJECTOR_INSTALLATION_COST = 220_000/);
@@ -40,6 +41,9 @@ test("요가매트는 아이핏 전자칠판형·슬림형에만 수량 연동�
   });
   assert.match(page, /internalCostAutoQuantity !== false/);
   assert.match(page, /아이핏 수량 적용/);
+  assert.match(styles, /\.quotation-item-internal-cost\{[^}]*grid-template-columns:minmax\(200px,\.7fr\) minmax\(0,1\.35fr\) minmax\(260px,\.9fr\)/);
+  assert.match(styles, /\.quotation-yoga-mat-cost\{[^}]*display:flex[^}]*flex-wrap:wrap/);
+  assert.match(styles, /\.quotation-item-internal-cost>small\{grid-column:1\/-1/);
 });
 
 test("internal deductions persist with a bearer and preserve legacy quotes as Whizzup cost", () => {

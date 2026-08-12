@@ -347,7 +347,7 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
       context.fillStyle = "#17233f";
       context.textAlign = "center";
       context.font = '700 43px "Malgun Gothic", "Noto Sans KR", sans-serif';
-      context.fillText("교 구 세 부 견 적", 500, 112);
+      context.fillText("교 구 세 부 견 적 서", 500, 112);
       context.textAlign = "left";
       context.font = '400 16px "Malgun Gothic", "Noto Sans KR", sans-serif';
       context.fillStyle = "#52617d";

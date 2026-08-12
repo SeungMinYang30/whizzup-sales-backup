@@ -22,6 +22,10 @@ const settlementPdf = await readFile(
   new URL("../app/consortium-settlement-pdf.ts", import.meta.url),
   "utf8",
 );
+const authoredPdf = await readFile(
+  new URL("../app/authored-quotation-pdf.ts", import.meta.url),
+  "utf8",
+);
 const workbook = await readFile(
   new URL("../lib/quotation-xlsx.ts", import.meta.url),
   "utf8",
@@ -159,7 +163,10 @@ test("PDF output uses the same saved generator and retains the print fallback", 
   assert.doesNotMatch(styles, /@media print\{body \*\{visibility:hidden!important\}/);
   assert.match(page, /async function printQuotation\(\)/);
   assert.match(page, /createAuthoredQuotationPdf\(/);
-  assert.match(page, /저장 PDF와 동일한 양식/);
+  assert.match(page, /const preview = window\.open\("", "_blank"\)/);
+  assert.match(page, /preview\.location\.replace\(url\)/);
+  assert.match(page, /저장 PDF와 동일한 양식으로 PDF 미리보기를 열었습니다/);
+  assert.doesNotMatch(page.slice(page.indexOf("async function printQuotation"), page.indexOf("function startQuotation")), /downloadBlob\(pdf/);
   assert.match(page, /onClick=\{printQuotation\}/);
   assert.match(page, /beforeprint/);
   assert.match(page, /afterprint/);
@@ -173,6 +180,8 @@ test("교구 PDF는 수정 화면과 목록 모두 에어패스 공급자 정보
   assert.match(page, /airpass-print-brand/);
   assert.match(page, /airpass-seal\.png/);
   assert.match(page, /createAuthoredQuotationPdf\(/);
+  assert.match(authoredPdf, /교 구 세 부 견 적 서/);
+  assert.match(workbook, /교  구  세  부  견  적  서/);
 });
 
 test("정산서 PDF는 조정 내역·최종 지급액·직인을 포함한다", () => {

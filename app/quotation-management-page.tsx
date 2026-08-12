@@ -586,6 +586,14 @@ export default function QuotationManagementPage({
 
   async function printQuotation() {
     if (!draft?.items.length) return;
+    const preview = window.open("", "_blank");
+    if (!preview) {
+      setMessage("PDF 미리보기 창이 차단되었습니다. 브라우저 팝업을 허용해 주세요.");
+      return;
+    }
+    preview.opener = null;
+    preview.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>PDF 준비 중</title></head><body style="font-family:Arial,\'Noto Sans KR\',sans-serif;padding:32px;color:#17233d">PDF 미리보기를 준비하고 있습니다.</body></html>');
+    preview.document.close();
     try {
       const pdf = await createAuthoredQuotationPdf({
         organization: draft.organization,
@@ -612,9 +620,12 @@ export default function QuotationManagementPage({
           equipmentKit: item.equipmentKit,
         })),
       });
-      downloadBlob(pdf, pdf.name);
-      setMessage("저장 PDF와 동일한 양식으로 PDF를 만들었습니다.");
+      const url = URL.createObjectURL(pdf);
+      preview.location.replace(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setMessage("저장 PDF와 동일한 양식으로 PDF 미리보기를 열었습니다.");
     } catch (error) {
+      preview.close();
       setMessage(error instanceof Error ? error.message : "견적서 PDF를 만들지 못했습니다.");
     }
   }

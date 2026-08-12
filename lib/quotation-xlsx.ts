@@ -289,7 +289,7 @@ function equipmentKitSheetXml(input: QuotationWorkbookInput, hasDrawing: boolean
   <cols><col min="1" max="1" width="6" customWidth="1"/><col min="2" max="2" width="20" customWidth="1"/><col min="3" max="3" width="17" customWidth="1"/><col min="4" max="5" width="9" customWidth="1"/><col min="6" max="6" width="15" customWidth="1"/><col min="7" max="8" width="14" customWidth="1"/><col min="9" max="9" width="14" customWidth="1"/></cols>
   <sheetData>
     <row r="1" ht="5" customHeight="1">${inline("A1", "", 19)}</row>
-    <row r="2" ht="24" customHeight="1">${inline("B2", "교  구  세  부  견  적", 1)}</row>
+    <row r="2" ht="24" customHeight="1">${inline("B2", "교  구  세  부  견  적  서", 1)}</row>
     <row r="3" ht="22" customHeight="1">${inline("G3", "견적번호", 3)}${inline("H3", input.quoteNumber || "저장 시 발급", 4)}${inline("I3", "", 4)}</row>
     <row r="4" ht="22" customHeight="1">${inline("G4", "작성일", 3)}${inline("H4", input.quoteDate, 4)}${inline("I4", "", 4)}</row>
     <row r="5" ht="24" customHeight="1">${inline("A5", "받는 분", 2)}${styledBlanks(5, ["B", "C", "D"], 2)}${inline("E5", "공급자", 2)}${styledBlanks(5, ["F", "G", "H", "I"], 2)}</row>
