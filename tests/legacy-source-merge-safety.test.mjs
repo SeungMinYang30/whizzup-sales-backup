@@ -5,6 +5,7 @@ import test from "node:test";
 const helperPath = new URL("../lib/legacy-source-merge.ts", import.meta.url);
 const routePath = new URL("../app/api/admin/legacy-source-merge/route.ts", import.meta.url);
 const memberRoutePath = new URL("../app/api/members/route.ts", import.meta.url);
+const managerPath = new URL("../app/budget-name-manager.tsx", import.meta.url);
 
 test("legacy merge is owner-only, backs up target data, and uses source export", async () => {
   const [helper, route] = await Promise.all([
@@ -39,6 +40,13 @@ test("assignment comparison counts unique workload items instead of relationship
   assert.match(helper, /seenByEmail/);
   assert.match(helper, /`activity:\$\{integer\(author\.activity_id\)\}`/);
   assert.match(helper, /`activity:\$\{integer\(history\.activity_id\)\}`/);
+});
+
+test("budget manager exposes the latest safe merge audit", async () => {
+  const manager = await readFile(managerPath, "utf8");
+  assert.match(manager, /최근 복구 검증/);
+  assert.match(manager, /changedWhileLocked/);
+  assert.match(manager, /overwrittenAssigned/);
 });
 
 test("comparison uses the same unclassified budget filters as the management screen", async () => {

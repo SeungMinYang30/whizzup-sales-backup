@@ -146,6 +146,34 @@ type LegacyMemberComparison = {
   assignments?: { total?: number };
 };
 
+type LegacyMergeAudit = {
+  backup?: { id?: string; createdAt?: string };
+  members?: {
+    yangSeungmin?: { displayName?: string; status?: string; isSales?: boolean } | null;
+  };
+  assignments?: {
+    restoredFromUnassigned?: number;
+    restoredByManager?: Record<string, number>;
+    changedWhileLocked?: number;
+    overwrittenAssigned?: number;
+    authorsAdded?: number;
+    historyAdded?: number;
+    scheduleRowsChanged?: number;
+    campaignTargetRowsChanged?: number;
+    complexProjectRowsChanged?: number;
+  };
+  budgets?: {
+    groupsBefore?: number;
+    groupsAfter?: number;
+    aliasesBefore?: number;
+    aliasesAfter?: number;
+    linksBefore?: number;
+    linksAfter?: number;
+    eventsBefore?: number;
+    eventsAfter?: number;
+  };
+};
+
 function clean(value: unknown) {
   return String(value ?? "").normalize("NFKC").replace(/\s+/g, " ").trim();
 }
@@ -537,6 +565,7 @@ export default function BudgetNameManager({
   } | null>(null);
   const [selectedRetrofit, setSelectedRetrofit] = useState<string[]>([]);
   const [legacyReport, setLegacyReport] = useState<LegacyMergeReport | null>(null);
+  const [legacyAudit, setLegacyAudit] = useState<LegacyMergeAudit | null>(null);
   const [legacyBusy, setLegacyBusy] = useState(false);
 
   async function load() {
@@ -606,6 +635,27 @@ export default function BudgetNameManager({
       onToast(`안전 병합이 완료되었습니다. 백업 ID: ${payload.backupId ?? "확인 가능"}`);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "원본 누락 데이터 병합에 실패했습니다.");
+    } finally {
+      setLegacyBusy(false);
+    }
+  }
+
+  async function auditLegacyData() {
+    if (legacyBusy) return;
+    setLegacyBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/legacy-source-merge?audit=latest", {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as LegacyMergeAudit & { error?: string };
+      if (!response.ok) {
+        throw new Error(clean(payload.error) || "최근 병합 결과를 검증하지 못했습니다.");
+      }
+      setLegacyAudit(payload);
+      onToast("최근 병합 백업과 현재 데이터를 대조했습니다.");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "최근 병합 검증에 실패했습니다.");
     } finally {
       setLegacyBusy(false);
     }
@@ -948,6 +998,9 @@ export default function BudgetNameManager({
             <button type="button" onClick={() => void compareLegacyData()} disabled={legacyBusy}>
               {legacyBusy ? "확인 중…" : "원본과 비교"}
             </button>
+            <button type="button" onClick={() => void auditLegacyData()} disabled={legacyBusy}>
+              최근 복구 검증
+            </button>
             <button type="button" className="primary" onClick={() => void mergeLegacyData()} disabled={legacyBusy || !legacyReport}>
               백업 후 누락 병합
             </button>
@@ -980,6 +1033,18 @@ export default function BudgetNameManager({
               </details>
             )}
           </>
+        )}
+        {legacyAudit && (
+          <div className="budget-manager-summary-grid" style={{ marginTop: 12 }}>
+            <div><strong>최근 백업</strong><span>{legacyAudit.backup?.id || "확인 필요"}</span></div>
+            <div><strong>담당 복구</strong><span>미지정에서 {legacyAudit.assignments?.restoredFromUnassigned ?? 0}건</span></div>
+            <div><strong>보호 결과</strong><span>잠금 변경 {legacyAudit.assignments?.changedWhileLocked ?? 0}건 · 기존 담당 덮어쓰기 {legacyAudit.assignments?.overwrittenAssigned ?? 0}건</span></div>
+            <div><strong>양승민 계정</strong><span>{legacyAudit.members?.yangSeungmin?.status || "미확인"} · {legacyAudit.members?.yangSeungmin?.isSales ? "영업 담당자" : "사이트 이용만"}</span></div>
+            <div><strong>연결 복구</strong><span>작성자 {legacyAudit.assignments?.authorsAdded ?? 0}건 · 이력 {legacyAudit.assignments?.historyAdded ?? 0}건</span></div>
+            <div><strong>업무 연결</strong><span>일정 {legacyAudit.assignments?.scheduleRowsChanged ?? 0}건 · 캠페인 {legacyAudit.assignments?.campaignTargetRowsChanged ?? 0}건 · 수주 사업 {legacyAudit.assignments?.complexProjectRowsChanged ?? 0}건</span></div>
+            <div><strong>예산 관계</strong><span>표준 {legacyAudit.budgets?.groupsBefore ?? 0}→{legacyAudit.budgets?.groupsAfter ?? 0} · 별칭 {legacyAudit.budgets?.aliasesBefore ?? 0}→{legacyAudit.budgets?.aliasesAfter ?? 0}</span></div>
+            <div><strong>예산 연결</strong><span>연결 {legacyAudit.budgets?.linksBefore ?? 0}→{legacyAudit.budgets?.linksAfter ?? 0} · 이력 {legacyAudit.budgets?.eventsBefore ?? 0}→{legacyAudit.budgets?.eventsAfter ?? 0}</span></div>
+          </div>
         )}
       </div>
       <nav className="budget-manager-tabs" aria-label="표준 예산명 관리">
