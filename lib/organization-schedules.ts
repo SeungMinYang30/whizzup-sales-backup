@@ -418,7 +418,7 @@ function normalizeScheduleLabel(value: unknown) {
     .slice(0, 120);
 }
 
-function normalizeScheduleSemanticLabel(organization: unknown, label: unknown) {
+export function normalizeScheduleSemanticLabel(organization: unknown, label: unknown) {
   const compactOrganization = normalizeScheduleLabel(organization)
     .toLocaleLowerCase("ko-KR")
     .replace(/\s+/g, "");
@@ -427,6 +427,7 @@ function normalizeScheduleSemanticLabel(organization: unknown, label: unknown) {
   let compactLabel = normalizeScheduleLabel(label)
     .toLocaleLowerCase("ko-KR")
     .replace(/^\s*\[[^\]]{1,10}\]\s*/u, "")
+    .replace(/^\s*(?:영업|회의|시공|쇼룸|기타|내\s*일정)\s*[·•:\-]\s*/u, "")
     .replace(/\s+/g, "");
   if (compactOrganization) compactLabel = compactLabel.replaceAll(compactOrganization, "");
   if (administrativeFreeOrganization) {
@@ -900,6 +901,65 @@ export async function addOrganizationSchedule(input: {
   const semanticLabel = normalizeScheduleSemanticLabel(organization, label);
   const d1 = await ensureOrganizationSchedulesReady();
   const assignee = await resolveScheduleAssignee(d1, input.assigneeMemberId, input.memberName);
+  const candidates = await d1.prepare(
+    `SELECT * FROM organization_schedules
+     WHERE LOWER(TRIM(organization)) = LOWER(TRIM(?))
+       AND business_round = ?
+       AND scheduled_date = ?
+       AND COALESCE(category, 'general') <> 'construction'
+       AND TRIM(COALESCE(deleted_at, '')) = ''
+     ORDER BY CASE WHEN TRIM(COALESCE(google_event_id, '')) <> '' THEN 0 ELSE 1 END, id ASC`,
+  ).bind(organization, businessRound, scheduledDate).all<Record<string, unknown>>();
+  const semanticMatches = candidates.results.filter((row) =>
+    normalizeScheduleSemanticLabel(organization, row.label) === semanticLabel
+      && clean(row.start_time) === startTime
+      && clean(row.end_time) === endTime,
+  );
+  if (semanticMatches.length === 1) {
+    const existing = semanticMatches[0];
+    const existingId = Number(existing.id);
+    const existingCategory = normalizeScheduleCategory(existing.category);
+    if (existingCategory !== category) {
+      await d1.prepare(
+        `UPDATE organization_schedules
+         SET label = ?, start_time = ?, end_time = ?, end_date = ?, category = ?, details = ?,
+             assignee_member_id = ?, assignee_name = ?,
+             sync_status = CASE WHEN ? = 'personal' THEN 'local_only' ELSE 'pending' END,
+             sync_operation = CASE
+               WHEN ? = 'personal' AND TRIM(COALESCE(google_event_id, '')) <> '' THEN 'unlink'
+               ELSE 'upsert'
+             END,
+             sync_error = '', updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+      ).bind(
+        label,
+        startTime,
+        endTime,
+        scheduledDate,
+        category,
+        details || clean(existing.details),
+        assignee.memberId ?? existing.assignee_member_id ?? null,
+        assignee.name || clean(existing.assignee_name),
+        category,
+        category,
+        input.memberId,
+        input.memberName,
+        existingId,
+      ).run();
+      if (!linked) return [];
+      const updated = await listOrganizationSchedules(organization, businessRound);
+      const construction = await d1.prepare(
+        `SELECT * FROM organization_schedules
+         WHERE organization = ? AND business_round = ? AND category = 'construction'
+           AND TRIM(COALESCE(deleted_at, '')) = ''`,
+      ).bind(organization, businessRound).all<Record<string, unknown>>();
+      await mirrorOpenSchedulesToLatestActivity(d1, organization, businessRound, [
+        ...updated,
+        ...construction.results.map(scheduleJson),
+      ]);
+      return updated;
+    }
+  }
   await d1.prepare(
       `INSERT OR IGNORE INTO organization_schedules (
          organization, business_round, label, scheduled_date, start_time, end_time, category, details, completed,

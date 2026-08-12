@@ -200,3 +200,20 @@ test("시공 일정 저장 응답은 Google 동기화를 기다리지 않고 범
   assert.match(store, /Promise<ConstructionScheduleSaveResult>/);
   assert.match(store, /WHERE organization = \? AND business_round = \? AND category = 'construction'/);
 });
+
+test("schedule category changes reuse the existing Google event and clean only matched orphans", () => {
+  assert.match(store, /export function normalizeScheduleSemanticLabel/);
+  assert.match(store, /const semanticMatches = candidates\.results\.filter/);
+  assert.match(store, /if \(existingCategory !== category\)/);
+  const reclassification = store.slice(
+    store.indexOf("if (semanticMatches.length === 1)"),
+    store.indexOf("await d1.prepare(\n      `INSERT OR IGNORE", store.indexOf("if (semanticMatches.length === 1)")),
+  );
+  assert.match(reclassification, /UPDATE organization_schedules/);
+  assert.doesNotMatch(reclassification, /google_event_id\s*=/);
+  assert.match(route, /normalizeScheduleSemanticLabel\(schedule\.organization, schedule\.label\)/);
+  assert.match(sync, /siteOwned && !siteIds\.has\(siteId\)/);
+  assert.match(sync, /candidate\.google_event_id !== event\.id/);
+  assert.match(sync, /if \(replacements\.length === 1\)/);
+  assert.match(sync, /await deleteGoogleCalendarEvent\(event\.id, "general"\)/);
+});

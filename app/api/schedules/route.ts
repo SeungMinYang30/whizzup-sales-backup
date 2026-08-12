@@ -11,6 +11,7 @@ import {
   listConstructionScheduleBoard,
   listConstructionStageOptions,
   listOrganizationSchedules,
+  normalizeScheduleSemanticLabel,
   removeConstructionScheduleProject,
   replaceOrganizationSchedules,
   saveConstructionSchedules,
@@ -55,7 +56,7 @@ function scheduleDedupeKey(schedule: Record<string, unknown>) {
   const text = (value: unknown) => String(value || "").trim().toLocaleLowerCase("ko-KR");
   return [
     text(schedule.organization),
-    text(schedule.label),
+    normalizeScheduleSemanticLabel(schedule.organization, schedule.label),
     text(schedule.scheduledDate),
     text(schedule.endDate || schedule.scheduledDate),
     text(schedule.startTime),

@@ -17,6 +17,7 @@ import {
 } from "./construction-stages";
 import {
   ensureOrganizationSchedulesReady,
+  normalizeScheduleSemanticLabel,
   refreshOrganizationScheduleMirror,
   resolveScheduleAssignee,
 } from "./organization-schedules";
@@ -767,6 +768,38 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
     }
     if (event.status === "cancelled" || !event.start) continue;
     const values = eventValues(event);
+    if (siteOwned && !siteIds.has(siteId) && values.scheduledDate) {
+      const organization = (properties.whizzupOrganization || suggestedOrganization(event)).trim().slice(0, 120);
+      const businessRound = Math.max(0, Number(properties.whizzupBusinessRound) || 0);
+      const structured = googleStructuredDescription(event.description || "");
+      const eventLabel = structured.content.trim()
+        || (event.summary || "").replace(/^\s*\[[^\]]{1,10}\]\s*/u, "").replace(organization, "").replace(/^\s*[·•:\-]\s*/, "").trim();
+      if (organization && eventLabel) {
+        const candidates = await d1.prepare(
+          `SELECT id, label, start_time, end_time, google_event_id
+           FROM organization_schedules
+           WHERE LOWER(TRIM(organization)) = LOWER(TRIM(?))
+             AND business_round = ?
+             AND scheduled_date = ?
+             AND COALESCE(category, 'general') <> 'construction'
+             AND TRIM(COALESCE(deleted_at, '')) = ''`,
+        ).bind(organization, businessRound, values.scheduledDate).all<{
+          id: number; label: string; start_time: string; end_time: string; google_event_id: string;
+        }>();
+        const semanticLabel = normalizeScheduleSemanticLabel(organization, eventLabel);
+        const replacements = candidates.results.filter((candidate) =>
+          normalizeScheduleSemanticLabel(organization, candidate.label) === semanticLabel
+            && (candidate.start_time || "") === values.startTime
+            && (candidate.end_time || "") === values.endTime
+            && Boolean(candidate.google_event_id?.trim())
+            && candidate.google_event_id !== event.id,
+        );
+        if (replacements.length === 1) {
+          await deleteGoogleCalendarEvent(event.id, "general");
+          continue;
+        }
+      }
+    }
     const legacyStage = legacyConstructionStage(event.description || "");
     if (legacyStage && values.scheduledDate) {
       const candidates = await d1.prepare(
