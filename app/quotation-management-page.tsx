@@ -10,6 +10,7 @@ import { hasProcurementSignal, procurementNumbersFromText } from "../lib/procure
 import { createAuthoredQuotationPdf, quotationFileStem } from "./authored-quotation-pdf";
 import { quotationInternalCostDefaults, quotationInternalCostKind } from "../lib/quotation-internal-costs";
 import { procurementContractWarnings } from "../lib/procurement-contract-warning";
+import { applyCatalogSuppliers } from "../lib/quotation-supplier";
 import {
   airpassEquipmentKitOutputLines,
   airpassEquipmentKitTotal,
@@ -920,7 +921,11 @@ export default function QuotationManagementPage({
     setProductListMode(null);
     setOutputBlankRows(0);
     setLoadedInstitutionKey("");
-    beginEditor(draftFromQuotation(quote));
+    const nextDraft = draftFromQuotation(quote);
+    beginEditor({
+      ...nextDraft,
+      items: applyCatalogSuppliers(nextDraft.items, products),
+    });
     setInstitutionQuery(quote.organization);
     setMessage(
       quote.status === "final"
@@ -1057,7 +1062,7 @@ export default function QuotationManagementPage({
         || projects.find((project) => project.budgetType)?.budgetType
         || projects.find((project) => project.name)?.name
         || targetDraft.projectTitle;
-      const equipmentItems = Array.from(itemMap.values());
+      const equipmentItems = applyCatalogSuppliers(Array.from(itemMap.values()), products);
       const constructionAmount = projects.reduce((sum, project) => sum + project.constructionAmount, 0);
       const items = constructionAmount > 0
         ? [...equipmentItems, constructionDraftItem(constructionAmount, projectTitle)]
@@ -1479,7 +1484,7 @@ export default function QuotationManagementPage({
       return;
     }
     let nextItems = [...draft.items.filter((item) => !isConstructionItem(item))];
-    const importedItems: DraftItem[] = result.items.map((item) => ({
+    const importedItems: DraftItem[] = applyCatalogSuppliers(result.items.map((item) => ({
       id: crypto.randomUUID(),
       productId: item.productId,
       name: item.productName.trim(),
@@ -1501,7 +1506,7 @@ export default function QuotationManagementPage({
       procurementFeeRate: item.procurement && !isS2BChannel(item.procurementChannel) ? item.procurementFeeRate : 0,
       consortiumRate: 0,
       ...internalCostFields(item.productName.trim(), item.specification.trim()),
-    }));
+    })), products);
     result.items.forEach((source, index) => {
       const imported = importedItems[index];
       const existingIndex = nextItems.findIndex((item) =>
@@ -1837,7 +1842,8 @@ export default function QuotationManagementPage({
         try {
           finalizedQuotation = await storeQuotationFiles(payload.quotation);
         } catch (fileError) {
-          setDraft(draftFromQuotation(payload.quotation));
+          const recoveredDraft = draftFromQuotation(payload.quotation);
+          setDraft({ ...recoveredDraft, items: applyCatalogSuppliers(recoveredDraft.items, products) });
           throw new Error(`견적은 임시 저장했지만 최종 파일 보관을 완료하지 못했습니다. ${fileError instanceof Error ? fileError.message : "다시 최종 저장해 주세요."}`);
         }
         setMessage(importSourceFile
@@ -1849,7 +1855,8 @@ export default function QuotationManagementPage({
       if (status === "final") {
         closeEditor();
       } else {
-        setDraft(draftFromQuotation(payload.quotation));
+        const savedDraft = draftFromQuotation(payload.quotation);
+        setDraft({ ...savedDraft, items: applyCatalogSuppliers(savedDraft.items, products) });
       }
       await load();
     } catch (error) {
