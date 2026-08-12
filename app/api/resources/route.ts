@@ -10,6 +10,7 @@ import {
   getDriveFileMetadata,
   isResourceStorageConfigured,
   moveDriveFilesTransaction,
+  pruneDriveMoveSources,
   removeDriveFile,
   rollbackDriveMoves,
   safeDriveFolderName,
@@ -429,6 +430,7 @@ export async function PATCH(request: Request) {
           .bind(move.destinationFolderId, id, move.fileId)),
       ];
       await d1.batch(statements);
+      if (driveMoves.length) await pruneDriveMoveSources(driveMoves).catch(() => undefined);
     } catch (error) {
       if (driveMoves.length) await rollbackDriveMoves(driveMoves).catch(() => undefined);
       throw error;

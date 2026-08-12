@@ -13,6 +13,7 @@ import {
   safeDriveFolderName,
   uploadDriveFile,
 } from "../../../../lib/google-drive-storage";
+import { quotationFileStem } from "../../../../lib/quotation-file-name";
 
 export const dynamic = "force-dynamic";
 
@@ -49,8 +50,14 @@ export async function GET(request: Request) {
     const idColumn = kind === "pdf" ? "drive_pdf_file_id" : kind === "xlsx" ? "drive_xlsx_file_id" : "source_file_id";
     const nameColumn = kind === "pdf" ? "drive_pdf_name" : kind === "xlsx" ? "drive_xlsx_name" : "source_file_name";
     const fileId = String(row[idColumn] ?? "");
-    const fileName = String(row[nameColumn] ?? "")
-      || `${String(row.quote_number ?? "견적서")}.${kind === "pdf" ? "pdf" : "xlsx"}`;
+    const fileName = kind === "source"
+      ? String(row[nameColumn] ?? "") || "참고 원본"
+      : `${quotationFileStem({
+        organization: String(row.organization ?? ""),
+        businessRound: Math.max(1, Number(row.business_round) || 1),
+        quoteNumber: String(row.quote_number ?? ""),
+        revisionNumber: Math.max(0, Number(row.revision_number) || 0),
+      })}.${kind}`;
     if (!fileId) return Response.json({ error: "Google Drive에 저장된 견적서 파일이 없습니다." }, { status: 404 });
     const stored = await downloadDriveFile(fileId);
     const contentType = kind === "pdf"
@@ -63,7 +70,7 @@ export async function GET(request: Request) {
     return new Response(stored.body, {
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `${kind === "pdf" ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+        "Content-Disposition": `${kind === "pdf" ? "inline" : "attachment"}; filename="quotation.${kind === "pdf" ? "pdf" : "xlsx"}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
       },
@@ -158,16 +165,28 @@ export async function POST(request: Request) {
       "견적서",
       String(row.quote_date ?? new Date().getFullYear()).slice(0, 4),
     ];
+    const fileStem = quotationFileStem({
+      organization: String(row.organization ?? ""),
+      businessRound: Math.max(1, Number(row.business_round) || 1),
+      quoteNumber: String(row.quote_number ?? ""),
+      revisionNumber: Math.max(0, Number(row.revision_number) || 0),
+    });
+    const pdfName = `${fileStem}.pdf`;
+    const xlsxName = `${fileStem}.xlsx`;
+    const namedPdf = new File([pdf], pdfName, { type: "application/pdf" });
+    const namedXlsx = new File([xlsx], xlsxName, {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
     const contextId = `${String(row.organization ?? "")}|${Math.max(1, Number(row.business_round) || 1)}|${id}`;
     const storedPdf = await uploadDriveFile({
-      file: pdf,
+      file: namedPdf,
       folderSegments,
       contextType: "authored-quotation-pdf",
       contextId,
     });
     uploadedFileIds.push(storedPdf.fileId);
     const storedXlsx = await uploadDriveFile({
-      file: xlsx,
+      file: namedXlsx,
       folderSegments,
       contextType: "authored-quotation-xlsx",
       contextId,
@@ -188,9 +207,9 @@ export async function POST(request: Request) {
       WHERE id=?`)
       .bind(
         storedPdf.fileId,
-        pdf.name.slice(0, 240),
+        pdfName.slice(0, 240),
         storedXlsx.fileId,
-        xlsx.name.slice(0, 240),
+        xlsxName.slice(0, 240),
         storedSource?.fileId || existingSourceId,
         sourceFile?.name.slice(0, 240) || String(row.source_file_name ?? ""),
         sourceFile?.type || String(row.source_file_type ?? ""),

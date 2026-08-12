@@ -596,9 +596,11 @@ export default function QuotationManagementPage({
     duplicateFileReconcileRef.current = true;
     void fetch("/api/quotations/reconcile", { method: "POST" })
       .then(async (response) => {
-        const payload = await response.json() as { archived?: number; error?: string };
+        const payload = await response.json() as { moved?: number; renamed?: number; removed?: number; emptyFoldersRemoved?: number; error?: string };
         if (!response.ok) throw new Error(payload.error || "중복 견적 파일을 확인하지 못했습니다.");
-        if (payload.archived) setMessage(`Google Drive의 중복 견적 파일 ${payload.archived.toLocaleString()}개를 보관함으로 이동했습니다.`);
+        const changed = Number(payload.moved || 0) + Number(payload.renamed || 0)
+          + Number(payload.removed || 0) + Number(payload.emptyFoldersRemoved || 0);
+        if (changed) setMessage(`Google Drive 견적 파일 ${changed.toLocaleString()}개의 위치·이름·중복 상태를 정리했습니다.`);
       })
       .catch((error) => setMessage(error instanceof Error ? error.message : "중복 견적 파일을 확인하지 못했습니다."));
   }, [quotes]);
@@ -1678,28 +1680,8 @@ export default function QuotationManagementPage({
       setMessage("저장된 PDF 파일이 없습니다. 견적 수정에서 최종 저장하면 현재 PDF가 생성됩니다.");
       return;
     }
-    const popup = window.open("", "_blank");
-    try {
-      const response = await fetch(quote.pdfUrl, { cache: "no-store" });
-      if (!response.ok) throw new Error("저장된 PDF를 불러오지 못했습니다.");
-      const url = URL.createObjectURL(await response.blob());
-      if (popup) {
-        popup.opener = null;
-        popup.location.replace(url);
-      } else {
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.target = "_blank";
-        anchor.rel = "noopener";
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-      }
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (error) {
-      popup?.close();
-      setMessage(error instanceof Error ? error.message : "저장된 PDF를 불러오지 못했습니다.");
-    }
+    const popup = window.open(quote.pdfUrl, "_blank", "noopener");
+    if (!popup) setMessage("브라우저에서 새 창 열기를 허용한 뒤 PDF 보기를 다시 눌러 주세요.");
   }
 
   async function downloadSavedExcel(quote: AuthoredQuotation) {
@@ -1713,7 +1695,7 @@ export default function QuotationManagementPage({
       const url = URL.createObjectURL(await response.blob());
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = quote.driveXlsxName || `${quotationFileStem(quote)}.xlsx`;
+      anchor.download = `${quotationFileStem(quote)}.xlsx`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();

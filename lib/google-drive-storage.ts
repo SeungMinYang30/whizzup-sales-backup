@@ -503,12 +503,99 @@ export async function removeDriveFile(fileId: string) {
     await getPostgresObjectStorage().delete(objectKey);
     return;
   }
+  const metadata = await getDriveFileMetadata(fileId).catch(() => null);
   const response = await driveFetch(
     `${DRIVE_API}/files/${encodeURIComponent(fileId)}`,
     { method: "DELETE" },
   );
   if (!response.ok && response.status !== 404) {
     throw new Error("Google Drive 임시 파일을 정리하지 못했습니다.");
+  }
+  if (metadata?.parents?.length) {
+    await pruneEmptyDriveFolders(metadata.parents).catch(() => undefined);
+  }
+}
+
+function clearFolderCache(fileId: string) {
+  for (const [key, cachedId] of folderCache.entries()) {
+    if (cachedId === fileId) folderCache.delete(key);
+  }
+}
+
+const protectedFolderNames = new Set([
+  ROOT_FOLDER_NAME,
+  "01_기관자료",
+  "02_제품자료",
+  "03_자료실게시판",
+  "99_보관",
+  "지역 미분류",
+]);
+
+export async function pruneEmptyDriveFolders(folderIds: string[], maxLevels = 6) {
+  if (!isGoogleDriveConfigured()) return 0;
+  const configuredRootId = config().rootFolderId;
+  const queue = folderIds.map((id) => ({ id, depth: 0 }));
+  const visited = new Set<string>();
+  let removed = 0;
+  while (queue.length) {
+    const entry = queue.shift();
+    if (!entry?.id || visited.has(entry.id) || entry.depth >= maxLevels) continue;
+    visited.add(entry.id);
+    if (entry.id === configuredRootId) continue;
+    const metadata = await getDriveFileMetadata(entry.id).catch(() => null);
+    if (!metadata || !isDriveFolder(metadata) || protectedFolderNames.has(String(metadata.name ?? ""))) continue;
+    const children = await listDriveChildren(entry.id);
+    if (children.length) continue;
+    const response = await driveFetch(
+      `${DRIVE_API}/files/${encodeURIComponent(entry.id)}?supportsAllDrives=true`,
+      { method: "DELETE" },
+    );
+    if (!response.ok && response.status !== 404) continue;
+    clearFolderCache(entry.id);
+    removed += 1;
+    for (const parentId of metadata.parents ?? []) queue.push({ id: parentId, depth: entry.depth + 1 });
+  }
+  return removed;
+}
+
+export async function pruneEmptyDriveFolderTree(rootFolderId: string, maxDepth = 6) {
+  if (!isGoogleDriveConfigured() || !rootFolderId) return 0;
+  let removed = 0;
+  async function visit(folderId: string, depth: number, keep: boolean) {
+    if (depth > maxDepth) return;
+    const children = await listDriveChildren(folderId);
+    for (const child of children) {
+      if (isDriveFolder(child)) await visit(child.id, depth + 1, false);
+    }
+    if (keep) return;
+    const metadata = await getDriveFileMetadata(folderId).catch(() => null);
+    if (!metadata || protectedFolderNames.has(String(metadata.name ?? ""))) return;
+    if ((await listDriveChildren(folderId)).length) return;
+    const response = await driveFetch(
+      `${DRIVE_API}/files/${encodeURIComponent(folderId)}?supportsAllDrives=true`,
+      { method: "DELETE" },
+    );
+    if (!response.ok && response.status !== 404) return;
+    clearFolderCache(folderId);
+    removed += 1;
+  }
+  await visit(rootFolderId, 0, true);
+  return removed;
+}
+
+export async function renameDriveFile(fileId: string, fileName: string) {
+  if (localFileKey(fileId)) return;
+  const response = await driveFetch(
+    `${DRIVE_API}/files/${encodeURIComponent(fileId)}?fields=id,name&supportsAllDrives=true`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: fileName.slice(0, 240) }),
+    },
+  );
+  const payload = (await response.json().catch(() => ({}))) as DriveFile & { error?: { message?: string } };
+  if (!response.ok || !payload.id) {
+    throw new Error(payload.error?.message || "Google Drive 파일 이름을 변경하지 못했습니다.");
   }
 }
 
@@ -595,6 +682,12 @@ export async function rollbackDriveMoves(snapshots: DriveMoveSnapshot[]) {
   if (failures.length) {
     throw new Error(`Google Drive 원상복구에 실패한 파일이 ${failures.length}개 있습니다.`);
   }
+}
+
+export async function pruneDriveMoveSources(snapshots: DriveMoveSnapshot[]) {
+  const parentIds = snapshots.flatMap((snapshot) => snapshot.previousParents)
+    .filter((parentId) => parentId && !snapshots.some((snapshot) => snapshot.destinationFolderId === parentId));
+  return pruneEmptyDriveFolders(parentIds);
 }
 
 export async function moveDriveFilesTransaction(

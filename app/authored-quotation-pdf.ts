@@ -1,5 +1,8 @@
 import type { AuthoredQuotation, AuthoredQuotationItem } from "../lib/authored-quotations";
 import { airpassEquipmentKitOutputLines, airpassEquipmentKitTotal } from "../lib/airpass-equipment-kit";
+import { quotationFileStem } from "../lib/quotation-file-name";
+
+export { quotationFileStem } from "../lib/quotation-file-name";
 
 const PAGE_WIDTH = 1240;
 const PAGE_HEIGHT = 1754;
@@ -8,11 +11,6 @@ const PDF_HEIGHT = 841.89;
 const ITEMS_PER_PAGE = 6;
 
 const won = new Intl.NumberFormat("ko-KR");
-
-export function quotationFileStem(quote: Pick<AuthoredQuotation, "quoteNumber" | "revisionNumber">) {
-  const rootNumber = quote.quoteNumber.replace(/-수정\d+$/u, "");
-  return `${rootNumber}_${quote.revisionNumber > 0 ? `수정${quote.revisionNumber}` : "원본"}`;
-}
 
 function concatBytes(chunks: Uint8Array[]) {
   const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
