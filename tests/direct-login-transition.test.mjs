@@ -3,9 +3,10 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("approved employee email can establish a new direct-login password", async () => {
-  const [page, login, setup, passwordSetupPage, loginRoute, setPasswordRoute, ticket, appAuth] =
+  const [page, loginPageRoute, login, setup, passwordSetupPage, loginRoute, setPasswordRoute, ticket, appAuth] =
     await Promise.all([
       readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+      readFile(new URL("../app/login/page.tsx", import.meta.url), "utf8"),
       readFile(new URL("../app/login-page.tsx", import.meta.url), "utf8"),
       readFile(new URL("../app/initial-password-setup.tsx", import.meta.url), "utf8"),
       readFile(new URL("../app/password-setup/page.tsx", import.meta.url), "utf8"),
@@ -22,6 +23,9 @@ test("approved employee email can establish a new direct-login password", async 
   assert.doesNotMatch(login, /ChatGPT로 비밀번호 설정/);
   assert.match(login, /신규 가입/);
   assert.match(login, /비밀번호 재설정/);
+  assert.match(loginPageRoute, /<DirectLoginPage \/>/);
+  assert.doesNotMatch(loginPageRoute, /Google 계정으로 로그인/);
+  assert.doesNotMatch(loginPageRoute, /LocalLoginForm/);
 
   assert.match(loginRoute, /createPasswordSetupTicket/);
   assert.match(loginRoute, /code: "PASSWORD_SETUP_REQUIRED"/);
