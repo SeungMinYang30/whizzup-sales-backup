@@ -21,4 +21,8 @@ test("budget queries do not reference quoted camelCase CTE aliases as lowercase 
   assert.match(source, /COUNT\(\*\) AS project_count/);
   assert.doesNotMatch(source, /activity\.activityCount|project\.projectCount/);
   assert.match(source, /ORDER BY "groupId"/);
+  assert.match(source, /FROM budget_name_aliases WHERE COALESCE\(active, 1\) = 1/);
+  assert.match(source, /WHERE COALESCE\(m\.active, 1\) = 1/);
+  assert.match(source, /const groupId = Number\(alias\.groupId\)/);
+  assert.match(source, /const groupId = Number\(member\.groupId\)/);
 });

@@ -363,7 +363,7 @@ async function ensureVirtualSportsBudgetGroup(d1: D1Database) {
               g.canonical_name AS canonicalName
        FROM budget_name_aliases a
        JOIN budget_name_groups g ON g.id = a.group_id
-       WHERE a.active = 1 AND g.active = 1
+       WHERE COALESCE(a.active, 1) = 1 AND g.active = 1
          AND a.alias_key IN (${placeholders(targetKeys.length)})`,
     )
     .bind(...targetKeys)
@@ -624,7 +624,7 @@ async function ensureSelfBudgetGroup(d1: D1Database) {
        SELECT g.id, g.canonical_name AS canonicalName
        FROM budget_name_aliases a
        JOIN budget_name_groups g ON g.id = a.group_id
-       WHERE a.active = 1 AND g.active = 1 AND a.alias_key = ?`,
+       WHERE COALESCE(a.active, 1) = 1 AND g.active = 1 AND a.alias_key = ?`,
     )
     .bind(aliasKey, aliasKey)
     .all<{ id: number; canonicalName: string }>();
@@ -1037,7 +1037,7 @@ export async function resolveCanonicalBudgetName(
               a.alias_name AS matchedName, 'alias' AS matchedSource
        FROM budget_name_aliases a
        JOIN budget_name_groups g ON g.id = a.group_id
-       WHERE a.active = 1 AND g.active = 1 AND a.alias_key = ?
+       WHERE COALESCE(a.active, 1) = 1 AND g.active = 1 AND a.alias_key = ?
        ORDER BY "groupId"`,
     )
     .bind(aliasKey, aliasKey)
@@ -1655,7 +1655,7 @@ export async function listBudgetNameManagement() {
         .prepare(
           `SELECT id, group_id AS groupId, alias_name AS aliasName,
                   alias_key AS aliasKey
-           FROM budget_name_aliases WHERE active = 1
+           FROM budget_name_aliases WHERE COALESCE(active, 1) = 1
            ORDER BY group_id, id`,
         )
         .all<{ id: number; groupId: number; aliasName: string; aliasKey: string }>(),
@@ -1694,7 +1694,7 @@ export async function listBudgetNameManagement() {
            LEFT JOIN equipment_projects p
              ON m.entity_type = 'equipment_project' AND p.id = m.entity_id
            LEFT JOIN activities pa ON pa.id = p.activity_id
-           WHERE m.active = 1
+           WHERE COALESCE(m.active, 1) = 1
              AND (
                (m.entity_type = 'activity' AND EXISTS (
                  SELECT 1 FROM activities a
@@ -1803,15 +1803,17 @@ export async function listBudgetNameManagement() {
   }>;
   const aliasesByGroup = new Map<number, typeof aliases>();
   for (const alias of aliases) {
-    const values = aliasesByGroup.get(alias.groupId) ?? [];
+    const groupId = Number(alias.groupId);
+    const values = aliasesByGroup.get(groupId) ?? [];
     values.push(alias);
-    aliasesByGroup.set(alias.groupId, values);
+    aliasesByGroup.set(groupId, values);
   }
   const membersByGroup = new Map<number, typeof members>();
   for (const member of members) {
-    const values = membersByGroup.get(member.groupId) ?? [];
+    const groupId = Number(member.groupId);
+    const values = membersByGroup.get(groupId) ?? [];
     values.push(member);
-    membersByGroup.set(member.groupId, values);
+    membersByGroup.set(groupId, values);
   }
   const visibleNames = names.filter(
     (item) => !ignoredBudgetNames.has(normalizeBudgetNameKey(item.name)),
@@ -1853,7 +1855,7 @@ export async function listBudgetNameManagement() {
       canonicalName: group.canonicalName,
       budgetKind: normalizeBudgetKind(group.budgetKind),
       amountMode: normalizeBudgetAmountMode(group.amountMode),
-      aliases: aliasesByGroup.get(group.id) ?? [],
+      aliases: aliasesByGroup.get(Number(group.id)) ?? [],
     }));
   const requests = [...groupedRequests.values()].map((rows) => {
     const first = rows[0];
@@ -1951,8 +1953,8 @@ export async function listBudgetNameManagement() {
       budgetKind: normalizeBudgetKind(group.budgetKind),
       amountMode: normalizeBudgetAmountMode(group.amountMode),
       active: Number(group.active) === 1,
-      aliases: aliasesByGroup.get(group.id) ?? [],
-      members: membersByGroup.get(group.id) ?? [],
+      aliases: aliasesByGroup.get(Number(group.id)) ?? [],
+      members: membersByGroup.get(Number(group.id)) ?? [],
     })),
     requests,
     events,
@@ -2244,7 +2246,7 @@ async function assertBudgetAliasAvailable(
        SELECT g.id AS groupId, g.canonical_name AS canonicalName
        FROM budget_name_aliases a
        JOIN budget_name_groups g ON g.id = a.group_id
-       WHERE a.active = 1 AND g.active = 1 AND a.alias_key = ?
+       WHERE COALESCE(a.active, 1) = 1 AND g.active = 1 AND a.alias_key = ?
        LIMIT 1`,
     )
     .bind(aliasKey, aliasKey)
