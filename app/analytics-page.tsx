@@ -7,6 +7,10 @@ import {
 } from "../lib/analytics-performance";
 import { groupAnalyticsProductsByBusiness } from "../lib/analytics-drilldowns";
 import { sumReceiptsForPeriod } from "../lib/collection-analytics";
+import {
+  buildExecutionTrend,
+  type ExecutionTrendMetric,
+} from "../lib/analytics-execution-trends";
 
 type AnalyticsAward = {
   activityId: number;
@@ -175,6 +179,25 @@ function productExpectedRevenue(row: AnalyticsProduct) {
   );
 }
 
+function formatTrendValue(value: number, metric: ExecutionTrendMetric) {
+  return metric === "count"
+    ? `${Math.round(value).toLocaleString("ko-KR")}건`
+    : formatMoney(value);
+}
+
+function formatTrendAxisValue(value: number, metric: ExecutionTrendMetric) {
+  if (metric === "count") return `${Math.round(value).toLocaleString("ko-KR")}건`;
+  const absolute = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (absolute >= 100_000_000) {
+    return `${sign}${(absolute / 100_000_000).toFixed(1).replace(/\.0$/, "")}억`;
+  }
+  if (absolute >= 10_000) {
+    return `${sign}${(absolute / 10_000).toFixed(1).replace(/\.0$/, "")}만`;
+  }
+  return formatMoney(value);
+}
+
 function aggregateAwards(
   rows: AnalyticsAward[],
   key: (row: AnalyticsAward) => string,
@@ -323,6 +346,8 @@ export default function AnalyticsPage({
   }).slice(5, 7);
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [trendMetric, setTrendMetric] =
+    useState<ExecutionTrendMetric>("amount");
   const [productMode, setProductMode] = useState<"product" | "vendor">("product");
   const [productLimit, setProductLimit] = useState(20);
   const [drilldown, setDrilldown] = useState<AnalyticsDrilldown | null>(null);
@@ -410,6 +435,16 @@ export default function AnalyticsPage({
   const confirmedAwards = useMemo(
     () => periodAwards.filter((row) => row.confirmed),
     [periodAwards],
+  );
+  const executionTrend = useMemo(
+    () => buildExecutionTrend(awards, selectedYear, trendMetric),
+    [awards, selectedYear, trendMetric],
+  );
+  const executionTrendMax = Math.max(
+    1,
+    ...executionTrend.months.map(
+      (month) => Math.abs(month.direct) + Math.abs(month.consortium),
+    ),
   );
   const totals = confirmedAwards.reduce(
     (current, row) => ({
@@ -1039,6 +1074,107 @@ export default function AnalyticsPage({
           <strong>기타 비용 차감 전 관리용 예상치</strong>
         </span>
       </div>
+
+      <article className="panel analytics-execution-card">
+        <header>
+          <div>
+            <span className="section-kicker">DIRECT · CONSORTIUM TREND</span>
+            <h3>월별 직영·컨소 수주 비교</h3>
+            <p>
+              {selectedYear}년 납품 완료 수주를 기준으로 월별 실적과 연간 비율을
+              한 번에 비교합니다.
+            </p>
+          </div>
+          <div className="analytics-execution-controls">
+            <select
+              aria-label="비교 지표"
+              value={trendMetric}
+              onChange={(event) =>
+                setTrendMetric(event.target.value as ExecutionTrendMetric)
+              }
+            >
+              <option value="amount">수주금액</option>
+              <option value="margin">최종수익</option>
+              <option value="count">수주 건수</option>
+            </select>
+          </div>
+        </header>
+
+        <div className="analytics-execution-layout">
+          <div className="analytics-execution-ratio">
+            <div
+              className="analytics-execution-donut"
+              style={{
+                background: `conic-gradient(#4f67e8 0 ${executionTrend.directRatio * 100}%, #f39a62 ${executionTrend.directRatio * 100}% 100%)`,
+              }}
+              role="img"
+              aria-label={`직영 ${(executionTrend.directRatio * 100).toFixed(1)}%, 컨소 ${(executionTrend.consortiumRatio * 100).toFixed(1)}%`}
+            >
+              <span>
+                <small>연간 합계</small>
+                <strong>{formatTrendValue(executionTrend.totals.total, trendMetric)}</strong>
+              </span>
+            </div>
+            <div className="analytics-execution-ratio-legend">
+              <span className="direct">
+                <i />
+                <small>직영 {(executionTrend.directRatio * 100).toFixed(1)}%</small>
+                <strong>{formatTrendValue(executionTrend.totals.direct, trendMetric)}</strong>
+              </span>
+              <span className="consortium">
+                <i />
+                <small>컨소 {(executionTrend.consortiumRatio * 100).toFixed(1)}%</small>
+                <strong>{formatTrendValue(executionTrend.totals.consortium, trendMetric)}</strong>
+              </span>
+            </div>
+          </div>
+
+          <div className="analytics-execution-chart-wrap">
+            <div className="analytics-execution-chart" aria-label="월별 직영·컨소 비교 그래프">
+              {executionTrend.months.map((month) => {
+                const directHeight =
+                  (Math.abs(month.direct) / executionTrendMax) * 100;
+                const consortiumHeight =
+                  (Math.abs(month.consortium) / executionTrendMax) * 100;
+                const active =
+                  periodMode === "month" && selectedMonth === month.month;
+                return (
+                  <button
+                    type="button"
+                    className={active ? "active" : ""}
+                    key={month.month}
+                    onClick={() => {
+                      setSelectedMonth(month.month);
+                      setPeriodMode("month");
+                    }}
+                    aria-label={`${Number(month.month)}월 ${formatTrendValue(month.total, trendMetric)}. 월간 통계로 보기`}
+                  >
+                    <strong>
+                      {formatTrendAxisValue(month.total, trendMetric)}
+                    </strong>
+                    <span className="analytics-execution-stack">
+                      <i
+                        className="consortium"
+                        style={{ height: `${consortiumHeight}%` }}
+                      />
+                      <i
+                        className="direct"
+                        style={{ height: `${directHeight}%` }}
+                      />
+                    </span>
+                    <small>{Number(month.month)}월</small>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        <footer>
+          <span><i className="direct" /> 직영</span>
+          <span><i className="consortium" /> 컨소</span>
+          <small>월 막대를 누르면 아래 통계도 해당 월 기준으로 전환됩니다.</small>
+        </footer>
+      </article>
 
       {loading && (
         <div className="loading-state analytics-loading">
