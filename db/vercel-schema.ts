@@ -201,6 +201,8 @@ ALTER TABLE public.authored_quotations
 ALTER TABLE public.authored_quotations
   ADD COLUMN IF NOT EXISTS budgets_json text NOT NULL DEFAULT '[]';
 ALTER TABLE public.authored_quotations
+  ADD COLUMN IF NOT EXISTS settlement_adjustments_json text NOT NULL DEFAULT '[]';
+ALTER TABLE public.authored_quotations
   ADD COLUMN IF NOT EXISTS additional_internal_construction_cost bigint NOT NULL DEFAULT 0;
 UPDATE public.authored_quotations
 SET revision_root_id = id

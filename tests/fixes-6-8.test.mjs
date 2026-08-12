@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { googleCalendarTitle } from "../lib/google-calendar-title.ts";
-import { procurementContractWarnings } from "../lib/procurement-contract-warning.ts";
+import { directPurchaseLimitWarning, procurementContractWarnings } from "../lib/procurement-contract-warning.ts";
 
 test("조달 계약 경고는 공급처별 합계와 1억원 경계를 정확히 적용한다", () => {
   const base = { contractType: "g2b", quantity: 1, supplierVendorId: 7, supplierVendorName: "공급사 A" };
@@ -24,6 +24,35 @@ test("공급처 미지정 조달 계약은 금액과 무관하게 별도 경고�
   const [warning] = procurementContractWarnings([{ contractType: "g2b", quantity: 1, unitPrice: 1 }]);
   assert.equal(warning.unspecified, true);
   assert.equal(warning.vendorName, "공급처 미지정");
+});
+
+test("조달 1억원은 일반 조달과 디지털서비스몰을 따로 합산한다", () => {
+  const base = { contractType: "g2b", quantity: 1, supplierVendorId: 7, supplierVendorName: "공급사 A" };
+  const warnings = procurementContractWarnings([
+    { ...base, procurementChannel: "G2B", unitPrice: 60_000_000 },
+    { ...base, procurementChannel: "디지털서비스몰", unitPrice: 60_000_000 },
+  ]);
+  assert.equal(warnings.length, 0);
+  assert.deepEqual(procurementContractWarnings([
+    { ...base, procurementChannel: "디지털서비스몰", unitPrice: 60_000_000 },
+    { ...base, procurementChannel: "디지털서비스몰", unitPrice: 40_000_000 },
+  ]).map(({ channelLabel, totalAmount }) => ({ channelLabel, totalAmount })), [
+    { channelLabel: "디지털서비스몰", totalAmount: 100_000_000 },
+  ]);
+});
+
+test("물품 수의계약 2,200만원은 수의계약과 학교장터만 합산하고 공사비는 제외한다", () => {
+  const direct = { contractType: "direct", quantity: 1, unitPrice: 12_000_000 };
+  assert.equal(directPurchaseLimitWarning([
+    direct,
+    { contractType: "s2b", quantity: 1, unitPrice: 10_000_000 },
+    { contractType: "direct", productId: "__construction_cost__", quantity: 1, unitPrice: 50_000_000 },
+    { contractType: "g2b", procurementChannel: "디지털서비스몰", quantity: 1, unitPrice: 100_000_000 },
+  ]), null);
+  assert.deepEqual(directPurchaseLimitWarning([
+    direct,
+    { contractType: "s2b", quantity: 1, unitPrice: 10_000_001 },
+  ]), { totalAmount: 22_000_001, itemCount: 2, threshold: 22_000_000 });
 });
 
 test("Google 일정 제목은 유형별 규칙을 적용하고 기관명 중복을 제거한다", () => {

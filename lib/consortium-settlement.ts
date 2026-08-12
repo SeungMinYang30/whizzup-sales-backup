@@ -1,4 +1,4 @@
-import { quotationInternalCostDefaults } from "./quotation-internal-costs";
+import { quotationInternalCostDefaults, quotationInternalCostKind } from "./quotation-internal-costs";
 
 export type InternalCostBearer = "consortium" | "whizzup";
 
@@ -12,6 +12,23 @@ export type ConsortiumSettlementItemInput = {
   internalCostEnabled?: boolean;
   internalCostAmount?: number;
   internalCostBearer?: InternalCostBearer;
+  internalCostQuantity?: number;
+  internalCostUnitAmount?: number;
+};
+
+export type SettlementAdjustmentType = "addition" | "deduction";
+
+export type ConsortiumSettlementAdjustmentInput = {
+  id?: string;
+  type: SettlementAdjustmentType;
+  label: string;
+  amount: number;
+  note?: string;
+};
+
+export type ConsortiumSettlementAdjustment = ConsortiumSettlementAdjustmentInput & {
+  id: string;
+  amount: number;
 };
 
 export type ConsortiumSettlementItem = {
@@ -26,6 +43,8 @@ export type ConsortiumSettlementCost = {
   amount: number;
   bearer: InternalCostBearer;
   consortiumDeduction: number;
+  quantity: number;
+  unitAmount: number;
 };
 
 function safeAmount(value: number | undefined) {
@@ -39,6 +58,7 @@ function safeRate(value: number | undefined) {
 export function calculateConsortiumSettlement(
   items: ConsortiumSettlementItemInput[],
   executionType: "직영" | "컨소" = "컨소",
+  adjustmentInputs: ConsortiumSettlementAdjustmentInput[] = [],
 ) {
   const settlementItems: ConsortiumSettlementItem[] = items.map((item) => {
     const lineAmount = Math.round(Math.max(0, item.quantity) * Math.max(0, item.unitPrice));
@@ -51,7 +71,7 @@ export function calculateConsortiumSettlement(
   });
 
   const costs: ConsortiumSettlementCost[] = items.flatMap((item) => {
-    const defaults = quotationInternalCostDefaults(item.name, item.specification ?? "");
+    const defaults = quotationInternalCostDefaults(item.name, item.specification ?? "", item.quantity);
     const enabled = typeof item.internalCostEnabled === "boolean"
       ? item.internalCostEnabled
       : defaults.enabled;
@@ -61,11 +81,31 @@ export function calculateConsortiumSettlement(
       : safeAmount(item.internalCostAmount);
     if (!amount) return [];
     const bearer = item.internalCostBearer === "consortium" ? "consortium" : "whizzup";
+    const kind = quotationInternalCostKind(item.name, item.specification ?? "");
+    const unitAmount = safeAmount(item.internalCostUnitAmount) || defaults.unitAmount || amount;
+    const quantity = kind === "aifit-yoga-mat"
+      ? Math.max(1, Math.round(Number(item.internalCostQuantity) || Math.max(1, Math.round(amount / Math.max(1, unitAmount)))))
+      : 1;
     return [{
       label: defaults.label || `${item.name} 관련 비용`,
       amount,
       bearer,
       consortiumDeduction: executionType === "컨소" && bearer === "consortium" ? amount : 0,
+      quantity,
+      unitAmount,
+    }];
+  });
+
+  const adjustments: ConsortiumSettlementAdjustment[] = adjustmentInputs.slice(0, 50).flatMap((entry, index) => {
+    const label = String(entry?.label ?? "").trim().slice(0, 200);
+    const amount = safeAmount(entry?.amount);
+    if (!label || !amount) return [];
+    return [{
+      id: String(entry.id ?? "").trim().slice(0, 120) || `adjustment-${index + 1}`,
+      type: entry.type === "addition" ? "addition" : "deduction",
+      label,
+      amount,
+      note: String(entry.note ?? "").trim().slice(0, 500),
     }];
   });
 
@@ -75,6 +115,18 @@ export function calculateConsortiumSettlement(
     (sum, cost) => sum + (executionType !== "컨소" || cost.bearer === "whizzup" ? cost.amount : 0),
     0,
   );
-  const finalPayment = Math.max(0, grossPayment - consortiumCost);
-  return { items: settlementItems, costs, grossPayment, consortiumCost, whizzupCost, finalPayment };
+  const adjustmentAdditions = adjustments.reduce((sum, item) => sum + (item.type === "addition" ? item.amount : 0), 0);
+  const adjustmentDeductions = adjustments.reduce((sum, item) => sum + (item.type === "deduction" ? item.amount : 0), 0);
+  const finalPayment = Math.max(0, grossPayment - consortiumCost - adjustmentDeductions + adjustmentAdditions);
+  return {
+    items: settlementItems,
+    costs,
+    adjustments,
+    grossPayment,
+    consortiumCost,
+    whizzupCost,
+    adjustmentAdditions,
+    adjustmentDeductions,
+    finalPayment,
+  };
 }

@@ -4,7 +4,11 @@ import { personDisplayLabel } from "./person-label";
 import { hasProcurementSignal, procurementNumbersFromText, resolveProcurementFeeRate } from "./procurement-product";
 import { normalizeAirpassEquipmentKit, type AirpassEquipmentKit } from "./airpass-equipment-kit";
 import { quotationInternalCostDefaults } from "./quotation-internal-costs";
-import { calculateConsortiumSettlement, type InternalCostBearer } from "./consortium-settlement";
+import {
+  calculateConsortiumSettlement,
+  type InternalCostBearer,
+  type SettlementAdjustmentType,
+} from "./consortium-settlement";
 
 export type AuthoredQuotationItem = {
   id: string;
@@ -32,7 +36,18 @@ export type AuthoredQuotationItem = {
   internalCostEnabled: boolean;
   internalCostAmount: number;
   internalCostBearer?: InternalCostBearer;
+  internalCostQuantity?: number;
+  internalCostUnitAmount?: number;
+  internalCostAutoQuantity?: boolean;
   equipmentKit?: AirpassEquipmentKit;
+};
+
+export type AuthoredQuotationSettlementAdjustment = {
+  id: string;
+  type: SettlementAdjustmentType;
+  label: string;
+  amount: number;
+  note: string;
 };
 
 export type AuthoredQuotationBudget = {
@@ -75,6 +90,7 @@ export type AuthoredQuotation = {
   memo: string;
   items: AuthoredQuotationItem[];
   budgets: AuthoredQuotationBudget[];
+  settlementAdjustments: AuthoredQuotationSettlementAdjustment[];
   drivePdfName: string;
   driveXlsxName: string;
   sourceOriginalName: string;
@@ -123,6 +139,7 @@ const statements = [
     memo TEXT NOT NULL DEFAULT '',
     items_json TEXT NOT NULL DEFAULT '[]',
     budgets_json TEXT NOT NULL DEFAULT '[]',
+    settlement_adjustments_json TEXT NOT NULL DEFAULT '[]',
     drive_pdf_file_id TEXT NOT NULL DEFAULT '',
     drive_pdf_name TEXT NOT NULL DEFAULT '',
     drive_xlsx_file_id TEXT NOT NULL DEFAULT '',
@@ -155,6 +172,7 @@ const authoredQuotationColumns = [
   ["revision_parent_id", "INTEGER NOT NULL DEFAULT 0"],
   ["revision_number", "INTEGER NOT NULL DEFAULT 0"],
   ["budgets_json", "TEXT NOT NULL DEFAULT '[]'"],
+  ["settlement_adjustments_json", "TEXT NOT NULL DEFAULT '[]'"],
   ["additional_internal_construction_cost", "INTEGER NOT NULL DEFAULT 0"],
   ["drive_pdf_file_id", "TEXT NOT NULL DEFAULT ''"],
   ["drive_pdf_name", "TEXT NOT NULL DEFAULT ''"],
@@ -250,15 +268,22 @@ function parseItems(value: unknown) {
     const expectedEarning = Math.floor(lineAmount * earningRate / 10) * 10;
     const consortiumPayment = Math.min(expectedEarning, Math.floor(lineAmount * consortiumRate / 10) * 10);
     const equipmentKit = normalizeAirpassEquipmentKit(item.equipmentKit);
-    const internalCostDefaults = quotationInternalCostDefaults(name, text(item.specification, 1_000));
+    const internalCostDefaults = quotationInternalCostDefaults(name, text(item.specification, 1_000), quantity);
     const internalCostEnabled = typeof item.internalCostEnabled === "boolean"
       ? item.internalCostEnabled
-      : internalCostDefaults.enabled;
+      : false;
     const internalCostAmount = item.internalCostAmount === undefined || item.internalCostAmount === null
-      ? internalCostDefaults.amount
+      ? 0
       : amount(item.internalCostAmount);
     // 부담 주체 필드가 생기기 전 저장된 견적은 기존 계산을 보존하기 위해 위즈업 부담으로 읽습니다.
     const internalCostBearer = item.internalCostBearer === "consortium" ? "consortium" as const : "whizzup" as const;
+    const internalCostUnitAmount = amount(item.internalCostUnitAmount) || internalCostDefaults.unitAmount || internalCostAmount;
+    const internalCostQuantity = Math.max(0, Math.round(Number(item.internalCostQuantity) || (
+      internalCostEnabled && internalCostUnitAmount > 0
+        ? internalCostAmount / internalCostUnitAmount
+        : internalCostDefaults.quantity
+    )));
+    const internalCostAutoQuantity = item.internalCostAutoQuantity === true;
     return [{
       id: text(item.id, 160) || `line-${index + 1}`,
       productId: text(item.productId, 160),
@@ -287,7 +312,32 @@ function parseItems(value: unknown) {
       internalCostEnabled,
       internalCostAmount,
       internalCostBearer,
+      internalCostQuantity,
+      internalCostUnitAmount,
+      internalCostAutoQuantity,
       ...(equipmentKit ? { equipmentKit } : {}),
+    }];
+  });
+}
+
+function parseSettlementAdjustments(value: unknown): AuthoredQuotationSettlementAdjustment[] {
+  let source = value;
+  if (typeof source === "string") {
+    try { source = JSON.parse(source); } catch { source = []; }
+  }
+  if (!Array.isArray(source)) return [];
+  return source.slice(0, 50).flatMap((entry, index) => {
+    if (!entry || typeof entry !== "object") return [];
+    const adjustment = entry as Record<string, unknown>;
+    const label = text(adjustment.label, 200);
+    const adjustmentAmount = amount(adjustment.amount);
+    if (!label || !adjustmentAmount) return [];
+    return [{
+      id: text(adjustment.id, 120) || `adjustment-${index + 1}`,
+      type: adjustment.type === "addition" ? "addition" as const : "deduction" as const,
+      label,
+      amount: adjustmentAmount,
+      note: text(adjustment.note, 500),
     }];
   });
 }
@@ -328,8 +378,10 @@ function parseBudgets(value: unknown, totalAmount = 0): AuthoredQuotationBudget[
 export function authoredQuotationFromRow(row: Record<string, unknown>): AuthoredQuotation {
   let items: AuthoredQuotationItem[] = [];
   let budgets: AuthoredQuotationBudget[] = [];
+  let settlementAdjustments: AuthoredQuotationSettlementAdjustment[] = [];
   try { items = parseItems(JSON.parse(String(row.items_json ?? "[]"))); } catch { items = []; }
   try { budgets = parseBudgets(JSON.parse(String(row.budgets_json ?? "[]")), amount(row.total_amount)); } catch { budgets = []; }
+  try { settlementAdjustments = parseSettlementAdjustments(row.settlement_adjustments_json); } catch { settlementAdjustments = []; }
   const id = Number(row.id);
   const revisionNumber = Math.max(0, Number(row.revision_number) || 0);
   const drivePdfFileId = String(row.drive_pdf_file_id ?? "");
@@ -359,7 +411,7 @@ export function authoredQuotationFromRow(row: Record<string, unknown>): Authored
     procurementFeeAmount: items.reduce((sum, item) => sum + item.procurementFee, 0),
     expectedEarning: amount(row.expected_earning), consortiumPayment: amount(row.consortium_payment),
     marginAmount: amount(row.margin_amount), marginRate: rate(row.margin_rate),
-    includeStamp: Number(row.include_stamp) === 1, memo: String(row.memo ?? ""), items, budgets,
+    includeStamp: Number(row.include_stamp) === 1, memo: String(row.memo ?? ""), items, budgets, settlementAdjustments,
     drivePdfName: String(row.drive_pdf_name ?? ""),
     driveXlsxName: String(row.drive_xlsx_name ?? ""),
     sourceOriginalName: String(row.source_file_name ?? ""),
@@ -400,6 +452,7 @@ function normalized(value: Record<string, unknown>) {
   const procurementFeeAmount = items.reduce((sum, item) => sum + item.procurementFee, 0);
   const totalAmount = adjustedItemAmount + procurementFeeAmount;
   const budgets = parseBudgets(value.budgets, totalAmount);
+  const settlementAdjustments = parseSettlementAdjustments(value.settlementAdjustments);
   if ((value.status === "final" || value.validateFinal === true) && budgets.length > 0) {
     const allocatedTotal = budgets.reduce((sum, budget) => sum + budget.allocatedAmount, 0);
     if (allocatedTotal !== totalAmount) {
@@ -409,7 +462,7 @@ function normalized(value: Record<string, unknown>) {
   const expectedEarning = items.reduce((sum, item) => sum + item.expectedEarning, 0);
   const executionType = value.executionType === "컨소" ? "컨소" as const : "직영" as const;
   const consortiumRate = 0;
-  const settlement = calculateConsortiumSettlement(items, executionType);
+  const settlement = calculateConsortiumSettlement(items, executionType, settlementAdjustments);
   const consortiumPayment = settlement.finalPayment;
   const marginAmount = Math.max(0, expectedEarning - consortiumPayment - settlement.whizzupCost - additionalInternalConstructionCost);
   return {
@@ -420,7 +473,7 @@ function normalized(value: Record<string, unknown>) {
     consortiumRate, discountAmount, extraAmount, additionalInternalConstructionCost, subtotalAmount, supplyAmount,
     taxAmount, totalAmount, procurementFeeAmount, expectedEarning, consortiumPayment, marginAmount,
     marginRate: subtotalAmount > 0 ? marginAmount / subtotalAmount : 0,
-    includeStamp: value.includeStamp === true, memo: text(value.memo, 4_000), items, budgets,
+    includeStamp: value.includeStamp === true, memo: text(value.memo, 4_000), items, budgets, settlementAdjustments,
   };
 }
 
@@ -501,14 +554,14 @@ export async function saveAuthoredQuotation(value: Record<string, unknown>, memb
     data.status, data.executionType, data.consortiumCompany, String(data.consortiumRate), data.discountAmount,
     data.extraAmount, data.additionalInternalConstructionCost, data.subtotalAmount, data.supplyAmount, data.taxAmount, data.totalAmount,
     data.expectedEarning, data.consortiumPayment, data.marginAmount, String(data.marginRate), data.includeStamp ? 1 : 0,
-    data.memo, JSON.stringify(data.items), JSON.stringify(data.budgets), member.id, memberName] as const;
+    data.memo, JSON.stringify(data.items), JSON.stringify(data.budgets), JSON.stringify(data.settlementAdjustments), member.id, memberName] as const;
   if (Number.isSafeInteger(id) && id > 0) {
     const existing = await d1
       .prepare("SELECT status FROM authored_quotations WHERE id=? AND deleted_at = ''")
       .bind(id)
       .first<{ status: string }>();
     if (!existing) throw new Error("수정할 견적서를 찾지 못했습니다.");
-    await d1.prepare(`UPDATE authored_quotations SET organization=?, business_round=?, project_title=?, quote_date=?, valid_until=?, status=?, execution_type=?, consortium_company=?, consortium_rate=?, discount_amount=?, extra_amount=?, additional_internal_construction_cost=?, subtotal_amount=?, supply_amount=?, tax_amount=?, total_amount=?, expected_earning=?, consortium_payment=?, margin_amount=?, margin_rate=?, include_stamp=?, memo=?, items_json=?, budgets_json=?, drive_sync_status='none', drive_sync_error='', updated_by=?, updated_by_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(...params, id).run();
+    await d1.prepare(`UPDATE authored_quotations SET organization=?, business_round=?, project_title=?, quote_date=?, valid_until=?, status=?, execution_type=?, consortium_company=?, consortium_rate=?, discount_amount=?, extra_amount=?, additional_internal_construction_cost=?, subtotal_amount=?, supply_amount=?, tax_amount=?, total_amount=?, expected_earning=?, consortium_payment=?, margin_amount=?, margin_rate=?, include_stamp=?, memo=?, items_json=?, budgets_json=?, settlement_adjustments_json=?, drive_sync_status='none', drive_sync_error='', updated_by=?, updated_by_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(...params, id).run();
     const row = await quotationRowById(d1, id);
     if (!row) throw new Error("저장한 견적서를 찾지 못했습니다.");
     return authoredQuotationFromRow(row);
@@ -540,7 +593,7 @@ export async function saveAuthoredQuotation(value: Record<string, unknown>, memb
     const rootNumber = String(root?.quote_number || source.quote_number || quotationNumber()).replace(/-수정\d+$/u, "");
     quoteNumber = `${rootNumber}-수정${revisionNumber}`;
   }
-  const result = await d1.prepare(`INSERT INTO authored_quotations (quote_number, revision_root_id, revision_parent_id, revision_number, organization, business_round, project_title, quote_date, valid_until, status, execution_type, consortium_company, consortium_rate, discount_amount, extra_amount, additional_internal_construction_cost, subtotal_amount, supply_amount, tax_amount, total_amount, expected_earning, consortium_payment, margin_amount, margin_rate, include_stamp, memo, items_json, budgets_json, created_by, created_by_name, updated_by, updated_by_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(quoteNumber, revisionRootId, revisionParentId, revisionNumber, ...params.slice(0, 24), member.id, memberName, member.id, memberName).run();
+  const result = await d1.prepare(`INSERT INTO authored_quotations (quote_number, revision_root_id, revision_parent_id, revision_number, organization, business_round, project_title, quote_date, valid_until, status, execution_type, consortium_company, consortium_rate, discount_amount, extra_amount, additional_internal_construction_cost, subtotal_amount, supply_amount, tax_amount, total_amount, expected_earning, consortium_payment, margin_amount, margin_rate, include_stamp, memo, items_json, budgets_json, settlement_adjustments_json, created_by, created_by_name, updated_by, updated_by_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(quoteNumber, revisionRootId, revisionParentId, revisionNumber, ...params.slice(0, 25), member.id, memberName, member.id, memberName).run();
   const insertedId = Number(result.meta.last_row_id);
   if (!revisionRootId) {
     revisionRootId = insertedId;

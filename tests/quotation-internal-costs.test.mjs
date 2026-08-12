@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { register } from "node:module";
+
+register(new URL("./typescript-resolver.mjs", import.meta.url));
+const { isYogaMatEligibleAifitProduct, quotationInternalCostDefaults } = await import("../lib/quotation-internal-costs.ts");
 
 const page = await readFile(new URL("../app/quotation-management-page.tsx", import.meta.url), "utf8");
 const store = await readFile(new URL("../lib/authored-quotations.ts", import.meta.url), "utf8");
@@ -14,10 +18,28 @@ test("projector and AiFit internal deductions use editable defaults", () => {
   assert.match(defaults, /PROJECTOR_INSTALLATION_COST = 220_000/);
   assert.match(defaults, /AIFIT_YOGA_MAT_COST = 300_000/);
   assert.match(defaults, /kind === "projector-installation"[\s\S]*enabled: true/);
-  assert.match(defaults, /kind === "aifit-yoga-mat"[\s\S]*enabled: false/);
-  assert.match(defaults, /빔프로젝터 설치비/);
+  assert.match(defaults, /kind === "aifit-yoga-mat"[\s\S]*enabled: true/);
+  assert.match(defaults, /빔·비디오프로젝터 설치비/);
   assert.match(defaults, /요가매트 서비스 제공/);
   assert.match(page, /FormattedMoneyInput value=\{item\.internalCostAmount\}/);
+});
+
+test("요가매트는 아이핏 전자칠판형·슬림형에만 수량 연동한다", () => {
+  assert.equal(isYogaMatEligibleAifitProduct("아이핏 전자칠판형"), true);
+  assert.equal(isYogaMatEligibleAifitProduct("아이핏 슬림형"), true);
+  assert.equal(isYogaMatEligibleAifitProduct("PAPS 콘텐츠"), false);
+  assert.equal(isYogaMatEligibleAifitProduct("아이핏 콘텐츠"), false);
+  assert.deepEqual(quotationInternalCostDefaults("아이핏 전자칠판형", "", 2), {
+    kind: "aifit-yoga-mat",
+    enabled: true,
+    amount: 600_000,
+    quantity: 2,
+    unitAmount: 300_000,
+    autoQuantity: true,
+    label: "요가매트 서비스 제공 비용",
+  });
+  assert.match(page, /internalCostAutoQuantity !== false/);
+  assert.match(page, /아이핏 수량 적용/);
 });
 
 test("internal deductions persist with a bearer and preserve legacy quotes as Whizzup cost", () => {

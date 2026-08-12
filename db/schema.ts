@@ -1402,6 +1402,7 @@ export const authoredQuotations = sqliteTable(
     memo: text("memo").notNull().default(""),
     itemsJson: text("items_json").notNull().default("[]"),
     budgetsJson: text("budgets_json").notNull().default("[]"),
+    settlementAdjustmentsJson: text("settlement_adjustments_json").notNull().default("[]"),
     drivePdfFileId: text("drive_pdf_file_id").notNull().default(""),
     drivePdfName: text("drive_pdf_name").notNull().default(""),
     driveXlsxFileId: text("drive_xlsx_file_id").notNull().default(""),

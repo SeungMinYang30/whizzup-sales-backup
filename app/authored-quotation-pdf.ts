@@ -12,6 +12,16 @@ const PDF_WIDTH = 595.28;
 const PDF_HEIGHT = 841.89;
 const ITEMS_PER_PAGE = 6;
 
+type AuthoredQuotationPdfItem = Pick<
+  AuthoredQuotationItem,
+  "name" | "specification" | "quantity" | "unit" | "unitPrice" | "note" | "contractType" | "procurement" | "procurementChannel" | "procurementNumber" | "procurementFee" | "equipmentKit"
+>;
+
+export type AuthoredQuotationPdfInput = Pick<
+  AuthoredQuotation,
+  "organization" | "projectTitle" | "quoteDate" | "quoteNumber" | "validUntil" | "includeStamp" | "discountAmount" | "extraAmount" | "memo"
+> & { items: AuthoredQuotationPdfItem[] };
+
 const won = new Intl.NumberFormat("ko-KR");
 
 function concatBytes(chunks: Uint8Array[]) {
@@ -67,29 +77,29 @@ function drawTextLines(
   });
 }
 
-function isS2B(item: AuthoredQuotationItem) {
+function isS2B(item: AuthoredQuotationPdfItem) {
   return item.contractType === "s2b" || /^S\s*2\s*B$/iu.test(item.procurementChannel.trim());
 }
 
-function contractLabel(item: AuthoredQuotationItem) {
+function contractLabel(item: AuthoredQuotationPdfItem) {
   if (item.note.trim().replace(/\s/g, "") === "공사비") return "공사비";
   if (!item.procurement) return "수의계약";
   return isS2B(item) ? "학교장터" : "조달 계약";
 }
 
-function outputNote(item: AuthoredQuotationItem) {
+function outputNote(item: AuthoredQuotationPdfItem) {
   if (item.equipmentKit) return AIRPASS_EQUIPMENT_CONTRACT_NOTE;
   return contractLabel(item);
 }
 
-function identifier(item: AuthoredQuotationItem) {
+function identifier(item: AuthoredQuotationPdfItem) {
   if (!item.procurement) return "-";
   return [item.procurementChannel || (isS2B(item) ? "S2B" : "G2B"), item.procurementNumber]
     .filter(Boolean)
     .join(" · ");
 }
 
-function amounts(quote: AuthoredQuotation) {
+function amounts(quote: AuthoredQuotationPdfInput) {
   const subtotal = quote.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const procurementFee = quote.items.reduce((sum, item) => sum + item.procurementFee, 0);
   const adjusted = Math.max(0, subtotal - quote.discountAmount + quote.extraAmount);
@@ -149,7 +159,7 @@ async function canvasJpeg(canvas: HTMLCanvasElement) {
   return blob;
 }
 
-async function renderPages(quote: AuthoredQuotation) {
+async function renderPages(quote: AuthoredQuotationPdfInput) {
   const [logo, seal, airpassSeal] = await Promise.all([
     loadImage("/whizzup-logo.png"),
     quote.includeStamp ? loadImage("/whizzup-seal.png") : Promise.resolve(null),
@@ -475,7 +485,7 @@ async function jpegPagesToPdf(pages: Array<{ blob: Blob; width: number; height: 
   return new Blob([concatBytes(chunks)], { type: "application/pdf" });
 }
 
-export async function createAuthoredQuotationPdf(quote: AuthoredQuotation) {
+export async function createAuthoredQuotationPdf(quote: AuthoredQuotationPdfInput) {
   const blob = await jpegPagesToPdf(await renderPages(quote));
   return new File([blob], `${quotationFileStem(quote)}.pdf`, { type: "application/pdf" });
 }

@@ -18,6 +18,10 @@ const styles = await readFile(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
+const settlementPdf = await readFile(
+  new URL("../app/consortium-settlement-pdf.ts", import.meta.url),
+  "utf8",
+);
 const workbook = await readFile(
   new URL("../lib/quotation-xlsx.ts", import.meta.url),
   "utf8",
@@ -142,7 +146,7 @@ test("government Excel export uses ten visible columns, portrait fit and bottom 
   assert.doesNotMatch(workbook, /조달 수수료율/);
 });
 
-test("PDF print uses the same government quotation structure and a persistent top shortcut", () => {
+test("PDF output uses the same saved generator and retains the print fallback", () => {
   assert.match(page, /quotation-print-stack quotation-print-portal print-only/);
   assert.match(page, /<th>식별번호<\/th>/);
   assert.match(page, /견적 조건 및 특이사항/);
@@ -153,15 +157,39 @@ test("PDF print uses the same government quotation structure and a persistent to
   assert.match(styles, /body\.quotation-printing \*::\-webkit-scrollbar\{display:none!important;width:0!important;height:0!important\}/);
   assert.match(styles, /\.quotation-print-stack\{[^}]*overflow:visible!important/);
   assert.doesNotMatch(styles, /@media print\{body \*\{visibility:hidden!important\}/);
-  assert.match(page, /function printQuotation\(\)/);
-  assert.match(page, /document\.body\.classList\.add\("quotation-printing"\)/);
-  assert.match(page, /window\.requestAnimationFrame\(\(\) => \{/);
+  assert.match(page, /async function printQuotation\(\)/);
+  assert.match(page, /createAuthoredQuotationPdf\(/);
+  assert.match(page, /저장 PDF와 동일한 양식/);
   assert.match(page, /onClick=\{printQuotation\}/);
   assert.match(page, /beforeprint/);
   assert.match(page, /afterprint/);
   assert.doesNotMatch(page, /onClick=\{\(\) => window\.print\(\)\}/);
   assert.match(crm, /whizzup\.openQuotationComposer/);
   assert.match(crm, /quotation-quick-button/);
+});
+
+test("교구 PDF는 수정 화면과 목록 모두 에어패스 공급자 정보를 사용한다", () => {
+  assert.match(page, /AIRPASS_COMPANY\.businessNumber/);
+  assert.match(page, /airpass-print-brand/);
+  assert.match(page, /airpass-seal\.png/);
+  assert.match(page, /createAuthoredQuotationPdf\(/);
+});
+
+test("정산서 PDF는 조정 내역·최종 지급액·직인을 포함한다", () => {
+  assert.match(settlementPdf, /정산 조정 내역/);
+  assert.match(settlementPdf, /추가 지급/);
+  assert.match(settlementPdf, /정산 차감/);
+  assert.match(settlementPdf, /최종 지급 예정액 \(VAT 포함\)/);
+  assert.match(settlementPdf, /whizzup-seal\.png/);
+  assert.match(page, /정산서 PDF/);
+});
+
+test("직접 바꾼 견적명은 기관·차수 갱신 뒤에도 보존하고 목록에 예산과 구분해 표시한다", () => {
+  assert.match(page, /projectTitleTouched: true/);
+  assert.match(page, /projectTitleTouched \? draft\.projectTitle/);
+  assert.match(page, /<span>견적명<\/span>/);
+  assert.match(page, /<span>연결 예산<\/span>/);
+  assert.match(page, /<span>예산별 배분 금액<\/span>/);
 });
 
 test("quotation purchase types separate G2B, S2B and direct contracts", () => {
