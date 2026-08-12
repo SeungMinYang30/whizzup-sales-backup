@@ -13,6 +13,7 @@ import {
   safeDriveFolderName,
   uploadDriveFile,
 } from "../../../../lib/google-drive-storage";
+import { quotationDownloadName } from "../../../../lib/quotation-file-name";
 
 export const dynamic = "force-dynamic";
 
@@ -49,8 +50,15 @@ export async function GET(request: Request) {
     const idColumn = kind === "pdf" ? "drive_pdf_file_id" : kind === "xlsx" ? "drive_xlsx_file_id" : "source_file_id";
     const nameColumn = kind === "pdf" ? "drive_pdf_name" : kind === "xlsx" ? "drive_xlsx_name" : "source_file_name";
     const fileId = String(row[idColumn] ?? "");
-    const fileName = String(row[nameColumn] ?? "")
+    const storedFileName = String(row[nameColumn] ?? "")
       || `${String(row.quote_number ?? "견적서")}.${kind === "pdf" ? "pdf" : "xlsx"}`;
+    const fileName = kind === "source" ? storedFileName : quotationDownloadName({
+      organization: row.organization,
+      projectTitle: row.project_title,
+      quoteDate: row.quote_date,
+      quoteNumber: row.quote_number,
+      revisionNumber: row.revision_number,
+    }, kind);
     if (!fileId) return Response.json({ error: "Google Drive에 저장된 견적서 파일이 없습니다." }, { status: 404 });
     const stored = await downloadDriveFile(fileId);
     const contentType = kind === "pdf"
@@ -63,7 +71,7 @@ export async function GET(request: Request) {
     return new Response(stored.body, {
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `${kind === "pdf" ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+        "Content-Disposition": `${kind === "pdf" ? "inline" : "attachment"}; filename="quotation.${kind === "pdf" ? "pdf" : "xlsx"}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
       },

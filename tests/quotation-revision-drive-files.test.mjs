@@ -56,7 +56,9 @@ test("final save creates PDF and Excel before Drive-backed finalization", () => 
 });
 
 test("generated Drive file names and PDF preserve each quotation version", () => {
-  assert.match(pdf, /_\$\{quote\.revisionNumber > 0 \? `수정\$\{quote\.revisionNumber\}` : "원본"\}/);
+  assert.match(pdf, /quotationFileStem/);
+  assert.match(pdf, /PDF_RENDER_SCALE = 2/);
+  assert.match(pdf, /context\.scale\(PDF_RENDER_SCALE, PDF_RENDER_SCALE\)/);
   assert.match(pdf, /%PDF-1\.4/);
   assert.match(pdf, /식별번호/);
   assert.match(pdf, /견적 조건 및 특이사항/);

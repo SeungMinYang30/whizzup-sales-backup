@@ -71,10 +71,11 @@ test("내부 수익 보고는 복사·CSV·인쇄를 제공하고 고객 출력�
   assert.match(styles, /quote-internal-report-dialog/);
 });
 
-test("저장된 PDF와 Excel은 인증된 파일 응답을 Blob으로 열고 내려받는다", () => {
-  assert.match(page, /await fetch\(quote\.pdfUrl, \{ cache: "no-store" \}\)/);
+test("저장된 PDF는 원래 파일 주소로 열고 Excel은 의미 있는 이름으로 내려받는다", () => {
+  assert.match(page, /window\.open\(quote\.pdfUrl, "_blank", "noopener,noreferrer"\)/);
   assert.match(page, /await fetch\(quote\.excelUrl, \{ cache: "no-store" \}\)/);
   assert.match(page, /URL\.createObjectURL\(await response\.blob\(\)\)/);
+  assert.match(page, /anchor\.download = `\$\{quotationFileStem\(quote\)\}\.xlsx`/);
 });
 
 test("final quotation consortium and item details flow into institution history", () => {

@@ -1677,28 +1677,8 @@ export default function QuotationManagementPage({
       setMessage("저장된 PDF 파일이 없습니다. 견적 수정에서 최종 저장하면 현재 PDF가 생성됩니다.");
       return;
     }
-    const popup = window.open("", "_blank");
-    try {
-      const response = await fetch(quote.pdfUrl, { cache: "no-store" });
-      if (!response.ok) throw new Error("저장된 PDF를 불러오지 못했습니다.");
-      const url = URL.createObjectURL(await response.blob());
-      if (popup) {
-        popup.opener = null;
-        popup.location.replace(url);
-      } else {
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.target = "_blank";
-        anchor.rel = "noopener";
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-      }
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (error) {
-      popup?.close();
-      setMessage(error instanceof Error ? error.message : "저장된 PDF를 불러오지 못했습니다.");
-    }
+    const popup = window.open(quote.pdfUrl, "_blank", "noopener,noreferrer");
+    if (!popup) setMessage("팝업이 차단되었습니다. PDF 보기를 다시 눌러 주세요.");
   }
 
   async function downloadSavedExcel(quote: AuthoredQuotation) {
@@ -1712,7 +1692,7 @@ export default function QuotationManagementPage({
       const url = URL.createObjectURL(await response.blob());
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = quote.driveXlsxName || `${quotationFileStem(quote)}.xlsx`;
+      anchor.download = `${quotationFileStem(quote)}.xlsx`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();

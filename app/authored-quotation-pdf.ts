@@ -1,18 +1,17 @@
 import type { AuthoredQuotation, AuthoredQuotationItem } from "../lib/authored-quotations";
 import { airpassEquipmentKitOutputLines, airpassEquipmentKitTotal } from "../lib/airpass-equipment-kit";
+import { quotationFileStem } from "../lib/quotation-file-name";
+
+export { quotationFileStem } from "../lib/quotation-file-name";
 
 const PAGE_WIDTH = 1240;
 const PAGE_HEIGHT = 1754;
+const PDF_RENDER_SCALE = 2;
 const PDF_WIDTH = 595.28;
 const PDF_HEIGHT = 841.89;
 const ITEMS_PER_PAGE = 6;
 
 const won = new Intl.NumberFormat("ko-KR");
-
-export function quotationFileStem(quote: Pick<AuthoredQuotation, "quoteNumber" | "revisionNumber">) {
-  const rootNumber = quote.quoteNumber.replace(/-수정\d+$/u, "");
-  return `${rootNumber}_${quote.revisionNumber > 0 ? `수정${quote.revisionNumber}` : "원본"}`;
-}
 
 function concatBytes(chunks: Uint8Array[]) {
   const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
@@ -156,10 +155,11 @@ async function renderPages(quote: AuthoredQuotation) {
   const pages: Array<{ blob: Blob; width: number; height: number }> = [];
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
     const canvas = document.createElement("canvas");
-    canvas.width = PAGE_WIDTH;
-    canvas.height = PAGE_HEIGHT;
+    canvas.width = PAGE_WIDTH * PDF_RENDER_SCALE;
+    canvas.height = PAGE_HEIGHT * PDF_RENDER_SCALE;
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) throw new Error("견적서 PDF 화면을 준비하지 못했습니다.");
+    context.scale(PDF_RENDER_SCALE, PDF_RENDER_SCALE);
     context.fillStyle = "#fff";
     context.fillRect(0, 0, PAGE_WIDTH, PAGE_HEIGHT);
     context.strokeStyle = "#3154df";
@@ -305,7 +305,11 @@ async function renderPages(quote: AuthoredQuotation) {
       context.font = '500 16px "Malgun Gothic", sans-serif';
       context.fillText("다음 페이지에 품목이 계속됩니다.", 72, 1690);
     }
-    pages.push({ blob: await canvasJpeg(canvas), width: PAGE_WIDTH, height: PAGE_HEIGHT });
+    pages.push({
+      blob: await canvasJpeg(canvas),
+      width: PAGE_WIDTH * PDF_RENDER_SCALE,
+      height: PAGE_HEIGHT * PDF_RENDER_SCALE,
+    });
     canvas.width = 1;
     canvas.height = 1;
   }
@@ -314,10 +318,11 @@ async function renderPages(quote: AuthoredQuotation) {
     const detailPageCount = Math.max(1, Math.ceil(detailLines.length / 15));
     for (let detailPageIndex = 0; detailPageIndex < detailPageCount; detailPageIndex += 1) {
       const canvas = document.createElement("canvas");
-      canvas.width = PAGE_WIDTH;
-      canvas.height = PAGE_HEIGHT;
+      canvas.width = PAGE_WIDTH * PDF_RENDER_SCALE;
+      canvas.height = PAGE_HEIGHT * PDF_RENDER_SCALE;
       const context = canvas.getContext("2d", { alpha: false });
       if (!context) throw new Error("교구 세부견적 PDF 화면을 준비하지 못했습니다.");
+      context.scale(PDF_RENDER_SCALE, PDF_RENDER_SCALE);
       context.fillStyle = "#fff";
       context.fillRect(0, 0, PAGE_WIDTH, PAGE_HEIGHT);
       context.strokeStyle = "#3154df";
@@ -372,7 +377,11 @@ async function renderPages(quote: AuthoredQuotation) {
       context.fillStyle = "#6c7890";
       context.font = '500 15px "Malgun Gothic", sans-serif';
       context.fillText("주식회사 위즈업 · 본 세부견적은 본 견적서와 함께 제출됩니다.", 72, 1690);
-      pages.push({ blob: await canvasJpeg(canvas), width: PAGE_WIDTH, height: PAGE_HEIGHT });
+      pages.push({
+        blob: await canvasJpeg(canvas),
+        width: PAGE_WIDTH * PDF_RENDER_SCALE,
+        height: PAGE_HEIGHT * PDF_RENDER_SCALE,
+      });
       canvas.width = 1;
       canvas.height = 1;
     }
