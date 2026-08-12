@@ -85,6 +85,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const uploadedFileIds: string[] = [];
   let id = 0;
+  let replaceExisting = false;
   try {
     await requireApprovedMember();
     if (!isGoogleDriveConfigured()) {
@@ -96,7 +97,7 @@ export async function POST(request: Request) {
     const xlsx = formData.get("xlsx");
     const sourceCandidate = formData.get("sourceFile");
     const sourceFile = sourceCandidate instanceof File && sourceCandidate.size > 0 ? sourceCandidate : null;
-    const replaceExisting = formData.get("replaceExisting") === "true";
+    replaceExisting = formData.get("replaceExisting") === "true";
     if (replaceExisting) await requireAdminMember();
     if (!id) return Response.json({ error: "올바른 견적서 ID가 필요합니다." }, { status: 400 });
     if (!(pdf instanceof File) || !pdf.name.toLowerCase().endsWith(".pdf") || pdf.size < 1 || pdf.size > 20 * 1024 * 1024) {
@@ -225,6 +226,10 @@ export async function POST(request: Request) {
       await ensureAuthoredQuotationsReady()
         .then((d1) => d1.prepare("UPDATE authored_quotations SET drive_sync_status='error', drive_sync_error=? WHERE id=?").bind(message, id).run())
         .catch(() => undefined);
+    }
+    if (replaceExisting) {
+      console.error("Quotation file replacement failed", { id, error });
+      return Response.json({ error: cleanError(error) }, { status: 500 });
     }
     return accessErrorResponse(error);
   }
