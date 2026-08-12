@@ -148,6 +148,18 @@ function memberIndexes(backup: FullBackup, preferredMemberId = 0) {
 
 function assignmentCounts(backup: FullBackup) {
   const members = memberIndexes(backup);
+  const activitiesById = new Map(
+    rows(backup, "activities").map((activity) => [integer(activity.id), activity] as const),
+  );
+  const campaignsById = new Map(
+    rows(backup, "sales_campaigns").map((campaign) => [integer(campaign.id), campaign] as const),
+  );
+  const activityWorkloadKey = (activityId: unknown) => {
+    const activity = activitiesById.get(integer(activityId));
+    return activity
+      ? `activity:${activityStableKey(activity)}`
+      : `activity-id:${integer(activityId)}`;
+  };
   const result = new Map<string, Record<string, number>>();
   const seenByEmail = new Map<string, Set<string>>();
   const seenByField = new Map<string, Set<string>>();
@@ -178,28 +190,44 @@ function assignmentCounts(backup: FullBackup) {
     result.set(email, counts);
   };
   for (const activity of rows(backup, "activities")) {
-    increment(members.emailByAlias.get(key(activity.progress_manager)) ?? "", "activities", `activity:${integer(activity.id)}`);
+    increment(
+      members.emailByAlias.get(key(activity.progress_manager)) ?? "",
+      "activities",
+      `activity:${activityStableKey(activity)}`,
+    );
   }
   for (const author of rows(backup, "activity_authors")) {
-    increment(text(members.byId.get(integer(author.member_id))?.email).toLowerCase(), "authoredActivities", `activity:${integer(author.activity_id)}`);
+    increment(
+      text(members.byId.get(integer(author.member_id))?.email).toLowerCase(),
+      "authoredActivities",
+      activityWorkloadKey(author.activity_id),
+    );
   }
   for (const history of rows(backup, "activity_assignment_history")) {
-    increment(text(members.byId.get(integer(history.to_member_id))?.email).toLowerCase(), "assignmentHistory", `activity:${integer(history.activity_id)}`);
+    increment(
+      text(members.byId.get(integer(history.to_member_id))?.email).toLowerCase(),
+      "assignmentHistory",
+      activityWorkloadKey(history.activity_id),
+    );
   }
   for (const schedule of rows(backup, "organization_schedules")) {
     const email = text(members.byId.get(integer(schedule.assignee_member_id))?.email).toLowerCase()
       || members.emailByAlias.get(key(schedule.assignee_name))
       || "";
-    increment(email, "schedules", `schedule:${integer(schedule.id)}`);
+    increment(email, "schedules", `schedule:${scheduleStableKey(schedule)}`);
   }
   for (const target of rows(backup, "sales_campaign_targets")) {
-    increment(text(members.byId.get(integer(target.assigned_member_id))?.email).toLowerCase(), "campaignTargets", `campaign-target:${integer(target.id)}`);
+    increment(
+      text(members.byId.get(integer(target.assigned_member_id))?.email).toLowerCase(),
+      "campaignTargets",
+      `campaign-target:${campaignTargetStableKey(target, campaignsById)}`,
+    );
   }
   for (const project of rows(backup, "complex_projects")) {
     const email = text(members.byId.get(integer(project.manager_member_id))?.email).toLowerCase()
       || members.emailByAlias.get(key(project.manager_name))
       || "";
-    increment(email, "complexProjects", `complex-project:${integer(project.id)}`);
+    increment(email, "complexProjects", `complex-project:${complexProjectStableKey(project)}`);
   }
   return result;
 }

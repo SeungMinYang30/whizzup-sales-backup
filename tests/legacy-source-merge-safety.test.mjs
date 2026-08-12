@@ -39,8 +39,11 @@ test("member restore matches email, preserves locked or assigned work, and repoi
 test("assignment comparison counts unique workload items instead of relationship edges", async () => {
   const helper = await readFile(helperPath, "utf8");
   assert.match(helper, /seenByEmail/);
-  assert.match(helper, /`activity:\$\{integer\(author\.activity_id\)\}`/);
-  assert.match(helper, /`activity:\$\{integer\(history\.activity_id\)\}`/);
+  assert.match(helper, /activityWorkloadKey\(author\.activity_id\)/);
+  assert.match(helper, /activityWorkloadKey\(history\.activity_id\)/);
+  assert.match(helper, /scheduleStableKey\(schedule\)/);
+  assert.match(helper, /campaignTargetStableKey\(target, campaignsById\)/);
+  assert.match(helper, /complexProjectStableKey\(project\)/);
 });
 
 test("budget manager exposes the latest safe merge audit", async () => {
