@@ -9,6 +9,8 @@ import {
   clean,
   ensureRecordsReady,
   insertActivity,
+  readCanonicalBusinessRoundBudgets,
+  synchronizeBusinessRoundBudgets,
 } from "../../../../lib/records-store";
 import { regionFromAddress } from "../../../../lib/region-from-address";
 import {
@@ -38,6 +40,12 @@ import {
   activityBudgetsFromRecord,
   parseStoredActivityBudgetMoney,
 } from "../../../../lib/activity-budgets";
+import {
+  campaignBudgetAllocation,
+  campaignBudgetDisplayAmount,
+  type CampaignBudgetCard,
+  upsertCampaignBudget,
+} from "../../../../lib/campaign-budgets";
 import { isPostgresDatabase } from "../../../../db";
 
 export const dynamic = "force-dynamic";
@@ -478,6 +486,16 @@ export async function GET() {
             current_activity.award_status AS current_award_status,
             current_activity.award_stage AS current_award_stage,
             current_activity.budget_type AS current_budget_type,
+            current_activity.budget_amount AS current_budget_amount,
+            current_activity.budget_original_name AS current_budget_original_name,
+            current_activity.budget_group_id AS current_budget_group_id,
+            current_activity.budget_match_status AS current_budget_match_status,
+            current_activity.budget_match_method AS current_budget_match_method,
+            current_activity.budget_request_id AS current_budget_request_id,
+            current_activity.budget_kind AS current_budget_kind,
+            current_activity.budget_amount_mode AS current_budget_amount_mode,
+            current_activity.budget_amount_override AS current_budget_amount_override,
+            current_activity.budgets_json AS current_budgets_json,
             current_activity.next_action AS current_next_action,
             COALESCE(
               NULLIF(manager_activity.progress_manager, ''),
@@ -579,9 +597,71 @@ export async function GET() {
         `)
         .all(),
     ]);
+    const campaignCards = new Map<number, CampaignBudgetCard>(
+      (campaigns.results as Record<string, unknown>[]).map((row) => {
+        const id = Number(row.id);
+        return [
+          id,
+          {
+            id,
+            budgetType: clean(row.budget_type),
+            budgetGroupId: Number(row.budget_group_id) || null,
+            budgetMatchStatus: clean(row.budget_match_status),
+            budgetMatchMethod: clean(row.budget_match_method),
+            budgetRequestId: clean(row.budget_request_id) || null,
+            budgetKind: clean(row.budget_kind),
+            budgetAmountMode: clean(row.budget_amount_mode),
+            defaultBudgetAmount:
+              row.default_budget_amount === null || row.default_budget_amount === undefined
+                ? null
+                : Number(row.default_budget_amount),
+          },
+        ];
+      }),
+    );
+    const effectiveTargets = (targets.results as Record<string, unknown>[]).map(
+      (row) => {
+        const campaign = campaignCards.get(Number(row.campaign_id));
+        if (!campaign) return row;
+        const budgets = activityBudgetsFromRecord({
+          budget_type: row.current_budget_type,
+          budget_amount: row.current_budget_amount,
+          budget_original_name: row.current_budget_original_name,
+          budget_group_id: row.current_budget_group_id,
+          budget_match_status: row.current_budget_match_status,
+          budget_match_method: row.current_budget_match_method,
+          budget_request_id: row.current_budget_request_id,
+          budget_kind: row.current_budget_kind,
+          budget_amount_mode: row.current_budget_amount_mode,
+          budget_amount_override: row.current_budget_amount_override,
+          budgets_json: row.current_budgets_json,
+        });
+        const matchingBudget = budgets.find(
+          (budget) =>
+            (campaign.budgetGroupId &&
+              budget.budgetGroupId === campaign.budgetGroupId) ||
+            cleanBudgetKey(budget.budgetType || budget.budgetOriginalName) ===
+              cleanBudgetKey(campaign.budgetType),
+        );
+        const storedTargetAmount =
+          row.budget_amount === null || row.budget_amount === undefined
+            ? null
+            : Number(row.budget_amount);
+        const display = campaignBudgetDisplayAmount(
+          matchingBudget,
+          campaign,
+          storedTargetAmount,
+        );
+        return {
+          ...row,
+          budget_amount: display.amount,
+          budget_amount_source: display.source,
+        };
+      },
+    );
     return Response.json({
       campaigns: campaigns.results,
-      targets: targets.results,
+      targets: effectiveTargets,
       members: members.results,
       budgetCatalog: budgetCatalog.results,
     });
@@ -611,6 +691,7 @@ export async function POST(request: Request) {
       budgetKind?: unknown;
       budgetAmountMode?: unknown;
       destinationCampaignId?: unknown;
+      cardOnly?: unknown;
       targets?: CampaignTargetInput[];
       institutionDecisions?: Record<
         string,
@@ -633,6 +714,7 @@ export async function POST(request: Request) {
         : importSource === "manual"
           ? "예산별 기관 직접 등록"
           : "예산별 기관 엑셀 가져오기";
+    const cardOnly = payload.cardOnly === true && importSource === "manual";
     const sourceFileName = clean(payload.sourceFileName).slice(0, 220);
     const selectionDate = clean(payload.selectionDate).slice(0, 10);
     const selectedYear = selectionDate.slice(0, 4);
@@ -655,7 +737,7 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    if (!targets.length) {
+    if (!targets.length && !cardOnly) {
       return Response.json(
         { error: "등록할 기관이 한 곳 이상 필요합니다." },
         { status: 400 },
@@ -684,7 +766,7 @@ export async function POST(request: Request) {
     if (
       !Number.isInteger(requestedBudgetGroupId) ||
       requestedBudgetGroupId < 1 ||
-      budgetMetadata.budgetGroupId !== requestedBudgetGroupId ||
+      Number(budgetMetadata.budgetGroupId) !== requestedBudgetGroupId ||
       !clean(budgetMetadata.storedName)
     ) {
       return Response.json(
@@ -803,6 +885,50 @@ export async function POST(request: Request) {
           { status: 409 },
         );
       }
+    }
+
+    if (cardOnly) {
+      const campaign = await d1
+        .prepare(`
+          INSERT INTO sales_campaigns (
+            name, notes, budget_type, budget_group_id, budget_match_status,
+            budget_match_method, budget_request_id, budget_kind,
+            budget_amount_mode, selection_date, default_budget_amount,
+            source_file_name, import_source, import_status,
+            expected_target_count, created_by
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', 'complete', 0, ?)
+          RETURNING *
+        `)
+        .bind(
+          name,
+          notes,
+          budgetMetadata.storedName,
+          budgetMetadata.budgetGroupId,
+          budgetMetadata.budgetMatchStatus,
+          budgetMetadata.budgetMatchMethod,
+          budgetMetadata.budgetRequestId,
+          budgetMetadata.budgetKind,
+          budgetMetadata.budgetAmountMode,
+          selectionDate,
+          effectiveDefaultBudgetAmount,
+          sourceFileName,
+          member.id,
+        )
+        .first<Record<string, unknown>>();
+      if (!campaign) throw new Error("예산카드를 만들지 못했습니다.");
+      return Response.json(
+        {
+          campaign: { ...campaign, target_count: 0, assigned_count: 0 },
+          targetCount: 0,
+          targets: [],
+          linkedExistingCount: 0,
+          correctedBudgetCount: 0,
+          newBusinessCount: 0,
+          newInstitutionCount: 0,
+          cardOnly: true,
+        },
+        { status: 201 },
+      );
     }
 
     const approvedMembers = await d1
@@ -971,7 +1097,7 @@ export async function POST(request: Request) {
                 Number(requestedLinkedActivity?.id) === target.linkedActivityId,
             )
           : currentPreAward;
-        correctBudget = Boolean(linked && target.updateLinkedBudget);
+        correctBudget = false;
         if (!linked) {
           return Response.json(
             {
@@ -1094,6 +1220,17 @@ export async function POST(request: Request) {
       createdCampaign = Boolean(campaignId);
     }
     if (!campaignId) throw new Error("예산별 기관 명단을 만들지 못했습니다.");
+    const campaignCard: CampaignBudgetCard = {
+      id: campaignId,
+      budgetType: budgetMetadata.storedName,
+      budgetGroupId: budgetMetadata.budgetGroupId,
+      budgetMatchStatus: budgetMetadata.budgetMatchStatus,
+      budgetMatchMethod: budgetMetadata.budgetMatchMethod,
+      budgetRequestId: budgetMetadata.budgetRequestId,
+      budgetKind: budgetMetadata.budgetKind,
+      budgetAmountMode: budgetMetadata.budgetAmountMode,
+      defaultBudgetAmount: effectiveDefaultBudgetAmount,
+    };
 
     const normalizedTargets: Array<Record<string, unknown>> = [];
     const createdPlans = plans.filter(
@@ -1155,6 +1292,12 @@ export async function POST(request: Request) {
                 .filter(Boolean)
                 .join("\n"),
               progressManager: plan.progressManager,
+              budgets: [
+                campaignBudgetAllocation(
+                  campaignCard,
+                  plan.target.budgetAmount,
+                ),
+              ],
               ...decision,
               institutionSeparate: true,
               skipOfficialSchoolLookup: true,
@@ -1274,7 +1417,7 @@ export async function POST(request: Request) {
           plan.target.notes,
           plan.target.assignedMemberId,
           activityId,
-          plan.target.budgetAmount ?? effectiveDefaultBudgetAmount,
+          plan.target.budgetAmount,
           plan.target.schoolLevel,
           plan.target.supplyItems,
           plan.target.reviewNote,
@@ -1291,6 +1434,29 @@ export async function POST(request: Request) {
       });
     }
     await runStatementsInChunks(d1, targetAndRelationStatements);
+
+    for (const planChunk of chunks(plans, 12)) {
+      await Promise.all(
+        planChunk.map(async (plan) => {
+          const currentBudgets = await readCanonicalBusinessRoundBudgets(
+            d1,
+            plan.organization,
+            plan.businessRound,
+          );
+          const nextBudgets = upsertCampaignBudget(
+            currentBudgets,
+            campaignCard,
+            plan.target.budgetAmount,
+          );
+          await synchronizeBusinessRoundBudgets(
+            d1,
+            plan.organization,
+            plan.businessRound,
+            nextBudgets,
+          );
+        }),
+      );
+    }
 
     const correctionStatements: Array<ReturnType<typeof d1.prepare>> = [];
     for (const plan of plans.filter((item) => item.correctBudget)) {
@@ -1580,7 +1746,9 @@ export async function PATCH(request: Request) {
     const d1 = await ensureCampaignsReady();
     const campaign = await d1
       .prepare(
-        `SELECT id, name, default_budget_amount
+        `SELECT id, name, budget_type, budget_group_id,
+                budget_match_status, budget_match_method, budget_request_id,
+                budget_kind, budget_amount_mode, default_budget_amount
          FROM sales_campaigns
          WHERE id = ? AND import_status = 'complete'`,
       )
@@ -1588,6 +1756,13 @@ export async function PATCH(request: Request) {
       .first<{
         id: number;
         name: string;
+        budget_type: string;
+        budget_group_id: number | null;
+        budget_match_status: string;
+        budget_match_method: string;
+        budget_request_id: string | null;
+        budget_kind: string;
+        budget_amount_mode: string;
         default_budget_amount: number | null;
       }>();
     if (!campaign) {
@@ -1606,6 +1781,16 @@ export async function PATCH(request: Request) {
       progress_manager: string;
       assigned_member_id: number | null;
       budget_amount: string;
+      budget_type: string;
+      budget_original_name: string;
+      budget_group_id: number | null;
+      budget_match_status: string;
+      budget_match_method: string;
+      budget_request_id: string | null;
+      budget_kind: string;
+      budget_amount_mode: string;
+      budget_amount_override: string;
+      budgets_json: string;
       business_round: number;
     };
     const activityById = new Map<number, ExistingCampaignActivity>();
@@ -1615,7 +1800,11 @@ export async function PATCH(request: Request) {
         .prepare(
           `SELECT
              a.id, a.organization, a.region, a.contact_name, a.contact_phone,
-             a.progress_manager, a.budget_amount, a.business_round,
+             a.progress_manager, a.budget_amount, a.budget_type,
+             a.budget_original_name, a.budget_group_id,
+             a.budget_match_status, a.budget_match_method,
+             a.budget_request_id, a.budget_kind, a.budget_amount_mode,
+             a.budget_amount_override, a.budgets_json, a.business_round,
              m.id AS assigned_member_id
            FROM activities a
            LEFT JOIN members m
@@ -1690,12 +1879,47 @@ export async function PATCH(request: Request) {
           `${campaign.name} 기존 기관 연결`,
           Number(row.assigned_member_id) || null,
           Number(row.id),
-          parseStoredActivityBudgetMoney(row.budget_amount) ||
-            campaign.default_budget_amount,
+          null,
           Math.max(1, Number(row.business_round) || 1),
         ),
     );
     await runStatementsInChunks(d1, statements);
+    const campaignCard: CampaignBudgetCard = {
+      id: Number(campaign.id),
+      budgetType: clean(campaign.budget_type),
+      budgetGroupId: Number(campaign.budget_group_id) || null,
+      budgetMatchStatus: clean(campaign.budget_match_status),
+      budgetMatchMethod: clean(campaign.budget_match_method),
+      budgetRequestId: clean(campaign.budget_request_id) || null,
+      budgetKind: clean(campaign.budget_kind),
+      budgetAmountMode: clean(campaign.budget_amount_mode),
+      defaultBudgetAmount:
+        campaign.default_budget_amount === null
+          ? null
+          : Number(campaign.default_budget_amount),
+    };
+    for (const rowChunk of chunks(selectedRows, 12)) {
+      await Promise.all(
+        rowChunk.map(async (row) => {
+          const currentBudgets = await readCanonicalBusinessRoundBudgets(
+            d1,
+            row.organization,
+            Math.max(1, Number(row.business_round) || 1),
+          );
+          const nextBudgets = upsertCampaignBudget(
+            currentBudgets,
+            campaignCard,
+            null,
+          );
+          await synchronizeBusinessRoundBudgets(
+            d1,
+            row.organization,
+            Math.max(1, Number(row.business_round) || 1),
+            nextBudgets,
+          );
+        }),
+      );
+    }
     await d1
       .prepare(
         `UPDATE sales_campaigns
@@ -1732,9 +1956,197 @@ export async function PUT(request: Request) {
       destinationBudgetGroupId?: unknown;
       targetId?: unknown;
       assignedMemberId?: unknown;
+      name?: unknown;
+      notes?: unknown;
+      selectionDate?: unknown;
+      defaultBudgetAmount?: unknown;
+      budgetType?: unknown;
+      budgetOriginalName?: unknown;
+      budgetGroupId?: unknown;
+      budgetMatchStatus?: unknown;
+      budgetMatchMethod?: unknown;
+      budgetRequestId?: unknown;
+      budgetKind?: unknown;
+      budgetAmountMode?: unknown;
     };
     const actor = await requirePrimaryOwner();
     const action = clean(payload.action);
+    if (action === "update-campaign") {
+      const campaignId = Number(payload.campaignId);
+      const name = clean(payload.name).slice(0, 120);
+      const notes = clean(payload.notes).slice(0, 1000);
+      const selectionDate = clean(payload.selectionDate).slice(0, 10);
+      const defaultBudgetAmount = parseMoney(payload.defaultBudgetAmount);
+      if (
+        !Number.isInteger(campaignId) ||
+        campaignId < 1 ||
+        !name ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(selectionDate)
+      ) {
+        return Response.json(
+          { error: "수정할 예산카드와 선정·공고일을 확인해 주세요." },
+          { status: 400 },
+        );
+      }
+      await Promise.all([ensureRecordsReady(), ensureBudgetNamesReady()]);
+      const d1 = await ensureCampaignsReady();
+      const existing = await d1
+        .prepare(
+          `SELECT * FROM sales_campaigns
+           WHERE id = ? AND import_status = 'complete'`,
+        )
+        .bind(campaignId)
+        .first<Record<string, unknown>>();
+      if (!existing) {
+        return Response.json(
+          { error: "수정할 예산카드를 찾지 못했습니다." },
+          { status: 404 },
+        );
+      }
+      const duplicate = await d1
+        .prepare(
+          "SELECT id FROM sales_campaigns WHERE name = ? AND id <> ? LIMIT 1",
+        )
+        .bind(name, campaignId)
+        .first<{ id: number }>();
+      if (duplicate) {
+        return Response.json(
+          { error: "같은 이름의 예산카드가 이미 있습니다." },
+          { status: 409 },
+        );
+      }
+      const existingBudgetGroupId = Number(existing.budget_group_id);
+      const requestedBudgetGroupId = Number(
+        payload.budgetGroupId ?? existing.budget_group_id,
+      );
+      if (requestedBudgetGroupId !== existingBudgetGroupId) {
+        return Response.json(
+          {
+            error:
+              "연결된 기관을 보호하기 위해 표준 예산명은 바꿀 수 없습니다. 다른 표준 예산은 새 카드로 등록해 주세요.",
+          },
+          { status: 409 },
+        );
+      }
+      const budgetMetadata = await resolveBudgetRecordMetadata(d1, {
+        budgetType: payload.budgetType ?? existing.budget_type,
+        budgetOriginalName:
+          payload.budgetOriginalName ?? existing.budget_type,
+        budgetGroupId: existingBudgetGroupId,
+        budgetMatchStatus:
+          payload.budgetMatchStatus ?? existing.budget_match_status,
+        budgetMatchMethod:
+          payload.budgetMatchMethod ?? existing.budget_match_method,
+        budgetRequestId:
+          payload.budgetRequestId ?? existing.budget_request_id,
+        budgetKind: payload.budgetKind ?? existing.budget_kind,
+        budgetAmountMode:
+          payload.budgetAmountMode ?? existing.budget_amount_mode,
+        awardStatus: "미정",
+      });
+      if (Number(budgetMetadata.budgetGroupId) !== existingBudgetGroupId) {
+        return Response.json(
+          { error: "등록된 표준 예산명을 다시 확인해 주세요." },
+          { status: 400 },
+        );
+      }
+      const previousDefaultBudgetAmount =
+        existing.default_budget_amount === null ||
+        existing.default_budget_amount === undefined
+          ? null
+          : Number(existing.default_budget_amount);
+      await d1
+        .prepare(
+          `UPDATE sales_campaigns
+           SET name = ?, notes = ?, selection_date = ?,
+               default_budget_amount = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+        )
+        .bind(name, notes, selectionDate, defaultBudgetAmount, campaignId)
+        .run();
+
+      const targetRows = await d1
+        .prepare(
+          `SELECT id, organization, business_round, budget_amount
+           FROM sales_campaign_targets WHERE campaign_id = ?`,
+        )
+        .bind(campaignId)
+        .all<{
+          id: number;
+          organization: string;
+          business_round: number;
+          budget_amount: number | null;
+        }>();
+      const campaignCard: CampaignBudgetCard = {
+        id: campaignId,
+        budgetType: budgetMetadata.storedName,
+        budgetGroupId: budgetMetadata.budgetGroupId,
+        budgetMatchStatus: budgetMetadata.budgetMatchStatus,
+        budgetMatchMethod: budgetMetadata.budgetMatchMethod,
+        budgetRequestId: budgetMetadata.budgetRequestId,
+        budgetKind: budgetMetadata.budgetKind,
+        budgetAmountMode: budgetMetadata.budgetAmountMode,
+        defaultBudgetAmount,
+      };
+      const implicitTargetIds: number[] = [];
+      for (const rowChunk of chunks(targetRows.results, 12)) {
+        await Promise.all(
+          rowChunk.map(async (row) => {
+            const targetAmount =
+              row.budget_amount === null ? null : Number(row.budget_amount);
+            const usesPreviousDefault =
+              targetAmount === null ||
+              (previousDefaultBudgetAmount !== null &&
+                targetAmount === previousDefaultBudgetAmount);
+            if (usesPreviousDefault) implicitTargetIds.push(Number(row.id));
+            const currentBudgets = await readCanonicalBusinessRoundBudgets(
+              d1,
+              clean(row.organization),
+              Math.max(1, Number(row.business_round) || 1),
+            );
+            const nextBudgets = upsertCampaignBudget(
+              currentBudgets,
+              campaignCard,
+              usesPreviousDefault ? null : targetAmount,
+              {
+                previousDefaultBudgetAmount,
+                assumePreviousDefault: usesPreviousDefault,
+              },
+            );
+            await synchronizeBusinessRoundBudgets(
+              d1,
+              clean(row.organization),
+              Math.max(1, Number(row.business_round) || 1),
+              nextBudgets,
+            );
+          }),
+        );
+      }
+      for (const targetIdChunk of chunks(implicitTargetIds, 50)) {
+        await d1
+          .prepare(
+            `UPDATE sales_campaign_targets
+             SET budget_amount = NULL, updated_at = CURRENT_TIMESTAMP
+             WHERE id IN (${targetIdChunk.map(() => "?").join(", ")})`,
+          )
+          .bind(...targetIdChunk)
+          .run();
+      }
+      const campaign = await d1
+        .prepare(
+          `SELECT c.*, COUNT(t.id) AS target_count
+           FROM sales_campaigns c
+           LEFT JOIN sales_campaign_targets t ON t.campaign_id = c.id
+           WHERE c.id = ? GROUP BY c.id`,
+        )
+        .bind(campaignId)
+        .first<Record<string, unknown>>();
+      return Response.json({
+        ok: true,
+        campaign,
+        message: `${name} 예산카드를 수정했습니다. 기관별 실제 입력금액은 유지했습니다.`,
+      });
+    }
     if (action) {
       const campaignId = Number(payload.campaignId);
       const targetIds = [
