@@ -33,14 +33,19 @@ function secureEqual(left: string, right: string) {
   return difference === 0;
 }
 
-function authorizedBySyncSecret(request: Request) {
-  const secret = serverValue("STANDBY_SYNC_SECRET");
+function authorizedByServerSecret(request: Request) {
+  const cutoverSecret = serverValue("CUTOVER_API_SECRET");
+  const syncSecret = serverValue("STANDBY_SYNC_SECRET");
   const authorization = request.headers.get("authorization") ?? "";
-  return Boolean(secret) && secureEqual(authorization, `Bearer ${secret}`);
+  return (
+    (Boolean(cutoverSecret) &&
+      secureEqual(authorization, `Bearer ${cutoverSecret}`)) ||
+    (Boolean(syncSecret) && secureEqual(authorization, `Bearer ${syncSecret}`))
+  );
 }
 
 async function cutoverActorId(request: Request) {
-  if (!authorizedBySyncSecret(request)) {
+  if (!authorizedByServerSecret(request)) {
     return (await requirePrimaryOwner()).id;
   }
   const owner = await getD1()

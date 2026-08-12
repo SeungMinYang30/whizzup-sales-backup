@@ -125,7 +125,8 @@ test("Supabase sync can only be scheduled after an explicit server-side opt in",
 
 test("Vercel cutover performs a final verified sync and permanently blocks replica overwrite", () => {
   assert.match(cutoverRoute, /requirePrimaryOwner/);
-  assert.match(cutoverRoute, /authorizedBySyncSecret/);
+  assert.match(cutoverRoute, /authorizedByServerSecret/);
+  assert.match(cutoverRoute, /CUTOVER_API_SECRET/);
   assert.match(cutoverRoute, /STANDBY_SYNC_SECRET/);
   assert.match(cutoverRoute, /VERCEL 운영 전환/);
   assert.match(cutoverRoute, /removeStandbySchedule/);
