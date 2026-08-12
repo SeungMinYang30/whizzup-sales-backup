@@ -86,20 +86,43 @@ function driveStatus() {
 
 async function credentialStatus() {
   const d1 = getD1();
-  const approved = await d1
-    .prepare("SELECT COUNT(*)::integer AS count FROM members WHERE status = 'approved'")
-    .first<{ count: number }>();
-  const credentials = await d1
+  const approvedMembers = await d1
     .prepare(
-      `SELECT COUNT(*)::integer AS count
-       FROM member_credentials credential
-       JOIN members member ON member.id = credential.member_id
-       WHERE member.status = 'approved'`,
+      `SELECT member.id,
+              member.email,
+              member.display_name,
+              COALESCE(member.job_title, '') AS job_title,
+              CASE WHEN credential.member_id IS NULL THEN 0 ELSE 1 END AS has_credential
+       FROM members member
+       LEFT JOIN member_credentials credential ON credential.member_id = member.id
+       WHERE member.status = 'approved'
+       ORDER BY member.id ASC`,
     )
-    .first<{ count: number }>();
-  const total = Number(approved?.count ?? 0);
-  const local = Number(credentials?.count ?? 0);
-  return { total, local, missing: Math.max(0, total - local), ready: total > 0 && local >= total };
+    .all<{
+      id: number;
+      email: string;
+      display_name: string;
+      job_title: string;
+      has_credential: number;
+    }>();
+  const rows = approvedMembers.results ?? [];
+  const missingMembers = rows
+    .filter((member) => !Number(member.has_credential))
+    .map((member) => ({
+      id: Number(member.id),
+      email: String(member.email ?? ""),
+      displayName: String(member.display_name ?? ""),
+      jobTitle: String(member.job_title ?? ""),
+    }));
+  const total = rows.length;
+  const local = total - missingMembers.length;
+  return {
+    total,
+    local,
+    missing: missingMembers.length,
+    missingMembers,
+    ready: total > 0 && local >= total,
+  };
 }
 
 async function readiness() {
@@ -167,7 +190,11 @@ export async function POST(request: Request) {
     );
     if (hardBlockers.length > 0) {
       return Response.json(
-        { error: "이전 준비가 완료되지 않았습니다.", blockers: hardBlockers },
+        {
+          error: "이전 준비가 완료되지 않았습니다.",
+          blockers: hardBlockers,
+          credentials: before.credentials,
+        },
         { status: 409 },
       );
     }
