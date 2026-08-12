@@ -1,21 +1,19 @@
 import InitialPasswordSetup from "../initial-password-setup";
-import {
-  chatGPTSignOutPath,
-  requireChatGPTUser,
-} from "../chatgpt-auth";
-import {
-  findMemberByEmail,
-  memberHasPassword,
-} from "../../lib/app-auth";
+import { findMemberByEmail, memberHasPassword } from "../../lib/app-auth";
+import { readPasswordSetupTicket } from "../../lib/password-setup-ticket";
 
 export const dynamic = "force-dynamic";
 
 export default async function PasswordSetupPage() {
-  const chatgpt = await requireChatGPTUser("/password-setup");
-  const email = chatgpt.email.trim().toLowerCase();
-  const member = await findMemberByEmail(email);
+  const ticket = await readPasswordSetupTicket();
+  const member = ticket ? await findMemberByEmail(ticket.email) : null;
 
-  if (!member || String(member.status) !== "approved") {
+  if (
+    !ticket ||
+    !member ||
+    String(member.status) !== "approved" ||
+    Number(member.id) !== ticket.memberId
+  ) {
     return (
       <div
         className="initial-password-overlay"
@@ -33,16 +31,11 @@ export default async function PasswordSetupPage() {
               height={83}
             />
           </div>
-          <h2 id="password-setup-unavailable-title">승인 계정을 확인해 주세요</h2>
-          <p>
-            현재 확인된 ChatGPT 이메일({email})과 일치하는 승인 계정이 없습니다.
-          </p>
+          <h2 id="password-setup-unavailable-title">비밀번호 설정을 다시 시작해 주세요</h2>
+          <p>로그인 화면에서 등록된 직원 이메일을 입력하면 새 비밀번호 설정 화면이 열립니다.</p>
           <div className="initial-password-actions">
-            <a
-              className="initial-password-account-link"
-              href={chatGPTSignOutPath("/password-setup")}
-            >
-              다른 ChatGPT 계정으로 확인
+            <a className="initial-password-account-link" href="/login">
+              로그인 화면으로 이동
             </a>
           </div>
         </section>
@@ -53,8 +46,9 @@ export default async function PasswordSetupPage() {
   const hasPassword = await memberHasPassword(Number(member.id));
   return (
     <InitialPasswordSetup
-      email={email}
+      email={ticket.email}
       mode={hasPassword ? "reset" : "initial"}
     />
   );
 }
+
