@@ -163,9 +163,9 @@ export default function LoginPage() {
           {error && <p className="direct-login-error" role="alert">{error}</p>}
           {mode === "login" && (
             <div className="direct-login-password-setup">
-              <p>최초 비밀번호가 없거나 다시 설정하려면 기존 ChatGPT 계정을 확인해 주세요.</p>
+              <p>기존에 사용하던 Google 이메일 계정으로 본인 확인 후 비밀번호를 설정하거나 재설정할 수 있습니다.</p>
               <a href={CHATGPT_PASSWORD_SETUP_URL}>
-                ChatGPT로 비밀번호 설정·재설정
+                Google 계정으로 비밀번호 설정·재설정
               </a>
             </div>
           )}
