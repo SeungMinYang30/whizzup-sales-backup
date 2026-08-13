@@ -29,6 +29,9 @@ test("institution detail keeps quotations separated by institution and business 
   assert.match(crm, /<OrganizationQuotationHistory[\s\S]*?readOnly/);
   assert.match(crm, /<OrganizationQuotationHistory[\s\S]*?onCreate=/);
   assert.match(crm, /whizzup\.quotationTarget/);
+  assert.match(crm, /JSON\.stringify\(\{ id, mode: "edit" \}\)[\s\S]*?selectView\("quotations"\)/);
+  assert.match(page, /const quote = quotes\.find\(\(item\) => item\.id === Number\(target\.id\)\)/);
+  assert.match(page, /if \(quote\) openQuotation\(quote\)/);
   assert.match(page, /target\.scope\?\.organization/);
 });
 

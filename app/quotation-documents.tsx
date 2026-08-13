@@ -18,7 +18,6 @@ import {
   hasProcurementSignal,
   procurementNumbersFromText,
 } from "../lib/procurement-product";
-import type { AuthoredQuotation } from "../lib/authored-quotations";
 
 type QuotationDocument = {
   id: number;
@@ -312,67 +311,20 @@ async function renderPdfPages(
   return images;
 }
 
-async function renderStoredPdfPreviewPages(url: string) {
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null) as { error?: string } | null;
-    throw new Error(payload?.error || "PDF 견적서를 불러오지 못했습니다.");
-  }
-  const { GlobalWorkerOptions, getDocument } = await import("pdfjs-dist");
-  GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
-  const pdf = await getDocument({ data: new Uint8Array(await response.arrayBuffer()) }).promise;
-  if (pdf.numPages > 40) {
-    await pdf.destroy();
-    throw new Error("견적서는 40페이지 이하만 미리볼 수 있습니다.");
-  }
-  const urls: string[] = [];
-  try {
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-      const page = await pdf.getPage(pageNumber);
-      const natural = page.getViewport({ scale: 1 });
-      const scale = Math.min(2.2, 1500 / Math.max(natural.width, natural.height));
-      const viewport = page.getViewport({ scale });
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.ceil(viewport.width));
-      canvas.height = Math.max(1, Math.ceil(viewport.height));
-      const context = canvas.getContext("2d", { alpha: false });
-      if (!context) throw new Error("PDF 미리보기 화면을 준비하지 못했습니다.");
-      context.fillStyle = "#ffffff";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      await page.render({ canvas, canvasContext: context, viewport }).promise;
-      urls.push(URL.createObjectURL(await canvasBlob(canvas)));
-      page.cleanup();
-      canvas.width = 1;
-      canvas.height = 1;
-    }
-    return urls;
-  } catch (error) {
-    urls.forEach((previewUrl) => URL.revokeObjectURL(previewUrl));
-    throw error;
-  } finally {
-    await pdf.destroy();
-  }
-}
-
 export default function QuotationDocuments({
   organization,
   businessRound = 1,
   onToast,
   onEquipmentImported,
   canManageExternalQuotations = false,
-  canEditAuthoredQuotations = false,
-  onOpenAuthoredQuotation,
 }: {
   organization: string;
   businessRound?: number;
   onToast: (message: string) => void;
   onEquipmentImported?: () => void;
   canManageExternalQuotations?: boolean;
-  canEditAuthoredQuotations?: boolean;
-  onOpenAuthoredQuotation?: (id: number) => void;
 }) {
   const [documents, setDocuments] = useState<QuotationDocument[]>([]);
-  const [authoredQuotations, setAuthoredQuotations] = useState<AuthoredQuotation[]>([]);
   const [storage, setStorage] = useState<QuotationStorage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -381,11 +333,6 @@ export default function QuotationDocuments({
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
   const [preview, setPreview] = useState<QuotationDocument | null>(null);
-  const [authoredPreview, setAuthoredPreview] = useState<AuthoredQuotation | null>(null);
-  const [authoredPreviewPages, setAuthoredPreviewPages] = useState<string[]>([]);
-  const [authoredPreviewLoading, setAuthoredPreviewLoading] = useState(false);
-  const [authoredPreviewError, setAuthoredPreviewError] = useState("");
-  const [authoredPreviewVersion, setAuthoredPreviewVersion] = useState(0);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const [analysisDraft, setAnalysisDraft] =
@@ -398,31 +345,17 @@ export default function QuotationDocuments({
     setLoading(true);
     setError("");
     try {
-      const [response, authoredResponse] = await Promise.all([
-        fetch(
-          `/api/quotation-documents?organization=${encodeURIComponent(organization)}&businessRound=${businessRound}`,
-          { cache: "no-store" },
-        ),
-        fetch(
-          `/api/quotations?organization=${encodeURIComponent(organization)}&businessRound=${businessRound}`,
-          { cache: "no-store" },
-        ),
-      ]);
+      const response = await fetch(
+        `/api/quotation-documents?organization=${encodeURIComponent(organization)}&businessRound=${businessRound}`,
+        { cache: "no-store" },
+      );
       const payload = (await response.json()) as {
         documents?: QuotationDocument[];
         storage?: QuotationStorage;
         error?: string;
       };
-      const authoredPayload = (await authoredResponse.json()) as {
-        quotations?: AuthoredQuotation[];
-        error?: string;
-      };
       if (!response.ok) throw new Error(payload.error || "견적서를 불러오지 못했습니다.");
-      if (!authoredResponse.ok) throw new Error(authoredPayload.error || "시스템 견적서를 불러오지 못했습니다.");
       setDocuments(payload.documents ?? []);
-      setAuthoredQuotations((authoredPayload.quotations ?? [])
-        .filter((quotation) => quotation.organization === organization && quotation.businessRound === businessRound && quotation.status === "final")
-        .sort((left, right) => right.quoteDate.localeCompare(left.quoteDate) || right.revisionNumber - left.revisionNumber || right.id - left.id));
       setStorage(payload.storage ?? null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "견적서를 불러오지 못했습니다.");
@@ -444,33 +377,6 @@ export default function QuotationDocuments({
     window.addEventListener("whizzup:quotation-files-updated", handleFilesUpdated);
     return () => window.removeEventListener("whizzup:quotation-files-updated", handleFilesUpdated);
   }, [businessRound, loadDocuments, organization]);
-
-  useEffect(() => {
-    const url = authoredPreview?.pdfUrl;
-    let cancelled = false;
-    let generatedUrls: string[] = [];
-    setAuthoredPreviewPages([]);
-    setAuthoredPreviewError("");
-    if (!url) {
-      setAuthoredPreviewLoading(false);
-      return () => undefined;
-    }
-    setAuthoredPreviewLoading(true);
-    void renderStoredPdfPreviewPages(url)
-      .then((urls) => {
-        generatedUrls = urls;
-        if (cancelled) urls.forEach((previewUrl) => URL.revokeObjectURL(previewUrl));
-        else setAuthoredPreviewPages(urls);
-      })
-      .catch((previewError) => {
-        if (!cancelled) setAuthoredPreviewError(previewError instanceof Error ? previewError.message : "PDF 견적서를 불러오지 못했습니다.");
-      })
-      .finally(() => { if (!cancelled) setAuthoredPreviewLoading(false); });
-    return () => {
-      cancelled = true;
-      generatedUrls.forEach((previewUrl) => URL.revokeObjectURL(previewUrl));
-    };
-  }, [authoredPreview?.id, authoredPreview?.pdfUrl, authoredPreviewVersion]);
 
   function selectPdf(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
@@ -1040,21 +946,14 @@ export default function QuotationDocuments({
 
   const remainingPercent = Math.max(0, Math.min(100, storage?.remainingPercent ?? 100));
   const storageTone = remainingPercent <= 10 ? "danger" : remainingPercent <= 20 ? "warning" : "safe";
-  const authoredLatestIds = new Set<number>();
-  const authoredLatestByRoot = new Map<number, AuthoredQuotation>();
-  authoredQuotations.forEach((quotation) => {
-    const rootId = quotation.revisionRootId || quotation.id;
-    const current = authoredLatestByRoot.get(rootId);
-    if (!current || quotation.revisionNumber > current.revisionNumber) authoredLatestByRoot.set(rootId, quotation);
-  });
-  authoredLatestByRoot.forEach((quotation) => authoredLatestIds.add(quotation.id));
+  if (!canManageExternalQuotations && (loading || (documents.length === 0 && !error))) return null;
 
   return (
     <section className="quotation-documents">
       <div className="history-section-heading quotation-documents-heading">
         <div>
-          <span className="section-kicker">QUOTATION FILES</span>
-          <h3>견적서 파일</h3>
+          <span className="section-kicker">REFERENCE FILES</span>
+          <h3>외부 원본·참고 파일</h3>
         </div>
         {canManageExternalQuotations && (
           <button type="button" onClick={() => setUploadOpen((current) => !current)}>
@@ -1115,54 +1014,11 @@ export default function QuotationDocuments({
         </div>
       )}
 
-      <div className="quotation-file-group">
+      {!loading && documents.length > 0 && <div className="quotation-file-group quotation-external-file-group">
         <div className="quotation-file-group-heading">
-          <div><strong>시스템 작성 견적서</strong><span>최종 저장할 때 생성된 PDF·Excel</span></div>
-          <b>{authoredQuotations.length}건</b>
+          <div><strong>첨부된 외부 원본</strong><span>업체에서 받은 PDF·Excel과 참고 자료</span></div>
+          <b>{documents.length}건</b>
         </div>
-        <div className="quotation-document-list quotation-system-file-list">
-          {loading ? (
-            <p className="quotation-empty">시스템 견적서 파일을 불러오고 있습니다.</p>
-          ) : authoredQuotations.length === 0 ? (
-            <p className="quotation-empty">저장된 시스템 견적서 파일이 없습니다.</p>
-          ) : authoredQuotations.map((quotation) => (
-            <article className="quotation-document-card quotation-system-file-card" key={quotation.id}>
-              <div className={`quotation-system-thumbnail${quotation.pdfUrl ? " ready" : " missing"}`}>
-                {quotation.pdfUrl ? (
-                  <div className="quotation-system-pdf-cover" aria-hidden="true"><b>PDF</b><span>{quotation.quoteNumber}</span></div>
-                ) : <div className="quotation-system-missing">PDF<br />미생성</div>}
-                <button
-                  type="button"
-                  disabled={!quotation.pdfUrl}
-                  onClick={() => setAuthoredPreview(quotation)}
-                  aria-label={`${quotation.quoteNumber} PDF 확대 보기`}
-                >{quotation.pdfUrl ? "PDF 확대 보기" : "이전 견적"}</button>
-              </div>
-              <div className="quotation-document-meta">
-                <div>
-                  <span>{displayDate(quotation.quoteDate)} · {quotation.revisionLabel}{authoredLatestIds.has(quotation.id) ? " · 최신" : ""}</span>
-                  <strong>{quotation.projectTitle || `${quotation.businessRound}차 사업`}</strong>
-                  <b>{Number(quotation.totalAmount || 0).toLocaleString("ko-KR")}원</b>
-                </div>
-                <small>{quotation.quoteNumber} · {quotation.updatedByName}</small>
-                <div className="quotation-document-actions">
-                  {quotation.pdfUrl ? <button type="button" onClick={() => setAuthoredPreview(quotation)}>PDF 확대</button> : <span className="quotation-file-missing-label">PDF 파일 없음</span>}
-                  {quotation.pdfUrl && <a href={quotation.pdfUrl} target="_blank" rel="noreferrer">새 창에서 보기</a>}
-                  {quotation.excelUrl && <a href={quotation.excelUrl}>Excel 다운로드</a>}
-                  {quotation.sourceOriginalUrl && <a href={quotation.sourceOriginalUrl} target="_blank" rel="noreferrer">불러온 원본 보기</a>}
-                  {canEditAuthoredQuotations && onOpenAuthoredQuotation && <button type="button" onClick={() => onOpenAuthoredQuotation(quotation.id)}>견적 수정</button>}
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      </div>
-
-      {!loading && documents.length > 0 && <details className="quotation-file-group quotation-external-file-group">
-        <summary className="quotation-file-group-heading">
-          <div><strong>기타 외부 견적 자료</strong><span>예전에 별도로 첨부한 업체 PDF·Excel</span></div>
-          <b>{documents.length}건 <span className="quotation-external-open-label">· 펼쳐보기</span><span className="quotation-external-close-label">· 접기</span></b>
-        </summary>
         <div className="quotation-document-list">
           {documents.map((document) => (
             <article className="quotation-document-card" key={document.id}>
@@ -1210,7 +1066,7 @@ export default function QuotationDocuments({
             </article>
           ))}
         </div>
-      </details>}
+      </div>}
 
       {analysisDraft && (
         <div
@@ -1580,30 +1436,6 @@ export default function QuotationDocuments({
         </div>
       )}
 
-      {authoredPreview?.pdfUrl && (
-        <div className="quotation-preview-layer" role="dialog" aria-modal="true" aria-label={`${authoredPreview.quoteNumber} PDF 미리보기`}>
-          <button className="quotation-preview-backdrop" type="button" aria-label="시스템 견적서 미리보기 닫기" onClick={() => setAuthoredPreview(null)} />
-          <div className="quotation-preview-panel quotation-system-preview-panel">
-            <header>
-              <div>
-                <span>{displayDate(authoredPreview.quoteDate)} · {authoredPreview.revisionLabel}</span>
-                <strong>{authoredPreview.projectTitle || authoredPreview.organization}</strong>
-                <small>{authoredPreview.quoteNumber}</small>
-              </div>
-              <div>
-                <a href={authoredPreview.pdfUrl} target="_blank" rel="noreferrer">새 창에서 보기</a>
-                {authoredPreview.excelUrl && <a href={authoredPreview.excelUrl}>Excel 다운로드</a>}
-                <button type="button" onClick={() => setAuthoredPreview(null)} aria-label="닫기">×</button>
-              </div>
-            </header>
-            <div className="quotation-preview-pages quotation-system-preview-pages">
-              {authoredPreviewLoading && <p className="quotation-preview-status">PDF 페이지를 불러오는 중입니다.</p>}
-              {authoredPreviewError && <div className="quotation-error" role="alert"><span>{authoredPreviewError}</span><button type="button" onClick={() => setAuthoredPreviewVersion((version) => version + 1)}>다시 불러오기</button></div>}
-              {!authoredPreviewLoading && !authoredPreviewError && authoredPreviewPages.map((url, index) => <figure key={url}><figcaption>{index + 1} / {authoredPreviewPages.length}</figcaption><img src={url} alt={`${authoredPreview.quoteNumber} 견적서 ${index + 1}페이지`} /></figure>)}
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   );
 }

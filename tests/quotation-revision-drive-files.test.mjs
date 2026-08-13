@@ -65,33 +65,27 @@ test("generated Drive file names and PDF preserve each quotation version", () =>
   assert.match(pdf, /금액 요약/);
 });
 
-test("institution detail keeps final quotations and legacy external files read-only", () => {
+test("institution detail keeps final quotations once and shows only legacy external reference files below", () => {
   assert.match(crm, /<OrganizationQuotationHistory[\s\S]*?readOnly/);
   assert.match(crm, /canManageExternalQuotations=\{false\}/);
   assert.doesNotMatch(crm, /<QuotationManagementPage[\s\S]*?embedded/);
-  return;
-  assert.match(page, /<h2>\{embedded \? "견적서 내역"/);
-  assert.match(documents, /시스템 작성 견적서/);
-  assert.match(documents, /외부 첨부 견적서/);
-  assert.match(documents, /첨부된 외부 견적서가 없습니다/);
-  assert.doesNotMatch(documents, /원본 파일 Google Drive 보관/);
+  assert.match(documents, /외부 원본·참고 파일/);
+  assert.match(documents, /첨부된 외부 원본/);
+  assert.doesNotMatch(documents, /시스템 작성 견적서/);
+  assert.doesNotMatch(documents, /setAuthoredPreview/);
+  assert.doesNotMatch(documents, /fetch\(\s*`\/api\/quotations\?organization=/);
+  assert.match(documents, /!canManageExternalQuotations && \(loading \|\| \(documents\.length === 0 && !error\)\)/);
 });
 
-test("institution quotation cards remove horizontal scrolling and show stored PDF thumbnails", () => {
+test("institution quotation cards remove horizontal scrolling and keep generated files in history only", () => {
   assert.match(page, /quotation-row-facts/);
   assert.doesNotMatch(page, /quotation-list-head/);
   assert.match(styles, /\.quotation-list\{display:grid/);
   assert.doesNotMatch(styles, /\.quotation-list\{overflow-x:auto/);
-  assert.match(documents, /\/api\/quotations\?organization=/);
-  assert.match(documents, /quotation-system-thumbnail/);
-  assert.match(documents, /renderStoredPdfPreviewPages/);
-  assert.match(documents, /quotation-system-preview-pages/);
-  assert.doesNotMatch(documents, /<iframe/);
-  assert.match(documents, /setAuthoredPreview/);
-  assert.match(documents, /onOpenAuthoredQuotation\(quotation\.id\)/);
-  assert.match(documents, />견적 수정<\/button>/);
-  assert.match(crm, /canEditAuthoredQuotations=\{canManageRecords\}/);
-  assert.match(crm, /onOpenAuthoredQuotation=\{\(id\) =>/);
+  assert.doesNotMatch(documents, /quotation-system-thumbnail/);
+  assert.doesNotMatch(documents, /quotation-system-preview-frame/);
+  assert.doesNotMatch(documents, /renderStoredPdfPreviewPages/);
+  assert.doesNotMatch(documents, /onOpenAuthoredQuotation/);
   assert.match(page, /저장된 PDF 파일이 없습니다/);
   assert.doesNotMatch(page, /const saved = await storeQuotationFiles\(quote\)/);
 });
