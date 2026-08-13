@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { buildExecutionTrend } from "../lib/analytics-execution-trends.ts";
 
@@ -82,4 +83,17 @@ test("buildExecutionTrend applies the selected metric", () => {
 test("buildExecutionTrend counts orders without including unconfirmed rows", () => {
   const result = buildExecutionTrend(rows, "2026", "count");
   assert.deepEqual(result.totals, { direct: 2, consortium: 1, total: 3 });
+});
+
+test("analytics execution panel keeps the annual overview compact and avoids duplicate chart labels", async () => {
+  const [page, styles] = await Promise.all([
+    readFile(new URL("../app/analytics-page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(page, /className="analytics-execution-summary"/);
+  assert.doesNotMatch(page, /className="analytics-execution-donut"/);
+  assert.match(page, /viewBox="0 0 1200 220"/);
+  assert.match(styles, /\.analytics-execution-line-panel svg\s*\{[^}]*height:\s*142px/s);
+  assert.match(styles, /\.analytics-execution-chart\.grouped\s*\{[^}]*height:\s*138px/s);
 });
