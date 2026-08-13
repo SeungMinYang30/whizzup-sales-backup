@@ -50,8 +50,8 @@ export function isYogaMatEligibleAifitProduct(name: string) {
 
 export function quotationInternalCostKind(name: string, specification = ""): QuotationInternalCostKind {
   const value = `${name} ${specification}`.normalize("NFKC").toLocaleLowerCase("ko-KR");
-  if (isYogaMatEligibleAifitProduct(name)) return "aifit-yoga-mat";
   if (/콘텐츠|컨텐츠|contents?/iu.test(value)) return "content-substitution";
+  if (isYogaMatEligibleAifitProduct(name)) return "aifit-yoga-mat";
   if (/빔\s*프로젝터|비디오\s*프로젝터|projector/iu.test(value)) return "projector-installation";
   return "";
 }

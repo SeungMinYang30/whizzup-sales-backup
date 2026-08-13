@@ -8,6 +8,7 @@ const {
   contentSubstitutionBaseEarningRate,
   contentSubstitutionMargin,
   isYogaMatEligibleAifitProduct,
+  quotationInternalCostKind,
   quotationInternalCostDefaults,
 } = await import("../lib/quotation-internal-costs.ts");
 
@@ -50,6 +51,24 @@ test("요가매트는 아이핏 전자칠판형·슬림형에만 수량 연동�
   assert.match(styles, /\.quotation-item-internal-cost\{[^}]*grid-template-columns:minmax\(200px,\.7fr\) minmax\(0,1\.35fr\) minmax\(260px,\.9fr\)/);
   assert.match(styles, /\.quotation-yoga-mat-cost\{[^}]*display:flex[^}]*flex-wrap:wrap/);
   assert.match(styles, /\.quotation-item-internal-cost>small\{grid-column:1\/-1/);
+});
+
+test("아이핏 이름이어도 규격이 콘텐츠면 요가매트 기능을 표시하지 않는다", () => {
+  assert.equal(
+    quotationInternalCostKind(
+      "아이핏 슬림형(AiFit)",
+      "교육용소프트웨어, 에어패스, AIFIT-CNTS4, 멀티미디어교육콘텐츠, 체육/인지기능",
+    ),
+    "content-substitution",
+  );
+  assert.equal(
+    quotationInternalCostDefaults(
+      "아이핏 슬림형(AiFit)",
+      "교육용소프트웨어, 에어패스, AIFIT-CNTS4, 멀티미디어교육콘텐츠, 체육/인지기능",
+      1,
+    ).kind,
+    "content-substitution",
+  );
 });
 
 test("internal deductions persist with a bearer and preserve legacy quotes as Whizzup cost", () => {

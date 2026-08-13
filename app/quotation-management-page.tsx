@@ -2390,12 +2390,16 @@ export default function QuotationManagementPage({
                   const consortiumPayment = draft.executionType === "컨소" && !contentSubstitution ? Math.min(expectedEarning, Math.floor(productAmount * item.consortiumRate / 10) * 10) : 0;
                   const internalCost = item.internalCostEnabled ? Math.max(0, item.internalCostAmount) : 0;
                   const internalCostDefaults = quotationInternalCostDefaults(item.name, item.specification, item.quantity);
-                  const settledConsortiumPayment = !contentSubstitution && item.internalCostEnabled && item.internalCostBearer === "consortium"
+                  const consortiumBearsInternalCost = draft.executionType === "컨소"
+                    && !contentSubstitution
+                    && item.internalCostEnabled
+                    && item.internalCostBearer === "consortium";
+                  const settledConsortiumPayment = consortiumBearsInternalCost
                     ? consortiumPayment - internalCost
                     : consortiumPayment;
                   const companyMargin = contentSubstitution
                     ? expectedEarning
-                    : expectedEarning - settledConsortiumPayment - (item.internalCostBearer === "whizzup" ? internalCost : 0);
+                    : expectedEarning - settledConsortiumPayment - (consortiumBearsInternalCost ? 0 : internalCost);
                   return <article
                     className={`quotation-item-card${dragOverItemId === item.id ? " drag-over" : ""}`}
                     key={item.id}
