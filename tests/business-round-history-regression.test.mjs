@@ -19,7 +19,7 @@ test("a new record after a completed business reuses one active next round or cr
 });
 
 test("activity history deletion removes optional children before the parent and reports the server error", () => {
-  const child = route.indexOf('"organization_schedules",\n        "id"');
+  const child = route.search(/"organization_schedules",\s*"id"/);
   const parent = route.indexOf('"activities", "id", selectedActivityIds');
   assert.ok(child >= 0 && parent > child);
   assert.match(client, /payload\.error \|\| "[^"]+"/);
