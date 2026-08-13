@@ -371,7 +371,7 @@ export function prepareActivityChangeBatchProgress(
                FROM activity_change_items
                WHERE batch_id = activity_change_batches.id
              ) >= operation_total
-             THEN COALESCE(completed_at, CURRENT_TIMESTAMP)
+             THEN CAST(CURRENT_TIMESTAMP AS TEXT)
              ELSE completed_at
            END,
            updated_at = CURRENT_TIMESTAMP

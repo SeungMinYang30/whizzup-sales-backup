@@ -1,5 +1,6 @@
 import { getD1 } from "../db";
 import { resolveRegisteredSalesName } from "./sales-names";
+export { explicitlyNamedProgressManager } from "./progress-manager-explicit-selection";
 
 type D1 = ReturnType<typeof getD1>;
 type ProgressManagerReplacement = {
@@ -10,8 +11,12 @@ type ProgressManagerReplacement = {
 const LATEST_AUTHOR_PROGRESS_MANAGER_BACKFILL_KEY =
   "latest_author_progress_manager_backfill_v1";
 const AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_REPAIR_KEY =
-  "auto_backfilled_owner_progress_manager_repair_v2";
-const AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER = "양승민 이사";
+  "auto_backfilled_owner_progress_manager_repair_v3";
+const AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES = ["양승민", "양승민 이사"];
+
+function managerAliasSql(column: string) {
+  return `REGEXP_REPLACE(TRIM(COALESCE(${column}, '')), '\\s*(대표이사|부대표|대표|사장|부사장|전무|상무|본부장|센터장|실장|팀장|부장|차장|과장|대리|주임|사원|이사)\\s*$', '')`;
+}
 
 function cleanName(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -84,7 +89,7 @@ async function listBusinessProgressManagerSources(
            ORDER BY current.activity_date DESC, current.id DESC
            LIMIT 1
          ), '미정') AS award_status,
-         COALESCE((
+         (
            SELECT member.display_name
            FROM activities locked
            JOIN members member
@@ -96,19 +101,7 @@ async function listBusinessProgressManagerSources(
              AND locked.progress_manager_locked = 1
            ORDER BY locked.updated_at DESC, locked.id DESC
            LIMIT 1
-         ), (
-           SELECT member.display_name
-           FROM activities latest
-           JOIN activity_authors author ON author.activity_id = latest.id
-           JOIN members member
-             ON member.id = author.member_id
-            AND member.status = 'approved'
-            AND member.is_sales = 1
-           WHERE latest.organization = business.organization
-             AND latest.business_round = business.business_round
-           ORDER BY latest.activity_date DESC, latest.id DESC
-           LIMIT 1
-         )) AS progress_manager
+         ) AS progress_manager
        FROM business_keys business`,
     )
     .bind(organization, organization, businessRound, businessRound)
@@ -165,6 +158,30 @@ export async function syncBusinessProgressManagerFromLatestAuthor(
   if (statement) await statement.run();
 }
 
+export async function syncBusinessProgressManagerFromExplicitSelection(
+  d1: D1,
+  organization: string,
+  businessRound: number,
+  progressManager: string,
+) {
+  const manager = cleanName(progressManager);
+  if (!manager) return 0;
+  const result = await d1
+    .prepare(
+      `UPDATE activities
+       SET progress_manager = ?,
+           progress_manager_locked = 1
+       WHERE organization = ?
+         AND business_round = ?
+         AND award_status <> '협력사 수주'
+         AND (TRIM(COALESCE(progress_manager, '')) <> ?
+              OR progress_manager_locked <> 1)`,
+    )
+    .bind(manager, organization, businessRound, manager)
+    .run();
+  return Number(result.meta?.changes ?? 0);
+}
+
 export async function backfillHistoricalProgressManagersFromLatestAuthors(
   d1: D1,
 ) {
@@ -208,10 +225,58 @@ export async function repairAutoBackfilledOwnerProgressManagers(d1: D1) {
     .first<{ value: string }>();
   if (completed?.value === "completed") return 0;
 
-  const previousBackfill = await d1
-    .prepare("SELECT value FROM app_settings WHERE key = ? LIMIT 1")
-    .bind(LATEST_AUTHOR_PROGRESS_MANAGER_BACKFILL_KEY)
-    .first<{ value: string }>();
+  await d1.prepare(
+    `CREATE TABLE IF NOT EXISTS progress_manager_repair_backups (
+       repair_key TEXT NOT NULL,
+       activity_id INTEGER NOT NULL,
+       organization TEXT NOT NULL DEFAULT '',
+       business_round INTEGER NOT NULL DEFAULT 1,
+       progress_manager TEXT NOT NULL DEFAULT '',
+       progress_manager_locked INTEGER NOT NULL DEFAULT 0,
+       backed_up_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+       PRIMARY KEY (repair_key, activity_id)
+     )`,
+  ).run();
+  await d1.prepare(
+    `INSERT INTO progress_manager_repair_backups (
+       repair_key, activity_id, organization, business_round,
+       progress_manager, progress_manager_locked
+     )
+     SELECT ?, id, organization, business_round,
+            progress_manager, progress_manager_locked
+     FROM activities
+     WHERE progress_manager_locked = 0
+       AND TRIM(COALESCE(progress_manager, '')) IN (?, ?)
+     ON CONFLICT (repair_key, activity_id) DO NOTHING`,
+  ).bind(
+    AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_REPAIR_KEY,
+    ...AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES,
+  ).run();
+  await d1.prepare(
+    `CREATE TABLE IF NOT EXISTS progress_manager_campaign_repair_backups (
+       repair_key TEXT NOT NULL,
+       target_id INTEGER NOT NULL,
+       organization TEXT NOT NULL DEFAULT '',
+       business_round INTEGER NOT NULL DEFAULT 1,
+       assigned_member_id INTEGER,
+       backed_up_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+       PRIMARY KEY (repair_key, target_id)
+     )`,
+  ).run();
+  await d1.prepare(
+    `INSERT INTO progress_manager_campaign_repair_backups (
+       repair_key, target_id, organization, business_round, assigned_member_id
+     )
+     SELECT ?, target.id, target.organization, target.business_round,
+            target.assigned_member_id
+     FROM sales_campaign_targets target
+     JOIN members member ON member.id = target.assigned_member_id
+     WHERE TRIM(member.display_name) IN (?, ?)
+     ON CONFLICT (repair_key, target_id) DO NOTHING`,
+  ).bind(
+    AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_REPAIR_KEY,
+    ...AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES,
+  ).run();
   const assignmentHistoryTable = await d1
     .prepare(
       `SELECT name
@@ -231,10 +296,169 @@ export async function repairAutoBackfilledOwnerProgressManagers(d1: D1) {
 
   let repairedCount = 0;
   if (
-    previousBackfill?.value === "completed" &&
     assignmentHistoryTable?.name === "activity_assignment_history" &&
     campaignTargetsTable?.name === "sales_campaign_targets"
   ) {
+    // If a real assignment history exists, restore that person before clearing
+    // rows that were filled only from the latest record author.
+    const restoredLocked = await d1.batch([
+      d1
+        .prepare(
+          `UPDATE activities
+           SET progress_manager = (
+             SELECT fixed.progress_manager
+             FROM activities fixed
+              JOIN members member
+                ON ${managerAliasSql("member.display_name")} = ${managerAliasSql("fixed.progress_manager")}
+              AND member.status = 'approved'
+              AND member.is_sales = 1
+             WHERE fixed.organization = activities.organization
+               AND fixed.business_round = activities.business_round
+               AND fixed.progress_manager_locked = 1
+               AND TRIM(COALESCE(fixed.progress_manager, '')) <> ''
+             ORDER BY fixed.updated_at DESC, fixed.id DESC
+             LIMIT 1
+           )
+           WHERE progress_manager_locked = 0
+             AND TRIM(COALESCE(progress_manager, '')) IN (?, ?)
+             AND award_status <> '협력사 수주'
+             AND EXISTS (
+               SELECT 1
+               FROM activities fixed
+               JOIN members member
+                 ON ${managerAliasSql("member.display_name")} = ${managerAliasSql("fixed.progress_manager")}
+                AND member.status = 'approved'
+                AND member.is_sales = 1
+               WHERE fixed.organization = activities.organization
+                 AND fixed.business_round = activities.business_round
+                 AND fixed.progress_manager_locked = 1
+                 AND TRIM(COALESCE(fixed.progress_manager, '')) <> ''
+             )`,
+        )
+        .bind(...AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES),
+      d1
+        .prepare(
+          `UPDATE sales_campaign_targets
+           SET assigned_member_id = (
+             SELECT member.id
+             FROM activities fixed
+              JOIN members member
+                ON ${managerAliasSql("member.display_name")} = ${managerAliasSql("fixed.progress_manager")}
+              AND member.status = 'approved'
+              AND member.is_sales = 1
+             WHERE fixed.organization = sales_campaign_targets.organization
+               AND fixed.business_round = sales_campaign_targets.business_round
+               AND fixed.progress_manager_locked = 1
+               AND TRIM(COALESCE(fixed.progress_manager, '')) <> ''
+             ORDER BY fixed.updated_at DESC, fixed.id DESC
+             LIMIT 1
+           ),
+           updated_at = CURRENT_TIMESTAMP
+           WHERE assigned_member_id IN (
+             SELECT member.id
+             FROM members member
+             WHERE TRIM(member.display_name) IN (?, ?)
+               AND member.status = 'approved'
+               AND member.is_sales = 1
+           )
+           AND EXISTS (
+             SELECT 1
+             FROM activities fixed
+             JOIN members member
+               ON ${managerAliasSql("member.display_name")} = ${managerAliasSql("fixed.progress_manager")}
+              AND member.status = 'approved'
+              AND member.is_sales = 1
+             WHERE fixed.organization = sales_campaign_targets.organization
+               AND fixed.business_round = sales_campaign_targets.business_round
+               AND fixed.progress_manager_locked = 1
+               AND TRIM(COALESCE(fixed.progress_manager, '')) <> ''
+           )`,
+        )
+        .bind(...AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES),
+    ]);
+    repairedCount += restoredLocked.reduce(
+      (total, result) => total + Number(result.meta?.changes ?? 0),
+      0,
+    );
+    const restored = await d1.batch([
+      d1
+        .prepare(
+          `UPDATE activities
+           SET progress_manager = (
+             SELECT history.to_manager
+             FROM activity_assignment_history history
+             JOIN activities assigned ON assigned.id = history.activity_id
+              JOIN members member
+                ON ${managerAliasSql("member.display_name")} = ${managerAliasSql("history.to_manager")}
+              AND member.status = 'approved'
+              AND member.is_sales = 1
+             WHERE assigned.organization = activities.organization
+               AND assigned.business_round = activities.business_round
+               AND TRIM(COALESCE(history.to_manager, '')) <> ''
+             ORDER BY history.created_at DESC, history.id DESC
+             LIMIT 1
+           )
+           WHERE progress_manager_locked = 0
+             AND TRIM(COALESCE(progress_manager, '')) IN (?, ?)
+             AND award_status <> '협력사 수주'
+             AND EXISTS (
+               SELECT 1
+               FROM activity_assignment_history history
+               JOIN activities assigned ON assigned.id = history.activity_id
+                JOIN members member
+                  ON ${managerAliasSql("member.display_name")} = ${managerAliasSql("history.to_manager")}
+                AND member.status = 'approved'
+                AND member.is_sales = 1
+               WHERE assigned.organization = activities.organization
+                 AND assigned.business_round = activities.business_round
+                 AND TRIM(COALESCE(history.to_manager, '')) <> ''
+             )`,
+        )
+        .bind(...AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES),
+      d1
+        .prepare(
+          `UPDATE sales_campaign_targets
+           SET assigned_member_id = (
+             SELECT member.id
+             FROM activity_assignment_history history
+             JOIN activities assigned ON assigned.id = history.activity_id
+              JOIN members member
+                ON ${managerAliasSql("member.display_name")} = ${managerAliasSql("history.to_manager")}
+              AND member.status = 'approved'
+              AND member.is_sales = 1
+             WHERE assigned.organization = sales_campaign_targets.organization
+               AND assigned.business_round = sales_campaign_targets.business_round
+               AND TRIM(COALESCE(history.to_manager, '')) <> ''
+             ORDER BY history.created_at DESC, history.id DESC
+             LIMIT 1
+           ),
+           updated_at = CURRENT_TIMESTAMP
+           WHERE assigned_member_id IN (
+             SELECT member.id
+             FROM members member
+             WHERE TRIM(member.display_name) IN (?, ?)
+               AND member.status = 'approved'
+               AND member.is_sales = 1
+           )
+           AND EXISTS (
+             SELECT 1
+             FROM activity_assignment_history history
+             JOIN activities assigned ON assigned.id = history.activity_id
+              JOIN members member
+                ON ${managerAliasSql("member.display_name")} = ${managerAliasSql("history.to_manager")}
+              AND member.status = 'approved'
+              AND member.is_sales = 1
+             WHERE assigned.organization = sales_campaign_targets.organization
+               AND assigned.business_round = sales_campaign_targets.business_round
+               AND TRIM(COALESCE(history.to_manager, '')) <> ''
+           )`,
+        )
+        .bind(...AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES),
+    ]);
+    repairedCount += restored.reduce(
+      (total, result) => total + Number(result.meta?.changes ?? 0),
+      0,
+    );
     const results = await d1.batch([
       d1
         .prepare(
@@ -244,7 +468,7 @@ export async function repairAutoBackfilledOwnerProgressManagers(d1: D1) {
            WHERE assigned_member_id IN (
                SELECT member.id
                FROM members member
-               WHERE TRIM(member.display_name) = ?
+               WHERE TRIM(member.display_name) IN (?, ?)
                  AND member.status = 'approved'
                  AND member.is_sales = 1
              )
@@ -266,7 +490,7 @@ export async function repairAutoBackfilledOwnerProgressManagers(d1: D1) {
                  AND fixed.business_round =
                        sales_campaign_targets.business_round
                  AND fixed.progress_manager_locked = 1
-                 AND TRIM(COALESCE(fixed.progress_manager, '')) = ?
+                 AND TRIM(COALESCE(fixed.progress_manager, '')) IN (?, ?)
              )
              AND NOT EXISTS (
                SELECT 1
@@ -276,9 +500,9 @@ export async function repairAutoBackfilledOwnerProgressManagers(d1: D1) {
                        sales_campaign_targets.organization
                  AND assigned.business_round =
                        sales_campaign_targets.business_round
-                 AND TRIM(COALESCE(history.to_manager, '')) = ?
+                 AND TRIM(COALESCE(history.to_manager, '')) IN (?, ?)
              )
-             AND ? = (
+             AND (
                SELECT member.display_name
                FROM activities latest
                JOIN activity_authors author ON author.activity_id = latest.id
@@ -292,20 +516,20 @@ export async function repairAutoBackfilledOwnerProgressManagers(d1: D1) {
                        sales_campaign_targets.business_round
                ORDER BY latest.activity_date DESC, latest.id DESC
                LIMIT 1
-             )`,
+             ) IN (?, ?)`,
         )
         .bind(
-          AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER,
-          AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER,
-          AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER,
-          AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER,
+          ...AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES,
+          ...AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES,
+          ...AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES,
+          ...AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES,
         ),
       d1
         .prepare(
           `UPDATE activities
            SET progress_manager = ''
            WHERE progress_manager_locked = 0
-             AND TRIM(COALESCE(progress_manager, '')) = ?
+             AND TRIM(COALESCE(progress_manager, '')) IN (?, ?)
              AND award_status <> '협력사 수주'
              AND NOT EXISTS (
                SELECT 1
@@ -313,7 +537,7 @@ export async function repairAutoBackfilledOwnerProgressManagers(d1: D1) {
                WHERE fixed.organization = activities.organization
                  AND fixed.business_round = activities.business_round
                  AND fixed.progress_manager_locked = 1
-                 AND TRIM(COALESCE(fixed.progress_manager, '')) = ?
+                 AND TRIM(COALESCE(fixed.progress_manager, '')) IN (?, ?)
              )
              AND NOT EXISTS (
                SELECT 1
@@ -321,9 +545,9 @@ export async function repairAutoBackfilledOwnerProgressManagers(d1: D1) {
                JOIN activities assigned ON assigned.id = history.activity_id
                WHERE assigned.organization = activities.organization
                  AND assigned.business_round = activities.business_round
-                 AND TRIM(COALESCE(history.to_manager, '')) = ?
+                 AND TRIM(COALESCE(history.to_manager, '')) IN (?, ?)
              )
-             AND ? = (
+             AND (
                SELECT member.display_name
                FROM activities latest
                JOIN activity_authors author ON author.activity_id = latest.id
@@ -335,16 +559,16 @@ export async function repairAutoBackfilledOwnerProgressManagers(d1: D1) {
                  AND latest.business_round = activities.business_round
                ORDER BY latest.activity_date DESC, latest.id DESC
                LIMIT 1
-             )`,
+             ) IN (?, ?)`,
         )
         .bind(
-          AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER,
-          AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER,
-          AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER,
-          AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER,
+          ...AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES,
+          ...AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES,
+          ...AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES,
+          ...AUTO_BACKFILLED_OWNER_PROGRESS_MANAGER_ALIASES,
         ),
     ]);
-    repairedCount = results.reduce(
+    repairedCount += results.reduce(
       (total, result) => total + Number(result.meta?.changes ?? 0),
       0,
     );

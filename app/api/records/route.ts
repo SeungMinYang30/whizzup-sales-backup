@@ -56,8 +56,10 @@ import {
   canonicalProgressManagerName,
   listRegisteredSalesNames,
   progressManagerForAward,
+  syncBusinessProgressManagerFromExplicitSelection,
   syncBusinessProgressManagerFromLatestAuthor,
 } from "../../../lib/sales-manager-normalization";
+import { explicitlyNamedProgressManager } from "../../../lib/progress-manager-explicit-selection";
 import {
   compactShareSummary,
   replaceOrganizationReferences,
@@ -837,33 +839,16 @@ export async function PUT(request: Request) {
                 budget_group_id, budget_match_status, budget_match_method,
                 budget_request_id, budget_kind, budget_amount_mode,
                 budget_amount_override, budgets_json,
-                (
-                  SELECT member.display_name
-                  FROM activities latest
-                  JOIN activity_authors author
-                    ON author.activity_id = latest.id
-                  JOIN members member
-                    ON member.id = author.member_id
-                   AND member.status = 'approved'
-                   AND member.is_sales = 1
-                  WHERE latest.organization = activities.organization
-                    AND latest.business_round = activities.business_round
-                  ORDER BY latest.activity_date DESC, latest.id DESC
-                  LIMIT 1
-                ) AS author_progress_manager
          FROM activities WHERE id = ?`,
       )
       .bind(id)
       .first<Record<string, unknown>>();
-    const automaticProgressManager =
-      award.awardStatus !== "협력사 수주" &&
-      Number(previous?.progress_manager_locked ?? 0) !== 1
-        ? clean(previous?.author_progress_manager) ||
-          clean(payload.progressManager)
-        : payload.progressManager;
+    const explicitProgressManager = clean(payload.sourceChat) === "사이트 AI 입력"
+      ? explicitlyNamedProgressManager(payload, registeredSalesNames)
+      : "";
     const requestedProgressManager = progressManagerForAward(
       award.awardStatus,
-      automaticProgressManager,
+      explicitProgressManager || payload.progressManager,
       registeredSalesNames,
     );
     const progressManagerChanged =
@@ -888,14 +873,14 @@ export async function PUT(request: Request) {
             error:
               "기관명을 변경하면 이 기관의 모든 과거 기록과 지도·사업 정보가 함께 변경됩니다. 계속하시겠습니까?",
             needsInstitutionRenameConfirmation: true,
-            previousOrganization: clean(previous.organization),
+            previousOrganization: clean(previous?.organization),
             nextOrganization: organization,
           },
           { status: 409 },
         );
       }
       await mergeInstitutionRecords(
-        clean(previous.organization),
+        clean(previous?.organization),
         organization,
         member.id,
       );
@@ -910,19 +895,19 @@ export async function PUT(request: Request) {
       progressManagerChanged &&
       award.awardStatus !== "협력사 수주"
     ) {
-      await d1
-        .prepare(
-          `UPDATE activities
-           SET progress_manager_locked = 0
-           WHERE organization = ? AND business_round = ?`,
-        )
-        .bind(organization, businessRound)
-        .run();
+      if (explicitProgressManager) {
+        await syncBusinessProgressManagerFromExplicitSelection(
+          d1,
+          organization,
+          businessRound,
+          explicitProgressManager,
+        );
+      }
     }
     const progressManagerLocked = award.awardStatus === "협력사 수주"
       ? 0
       : progressManagerChanged
-        ? 0
+        ? 1
         : Number(previous?.progress_manager_locked ?? 0) === 1
           ? 1
           : 0;
@@ -1195,11 +1180,20 @@ export async function PUT(request: Request) {
           memberName: member.displayName,
         }),
       ]);
-      await syncBusinessProgressManagerFromLatestAuthor(
-        d1,
-        clean(result.organization),
-        Math.max(1, Number(result.business_round) || 1),
-      );
+      if (explicitProgressManager) {
+        await syncBusinessProgressManagerFromExplicitSelection(
+          d1,
+          clean(result.organization),
+          Math.max(1, Number(result.business_round) || 1),
+          explicitProgressManager,
+        );
+      } else {
+        await syncBusinessProgressManagerFromLatestAuthor(
+          d1,
+          clean(result.organization),
+          Math.max(1, Number(result.business_round) || 1),
+        );
+      }
       responseRecord =
         (await d1
           .prepare(

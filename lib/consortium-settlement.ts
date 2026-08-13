@@ -117,7 +117,9 @@ export function calculateConsortiumSettlement(
   );
   const adjustmentAdditions = adjustments.reduce((sum, item) => sum + (item.type === "addition" ? item.amount : 0), 0);
   const adjustmentDeductions = adjustments.reduce((sum, item) => sum + (item.type === "deduction" ? item.amount : 0), 0);
-  const finalPayment = Math.max(0, grossPayment - consortiumCost - adjustmentDeductions + adjustmentAdditions);
+  // 대체 공사·교체 비용이 기본 정산액보다 큰 경우에는 다음 정산에서
+  // 상계할 금액을 음수로 그대로 보여줘야 하므로 0으로 제한하지 않는다.
+  const finalPayment = grossPayment - consortiumCost - adjustmentDeductions + adjustmentAdditions;
   return {
     items: settlementItems,
     costs,

@@ -28,6 +28,7 @@ test("projector and AiFit internal deductions use editable defaults", () => {
 test("요가매트는 아이핏 전자칠판형·슬림형에만 수량 연동한다", () => {
   assert.equal(isYogaMatEligibleAifitProduct("아이핏 전자칠판형"), true);
   assert.equal(isYogaMatEligibleAifitProduct("아이핏 슬림형"), true);
+  assert.equal(isYogaMatEligibleAifitProduct("아이핏 슬림형 (AiFit)"), true);
   assert.equal(isYogaMatEligibleAifitProduct("PAPS 콘텐츠"), false);
   assert.equal(isYogaMatEligibleAifitProduct("아이핏 콘텐츠"), false);
   assert.deepEqual(quotationInternalCostDefaults("아이핏 전자칠판형", "", 2), {

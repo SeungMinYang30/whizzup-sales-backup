@@ -1689,7 +1689,7 @@ const gptInstructions = `당신은 위즈업의 TM·미팅 기록 정리 도우�
 수주 건의 진행 단계는 미정, 협상, 계약, 일정 조율, 설치·공사 진행, 검수·교육 진행, 납품 완료 중 하나로 정리하세요.
 설치·공사가 끝났더라도 검수·교육이나 최종 인계가 남아 있으면 검수·교육 진행으로 두고, 납품 완료는 최종 완료가 분명한 경우에만 사용하세요.
 기관 인물의 역할이 공사 담당자·회계 담당자·행정 담당자처럼 명시되면 contactRole에 역할을 그대로 넣고 이름·직책은 contactName에 넣으세요. 같은 역할과 이름을 핵심요약에 다시 반복하지 마세요.
-progressManager는 위즈업 내부에서 수주 후 진행을 맡는 사람이며 기관 담당자와 구분하세요. 기관 메일은 contactEmail에 정리하세요.
+progressManager는 위즈업 내부에서 수주 후 진행을 맡는 사람이며 기관 담당자와 구분하세요. 사용자가 “진행 담당자” 또는 “내부 담당자”라고 사람을 명시한 경우에만 정확한 등록 이름을 넣고, 단순 참석자·작성자 언급만 있으면 빈 문자열로 두세요. 기관 메일은 contactEmail에 정리하세요.
 summary와 recommendation.meetingSummary는 “논의했습니다”, “확인했습니다”, “진행합니다” 같은 존댓말 보고체로 작성하세요. “논의했다”, “확인한다”, “진행함” 같은 반말·메모체 종결은 사용하지 마세요.
 기관 담당자가 말한 상황을 “전달했습니다”라고 쓰지 마세요. 기관의 설명은 “말씀하셨습니다”, “안내받았습니다”, “확인됐습니다”처럼 누가 말했는지 자연스럽게 이해되는 표현으로 정리하세요. “전달했습니다”는 위즈업 담당자가 실제로 자료나 내용을 전달한 경우에만 사용하세요.
 녹취가 불명확하거나 오인식된 단어는 그대로 옮기거나 추측해 구체화하지 말고, 앞뒤 문맥에서 확실한 범위의 일반적인 표현으로 정리하세요. 예를 들어 준비 대상이 불명확하면 “교내 일정 준비로 업무가 분주한 상황”처럼 쓰세요.
@@ -12694,7 +12694,7 @@ export default function CrmApp({
             ),
             progressManager: partnerAward
               ? "해당 없음"
-              : fixedManager || session?.member.displayName || preview.progressManager,
+              : fixedManager || preview.progressManager,
           };
           const inheritedBudgets = canonicalBudgetsForBusinessRound(
             records,
@@ -13414,7 +13414,7 @@ export default function CrmApp({
         if (attempt < 2) await waitForBulkRetry(500);
       }
       if (!payload) {
-        throw new Error(`${lastError} 잠시 후 다시 시도해 주세요.`);
+        throw new Error(lastError || "요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.");
       }
       const updatedIds = new Set(payload.updatedIds ?? selectedInstitutionIds);
       setRecords((current) =>
@@ -14311,16 +14311,10 @@ export default function CrmApp({
   }
 
   function openActivityReview() {
-    const displayName = session?.member.isSales
-      ? session.member.displayName
-      : "";
     const initialDrafts: Record<number, ActivityReviewDraft> = {};
     pendingActivityReviewRecords.forEach((record) => {
       initialDrafts[record.id] = {
         ...(record.activityDate ? { activityDate: record.activityDate } : {}),
-        ...(!record.progressManager.trim() && displayName
-          ? { progressManager: displayName }
-          : {}),
       };
     });
     setActivityReviewDrafts(initialDrafts);
@@ -14557,7 +14551,7 @@ export default function CrmApp({
       setToast(
         locked
           ? "현재 진행 담당자를 이후 AI 기록에도 고정합니다."
-          : "다음 AI 기록 작성자부터 진행 담당자로 자동 반영됩니다.",
+          : "담당자 고정을 해제했습니다. 다음 AI 기록에 진행 담당자를 명시하면 반영됩니다.",
       );
     } catch (caught) {
       setToast(

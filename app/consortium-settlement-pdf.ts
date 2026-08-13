@@ -177,7 +177,7 @@ function drawSummary(
   const cost = input.costs.reduce((sum, item) => sum + item.consortiumDeduction, 0);
   const additions = (input.adjustments ?? []).reduce((sum, item) => sum + (item.type === "addition" ? item.amount : 0), 0);
   const deductions = (input.adjustments ?? []).reduce((sum, item) => sum + (item.type === "deduction" ? item.amount : 0), 0);
-  const finalPayment = Math.max(0, gross - cost - deductions + additions);
+  const finalPayment = gross - cost - deductions + additions;
   const supply = Math.round(finalPayment / 1.1);
   const vat = finalPayment - supply;
   y = sectionRow(context, y + 14, "금액 요약");

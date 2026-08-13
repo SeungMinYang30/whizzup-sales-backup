@@ -464,7 +464,7 @@ function normalized(value: Record<string, unknown>) {
   const consortiumRate = 0;
   const settlement = calculateConsortiumSettlement(items, executionType, settlementAdjustments);
   const consortiumPayment = settlement.finalPayment;
-  const marginAmount = Math.max(0, expectedEarning - consortiumPayment - settlement.whizzupCost - additionalInternalConstructionCost);
+  const marginAmount = expectedEarning - consortiumPayment - settlement.whizzupCost - additionalInternalConstructionCost;
   return {
     organization, businessRound: Math.max(1, Number(value.businessRound) || 1),
     projectTitle: text(value.projectTitle, 500), quoteDate,

@@ -34,6 +34,24 @@ test("정산 조정은 추가 지급과 차감을 최종 지급액에 반영한�
   assert.equal(result.costs[0].unitAmount, 300_000);
 });
 
+test("콘텐츠 대체 비용이 기본 정산액보다 크면 다음 정산 상계를 위해 음수를 유지한다", () => {
+  const result = calculateConsortiumSettlement([
+    {
+      name: "콘텐츠",
+      quantity: 1,
+      unitPrice: 2_700_000,
+      earningRate: 0.5,
+      consortiumRate: 0.5,
+      internalCostEnabled: true,
+      internalCostAmount: 1_600_000,
+      internalCostBearer: "consortium",
+    },
+  ], "컨소");
+  assert.equal(result.grossPayment, 1_350_000);
+  assert.equal(result.consortiumCost, 1_600_000);
+  assert.equal(result.finalPayment, -250_000);
+});
+
 test("컨소 정산서 Excel은 내부 마진 없이 품목·비용 처리 방식·최종 지급액을 표시한다", () => {
   const workbook = createConsortiumSettlementWorkbook({
     organization: "테스트초등학교",
@@ -61,7 +79,7 @@ test("컨소 정산서 Excel은 내부 마진 없이 품목·비용 처리 방�
   assert.match(sheet, /비용 처리 방식/);
   assert.match(sheet, /최종 지급 예정액/);
   assert.match(sheet, /FLOOR\(D15\*E15,10\)/);
-  assert.match(sheet, /MAX\(0,/);
+  assert.doesNotMatch(sheet, /MAX\(0,/);
   assert.match(sheet, /정산 대상/);
   assert.match(sheet, /금액 요약/);
   assert.match(sheet, /정산 조정 내역/);

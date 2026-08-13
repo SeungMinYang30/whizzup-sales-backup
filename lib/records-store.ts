@@ -1,6 +1,6 @@
 import { getD1, isPostgresDatabase } from "../db";
 import type { Member } from "./collaboration";
-import { ensureCollaborationReady, isPrimaryOwner } from "./collaboration";
+import { ensureCollaborationReady } from "./collaboration";
 import {
   canonicalInstitutionName,
   findSimilarInstitutionMatches,
@@ -20,8 +20,10 @@ import {
   listRegisteredSalesNames,
   progressManagerForAward,
   repairAutoBackfilledOwnerProgressManagers,
+  syncBusinessProgressManagerFromExplicitSelection,
   syncBusinessProgressManagerFromLatestAuthor,
 } from "./sales-manager-normalization";
+import { explicitlyNamedProgressManager } from "./progress-manager-explicit-selection";
 import {
   compactShareSummary,
   replaceOrganizationReferences,
@@ -1209,6 +1211,7 @@ async function initializeRecords() {
   const d1 = getD1();
   if (isPostgresDatabase()) {
     await d1.prepare("SELECT 1").all();
+    await repairAutoBackfilledOwnerProgressManagers(d1);
     return d1;
   }
   if (await isRecordsRuntimeReady(d1)) return d1;
@@ -1566,22 +1569,24 @@ export async function insertActivity(
         )
         .bind(organization, businessRound)
         .first<{ progressManager: string }>();
-  const progressManagerLocked = Boolean(clean(lockedAssignment?.progressManager));
-  const primaryOwner = await isPrimaryOwner(member);
+  const registeredSalesNames = lightweightSystemRecord
+    ? []
+    : await listRegisteredSalesNames(d1);
+  const explicitProgressManager = sourceChat === "사이트 AI 입력"
+    ? explicitlyNamedProgressManager(payload, registeredSalesNames)
+    : "";
+  const progressManagerLocked = Boolean(
+    explicitProgressManager || clean(lockedAssignment?.progressManager),
+  );
   const progressManager =
     sourceChat === "사이트 AI 입력" &&
     award.awardStatus !== "협력사 수주"
-      ? progressManagerLocked
+      ? explicitProgressManager || (progressManagerLocked
         ? clean(lockedAssignment?.progressManager)
-        : member.displayName
-      : primaryOwner
-        ? progressManagerLocked
-          ? clean(lockedAssignment?.progressManager)
-          : member.isSales
-            ? member.displayName
-            : inheritedPayload.progressManager
-        : clean(previousState?.progressManager) ||
-          (member.isSales ? member.displayName : "");
+        : clean(previousState?.progressManager))
+      : progressManagerLocked
+        ? clean(lockedAssignment?.progressManager)
+        : clean(previousState?.progressManager) || clean(inheritedPayload.progressManager);
   const providedBudgetMetadata =
     payload.resolvedBudgetMetadata &&
     typeof payload.resolvedBudgetMetadata === "object" &&
@@ -1647,9 +1652,6 @@ export async function insertActivity(
     previousDate: previousState?.awardCompletedDate,
     fallbackDate: payload.activityDate,
   });
-  const registeredSalesNames = lightweightSystemRecord
-    ? []
-    : await listRegisteredSalesNames(d1);
   const followUpDate = clean(inheritedPayload.followUpDate);
   const followUpRequired =
     !isCompletedAwardStage(awardManagement.awardStage) &&
@@ -1758,11 +1760,20 @@ export async function insertActivity(
       `)
         .bind(Number(record.id), member.id, member.displayName)
         .run();
-      await syncBusinessProgressManagerFromLatestAuthor(
-        transaction,
-        organization,
-        businessRound,
-      );
+      if (explicitProgressManager) {
+        await syncBusinessProgressManagerFromExplicitSelection(
+          transaction,
+          organization,
+          businessRound,
+          explicitProgressManager,
+        );
+      } else {
+        await syncBusinessProgressManagerFromLatestAuthor(
+          transaction,
+          organization,
+          businessRound,
+        );
+      }
       await linkBudgetNameEntity(transaction, {
         entityType: "activity",
         entityId: Number(record.id),
