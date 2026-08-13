@@ -29,7 +29,8 @@ export function contentSubstitutionBaseEarningRate(item: ContentSubstitutionRate
  * 대체비용이 판매금액보다 크면 음수 마진을 그대로 보존합니다.
  */
 export function contentSubstitutionMargin(lineAmount: number, replacementCost: number, baseRate: number) {
-  const raw = (Math.max(0, Number(lineAmount) || 0) - Math.max(0, Number(replacementCost) || 0)) * safeRate(baseRate);
+  const remaining = Math.max(0, Number(lineAmount) || 0) - Math.max(0, Number(replacementCost) || 0);
+  const raw = remaining > 0 ? remaining * safeRate(baseRate) : remaining;
   return Math.trunc(raw / 10) * 10;
 }
 

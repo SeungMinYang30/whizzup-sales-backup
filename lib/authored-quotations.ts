@@ -281,7 +281,9 @@ function parseItems(value: unknown) {
       : amount(item.internalCostAmount);
     // 부담 주체 필드가 생기기 전 저장된 견적은 기존 계산을 보존하기 위해 위즈업 부담으로 읽습니다.
     const internalCostBearer = item.internalCostBearer === "consortium" ? "consortium" as const : "whizzup" as const;
-    const internalCostUnitAmount = amount(item.internalCostUnitAmount) || internalCostDefaults.unitAmount || internalCostAmount;
+    const internalCostUnitAmount = item.internalCostUnitAmount === undefined || item.internalCostUnitAmount === null
+      ? internalCostDefaults.unitAmount || internalCostAmount
+      : amount(item.internalCostUnitAmount);
     const internalCostQuantity = Math.max(0, Math.round(Number(item.internalCostQuantity) || (
       internalCostEnabled && internalCostUnitAmount > 0
         ? internalCostAmount / internalCostUnitAmount

@@ -863,6 +863,8 @@ export default function QuotationManagementPage({
   const internalReportRows = useMemo(() => (draft?.items ?? []).map((item, index) => {
     const lineAmount = Math.max(0, item.quantity) * Math.max(0, item.unitPrice);
     const contentSubstitution = isContentSubstitutionItem(item);
+    const baseRate = contentSubstitution ? contentSubstitutionBaseEarningRate(item) : Math.max(0, item.earningRate);
+    const baseEarning = Math.floor(lineAmount * baseRate / 10) * 10;
     const earning = draftItemExpectedEarning(item);
     const grossConsortium = draft?.executionType === "컨소" && !contentSubstitution
       ? Math.min(earning, Math.floor(lineAmount * Math.max(0, item.consortiumRate) / 10) * 10)
@@ -871,17 +873,32 @@ export default function QuotationManagementPage({
       ? Math.max(0, item.internalCostAmount)
       : 0;
     const consortium = grossConsortium - consortiumCost;
+    const internalCostDisplay = item.internalCostEnabled ? Math.max(0, item.internalCostAmount) : 0;
     const internalCost = !contentSubstitution && item.internalCostEnabled && (draft?.executionType !== "컨소" || item.internalCostBearer === "whizzup")
       ? Math.max(0, item.internalCostAmount)
       : 0;
+    const remaining = lineAmount - internalCostDisplay;
+    const formula = contentSubstitution
+      ? remaining > 0
+        ? `(${won.format(lineAmount)} - ${won.format(internalCostDisplay)}) × ${(baseRate * 100).toFixed(2).replace(/\.00$/, "")}%`
+        : `${won.format(lineAmount)} - ${won.format(internalCostDisplay)} (초과 비용 전액 반영)`
+      : `${won.format(baseEarning)} - ${won.format(consortium)} - ${won.format(internalCost)}`;
     return {
       number: index + 1,
       name: item.name || "미등록 품목",
+      quantity: Math.max(0, item.quantity),
+      unitPrice: Math.max(0, item.unitPrice),
       amount: lineAmount,
+      baseRate,
+      baseEarning,
       earning,
+      consortiumRate: Math.max(0, item.consortiumRate),
       consortium,
       internalCost,
+      internalCostDisplay,
       netProfit: earning - consortium - internalCost,
+      formula,
+      status: contentSubstitution ? "콘텐츠 대체" : internalCostDisplay > 0 ? "내부 비용 반영" : "일반",
     };
   }), [draft]);
 
@@ -927,8 +944,8 @@ export default function QuotationManagementPage({
       ["협업 구분", draft.executionType],
       ["컨소 업체", draft.consortiumCompany],
       [],
-      ["No", "품목", "견적금액", "예상 수익", "컨소 지급", "내부 원가", "품목 순이익"],
-      ...internalReportRows.map((row) => [row.number, row.name, row.amount, row.earning, row.consortium, row.internalCost, row.netProfit]),
+      ["No", "품목", "수량", "단가", "견적금액", "기준 수수료율", "기준 수익", "반영 수익", "컨소 지급률", "컨소 지급", "대체·내부비용", "품목 순이익", "계산식", "상태"],
+      ...internalReportRows.map((row) => [row.number, row.name, row.quantity, row.unitPrice, row.amount, `${(row.baseRate * 100).toFixed(2)}%`, row.baseEarning, row.earning, `${(row.consortiumRate * 100).toFixed(2)}%`, row.consortium, row.internalCostDisplay, row.netProfit, row.formula, row.status]),
       [],
       ["최종 총이익", numbers.margin],
       ["마진율", `${(numbers.marginRate * 100).toFixed(1)}%`],
@@ -952,8 +969,8 @@ export default function QuotationManagementPage({
       return;
     }
     popup.opener = null;
-    const rows = internalReportRows.map((row) => `<tr><td>${row.number}</td><td>${escapeHtml(row.name)}</td><td>${won.format(row.amount)}원</td><td>${won.format(row.earning)}원</td><td>${row.consortium < 0 ? "+" : "-"}${won.format(Math.abs(row.consortium))}원</td><td>-${won.format(row.internalCost)}원</td><td>${won.format(row.netProfit)}원</td></tr>`).join("");
-    popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>내부 수익표</title><style>body{font-family:Arial,'Noto Sans KR',sans-serif;margin:32px;color:#17233d}h1{font-size:24px;margin:0 0 8px}p{margin:4px 0 20px;color:#52617a}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:9px;border:1px solid #cfd8ea;text-align:right}th:nth-child(2),td:nth-child(2){text-align:left}section{margin-top:18px;padding:16px;background:#f4f7ff;border-radius:10px}section b{font-size:20px;color:#244eea}@media print{body{margin:12mm}}</style></head><body><h1>내부 수익표</h1><p>${escapeHtml(draft.organization)} · ${escapeHtml(draft.projectTitle)} · ${escapeHtml(draft.quoteNumber || "저장 전")}</p><table><thead><tr><th>No</th><th>품목</th><th>견적금액</th><th>예상 수익</th><th>컨소 지급</th><th>내부 원가</th><th>품목 순이익</th></tr></thead><tbody>${rows}</tbody></table><section>견적금액 ${won.format(numbers.total)}원 · 최종 총이익 <b>${won.format(numbers.margin)}원</b> · 마진율 ${(numbers.marginRate * 100).toFixed(1)}%</section><script>window.onload=()=>window.print()<\/script></body></html>`);
+    const rows = internalReportRows.map((row) => `<tr><td>${row.number}</td><td>${escapeHtml(row.name)}</td><td>${row.quantity}</td><td>${won.format(row.unitPrice)}원</td><td>${(row.baseRate * 100).toFixed(2)}%</td><td>${won.format(row.baseEarning)}원</td><td>${row.consortium ? `${row.consortium < 0 ? "+" : "-"}${won.format(Math.abs(row.consortium))}원` : "0원"}</td><td>${row.internalCostDisplay ? `-${won.format(row.internalCostDisplay)}원` : "0원"}</td><td>${won.format(row.netProfit)}원</td><td>${escapeHtml(row.formula)}</td></tr>`).join("");
+    popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>내부 수익표</title><style>body{font-family:Arial,'Noto Sans KR',sans-serif;margin:24px;color:#17233d}h1{font-size:24px;margin:0 0 8px}p{margin:4px 0 20px;color:#52617a}table{width:100%;border-collapse:collapse;font-size:10px}th,td{padding:7px;border:1px solid #cfd8ea;text-align:right}th:nth-child(2),td:nth-child(2),th:last-child,td:last-child{text-align:left}section{margin-top:18px;padding:16px;background:#f4f7ff;border-radius:10px}section b{font-size:20px;color:#244eea}@media print{body{margin:8mm}}</style></head><body><h1>내부 수익표</h1><p>${escapeHtml(draft.organization)} · ${escapeHtml(draft.projectTitle)} · ${escapeHtml(draft.quoteNumber || "저장 전")}</p><table><thead><tr><th>No</th><th>품목</th><th>수량</th><th>단가</th><th>기준율</th><th>기준 수익</th><th>컨소 지급</th><th>대체·내부비용</th><th>순이익</th><th>계산식</th></tr></thead><tbody>${rows}</tbody></table><section>견적금액 ${won.format(numbers.total)}원 · 예상 수익 ${won.format(numbers.earning)}원 · 컨소 지급 ${won.format(numbers.consortium)}원 · 내부 비용 ${won.format(numbers.internalCost)}원 · 최종 총이익 <b>${won.format(numbers.margin)}원</b> · 마진율 ${(numbers.marginRate * 100).toFixed(1)}%</section><script>window.onload=()=>window.print()<\/script></body></html>`);
     popup.document.close();
   }
 
@@ -2485,10 +2502,13 @@ export default function QuotationManagementPage({
                         {internalCostDefaults.kind === "aifit-yoga-mat" ? <div className="quotation-yoga-mat-cost">
                           <label><span>제공 수량</span><input type="number" min="0" step="1" value={item.internalCostQuantity ?? internalCostDefaults.quantity} onChange={(event) => {
                             const internalCostQuantity = Math.max(0, Math.round(Number(event.target.value) || 0));
-                            const internalCostUnitAmount = item.internalCostUnitAmount || internalCostDefaults.unitAmount;
+                            const internalCostUnitAmount = item.internalCostUnitAmount ?? internalCostDefaults.unitAmount;
                             updateItem(item.id, { internalCostQuantity, internalCostUnitAmount, internalCostAmount: internalCostQuantity * internalCostUnitAmount, internalCostAutoQuantity: false });
                           }} /></label>
-                          <span>개당 {won.format(item.internalCostUnitAmount || internalCostDefaults.unitAmount)}원</span>
+                          <label><span>개당 비용</span><span className="quotation-money-input"><FormattedMoneyInput value={item.internalCostUnitAmount ?? internalCostDefaults.unitAmount} onChange={(internalCostUnitAmount) => {
+                            const internalCostQuantity = Math.max(0, Math.round(Number(item.internalCostQuantity ?? internalCostDefaults.quantity) || 0));
+                            updateItem(item.id, { internalCostUnitAmount, internalCostAmount: internalCostQuantity * internalCostUnitAmount, internalCostAutoQuantity: false });
+                          }} label="요가매트 개당 비용" /><b>원</b></span></label>
                           <b>합계 {won.format(item.internalCostAmount)}원</b>
                           <button type="button" onClick={() => updateItem(item.id, { internalCostEnabled: true, internalCostQuantity: internalCostDefaults.quantity, internalCostUnitAmount: internalCostDefaults.unitAmount, internalCostAmount: internalCostDefaults.amount, internalCostAutoQuantity: true })}>아이핏 수량 적용</button>
                         </div> : <span className="quotation-money-input"><FormattedMoneyInput value={item.internalCostAmount} onChange={(internalCostAmount) => updateItem(item.id, { internalCostAmount })} label={`${internalCostDefaults.label} 내부 원가`} /><b>원</b></span>}
@@ -2571,8 +2591,9 @@ export default function QuotationManagementPage({
         {internalReportOpen && <div className="quote-internal-report-shell no-print" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setInternalReportOpen(false); }}>
           <section className="quote-internal-report-dialog" role="dialog" aria-modal="true" aria-labelledby="internal-profit-report-title">
             <header><div><span className="section-kicker">INTERNAL PROFIT REPORT</span><h3 id="internal-profit-report-title">내부 수익표</h3><p>{draft.organization} · {draft.projectTitle || `${draft.businessRound}차 사업`} · {draft.quoteNumber || "저장 전"}</p></div><button type="button" aria-label="닫기" onClick={() => setInternalReportOpen(false)}>×</button></header>
-            <div className="quote-internal-report-summary"><span>견적금액 <b>{won.format(numbers.total)}원</b></span><span>최종 총이익 <b>{won.format(numbers.margin)}원</b></span><span>마진율 <b>{(numbers.marginRate * 100).toFixed(1)}%</b></span></div>
-            <div className="quote-internal-report-table"><table><thead><tr><th>No</th><th>품목</th><th>견적금액</th><th>예상 수익</th><th>컨소 지급</th><th>내부 원가</th><th>품목 순이익</th></tr></thead><tbody>{internalReportRows.map((row) => <tr key={`${row.number}-${row.name}`}><td>{row.number}</td><td>{row.name}</td><td>{won.format(row.amount)}원</td><td>{won.format(row.earning)}원</td><td>{row.consortium ? `${row.consortium < 0 ? "+" : "-"}${won.format(Math.abs(row.consortium))}원` : "0원"}</td><td>{row.internalCost ? `-${won.format(row.internalCost)}원` : "0원"}</td><td>{won.format(row.netProfit)}원</td></tr>)}</tbody></table></div>
+            <div className="quote-internal-report-summary"><span>견적금액 <b>{won.format(numbers.total)}원</b></span><span>기준·반영 수익 <b>{won.format(numbers.earning)}원</b></span><span>컨소 지급 <b>{won.format(numbers.consortium)}원</b></span><span>내부 비용 <b>{won.format(numbers.internalCost)}원</b></span><span>최종 총이익 <b>{won.format(numbers.margin)}원</b></span><span>마진율 <b>{(numbers.marginRate * 100).toFixed(1)}%</b></span></div>
+            <div className="quote-internal-report-flow" aria-label="수익 계산 흐름"><span>견적금액 <b>{won.format(numbers.total)}원</b></span><i>→</i><span>반영 수익 <b>{won.format(numbers.earning)}원</b></span><i>−</i><span>컨소·내부비용 <b>{won.format(numbers.consortium + numbers.internalCost)}원</b></span><i>=</i><span className="result">최종 이익 <b>{won.format(numbers.margin)}원</b></span></div>
+            <div className="quote-internal-report-table"><table><thead><tr><th>No</th><th>품목</th><th>수량</th><th>단가</th><th>견적금액</th><th>기준율</th><th>기준 수익</th><th>반영 수익</th><th>컨소 지급</th><th>대체·내부비용</th><th>품목 순이익</th><th>계산식</th><th>상태</th></tr></thead><tbody>{internalReportRows.map((row) => <tr key={`${row.number}-${row.name}`}><td>{row.number}</td><td>{row.name}</td><td>{row.quantity}</td><td>{won.format(row.unitPrice)}원</td><td>{won.format(row.amount)}원</td><td>{(row.baseRate * 100).toFixed(2).replace(/\.00$/, "")}%</td><td>{won.format(row.baseEarning)}원</td><td>{won.format(row.earning)}원</td><td>{row.consortium ? `${row.consortium < 0 ? "+" : "-"}${won.format(Math.abs(row.consortium))}원` : "0원"}</td><td>{row.internalCostDisplay ? `-${won.format(row.internalCostDisplay)}원` : "0원"}</td><td>{won.format(row.netProfit)}원</td><td>{row.formula}</td><td>{row.status}</td></tr>)}</tbody></table></div>
             {numbers.additionalConstructionCost > 0 && <p className="quote-internal-report-deduction">별도 추가 공사 원가 -{won.format(numbers.additionalConstructionCost)}원은 최종 총이익에 반영되었습니다.</p>}
             <footer><button type="button" onClick={downloadInternalProfitCsv}>Excel용 CSV</button><button type="button" onClick={printInternalProfitReport}>인쇄·PDF</button><button className="primary" type="button" onClick={() => setInternalReportOpen(false)}>닫기</button></footer>
           </section>

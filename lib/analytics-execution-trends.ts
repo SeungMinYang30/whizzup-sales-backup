@@ -13,6 +13,10 @@ export type ExecutionTrendMonth = {
   direct: number;
   consortium: number;
   total: number;
+  directAmount: number;
+  consortiumAmount: number;
+  directCount: number;
+  consortiumCount: number;
 };
 
 function metricValue(
@@ -36,6 +40,10 @@ export function buildExecutionTrend(
       direct: 0,
       consortium: 0,
       total: 0,
+      directAmount: 0,
+      consortiumAmount: 0,
+      directCount: 0,
+      consortiumCount: 0,
     }),
   );
 
@@ -46,8 +54,15 @@ export function buildExecutionTrend(
       const monthIndex = Number(row.activityDate.slice(5, 7)) - 1;
       if (monthIndex < 0 || monthIndex > 11) return;
       const value = metricValue(row, metric);
-      if (row.executionType === "컨소") months[monthIndex].consortium += value;
-      else months[monthIndex].direct += value;
+      if (row.executionType === "컨소") {
+        months[monthIndex].consortium += value;
+        months[monthIndex].consortiumAmount += Number(row.confirmedAmount) || 0;
+        months[monthIndex].consortiumCount += 1;
+      } else {
+        months[monthIndex].direct += value;
+        months[monthIndex].directAmount += Number(row.confirmedAmount) || 0;
+        months[monthIndex].directCount += 1;
+      }
       months[monthIndex].total += value;
     });
 
@@ -64,6 +79,10 @@ export function buildExecutionTrend(
   return {
     months,
     totals,
+    totalCount: months.reduce(
+      (sum, month) => sum + month.directCount + month.consortiumCount,
+      0,
+    ),
     directRatio: ratioBase > 0 ? Math.abs(totals.direct) / ratioBase : 0,
     consortiumRatio:
       ratioBase > 0 ? Math.abs(totals.consortium) / ratioBase : 0,

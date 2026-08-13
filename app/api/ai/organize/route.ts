@@ -5,8 +5,11 @@ import {
 import { getOpenAIConfig } from "../../../../lib/openai-config";
 import {
   ensureRecordsReady,
+  parseProgressScheduleEntries,
   serializeProgressSchedule,
 } from "../../../../lib/records-store";
+import { isAllowedAiAutoSchedule } from "../../../../lib/ai-auto-schedule-policy";
+import { isConstructionStage } from "../../../../lib/construction-stages";
 import {
   institutionAliasKey,
   institutionNameWithoutRegionPrefix,
@@ -687,6 +690,7 @@ export async function POST(request: Request) {
 그 외에는 needsClarification을 false로 하고 assistantMessage에 "N개 기관으로 정리했습니다. 내용을 확인해 주세요."처럼 기관 수를 포함해 짧게 답하세요.
 호환성 필드인 activityType은 기타, contactMethod는 기타, status는 상담 진행으로 고정하세요. 활동 유형과 영업 진행상황을 추측하거나 분류하지 마세요.
 위즈업 수주 후 일정에서 날짜와 현장 작업이 함께 확인되면 목록에 없는 공정도 사용자가 말한 공정명 그대로 progressSchedule에 각각 나누어 넣으세요. 철거·전기설비·목공·도장·바닥·벽체유리·가구집기·시스템·사인물·청소·이사이동·검수·교육뿐 아니라 수납장 체결, 기자재 이동처럼 누가 봐도 현장 시공 과정인 일정도 포함합니다. "시스템 문의"처럼 날짜 없는 단순 언급은 일정으로 만들지 마세요.
+progressSchedule은 날짜가 확정된 위즈업 수주 후 시공 일정 또는 날짜가 확정된 위즈업·에어패스 쇼룸 시연에만 사용하세요. 영업 방문, 회의, 통화, 재연락, 후속 행동, 자료·비교표·제안서 준비, 일반 마감일, 개인일정·내 일정, 단순 메모는 날짜가 있어도 progressSchedule에 넣거나 일정 등록을 제안하지 마세요. 타 업체 쇼룸·시연, 문의·검토·가능성·미정·취소 일정도 넣지 마세요.
 일정의 정확한 시간이 확인되면 startTime과 endTime을 24시간제 HH:mm으로 작성하세요. 10분 단위로 맞추고, 시간이 없으면 둘 다 빈 문자열로 두세요. 시작 시간만 확인되면 startTime만 작성하고 endTime은 빈 문자열로 두세요.
 progressSchedule에 일정이 있다는 이유만으로 수주 주체를 위즈업으로 추정하지 마세요. 위즈업 수주가 명시된 경우에만 awardStatus를 위즈업 수주로, 협력사 수주가 명시된 경우에만 협력사 수주로 정리하고, 수주 주체가 명확하지 않으면 미정으로 두세요.
 현재 연도가 생략된 월/일은 ${todayInSeoul().slice(0, 4)}년으로 정리하세요.
@@ -786,11 +790,19 @@ budgetType은 위 목록의 표준명 또는 별칭과 입력 내용이 정확�
       const awardStatus = draft.awardStatus;
       const isOtherCompanyAward = awardStatus === "타업체 수주";
       const isPartnerCompanyAward = awardStatus === "협력사 수주";
+      const allowedProgressSchedule = serializeProgressSchedule(
+        parseProgressScheduleEntries(String(draft.progressSchedule ?? "")).filter(
+          (entry) => isAllowedAiAutoSchedule(entry.label, {
+            allowConstruction: awardStatus === "위즈업 수주",
+            isConstruction: isConstructionStage(entry.label),
+          }),
+        ),
+      );
       return {
         ...draft,
         ...resolvedActivityDate,
         progressSchedule:
-          cancellationIntent === "none" ? draft.progressSchedule : "",
+          cancellationIntent === "none" ? allowedProgressSchedule : "",
         nextAction:
           cancellationIntent === "confirmed" && !String(draft.nextAction ?? "").trim()
             ? "재문의 대기"

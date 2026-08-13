@@ -123,7 +123,11 @@ test("AI 취소 문구는 확인 후 사이트와 Google 일정에 함께 반영
   assert.match(aiOrganizer, /재문의 대기/);
   assert.match(route, /preview-schedule-cancellation/);
   assert.match(route, /cancel-schedule-candidates/);
-  assert.match(route, /flushGoogleCalendarSync\(\{ ids \}\)/);
+  assert.match(
+    route,
+    /queueGoogleCalendarSync\(\{ ids, source: "cancel-schedule-candidates" \}\)/,
+  );
+  assert.match(route, /after\(async \(\) =>/);
   assert.match(crm, /아래 일정을 사이트와 Google Calendar에서 함께 취소할까요/);
   assert.match(crm, /취소·연기 여부가 불명확해 기존 일정은 유지했습니다/);
 });

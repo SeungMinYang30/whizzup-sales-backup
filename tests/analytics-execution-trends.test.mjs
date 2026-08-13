@@ -52,16 +52,25 @@ test("buildExecutionTrend groups confirmed awards by month and execution type", 
     direct: 100,
     consortium: 300,
     total: 400,
+    directAmount: 100,
+    consortiumAmount: 300,
+    directCount: 1,
+    consortiumCount: 1,
   });
   assert.deepEqual(result.months[1], {
     month: "02",
     direct: 200,
     consortium: 0,
     total: 200,
+    directAmount: 200,
+    consortiumAmount: 0,
+    directCount: 1,
+    consortiumCount: 0,
   });
   assert.deepEqual(result.totals, { direct: 300, consortium: 300, total: 600 });
   assert.equal(result.directRatio, 0.5);
   assert.equal(result.consortiumRatio, 0.5);
+  assert.equal(result.totalCount, 3);
 });
 
 test("buildExecutionTrend applies the selected metric", () => {

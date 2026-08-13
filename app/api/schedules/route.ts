@@ -39,13 +39,36 @@ export const dynamic = "force-dynamic";
 
 function scheduleErrorResponse(error: unknown) {
   if (error instanceof AccessError) return accessErrorResponse(error);
-  if (error instanceof Error && /일정|기관|담당자|시간|날짜|달력|Google|캘린더|시공|구글/u.test(error.message)) {
+  const requestId = crypto.randomUUID();
+  console.error("Schedule API request failed", {
+    requestId,
+    message: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+  });
+  if (error instanceof Error && /일정|기관|담당자|시간|날짜|달력|calendar|google|공사|시공|납품|교육|검수|구글/i.test(error.message)) {
     return Response.json(
-      { error: error.message },
-      { status: /Google|구글|캘린더/u.test(error.message) ? 502 : 400 },
+      { error: error.message, requestId },
+      { status: /google|calendar|구글|캘린더/i.test(error.message) ? 502 : 400 },
     );
   }
-  return accessErrorResponse(error);
+  return Response.json(
+    { error: "요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.", requestId },
+    { status: 500 },
+  );
+}
+
+function queueGoogleCalendarSync(options: { ids?: number[]; limit?: number; source: string }) {
+  after(async () => {
+    try {
+      await flushGoogleCalendarSync({ ids: options.ids, limit: options.limit });
+    } catch (error) {
+      console.error("Google Calendar background sync failed", {
+        source: options.source,
+        ids: options.ids,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
 }
 
 function validCalendarDate(value: string) {
@@ -114,7 +137,14 @@ export async function GET(request: Request) {
           googleRefreshPending: true,
         });
       }
-      await flushGoogleCalendarSync({ limit: 50 });
+      try {
+        await flushGoogleCalendarSync({ limit: 50 });
+      } catch (error) {
+        console.error(
+          "Google Calendar refresh sync failed",
+          error instanceof Error ? error.message : String(error),
+        );
+      }
       const apiGoogle = await reconcileGoogleCalendarRange(start, end);
       const feedGoogle = apiGoogle.configured
         ? { configured: false, connected: false, events: [] }
@@ -203,8 +233,8 @@ export async function PUT(request: Request) {
         completed: payload.completed,
         member,
       });
-      await flushGoogleCalendarSync({ ids: [schedule.id] });
-      return Response.json({ schedule });
+      queueGoogleCalendarSync({ ids: [schedule.id], source: "update-general-schedule" });
+      return Response.json({ schedule, googleSyncPending: true });
     }
     await replaceOrganizationSchedules({
       organization: payload.organization,
@@ -213,7 +243,7 @@ export async function PUT(request: Request) {
       memberId: member.id,
       memberName: member.displayName,
     });
-    await flushGoogleCalendarSync({ limit: 50 });
+    queueGoogleCalendarSync({ limit: 50, source: "replace-organization-schedules" });
     return Response.json({
       schedules: await listOrganizationSchedules(payload.organization, payload.businessRound),
     });
@@ -246,8 +276,8 @@ export async function POST(request: Request) {
         : [];
       if (!ids.length) throw new Error("취소할 일정을 확인해 주세요.");
       for (const id of ids) await deleteOrganizationSchedule({ id, member });
-      await flushGoogleCalendarSync({ ids });
-      return Response.json({ cancelledIds: ids });
+      queueGoogleCalendarSync({ ids, source: "cancel-schedule-candidates" });
+      return Response.json({ cancelledIds: ids, googleSyncPending: true });
     }
     if (payload.action === "link-google-schedule") {
       const linked = await linkGoogleCalendarSchedule({
@@ -281,7 +311,7 @@ export async function POST(request: Request) {
         memberId: member.id,
         memberName: member.displayName,
       });
-      await flushGoogleCalendarSync({ limit: 25 });
+      queueGoogleCalendarSync({ limit: 25, source: "add-general-schedule" });
       return Response.json({
         schedules: payload.linked === false
           ? []
@@ -324,8 +354,8 @@ export async function DELETE(request: Request) {
     const payload = (await request.json()) as Record<string, unknown>;
     if (payload.action === "delete-general-schedule") {
       const deleted = await deleteOrganizationSchedule({ id: payload.scheduleId, member });
-      await flushGoogleCalendarSync({ ids: [Number(payload.scheduleId)] });
-      return Response.json(deleted);
+      queueGoogleCalendarSync({ ids: [Number(payload.scheduleId)], source: "delete-general-schedule" });
+      return Response.json({ ...deleted, googleSyncPending: true });
     }
     if (payload.action === "delete-google-calendar-event") {
       return Response.json(await deleteUnlinkedGoogleCalendarSchedule(payload.googleEventId, member));
@@ -343,8 +373,8 @@ export async function DELETE(request: Request) {
       organization: payload.organization,
       businessRound: payload.businessRound,
     });
-    await flushGoogleCalendarSync({ limit: 50 });
-    return Response.json(board);
+    queueGoogleCalendarSync({ limit: 50, source: "remove-construction-project" });
+    return Response.json(board, { headers: { "X-Google-Sync-Pending": "1" } });
   } catch (error) {
     return scheduleErrorResponse(error);
   }
@@ -358,8 +388,10 @@ export async function PATCH(request: Request) {
       payload.scheduleId,
       member,
     );
-    if (schedule?.id) await flushGoogleCalendarSync({ ids: [schedule.id] });
-    return Response.json({ schedule });
+    if (schedule?.id) {
+      queueGoogleCalendarSync({ ids: [schedule.id], source: "complete-schedule-reminder" });
+    }
+    return Response.json({ schedule, googleSyncPending: Boolean(schedule?.id) });
   } catch (error) {
     return scheduleErrorResponse(error);
   }

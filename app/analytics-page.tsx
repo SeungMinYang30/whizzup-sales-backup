@@ -348,6 +348,9 @@ export default function AnalyticsPage({
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [trendMetric, setTrendMetric] =
     useState<ExecutionTrendMetric>("amount");
+  const [trendFilter, setTrendFilter] = useState<"all" | "direct" | "consortium">("all");
+  const [showProfitGuide, setShowProfitGuide] = useState(false);
+  const [tvMode, setTvMode] = useState(false);
   const [productMode, setProductMode] = useState<"product" | "vendor">("product");
   const [productLimit, setProductLimit] = useState(20);
   const [drilldown, setDrilldown] = useState<AnalyticsDrilldown | null>(null);
@@ -359,6 +362,7 @@ export default function AnalyticsPage({
   const [correctionRequestMessage, setCorrectionRequestMessage] = useState("");
   const productRef = useRef<HTMLElement | null>(null);
   const oversightRef = useRef<HTMLElement | null>(null);
+  const analyticsPageRef = useRef<HTMLElement | null>(null);
 
   async function loadAnalytics() {
     try {
@@ -405,6 +409,17 @@ export default function AnalyticsPage({
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [drilldown, selectedDetail]);
+
+  useEffect(() => {
+    const syncFullscreen = () => setTvMode(document.fullscreenElement === analyticsPageRef.current);
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
+
+  async function toggleTvMode() {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await analyticsPageRef.current?.requestFullscreen();
+  }
 
   const years = useMemo(() => {
     const source = [
@@ -917,7 +932,7 @@ export default function AnalyticsPage({
   }
 
   return (
-    <section className="analytics-page">
+    <section ref={analyticsPageRef} className={`analytics-page ${tvMode ? "analytics-tv-mode" : ""}`}>
       <div className="analytics-toolbar panel">
         <div>
           <span className="section-kicker">BUSINESS PERFORMANCE</span>
@@ -1040,15 +1055,17 @@ export default function AnalyticsPage({
         <button
           type="button"
           className="net"
-          onClick={onOpenAwards}
+          onClick={() => setShowProfitGuide((value) => !value)}
+          aria-expanded={showProfitGuide}
         >
           <span>정산 후 예상수익</span>
           <strong>{formatMoney(totals.margin)}</strong>
           <small>제품 수익과 공사 마진에서 컨소 정산액을 뺀 값입니다.</small>
+          <em>{showProfitGuide ? "계산 기준 닫기" : "계산 기준 보기"}</em>
         </button>
       </div>
 
-      <div className="analytics-profit-guide" aria-label="예상 수익 계산 기준">
+      {showProfitGuide && <div className="analytics-profit-guide" aria-label="예상 수익 계산 기준">
         <span className="commission">
           <small>협력사 예상 수수료</small>
           <strong>협력사 공급 판매금액 × 수수료율</strong>
@@ -1073,7 +1090,7 @@ export default function AnalyticsPage({
           <small>정산 후 예상수익</small>
           <strong>기타 비용 차감 전 관리용 예상치</strong>
         </span>
-      </div>
+      </div>}
 
       <article className="panel analytics-execution-card">
         <header>
@@ -1086,6 +1103,9 @@ export default function AnalyticsPage({
             </p>
           </div>
           <div className="analytics-execution-controls">
+            <button type="button" onClick={() => void toggleTvMode()}>
+              {tvMode ? "전체화면 종료" : "전체화면"}
+            </button>
             <select
               aria-label="비교 지표"
               value={trendMetric}
@@ -1113,29 +1133,35 @@ export default function AnalyticsPage({
               <span>
                 <small>연간 합계</small>
                 <strong>{formatTrendValue(executionTrend.totals.total, trendMetric)}</strong>
+                <small>{executionTrend.totalCount.toLocaleString("ko-KR")}건</small>
               </span>
             </div>
             <div className="analytics-execution-ratio-legend">
-              <span className="direct">
+              <button type="button" className={`direct ${trendFilter === "direct" ? "active" : ""}`} onClick={() => setTrendFilter((value) => value === "direct" ? "all" : "direct")}>
                 <i />
                 <small>직영 {(executionTrend.directRatio * 100).toFixed(1)}%</small>
                 <strong>{formatTrendValue(executionTrend.totals.direct, trendMetric)}</strong>
-              </span>
-              <span className="consortium">
+              </button>
+              <button type="button" className={`consortium ${trendFilter === "consortium" ? "active" : ""}`} onClick={() => setTrendFilter((value) => value === "consortium" ? "all" : "consortium")}>
                 <i />
                 <small>컨소 {(executionTrend.consortiumRatio * 100).toFixed(1)}%</small>
                 <strong>{formatTrendValue(executionTrend.totals.consortium, trendMetric)}</strong>
-              </span>
+              </button>
             </div>
           </div>
 
           <div className="analytics-execution-chart-wrap">
             <div className="analytics-execution-chart" aria-label="월별 직영·컨소 비교 그래프">
               {executionTrend.months.map((month) => {
-                const directHeight =
-                  (Math.abs(month.direct) / executionTrendMax) * 100;
-                const consortiumHeight =
-                  (Math.abs(month.consortium) / executionTrendMax) * 100;
+                const directValue = trendFilter === "consortium" ? 0 : month.direct;
+                const consortiumValue = trendFilter === "direct" ? 0 : month.consortium;
+                const directHeight = (Math.abs(directValue) / executionTrendMax) * 100;
+                const consortiumHeight = (Math.abs(consortiumValue) / executionTrendMax) * 100;
+                const displayedTotal = directValue + consortiumValue;
+                const previousTotal = executionTrend.months[Number(month.month) - 2]?.total ?? 0;
+                const change = Number(month.month) === 1 || previousTotal === 0
+                  ? "비교 기준 없음"
+                  : `전월 대비 ${(((month.total - previousTotal) / Math.abs(previousTotal)) * 100).toFixed(1)}%`;
                 const active =
                   periodMode === "month" && selectedMonth === month.month;
                 return (
@@ -1147,10 +1173,11 @@ export default function AnalyticsPage({
                       setSelectedMonth(month.month);
                       setPeriodMode("month");
                     }}
-                    aria-label={`${Number(month.month)}월 ${formatTrendValue(month.total, trendMetric)}. 월간 통계로 보기`}
+                    aria-label={`${Number(month.month)}월 ${formatTrendValue(displayedTotal, trendMetric)}. 월간 통계로 보기`}
+                    title={`직영 ${formatMoney(month.directAmount)} · ${month.directCount}건\n컨소 ${formatMoney(month.consortiumAmount)} · ${month.consortiumCount}건\n월 합계 ${formatTrendValue(month.total, trendMetric)}\n${change}`}
                   >
                     <strong>
-                      {formatTrendAxisValue(month.total, trendMetric)}
+                      {displayedTotal === 0 ? "–" : formatTrendAxisValue(displayedTotal, trendMetric)}
                     </strong>
                     <span className="analytics-execution-stack">
                       <i

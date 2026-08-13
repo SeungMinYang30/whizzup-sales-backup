@@ -48,6 +48,8 @@ test("요가매트는 아이핏 전자칠판형·슬림형에만 수량 연동�
   });
   assert.match(page, /internalCostAutoQuantity !== false/);
   assert.match(page, /아이핏 수량 적용/);
+  assert.match(page, /label="요가매트 개당 비용"/);
+  assert.match(page, /internalCostQuantity \* internalCostUnitAmount/);
   assert.match(styles, /\.quotation-item-internal-cost\{[^}]*grid-template-columns:minmax\(200px,\.7fr\) minmax\(0,1\.35fr\) minmax\(260px,\.9fr\)/);
   assert.match(styles, /\.quotation-yoga-mat-cost\{[^}]*display:flex[^}]*flex-wrap:wrap/);
   assert.match(styles, /\.quotation-item-internal-cost>small\{grid-column:1\/-1/);
@@ -92,7 +94,8 @@ test("customer PDF and Excel remain free of internal cost fields", () => {
 
 test("content substitution shows a 100% bypass but applies the preserved base rate only to the balance", () => {
   assert.equal(contentSubstitutionMargin(2_700_000, 2_000_000, 0.5), 350_000);
-  assert.equal(contentSubstitutionMargin(2_700_000, 2_800_000, 0.5), -50_000);
+  assert.equal(contentSubstitutionMargin(2_700_000, 2_700_000, 0.5), 0);
+  assert.equal(contentSubstitutionMargin(2_700_000, 2_800_000, 0.5), -100_000);
   assert.equal(contentSubstitutionBaseEarningRate({
     earningRate: 1,
     internalCostBaseEarningRate: 0.5,

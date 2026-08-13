@@ -10,6 +10,10 @@ import {
   parseProgressScheduleEntries,
   serializeProgressSchedule,
 } from "./records-store";
+import {
+  isAllowedAiAutoSchedule,
+  isApprovedShowroomAutoSchedule,
+} from "./ai-auto-schedule-policy";
 import { personDisplayLabel } from "./person-label";
 import {
   findSimilarInstitutionNames,
@@ -1710,42 +1714,41 @@ export async function mergeActivityProgressSchedule(input: {
   ).bind(organization, businessRound).run();
   const whizzupScope = await isWhizzupAwardScope(d1, organization, businessRound);
   const constructionIncoming = whizzupScope
-    ? incoming.filter((schedule) => isConstructionStage(schedule.label))
+    ? incoming.filter((schedule) =>
+        isAllowedAiAutoSchedule(schedule.label, {
+          allowConstruction: true,
+          isConstruction: isConstructionStage(schedule.label),
+        })
+        && isConstructionStage(schedule.label))
     : [];
-  const generalIncoming = incoming.filter(
-    (schedule) => !whizzupScope || !isConstructionStage(schedule.label),
-  );
-  const current = await listStoredOrganizationSchedules(organization, businessRound);
-  const merged = new Map(
-    current.filter((schedule) => schedule.category !== "construction").map((schedule: OrganizationSchedule) => [
-      scheduleNaturalKey(schedule.scheduledDate, schedule.label),
-      {
-        label: schedule.label,
-        scheduledDate: schedule.scheduledDate,
-        startTime: schedule.startTime,
-        endTime: schedule.endTime,
-        completed: schedule.completed,
-      },
-    ]),
-  );
-  generalIncoming.forEach((schedule) => {
-    const key = scheduleNaturalKey(schedule.date, schedule.label);
-    merged.set(key, {
-      label: schedule.label,
-      scheduledDate: schedule.date,
-      startTime: schedule.startTime,
-      endTime: schedule.endTime,
-      completed: false,
-    });
-  });
-  if (generalIncoming.length) {
-    await replaceOrganizationSchedules({
-      organization,
-      businessRound,
-      schedules: [...merged.values()],
-      memberId: input.memberId,
-      memberName: input.memberName,
-    });
+  // AI가 기록에 적힌 모든 날짜를 일반/영업 일정으로 만들던 경로를 막습니다.
+  // 자동 일정은 위즈업·에어패스의 확정된 쇼룸 시연만 별도로 허용합니다.
+  const showroomIncoming = incoming.filter((schedule) =>
+    isApprovedShowroomAutoSchedule(schedule.label));
+
+  if (showroomIncoming.length) {
+    await d1.batch(showroomIncoming.map((schedule) => d1.prepare(
+      `INSERT INTO organization_schedules (
+         organization, business_round, label, scheduled_date, start_time, end_time,
+         category, end_date, completed, source_activity_id,
+         created_by, created_by_name, updated_by, updated_by_name
+       )
+       SELECT ?, ?, ?, ?, ?, ?, 'showroom', ?, 0, ?, ?, ?, ?, ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM organization_schedules
+         WHERE organization = ? AND business_round = ? AND category = 'showroom'
+           AND scheduled_date = ? AND COALESCE(start_time, '') = ?
+           AND COALESCE(end_time, '') = ?
+           AND LOWER(TRIM(label)) = LOWER(TRIM(?))
+           AND TRIM(COALESCE(deleted_at, '')) = ''
+       )`,
+    ).bind(
+      organization, businessRound, schedule.label, schedule.date,
+      schedule.startTime, schedule.endTime, schedule.date, input.activityId,
+      input.memberId, input.memberName, input.memberId, input.memberName,
+      organization, businessRound, schedule.date, schedule.startTime,
+      schedule.endTime, schedule.label,
+    )));
   }
 
   if (constructionIncoming.length) {

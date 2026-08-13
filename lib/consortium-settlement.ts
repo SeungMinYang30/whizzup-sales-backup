@@ -57,6 +57,12 @@ function safeAmount(value: number | undefined) {
   return Number.isFinite(value) ? Math.max(0, Math.round(value ?? 0)) : 0;
 }
 
+function resolvedAmount(value: number | undefined, fallback: number) {
+  return value === undefined || value === null || !Number.isFinite(Number(value))
+    ? safeAmount(fallback)
+    : safeAmount(value);
+}
+
 function safeRate(value: number | undefined) {
   return Number.isFinite(value) ? Math.min(1, Math.max(0, value ?? 0)) : 0;
 }
@@ -100,7 +106,7 @@ export function calculateConsortiumSettlement(
     const kind = quotationInternalCostKind(item.name, item.specification ?? "");
     // 콘텐츠 대체비용은 위즈업 내부 바이패스 계산 기준이며 별도 비용으로 다시 차감하지 않습니다.
     if (kind === "content-substitution") return [];
-    const unitAmount = safeAmount(item.internalCostUnitAmount) || defaults.unitAmount || amount;
+    const unitAmount = resolvedAmount(item.internalCostUnitAmount, defaults.unitAmount || amount);
     const quantity = kind === "aifit-yoga-mat"
       ? Math.max(1, Math.round(Number(item.internalCostQuantity) || Math.max(1, Math.round(amount / Math.max(1, unitAmount)))))
       : 1;

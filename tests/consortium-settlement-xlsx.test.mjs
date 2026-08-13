@@ -34,7 +34,7 @@ test("정산 조정은 추가 지급과 차감을 최종 지급액에 반영한�
   assert.equal(result.costs[0].unitAmount, 300_000);
 });
 
-test("콘텐츠 대체 비용이 기본 정산액보다 크면 다음 정산 상계를 위해 음수를 유지한다", () => {
+test("콘텐츠 대체비용은 컨소 지급이 아니라 내부 바이패스 마진에서만 계산한다", () => {
   const result = calculateConsortiumSettlement([
     {
       name: "콘텐츠",
@@ -47,9 +47,9 @@ test("콘텐츠 대체 비용이 기본 정산액보다 크면 다음 정산 상
       internalCostBearer: "consortium",
     },
   ], "컨소");
-  assert.equal(result.grossPayment, 1_350_000);
-  assert.equal(result.consortiumCost, 1_600_000);
-  assert.equal(result.finalPayment, -250_000);
+  assert.equal(result.grossPayment, 0);
+  assert.equal(result.consortiumCost, 0);
+  assert.equal(result.finalPayment, 0);
 });
 
 test("컨소 정산서 Excel은 내부 마진 없이 품목·비용 처리 방식·최종 지급액을 표시한다", () => {
