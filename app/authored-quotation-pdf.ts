@@ -193,7 +193,7 @@ function drawCell(
 }
 
 async function canvasJpeg(canvas: HTMLCanvasElement) {
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.94));
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.98));
   if (!blob) throw new Error("견적서 PDF 화면을 만들지 못했습니다.");
   return blob;
 }

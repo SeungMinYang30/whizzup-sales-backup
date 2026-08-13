@@ -15,6 +15,7 @@ import { createQuotationWorkbook } from "../lib/quotation-xlsx";
 import { AIRPASS_COMPANY, AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "../lib/airpass-company";
 import { calculateConsortiumSettlement } from "../lib/consortium-settlement";
 import { createConsortiumSettlementWorkbook, type ConsortiumSettlementWorkbookInput } from "../lib/consortium-settlement-xlsx";
+import { createInternalProfitReportWorkbook } from "../lib/internal-profit-report-xlsx";
 import { createConsortiumSettlementPdf } from "./consortium-settlement-pdf";
 import { hasProcurementSignal, procurementNumbersFromText } from "../lib/procurement-product";
 import { createAuthoredQuotationPdf, quotationFileStem } from "./authored-quotation-pdf";
@@ -377,11 +378,6 @@ function safeFileName(value: string) {
   return value.trim().replace(/[\\/:*?"<>|]/g, "_") || "미지정";
 }
 
-function csvCell(value: unknown) {
-  const text = String(value ?? "");
-  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
 function downloadBytes(bytes: Uint8Array, name: string) {
   const blob = new Blob([bytes as BlobPart], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -410,7 +406,7 @@ async function renderGeneratedPdfPages(file: File) {
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber);
       const natural = page.getViewport({ scale: 1 });
-      const scale = Math.min(2.2, 1500 / Math.max(natural.width, natural.height));
+      const scale = Math.min(4, 2800 / Math.max(natural.width, natural.height));
       const viewport = page.getViewport({ scale });
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, Math.ceil(viewport.width));
@@ -420,7 +416,7 @@ async function renderGeneratedPdfPages(file: File) {
       context.fillStyle = "#ffffff";
       context.fillRect(0, 0, canvas.width, canvas.height);
       await page.render({ canvas, canvasContext: context, viewport }).promise;
-      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("PDF 페이지 이미지를 만들지 못했습니다.")), "image/jpeg", 0.92));
+      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("PDF 페이지 이미지를 만들지 못했습니다.")), "image/png"));
       pageUrls.push(URL.createObjectURL(blob));
       page.cleanup();
       canvas.width = 1;
@@ -889,7 +885,6 @@ export default function QuotationManagementPage({
       baseRate,
       baseEarning,
       earning,
-      consortiumRate: Math.max(0, item.consortiumRate),
       consortium,
       internalCost,
       internalCostDisplay,
@@ -931,31 +926,25 @@ export default function QuotationManagementPage({
     setMessage("내부 수익 보고 내용을 복사했습니다.");
   }
 
-  function downloadInternalProfitCsv() {
+  function downloadInternalProfitExcel() {
     if (!draft) return;
-    const rows = [
-      ["기관", draft.organization],
-      ["사업·견적명", draft.projectTitle],
-      ["견적번호", draft.quoteNumber || "저장 전"],
-      ["견적금액", numbers.total],
-      ["협업 구분", draft.executionType],
-      ["컨소 업체", draft.consortiumCompany],
-      [],
-      ["No", "품목", "수량", "단가", "제공 구분", "견적금액", "기준 수수료율", "기준 수익", "반영 수익", "컨소 지급률", "컨소 지급", "대체·내부비용", "품목 순이익", "계산식", "상태"],
-      ...internalReportRows.map((row) => [row.number, row.name, `${row.quantity}${row.unit}`, row.unitPrice, row.complimentary ? "무상 제공" : "유상", row.amount, `${(row.baseRate * 100).toFixed(2)}%`, row.baseEarning, row.earning, `${(row.consortiumRate * 100).toFixed(2)}%`, row.consortium, row.internalCostDisplay, row.netProfit, row.formula, row.status]),
-      [],
-      ["최종 총이익", numbers.margin],
-      ["마진율", `${(numbers.marginRate * 100).toFixed(1)}%`],
-    ];
-    const csv = rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
-    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${safeFileName(draft.organization)}_${draft.quoteNumber || "견적"}_내부수익표.csv`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    const bytes = createInternalProfitReportWorkbook({
+      organization: draft.organization,
+      projectTitle: draft.projectTitle,
+      quoteNumber: draft.quoteNumber || "저장 전",
+      quoteDate: draft.quoteDate,
+      executionType: draft.executionType,
+      consortiumCompany: draft.consortiumCompany,
+      total: numbers.total,
+      earning: numbers.earning,
+      consortium: numbers.consortium,
+      internalCost: numbers.internalCost,
+      margin: numbers.margin,
+      marginRate: numbers.marginRate,
+      rows: internalReportRows.map((row) => ({ ...row, specification: row.specification ?? "" })),
+    });
+    downloadBytes(bytes, `${safeFileName(draft.organization)}_${draft.quoteNumber || "견적"}_내부수익표.xlsx`);
+    setMessage("PDF와 같은 구성의 내부 수익표 Excel을 만들었습니다.");
   }
 
   function printInternalProfitReport() {
@@ -2580,14 +2569,9 @@ export default function QuotationManagementPage({
                 {!draft.settlementAdjustments.length && <small>추가 지급이나 정산 차감이 생기면 항목을 추가해 주세요.</small>}
               </div>
               <div className="quotation-settlement-output-actions">
-                <details className="quotation-output-menu quotation-output-menu-settlement">
-                  <summary>정산서 출력·다운로드</summary>
-                  <div className="quotation-output-menu-panel">
-                    <button type="button" onClick={() => void exportConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>정산서 PDF 보기·출력</button>
-                    <button type="button" onClick={() => void downloadConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>정산서 PDF 다운로드</button>
-                    <button type="button" onClick={() => void exportConsortiumSettlementExcel()} disabled={!draft.items.length}>정산서 Excel 다운로드</button>
-                  </div>
-                </details>
+                <button type="button" className="primary" onClick={() => void exportConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>PDF 보기·인쇄</button>
+                <button type="button" onClick={() => void downloadConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>PDF 다운로드</button>
+                <button type="button" onClick={() => void exportConsortiumSettlementExcel()} disabled={!draft.items.length}>Excel 다운로드</button>
               </div>
               <p>품목별 지급률과 비용 처리 방식, 정산 조정 내역을 표시하며 위즈업 수익·마진은 포함하지 않습니다. 직인 포함 설정도 동일하게 적용됩니다.</p>
             </section>}
@@ -2619,7 +2603,7 @@ export default function QuotationManagementPage({
               <div><dl><dt>견적금액</dt><dd>{row.complimentary ? "무상" : `${won.format(row.amount)}원`}</dd><dt>예상 수익</dt><dd>{won.format(row.earning)}원</dd><dt>컨소 지급</dt><dd>{row.consortium ? `-${won.format(row.consortium)}원` : "0원"}</dd><dt>내부 원가</dt><dd>{row.internalCost ? `-${won.format(row.internalCost)}원` : "0원"}</dd></dl><p>{row.complimentary ? `기준 단가 ${won.format(row.unitPrice)}원은 보존되며 견적 합계와 수익 계산에서 제외됩니다.` : `${row.quantity}${row.unit} × ${won.format(row.unitPrice)}원 · 수익률 ${(row.earningRate * 100).toFixed(1)}%${draft.executionType === "컨소" ? ` · 컨소 지급률 ${(row.consortiumRate * 100).toFixed(1)}%` : ""}`}</p></div>
             </details>)}</div>
             {numbers.additionalConstructionCost > 0 && <p className="quote-internal-report-deduction">별도 추가 공사 원가 -{won.format(numbers.additionalConstructionCost)}원은 최종 총이익에 반영되었습니다.</p>}
-            <footer><button type="button" onClick={downloadInternalProfitCsv}>Excel용 CSV</button><button type="button" onClick={printInternalProfitReport}>인쇄·PDF</button><button className="primary" type="button" onClick={() => setInternalReportOpen(false)}>닫기</button></footer>
+            <footer><button type="button" onClick={downloadInternalProfitExcel}>Excel 다운로드</button><button type="button" onClick={printInternalProfitReport}>인쇄·PDF</button><button className="primary" type="button" onClick={() => setInternalReportOpen(false)}>닫기</button></footer>
           </section>
         </div>}
 

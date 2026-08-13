@@ -411,7 +411,7 @@ function splitText(
 
 async function canvasJpeg(canvas: HTMLCanvasElement) {
   const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/jpeg", 0.9),
+    canvas.toBlob(resolve, "image/jpeg", 0.97),
   );
   if (!blob) throw new Error("견적서 미리보기를 만들지 못했습니다.");
   return blob;
@@ -428,10 +428,11 @@ async function renderSanitizedPages(
   const pages: Array<{ blob: Blob; width: number; height: number }> = [];
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
     const canvas = document.createElement("canvas");
-    canvas.width = 1240;
-    canvas.height = 1754;
+    canvas.width = 2480;
+    canvas.height = 3508;
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) throw new Error("견적서 화면을 준비하지 못했습니다.");
+    context.scale(2, 2);
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = "#17233f";

@@ -6,6 +6,7 @@ import { strFromU8, unzipSync } from "fflate";
 register(new URL("./typescript-resolver.mjs", import.meta.url));
 const { calculateConsortiumSettlement } = await import("../lib/consortium-settlement.ts");
 const { createConsortiumSettlementWorkbook } = await import("../lib/consortium-settlement-xlsx.ts");
+const { createInternalProfitReportWorkbook } = await import("../lib/internal-profit-report-xlsx.ts");
 
 test("정산서 반영 비용과 위즈업 별도 처리 비용을 구분한다", () => {
   const result = calculateConsortiumSettlement([
@@ -50,6 +51,16 @@ test("콘텐츠 대체비용은 컨소 지급이 아니라 내부 바이패스 �
   assert.equal(result.grossPayment, 0);
   assert.equal(result.consortiumCost, 0);
   assert.equal(result.finalPayment, 0);
+});
+
+test("일반 콘텐츠 품목은 기존 견적에도 입력된 컨소 지급률을 소급 적용한다", () => {
+  const result = calculateConsortiumSettlement([
+    { name: "콘텐츠", quantity: 1, unitPrice: 15_000_000, earningRate: 0.3, consortiumRate: 0.3, internalCostEnabled: false },
+    { name: "아이핏 PAPS 콘텐츠", quantity: 1, unitPrice: 8_500_000, earningRate: 0.3, consortiumRate: 0.3, internalCostEnabled: false },
+    { name: "에어패스 가상사격시스템", specification: "카메라센서, 총, 콘텐츠 포함", quantity: 1, unitPrice: 7_000_000, earningRate: 0.2, consortiumRate: 0.2, internalCostEnabled: false },
+  ], "컨소");
+  assert.deepEqual(result.items.map((item) => item.grossPayment), [4_500_000, 2_550_000, 1_400_000]);
+  assert.equal(result.grossPayment, 8_450_000);
 });
 
 test("무상 제공 품목은 컨소 지급 계산에서 제외하고 별도 내부 비용은 유지한다", () => {
@@ -99,4 +110,31 @@ test("컨소 정산서 Excel은 내부 마진 없이 품목·비용 처리 방�
   assert.doesNotMatch(sheet, /마진|위즈업 수익|예상 수익/);
   assert.ok(files["xl/media/logo.png"]);
   assert.ok(files["xl/media/seal.png"]);
+});
+
+test("내부 수익표 Excel은 PDF형 요약과 품목별 수식을 포함하는 실제 xlsx다", () => {
+  const workbook = createInternalProfitReportWorkbook({
+    organization: "덕벌초등학교",
+    projectTitle: "가상현실 스포츠실",
+    quoteNumber: "WZ-TEST-002",
+    quoteDate: "2026-08-13",
+    executionType: "컨소",
+    consortiumCompany: "무한정보통신",
+    total: 15_000_000,
+    earning: 4_500_000,
+    consortium: 4_500_000,
+    internalCost: 0,
+    margin: 0,
+    marginRate: 0,
+    rows: [{ number: 1, name: "콘텐츠", specification: "교육용 콘텐츠", quantity: 1, unit: "식", unitPrice: 15_000_000, complimentary: false, amount: 15_000_000, baseRate: 0.3, baseEarning: 4_500_000, earning: 4_500_000, consortiumRate: 0.3, consortium: 4_500_000, internalCostDisplay: 0, netProfit: 0, status: "일반" }],
+  });
+  const files = unzipSync(workbook);
+  const sheet = strFromU8(files["xl/worksheets/sheet1.xml"]);
+  const workbookXml = strFromU8(files["xl/workbook.xml"]);
+  assert.match(workbookXml, /내부 수익표/);
+  assert.match(sheet, /내 부  수 익 표/);
+  assert.match(sheet, /품목별 수익 내역/);
+  assert.match(sheet, /FLOOR\(F15\*G15,10\)/);
+  assert.match(sheet, /I15-K15-L15/);
+  assert.match(sheet, /orientation="landscape"/);
 });

@@ -210,7 +210,7 @@ function drawSummary(
 }
 
 async function canvasJpeg(canvas: HTMLCanvasElement) {
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.98));
   if (!blob) throw new Error("정산서 PDF 화면을 만들지 못했습니다.");
   return blob;
 }

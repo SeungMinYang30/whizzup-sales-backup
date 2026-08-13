@@ -81,7 +81,8 @@ export function calculateConsortiumSettlement(
     const defaults = quotationInternalCostDefaults(item.name, item.specification ?? "", item.quantity);
     const internalCostEnabled = typeof item.internalCostEnabled === "boolean" ? item.internalCostEnabled : defaults.enabled;
     const internalCostAmount = item.internalCostAmount === undefined ? defaults.amount : safeAmount(item.internalCostAmount);
-    const earning = kind === "content-substitution" && internalCostEnabled
+    const contentSubstitution = kind === "content-substitution" && internalCostEnabled;
+    const earning = contentSubstitution
       ? contentSubstitutionMargin(
           lineAmount,
           internalCostAmount,
@@ -89,7 +90,7 @@ export function calculateConsortiumSettlement(
         )
       : Math.floor(lineAmount * safeRate(item.earningRate) / 10) * 10;
     const consortiumRate = safeRate(item.consortiumRate);
-    const grossPayment = executionType === "컨소" && kind !== "content-substitution"
+    const grossPayment = executionType === "컨소" && !contentSubstitution
       ? Math.min(earning, Math.floor(lineAmount * consortiumRate / 10) * 10)
       : 0;
     return { name: item.name, lineAmount, consortiumRate, grossPayment };
