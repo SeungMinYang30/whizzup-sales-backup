@@ -16,7 +16,7 @@ import { AIRPASS_COMPANY, AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "../lib/airpass
 import { calculateConsortiumSettlement } from "../lib/consortium-settlement";
 import { createConsortiumSettlementWorkbook, type ConsortiumSettlementWorkbookInput } from "../lib/consortium-settlement-xlsx";
 import { createInternalProfitReportWorkbook } from "../lib/internal-profit-report-xlsx";
-import { createConsortiumSettlementPdf } from "./consortium-settlement-pdf";
+import { createConsortiumSettlementPdf, createInternalProfitReportPdf } from "./consortium-settlement-pdf";
 import { hasProcurementSignal, procurementNumbersFromText } from "../lib/procurement-product";
 import { createAuthoredQuotationPdf, quotationFileStem } from "./authored-quotation-pdf";
 import {
@@ -926,9 +926,10 @@ export default function QuotationManagementPage({
     setMessage("내부 수익 보고 내용을 복사했습니다.");
   }
 
-  function downloadInternalProfitExcel() {
-    if (!draft) return;
-    const bytes = createInternalProfitReportWorkbook({
+  function internalProfitExportInput(compactView = false) {
+    if (!draft) return null;
+    return {
+      compactView,
       organization: draft.organization,
       projectTitle: draft.projectTitle,
       quoteNumber: draft.quoteNumber || "저장 전",
@@ -942,17 +943,35 @@ export default function QuotationManagementPage({
       margin: numbers.margin,
       marginRate: numbers.marginRate,
       rows: internalReportRows.map((row) => ({ ...row, specification: row.specification ?? "" })),
-    });
+    };
+  }
+
+  function downloadInternalProfitExcel() {
+    const input = internalProfitExportInput(window.matchMedia("(max-width: 700px)").matches);
+    if (!input || !draft) return;
+    const bytes = createInternalProfitReportWorkbook(input);
     downloadBytes(bytes, `${safeFileName(draft.organization)}_${draft.quoteNumber || "견적"}_내부수익표.xlsx`);
     setMessage("PDF와 같은 구성의 내부 수익표 Excel을 만들었습니다.");
   }
 
-  function printInternalProfitReport() {
-    if (!draft) return;
-    document.body.classList.remove("quotation-printing", "settlement-printing");
-    document.body.classList.add("internal-profit-printing");
-    requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
-    setMessage("내부 수익표 인쇄 창을 열었습니다. 프린터 출력 또는 PDF로 저장할 수 있습니다.");
+  async function openInternalProfitPdf() {
+    const input = internalProfitExportInput();
+    if (!input) return;
+    const popup = window.open("", "_blank");
+    try {
+      const file = await createInternalProfitReportPdf(input);
+      const url = URL.createObjectURL(file);
+      if (popup) {
+        popup.location.replace(url);
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } else {
+        downloadBlob(file, file.name);
+        setMessage("팝업이 차단되어 내부 수익표 PDF를 내려받았습니다.");
+      }
+    } catch (error) {
+      popup?.close();
+      setMessage(error instanceof Error ? error.message : "내부 수익표 PDF를 만들지 못했습니다.");
+    }
   }
 
   const effectiveBudgets = useMemo(() => {
@@ -2607,7 +2626,7 @@ export default function QuotationManagementPage({
               <div><dl><dt>견적금액</dt><dd>{row.complimentary ? "무상" : `${won.format(row.amount)}원`}</dd><dt>예상 수익</dt><dd>{won.format(row.earning)}원</dd><dt>컨소 지급</dt><dd>{row.consortium ? `-${won.format(row.consortium)}원` : "0원"}</dd><dt>내부 원가</dt><dd>{row.internalCost ? `-${won.format(row.internalCost)}원` : "0원"}</dd></dl><p>{row.complimentary ? `기준 단가 ${won.format(row.unitPrice)}원은 보존되며 견적 합계와 수익 계산에서 제외됩니다.` : `${row.quantity}${row.unit} × ${won.format(row.unitPrice)}원 · 수익률 ${(row.earningRate * 100).toFixed(1)}%${draft.executionType === "컨소" ? ` · 컨소 지급률 ${(row.consortiumRate * 100).toFixed(1)}%` : ""}`}</p></div>
             </details>)}</div>
             {numbers.additionalConstructionCost > 0 && <p className="quote-internal-report-deduction">별도 추가 공사 원가 -{won.format(numbers.additionalConstructionCost)}원은 최종 총이익에 반영되었습니다.</p>}
-            <footer><button type="button" onClick={downloadInternalProfitExcel}>Excel 다운로드</button><button type="button" onClick={printInternalProfitReport}>인쇄·PDF</button><button className="primary" type="button" onClick={() => setInternalReportOpen(false)}>닫기</button></footer>
+            <footer><button type="button" onClick={downloadInternalProfitExcel}>Excel 다운로드</button><button type="button" onClick={() => void openInternalProfitPdf()}>PDF 보기·인쇄</button><button className="primary" type="button" onClick={() => setInternalReportOpen(false)}>닫기</button></footer>
           </section>
         </div>}
 

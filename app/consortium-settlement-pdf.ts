@@ -1,4 +1,5 @@
 import type { ConsortiumSettlementWorkbookInput } from "../lib/consortium-settlement-xlsx";
+import type { InternalProfitReportWorkbookInput } from "../lib/internal-profit-report-xlsx";
 import { formatQuotationItemNameForOutput } from "../lib/quotation-output-text";
 
 const PAGE_WIDTH = 1240;
@@ -275,4 +276,70 @@ export async function createConsortiumSettlementPdf(input: ConsortiumSettlementW
   }
   const blob = await jpegPagesToPdf(pages);
   return new File([blob], `${safeFileName(input.organization)}_${input.quoteNumber || "견적"}_정산서.pdf`, { type: "application/pdf" });
+}
+
+function drawProfitHeader(context: CanvasRenderingContext2D, input: InternalProfitReportWorkbookInput, logo: HTMLImageElement | null, page: number, pages: number) {
+  context.fillStyle = "#ffffff"; context.fillRect(0, 0, PAGE_WIDTH, PAGE_HEIGHT);
+  context.strokeStyle = "#3157e6"; context.lineWidth = 3; context.beginPath(); context.moveTo(72, 44); context.lineTo(1168, 44); context.stroke();
+  if (logo) context.drawImage(logo, 78, 62, 112, 64);
+  context.fillStyle = "#182842"; context.font = '800 34px "Malgun Gothic", sans-serif'; context.textAlign = "center"; context.fillText("내 부  수 익 표", PAGE_WIDTH / 2, 105);
+  context.fillStyle = "#73809a"; context.font = '600 13px "Malgun Gothic", sans-serif'; context.textAlign = "right"; context.fillText(`${page} / ${pages}`, 1168, 102);
+  let y = 148;
+  [["기관", input.organization, "견적번호", input.quoteNumber || "저장 전"], ["사업·견적명", input.projectTitle || "미입력", "작성일", input.quoteDate], ["협업 구분", input.executionType, "컨소 업체", input.consortiumCompany || "-"]].forEach((row) => {
+    cell(context,72,y,130,38,row[0],{fill:"#f4f7fc",color:"#52617d",align:"center",bold:true,size:13}); cell(context,202,y,420,38,row[1],{size:14});
+    cell(context,622,y,130,38,row[2],{fill:"#f4f7fc",color:"#52617d",align:"center",bold:true,size:13}); cell(context,752,y,416,38,row[3],{size:14}); y += 38;
+  });
+  return y + 20;
+}
+
+function drawProfitSummary(context: CanvasRenderingContext2D, input: InternalProfitReportWorkbookInput, y: number) {
+  const cards: Array<[string,string,string?]> = [
+    ["견적금액",`${won.format(input.total)}원`], ["예상 수익",`${won.format(input.earning)}원`], ["컨소 지급",input.consortium ? `-${won.format(input.consortium)}원` : "0원","cost"],
+    ["내부 원가",input.internalCost ? `-${won.format(input.internalCost)}원` : "0원","cost"], ["최종 총이익",`${won.format(input.margin)}원`,"result"], ["마진율",`${(input.marginRate*100).toFixed(1)}%`],
+  ];
+  cards.forEach(([label,value,tone],index) => {
+    const width = 174; const x = 72 + index * 182;
+    context.fillStyle = tone === "result" ? "#eaf1ff" : tone === "cost" ? "#fff5e8" : "#f4f7fc"; context.fillRect(x,y,width,82);
+    context.strokeStyle = tone === "result" ? "#3157e6" : "#cbd6e7"; context.strokeRect(x,y,width,82);
+    context.fillStyle = "#73809a"; context.font = '700 13px "Malgun Gothic", sans-serif'; context.textAlign = "left"; context.fillText(label,x+12,y+23);
+    context.fillStyle = tone === "cost" ? "#c24b3f" : tone === "result" ? "#2254d1" : "#182842"; context.font = '800 18px "Malgun Gothic", sans-serif'; context.fillText(fitText(context,value,width-24),x+12,y+57);
+  });
+  return y + 104;
+}
+
+function drawProfitItems(context: CanvasRenderingContext2D, input: InternalProfitReportWorkbookInput, rows: InternalProfitReportWorkbookInput["rows"], startY: number) {
+  let y = sectionRow(context,startY,"품목별 수익 내역");
+  rows.forEach((item) => {
+    const label = item.specification ? `${item.name}\n${item.specification}` : item.name;
+    cell(context,72,y,54,58,String(item.number),{align:"center",bold:true,size:14});
+    cell(context,126,y,420,58,label,{bold:true,size:13});
+    cell(context,546,y,180,58,`${won.format(item.amount)}원`,{align:"right",size:14});
+    cell(context,726,y,180,58,`${won.format(item.earning)}원`,{align:"right",size:14});
+    cell(context,906,y,262,58,`${won.format(item.netProfit)}원`,{fill:"#eaf1ff",color:"#2254d1",align:"right",bold:true,size:16});
+    y += 58;
+  });
+  return y;
+}
+
+export async function createInternalProfitReportPdf(input: InternalProfitReportWorkbookInput) {
+  const logo = await loadImage("/whizzup-logo.png");
+  const chunks: InternalProfitReportWorkbookInput["rows"][] = [];
+  for (let index = 0; index < input.rows.length; index += 10) chunks.push(input.rows.slice(index,index+10));
+  if (!chunks.length) chunks.push([]);
+  const pages: Array<{ blob: Blob; width: number; height: number }> = [];
+  for (let pageIndex = 0; pageIndex < chunks.length; pageIndex += 1) {
+    const canvas = document.createElement("canvas"); canvas.width = PAGE_WIDTH * RENDER_SCALE; canvas.height = PAGE_HEIGHT * RENDER_SCALE;
+    const context = canvas.getContext("2d",{alpha:false}); if (!context) throw new Error("내부 수익표 PDF 화면을 준비하지 못했습니다."); context.scale(RENDER_SCALE,RENDER_SCALE);
+    let y = drawProfitHeader(context,input,logo,pageIndex+1,chunks.length);
+    if (pageIndex === 0) y = drawProfitSummary(context,input,y);
+    y = drawProfitItems(context,input,chunks[pageIndex],y);
+    if (pageIndex === chunks.length-1) {
+      cell(context,72,y+18,700,50,"컨소·내부 비용을 반영한 최종 예상 수익",{fill:"#eaf1ff",color:"#182842",bold:true,size:17});
+      cell(context,772,y+18,396,50,`${won.format(input.margin)}원`,{fill:"#eaf1ff",color:"#2254d1",align:"right",bold:true,size:24});
+    }
+    context.fillStyle="#73809a"; context.font='600 12px "Malgun Gothic", sans-serif'; context.textAlign="left"; context.fillText("본 자료는 내부 검토용이며 외부 견적서에는 포함되지 않습니다.",72,1690);
+    pages.push({blob:await canvasJpeg(canvas),width:canvas.width,height:canvas.height}); canvas.width=1; canvas.height=1;
+  }
+  const blob=await jpegPagesToPdf(pages);
+  return new File([blob],`${safeFileName(input.organization)}_${input.quoteNumber || "견적"}_내부수익표.pdf`,{type:"application/pdf"});
 }

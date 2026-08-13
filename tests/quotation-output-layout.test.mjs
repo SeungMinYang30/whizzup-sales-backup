@@ -56,6 +56,7 @@ test("catalog sticky controls and settlement sidebar match the shared layouts", 
   assert.match(styles, /\.quotation-settlement-adjustments article\s*\{\s*grid-template-columns:\s*1fr/);
   assert.match(styles, /\.quotation-output-spacing\s*\{[\s\S]*?flex-direction:\s*column/);
   assert.match(page, /quotation-output-menu-settlement/);
+  assert.match(styles, /quotation-output-menu-settlement \.quotation-output-menu-panel>button\{[^}]*white-space:normal;[^}]*word-break:keep-all/);
   assert.match(page, /정산서 출력·다운로드[\s\S]*?정산서 PDF 보기·인쇄[\s\S]*?정산서 PDF 다운로드[\s\S]*?정산서 Excel 다운로드/);
   assert.match(page, /printPortalReady && !internalReportOpen/);
   assert.match(styles, /body\.internal-profit-printing>\.quotation-print-portal\{display:none!important/);

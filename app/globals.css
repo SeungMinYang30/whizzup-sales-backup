@@ -14046,7 +14046,7 @@ button:is(
 .quotation-money-input b{flex:0 0 auto;white-space:nowrap}
 .quotation-item-card-summary .quotation-money-input{width:100%;max-width:none;flex:1 1 130px}
 .quotation-item-card-summary label>div>strong{flex:0 0 auto}
-.quotation-output-menu-settlement .quotation-output-menu-panel>button{border:1px solid #d4deed;border-radius:8px;background:#fff;color:#3157e6;font-size:11px;font-weight:850;cursor:pointer}
+.quotation-output-menu-settlement .quotation-output-menu-panel>button{box-sizing:border-box;min-width:0;padding:9px 8px;border:1px solid #d4deed;border-radius:8px;background:#fff;color:#3157e6;font-size:11px;font-weight:850;line-height:1.35;white-space:normal;word-break:keep-all;overflow-wrap:anywhere;cursor:pointer}
 .quotation-output-menu-settlement .quotation-output-menu-panel>button.primary{border-color:#3157e6;background:#3157e6;color:#fff}
 .quotation-output-menu-settlement .quotation-output-menu-panel>button:disabled{cursor:not-allowed;opacity:.45}
 

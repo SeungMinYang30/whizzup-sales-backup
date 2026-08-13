@@ -138,7 +138,23 @@ test("내부 수익표 Excel은 PDF형 요약과 품목별 수식을 포함하�
   assert.match(sheet, /FLOOR\(F15\*G15,10\)/);
   assert.match(sheet, /I15-K15-L15/);
   assert.match(sheet, /orientation="landscape"/);
-  assert.ok(sheet.indexOf("<autoFilter") < sheet.indexOf("<mergeCells"));
-  assert.match(sheet, /<col min="13" max="13" width="22"/);
+  assert.doesNotMatch(sheet, /<autoFilter/);
+  assert.match(sheet, /<mergeCell ref="A12:N12"/);
+  assert.match(sheet, /zoomScale="100"/);
+  assert.match(sheet, /<col min="13" max="13" width="18"/);
   assert.doesNotMatch(styles, /#,##0&quot;원&quot;/);
+});
+
+test("모바일 내부 수익표 Excel은 화면 이동이 쉬운 7열 간편 레이아웃을 만든다", () => {
+  const workbook = createInternalProfitReportWorkbook({
+    compactView: true, organization: "모바일 기관", projectTitle: "가상현실 스포츠실", quoteNumber: "WZ-MOBILE", quoteDate: "2026-08-13", executionType: "직영", consortiumCompany: "", total: 50_000_000, earning: 15_000_000, consortium: 0, internalCost: 300_000, margin: 14_700_000, marginRate: 0.294,
+    rows: [{ number: 1, name: "아이핏 슬림형", specification: "멀티미디어학습장치", quantity: 1, unit: "대", unitPrice: 19_500_000, complimentary: false, amount: 19_500_000, baseRate: 0.3, baseEarning: 5_850_000, earning: 5_850_000, consortiumRate: 0, consortium: 0, internalCostDisplay: 300_000, netProfit: 5_550_000, status: "내부 비용 반영" }],
+  });
+  const files = unzipSync(workbook);
+  const sheet = strFromU8(files["xl/worksheets/sheet1.xml"]);
+  const workbookXml = strFromU8(files["xl/workbook.xml"]);
+  assert.match(sheet, /dimension ref="A1:G/);
+  assert.match(sheet, /품목별 수익 내역 · 모바일 간편 보기/);
+  assert.match(sheet, /컨소·내부비용/);
+  assert.match(workbookXml, /\$A\$1:\$G\$/);
 });
