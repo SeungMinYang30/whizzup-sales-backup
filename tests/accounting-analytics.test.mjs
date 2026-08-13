@@ -232,6 +232,21 @@ test("공사 마진 소급 적용 뒤에도 당기 수금액은 실제 입금 �
   );
 });
 
+test("통계 요약 카드는 각 카드 집계 조건에 맞는 기관만 상세 표시한다", () => {
+  const analytics = source("../app/analytics-page.tsx");
+
+  assert.match(analytics, /const periodReceipts = useMemo/);
+  assert.match(analytics, /function showAwardMetricDrilldown/);
+  assert.match(analytics, /function showReceiptDrilldown/);
+  assert.match(analytics, /수주액 카드에 합산된 납품 완료 기관만 표시합니다/);
+  assert.match(analytics, /직접 공급 수금대상 카드에 합산된 납품 완료 기관만 표시합니다/);
+  assert.match(analytics, /협력사 예상 수수료 카드에 합산된 납품 완료 기관만 표시합니다/);
+  assert.match(analytics, /직접 공급 예상 마진 카드에 합산된 납품 완료 기관만 표시합니다/);
+  assert.match(analytics, /공사 마진 카드에 합산된 납품 완료 기관만 표시합니다/);
+  assert.match(analytics, /정산 후 예상수익 카드에 합산된 납품 완료 기관만 표시합니다/);
+  assert.match(analytics, /같은 기관의 입금액은 합산합니다/);
+});
+
 test("수금액 상위 거래처 표는 그룹 헤더와 무관하게 일곱 열 너비를 고정한다", () => {
   const accounting = source("../app/accounting-page.tsx");
   const styles = source("../app/globals.css");

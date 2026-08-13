@@ -447,6 +447,10 @@ export default function AnalyticsPage({
     () => products.filter((row) => row.activityDate.startsWith(periodPrefix)),
     [periodPrefix, products],
   );
+  const periodReceipts = useMemo(
+    () => receipts.filter((row) => row.collectionDate.startsWith(periodPrefix)),
+    [periodPrefix, receipts],
+  );
   const confirmedAwards = useMemo(
     () => periodAwards.filter((row) => row.confirmed),
     [periodAwards],
@@ -659,6 +663,61 @@ export default function AnalyticsPage({
           right.activityDate.localeCompare(left.activityDate),
         )
         .map((row) => awardDetailRow(row)),
+    });
+  }
+
+  function showAwardMetricDrilldown(
+    title: string,
+    description: string,
+    rows: AnalyticsAward[],
+    amountFor: (row: AnalyticsAward) => number,
+    detailAmountLabel: string,
+  ) {
+    openDrilldown({
+      title,
+      description,
+      kind: "award",
+      scope: { detailAmountLabel },
+      rows: [...rows]
+        .sort((left, right) =>
+          right.activityDate.localeCompare(left.activityDate),
+        )
+        .map((row) => awardDetailRow(row, amountFor(row))),
+    });
+  }
+
+  function showReceiptDrilldown() {
+    const grouped = new Map<string, AnalyticsDetailRow>();
+    periodReceipts.forEach((receipt) => {
+      const current = grouped.get(receipt.businessKey);
+      if (current) {
+        current.amount += receipt.amount;
+        if (receipt.collectionDate > current.activityDate) {
+          current.activityDate = receipt.collectionDate;
+        }
+        return;
+      }
+      grouped.set(receipt.businessKey, {
+        key: `receipt-${receipt.businessKey}`,
+        activityId: receipt.activityId,
+        businessKey: receipt.businessKey,
+        businessRound: receipt.businessRound,
+        organization: receipt.organization,
+        activityDate: receipt.collectionDate,
+        primaryMeta: receipt.region || "지역 미등록",
+        secondaryMeta: receipt.budgetType || "예산 미분류",
+        amount: receipt.amount,
+      });
+    });
+    openDrilldown({
+      title: "당기 수금 기관",
+      description:
+        "선택 기간에 실제 입금이 등록된 기관만 표시하며, 같은 기관의 입금액은 합산합니다.",
+      kind: "award",
+      scope: { detailAmountLabel: "당기 수금액" },
+      rows: [...grouped.values()].sort((left, right) =>
+        right.activityDate.localeCompare(left.activityDate),
+      ),
     });
   }
 
@@ -1002,25 +1061,53 @@ export default function AnalyticsPage({
       )}
 
       <div className="analytics-summary-grid">
-        <button type="button" className="orders" onClick={onOpenAwards}>
+        <button
+          type="button"
+          className="orders"
+          onClick={() => showAwardMetricDrilldown(
+            "선택 기간 수주 기관",
+            "선택 기간에 등록된 위즈업 수주 기관만 표시합니다.",
+            periodAwards,
+            (row) => row.confirmedAmount,
+            "계약·납품금액",
+          )}
+        >
           <span>수주 건수</span>
           <strong>{periodAwards.length.toLocaleString()}건</strong>
           <small>선택 기간의 수주 흐름입니다.</small>
         </button>
-        <button type="button" className="sales" onClick={onOpenAwards}>
+        <button
+          type="button"
+          className="sales"
+          onClick={() => showAwardMetricDrilldown(
+            "납품 완료 수주 기관",
+            "수주액 카드에 합산된 납품 완료 기관만 표시합니다.",
+            confirmedAwards,
+            (row) => row.confirmedAmount,
+            "수주액",
+          )}
+        >
           <span>수주액</span>
           <strong>{formatMoney(totals.amount)}</strong>
           <small>납품 완료 처리된 계약금액 합계입니다.</small>
         </button>
-        <button type="button" className="collection" onClick={onOpenCollectionAnalysis}>
+        <button type="button" className="collection" onClick={showReceiptDrilldown}>
           <span>당기 수금액</span>
           <strong>{formatMoney(actualReceiptTotal)}</strong>
-          <small>입금일 기준 · 누르면 수금 분석으로 이동합니다.</small>
+          <small>입금일 기준 · 누르면 실제 입금 기관을 표시합니다.</small>
         </button>
         <button
           type="button"
           className="direct-sales"
-          onClick={onOpenCollectionAnalysis}
+          onClick={() => showAwardMetricDrilldown(
+            "직접 공급 수금대상 기관",
+            "직접 공급 수금대상 카드에 합산된 납품 완료 기관만 표시합니다.",
+            confirmedAwards.filter(
+              (row) => (row.expectedDirectSalesCollection ?? 0) !== 0,
+            ),
+            (row) => row.expectedDirectSalesCollection ?? 0,
+            "직접 공급 수금대상",
+          )}
         >
           <span>직접 공급 수금대상</span>
           <strong>{formatMoney(totals.directSalesCollection)}</strong>
@@ -1029,7 +1116,15 @@ export default function AnalyticsPage({
         <button
           type="button"
           className="commission"
-          onClick={() => scrollTo("product")}
+          onClick={() => showAwardMetricDrilldown(
+            "협력사 예상 수수료 기관",
+            "협력사 예상 수수료 카드에 합산된 납품 완료 기관만 표시합니다.",
+            confirmedAwards.filter(
+              (row) => (row.expectedPartnerCommission ?? row.expectedCommission) !== 0,
+            ),
+            (row) => row.expectedPartnerCommission ?? row.expectedCommission,
+            "협력사 예상 수수료",
+          )}
         >
           <span>협력사 예상 수수료</span>
           <strong>{formatMoney(totals.commission)}</strong>
@@ -1038,7 +1133,13 @@ export default function AnalyticsPage({
         <button
           type="button"
           className="direct"
-          onClick={() => scrollTo("product")}
+          onClick={() => showAwardMetricDrilldown(
+            "직접 공급 예상 마진 기관",
+            "직접 공급 예상 마진 카드에 합산된 납품 완료 기관만 표시합니다.",
+            confirmedAwards.filter((row) => (row.expectedDirectMargin ?? 0) !== 0),
+            (row) => row.expectedDirectMargin ?? 0,
+            "직접 공급 예상 마진",
+          )}
         >
           <span>직접 공급 예상 마진</span>
           <strong>{formatMoney(totals.directMargin)}</strong>
@@ -1049,7 +1150,15 @@ export default function AnalyticsPage({
           className={`construction ${
             totals.constructionMargin < 0 ? "loss" : ""
           }`}
-          onClick={onOpenAwards}
+          onClick={() => showAwardMetricDrilldown(
+            "공사 마진 기관",
+            "공사 마진 카드에 합산된 납품 완료 기관만 표시합니다.",
+            confirmedAwards.filter(
+              (row) => (row.expectedConstructionMargin ?? 0) !== 0,
+            ),
+            (row) => row.expectedConstructionMargin ?? 0,
+            "공사 마진",
+          )}
         >
           <span>공사 마진</span>
           <strong>{formatMoney(totals.constructionMargin)}</strong>
@@ -1058,13 +1167,18 @@ export default function AnalyticsPage({
         <button
           type="button"
           className="net"
-          onClick={() => setShowProfitGuide((value) => !value)}
-          aria-expanded={showProfitGuide}
+          onClick={() => showAwardMetricDrilldown(
+            "정산 후 예상수익 기관",
+            "정산 후 예상수익 카드에 합산된 납품 완료 기관만 표시합니다.",
+            confirmedAwards.filter((row) => row.netRevenue !== 0),
+            (row) => row.netRevenue,
+            "정산 후 예상수익",
+          )}
         >
           <span>정산 후 예상수익</span>
           <strong>{formatMoney(totals.margin)}</strong>
           <small>제품 수익과 공사 마진에서 컨소 정산액을 뺀 값입니다.</small>
-          <em>{showProfitGuide ? "계산 기준 닫기" : "계산 기준 보기"}</em>
+          <em>관련 기관 보기</em>
         </button>
       </div>
 
