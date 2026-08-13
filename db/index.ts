@@ -402,6 +402,14 @@ export function normalizeSqlForPostgres(query: string) {
       "(CURRENT_TIMESTAMP - INTERVAL '35 seconds')",
     )
     .replace(
+      /datetime\(\s*'now'\s*,\s*'([+-]?\d+)\s+(second|minute|hour|day)s?'\s*\)/gi,
+      "(CURRENT_TIMESTAMP + INTERVAL '$1 $2')",
+    )
+    .replace(
+      /datetime\(\s*'now'\s*,\s*(\?)\s*\)/gi,
+      "(CURRENT_TIMESTAMP + CAST(? AS interval))",
+    )
+    .replace(
       /date\(\s*'now'\s*,\s*'-7 day'\s*\)/gi,
       "(CURRENT_DATE - INTERVAL '7 days')::date",
     )
@@ -422,6 +430,7 @@ export function normalizeSqlForPostgres(query: string) {
       /instr\(\s*lower\(([^)]+)\)\s*,\s*lower\((\?)\)\s*\)/gi,
       "POSITION(lower($2) IN lower($1))",
     )
+    .replace(/\bINSTR\s*\(/gi, "STRPOS(")
     .replace(
       /\)\)\s+END AS canonical_budgets_json/gi,
       "))::text END AS canonical_budgets_json",
