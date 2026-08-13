@@ -42,6 +42,21 @@ type CutoverReadiness = {
   confirmation: string;
 };
 
+type BusinessRoundRepairCandidate = {
+  id: number;
+  organization: string;
+  activityDate: string;
+  topic: string;
+  originalBusinessRound: number;
+  targetBusinessRound: number;
+};
+
+type BusinessRoundRepairPreview = {
+  repairKey: string;
+  candidates: BusinessRoundRepairCandidate[];
+  applied?: number;
+};
+
 const tableLabels: Record<string, string> = {
   members: "구성원·권한",
   activities: "기관 활동 기록",
@@ -176,6 +191,73 @@ export default function DataBackupPage({
   const [cutover, setCutover] = useState<CutoverReadiness | null>(null);
   const [cutoverError, setCutoverError] = useState("");
   const [cutoverConfirmation, setCutoverConfirmation] = useState("");
+  const [roundRepair, setRoundRepair] =
+    useState<BusinessRoundRepairPreview | null>(null);
+  const [roundRepairBusy, setRoundRepairBusy] = useState<"preview" | "apply" | "">("");
+  const [roundRepairError, setRoundRepairError] = useState("");
+
+  async function previewRoundRepair() {
+    try {
+      setRoundRepairBusy("preview");
+      setRoundRepairError("");
+      const response = await fetch("/api/data-control/business-round-rollover", {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as BusinessRoundRepairPreview & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || "사업 차수 정리 대상을 확인하지 못했습니다.");
+      }
+      setRoundRepair(payload);
+    } catch (error) {
+      setRoundRepairError(
+        error instanceof Error
+          ? error.message
+          : "사업 차수 정리 대상을 확인하지 못했습니다.",
+      );
+    } finally {
+      setRoundRepairBusy("");
+    }
+  }
+
+  async function applyRoundRepair() {
+    if (!roundRepair?.candidates.length) return;
+    if (
+      !window.confirm(
+        `${roundRepair.candidates.length}건을 백업한 뒤 다음 사업 차수로 정리할까요?`,
+      )
+    ) {
+      return;
+    }
+    try {
+      setRoundRepairBusy("apply");
+      setRoundRepairError("");
+      const response = await fetch("/api/data-control/business-round-rollover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "APPLY_BUSINESS_ROUND_ROLLOVER" }),
+      });
+      const payload = (await response.json()) as BusinessRoundRepairPreview & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || "사업 차수 정리를 적용하지 못했습니다.");
+      }
+      setRoundRepair(payload);
+      notify(`사업 차수 ${payload.applied ?? 0}건을 백업 후 정리했습니다.`);
+      await onDataChanged();
+      await previewRoundRepair();
+    } catch (error) {
+      setRoundRepairError(
+        error instanceof Error
+          ? error.message
+          : "사업 차수 정리를 적용하지 못했습니다.",
+      );
+    } finally {
+      setRoundRepairBusy("");
+    }
+  }
 
   useEffect(() => {
     if (!isPrimaryOwner || !canManageBackup) return;
@@ -508,6 +590,50 @@ export default function DataBackupPage({
     <section className="backup-workspace">
       {sectionTabs}
     <section className="backup-layout">
+      {isPrimaryOwner && canManageBackup && (
+        <article className="panel backup-cutover-card">
+          <div className="backup-restore-heading">
+            <div>
+              <span className="section-kicker">BUSINESS ROUND SAFETY REPAIR</span>
+              <h3>완료 사업 이후 기록 차수 정리</h3>
+              <p>
+                납품 완료 뒤 새 문의·방문·예산·견적 기록이 같은 차수에 남은 경우만
+                찾아 백업 후 다음 진행 차수로 옮깁니다.
+              </p>
+            </div>
+            <span className="backup-owner-badge">운영자 본인 전용</span>
+          </div>
+          <div className="backup-cutover-actions">
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={Boolean(roundRepairBusy)}
+              onClick={() => void previewRoundRepair()}
+            >
+              {roundRepairBusy === "preview" ? "대상 확인 중…" : "정리 대상 미리보기"}
+            </button>
+            <button
+              type="button"
+              className="setup-primary"
+              disabled={Boolean(roundRepairBusy) || !roundRepair?.candidates.length}
+              onClick={() => void applyRoundRepair()}
+            >
+              {roundRepairBusy === "apply"
+                ? "백업·적용 중…"
+                : `${roundRepair?.candidates.length ?? 0}건 백업 후 적용`}
+            </button>
+          </div>
+          {roundRepair && (
+            <p className="backup-security-note">
+              현재 정리 대상 {roundRepair.candidates.length}건
+              {roundRepair.candidates.length > 0
+                ? ` · ${Array.from(new Set(roundRepair.candidates.map((item) => item.organization))).slice(0, 5).join(", ")}`
+                : " · 추가로 정리할 기록이 없습니다."}
+            </p>
+          )}
+          {roundRepairError && <p className="form-error">{roundRepairError}</p>}
+        </article>
+      )}
       <article className="panel backup-hero">
         <div>
           <span className="section-kicker">DATA SAFETY</span>
