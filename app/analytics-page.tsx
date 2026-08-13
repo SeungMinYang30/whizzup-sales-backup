@@ -452,12 +452,12 @@ export default function AnalyticsPage({
     [periodAwards],
   );
   const executionTrend = useMemo(() => buildExecutionTrend(
-    trendExecutionFilter === "all"
+    trendFilter === "all"
       ? awards
-      : awards.filter((row) => row.executionType === (trendExecutionFilter === "direct" ? "직영" : "컨소")),
+      : awards.filter((row) => row.executionType === (trendFilter === "direct" ? "직영" : "컨소")),
     selectedYear,
     trendMetric,
-  ), [awards, selectedYear, trendExecutionFilter, trendMetric]);
+  ), [awards, selectedYear, trendFilter, trendMetric]);
   const executionTrendMax = Math.max(
     1,
     ...executionTrend.months.map(
