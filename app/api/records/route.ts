@@ -839,7 +839,7 @@ export async function PUT(request: Request) {
                 budget_type, budget_amount, budget_original_name,
                 budget_group_id, budget_match_status, budget_match_method,
                 budget_request_id, budget_kind, budget_amount_mode,
-                budget_amount_override, budgets_json,
+                budget_amount_override, budgets_json
          FROM activities WHERE id = ?`,
       )
       .bind(id)

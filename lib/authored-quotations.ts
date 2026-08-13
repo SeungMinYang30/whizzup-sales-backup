@@ -612,8 +612,11 @@ export async function saveAuthoredQuotation(value: Record<string, unknown>, memb
     const rootNumber = String(root?.quote_number || source.quote_number || quotationNumber()).replace(/-수정\d+$/u, "");
     quoteNumber = `${rootNumber}-수정${revisionNumber}`;
   }
-  const result = await d1.prepare(`INSERT INTO authored_quotations (quote_number, revision_root_id, revision_parent_id, revision_number, organization, business_round, project_title, quote_date, valid_until, status, execution_type, consortium_company, consortium_rate, discount_amount, extra_amount, additional_internal_construction_cost, subtotal_amount, supply_amount, tax_amount, total_amount, expected_earning, consortium_payment, margin_amount, margin_rate, include_stamp, memo, items_json, budgets_json, settlement_adjustments_json, created_by, created_by_name, updated_by, updated_by_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(quoteNumber, revisionRootId, revisionParentId, revisionNumber, ...params.slice(0, 25), member.id, memberName, member.id, memberName).run();
-  const insertedId = Number(result.meta.last_row_id);
+  const result = await d1.prepare(`INSERT INTO authored_quotations (quote_number, revision_root_id, revision_parent_id, revision_number, organization, business_round, project_title, quote_date, valid_until, status, execution_type, consortium_company, consortium_rate, discount_amount, extra_amount, additional_internal_construction_cost, subtotal_amount, supply_amount, tax_amount, total_amount, expected_earning, consortium_payment, margin_amount, margin_rate, include_stamp, memo, items_json, budgets_json, settlement_adjustments_json, created_by, created_by_name, updated_by, updated_by_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`).bind(quoteNumber, revisionRootId, revisionParentId, revisionNumber, ...params.slice(0, 25), member.id, memberName, member.id, memberName).run();
+  const insertedId = Number(result.results[0]?.id);
+  if (!Number.isSafeInteger(insertedId) || insertedId < 1) {
+    throw new Error("저장된 견적서 번호를 확인하지 못했습니다.");
+  }
   if (!revisionRootId) {
     revisionRootId = insertedId;
     await d1.prepare("UPDATE authored_quotations SET revision_root_id=? WHERE id=?").bind(insertedId, insertedId).run();

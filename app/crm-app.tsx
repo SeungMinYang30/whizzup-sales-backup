@@ -9850,7 +9850,12 @@ export default function CrmApp({
         budgetIndex === 0 &&
         normalizeBudgetKind(selection.budgetKind) === "self" &&
         normalizeBudgetAmountMode(selection.budgetAmountMode) === "quote_auto";
+      const budgetSelectionChanged = selection.budgetGroupId
+        ? Number(selection.budgetGroupId) !== Number(existing.budgetGroupId)
+        : String(selection.budgetType ?? "").trim() !==
+          String(existing.budgetType ?? "").trim();
       const preservesExistingManualAmount =
+        !budgetSelectionChanged &&
         hasExplicitBudgetAmount(existing.budgetAmount) &&
         existing.budgetAmountSource !== "auto";
       const defaultAmount =
@@ -9867,9 +9872,11 @@ export default function CrmApp({
                 `${quoteSummary?.contractAmountReference ?? 0}원`,
               )
             : ""
-        : preservesExistingManualAmount
-          ? existing.budgetAmount
-          : defaultAmount || existing.budgetAmount;
+        : budgetSelectionChanged
+          ? defaultAmount
+          : preservesExistingManualAmount
+            ? existing.budgetAmount
+            : defaultAmount || existing.budgetAmount;
       budgets[budgetIndex] = {
         ...existing,
         ...selection,
@@ -10549,7 +10556,12 @@ export default function CrmApp({
         budgetIndex === 0 &&
         normalizeBudgetKind(selection.budgetKind) === "self" &&
         normalizeBudgetAmountMode(selection.budgetAmountMode) === "quote_auto";
+      const budgetSelectionChanged = selection.budgetGroupId
+        ? Number(selection.budgetGroupId) !== Number(existing.budgetGroupId)
+        : String(selection.budgetType ?? "").trim() !==
+          String(existing.budgetType ?? "").trim();
       const preservesExistingManualAmount =
+        !budgetSelectionChanged &&
         hasExplicitBudgetAmount(existing.budgetAmount) &&
         existing.budgetAmountSource !== "auto";
       const defaultAmount =
@@ -10564,9 +10576,11 @@ export default function CrmApp({
           : quoteAvailable
             ? formatMoneyInput(`${quoteAmount}원`)
             : ""
-        : preservesExistingManualAmount
-          ? existing.budgetAmount
-          : defaultAmount || existing.budgetAmount;
+        : budgetSelectionChanged
+          ? defaultAmount
+          : preservesExistingManualAmount
+            ? existing.budgetAmount
+            : defaultAmount || existing.budgetAmount;
       budgets[budgetIndex] = {
         ...existing,
         ...selection,
