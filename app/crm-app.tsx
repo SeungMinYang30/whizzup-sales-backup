@@ -20635,8 +20635,8 @@ export default function CrmApp({
                   canEdit={canManageRecords}
                   availableBudgets={detailLatest?.budgets ?? []}
                   onLoaded={() => void loadEquipmentQuoteSummaries()}
-                  onOpen={(id) => {
-                    window.sessionStorage.setItem("whizzup.quotationTarget", JSON.stringify({ id, mode: "edit" }));
+                  onOpen={(quotation) => {
+                    window.sessionStorage.setItem("whizzup.quotationTarget", JSON.stringify({ id: quotation.id, mode: "edit", quotation }));
                     setDetailOrganization(null);
                     void selectView("quotations");
                   }}

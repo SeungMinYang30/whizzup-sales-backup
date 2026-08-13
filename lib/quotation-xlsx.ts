@@ -1,6 +1,7 @@
 import { zipSync } from "fflate";
 import { airpassEquipmentKitOutputLines, airpassEquipmentKitTotal, type AirpassEquipmentKit } from "./airpass-equipment-kit";
 import { AIRPASS_COMPANY, AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "./airpass-company";
+import { formatQuotationItemNameForOutput } from "./quotation-output-text";
 
 export type QuotationLine = {
   name: string;
@@ -140,10 +141,11 @@ function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
     const fee = appliesProcurementFee(line) ? Math.floor(amount * Math.max(0, line.procurementFeeRate ?? 0.0054) / 10) * 10 : 0;
     const specification = line.specification || "-";
     const procurement = procurementLabel(line);
-    const rowHeight = specification.length > 42 || procurement.length > 18 ? 43 : 34;
+    const outputName = formatQuotationItemNameForOutput(line.name);
+    const rowHeight = outputName.includes("\n") || specification.length > 42 || procurement.length > 18 ? 43 : 34;
     return `<row r="${row}" ht="${rowHeight}" customHeight="1">
       ${numeric(`A${row}`, index + 1, 7)}
-      ${inline(`B${row}`, line.name, 8)}
+      ${inline(`B${row}`, outputName, 8)}
       ${inline(`C${row}`, "", 8)}
       ${inline(`D${row}`, specification, 8)}
       ${inline(`E${row}`, procurement, 7)}

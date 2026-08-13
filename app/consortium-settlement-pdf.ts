@@ -1,4 +1,5 @@
 import type { ConsortiumSettlementWorkbookInput } from "../lib/consortium-settlement-xlsx";
+import { formatQuotationItemNameForOutput } from "../lib/quotation-output-text";
 
 const PAGE_WIDTH = 1240;
 const PAGE_HEIGHT = 1754;
@@ -63,7 +64,10 @@ function cell(
   context.textBaseline = "middle";
   const padding = 10;
   const tx = options.align === "right" ? x + width - padding : options.align === "center" ? x + width / 2 : x + padding;
-  context.fillText(fitText(context, value, width - padding * 2), tx, y + height / 2);
+  const lines = String(value ?? "").split(/\r?\n/u).slice(0, 2);
+  const lineHeight = (options.size ?? 15) + 4;
+  const firstY = y + height / 2 - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((line, index) => context.fillText(fitText(context, line, width - padding * 2), tx, firstY + index * lineHeight));
 }
 
 function sectionRow(context: CanvasRenderingContext2D, y: number, title: string) {
@@ -77,7 +81,7 @@ function buildRows(input: ConsortiumSettlementWorkbookInput): PdfRow[] {
     { kind: "header", values: ["No", "품목", "계약 구분", "정산 기준금액", "지급률", "기본 정산액"] },
     ...input.items.map((item, index) => ({
       kind: "item" as const,
-      values: [String(index + 1), item.name, item.contractLabel, `${won.format(item.lineAmount)}원`, `${(item.consortiumRate * 100).toFixed(1)}%`, `${won.format(item.grossPayment)}원`],
+      values: [String(index + 1), formatQuotationItemNameForOutput(item.name), item.contractLabel, `${won.format(item.lineAmount)}원`, `${(item.consortiumRate * 100).toFixed(1)}%`, `${won.format(item.grossPayment)}원`],
     })),
     { kind: "section", values: ["별도 비용 처리 내역"] },
     { kind: "header", values: ["No", "비용 항목", "수량", "단가", "합계", "비용 처리 방식"] },
@@ -144,7 +148,7 @@ function drawRows(context: CanvasRenderingContext2D, rows: PdfRow[], startY: num
   const widths = [58, 320, 165, 205, 145, 203];
   for (const row of rows) {
     if (row.kind === "section") { y = sectionRow(context, y + 8, row.values[0]); continue; }
-    const height = row.kind === "header" ? 36 : 39;
+    const height = row.kind === "header" ? 36 : row.kind === "item" && row.values[1].includes("\n") ? 52 : 39;
     let x = 72;
     row.values.forEach((value, index) => {
       const header = row.kind === "header";

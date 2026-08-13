@@ -13013,9 +13013,8 @@ button:is(
 
 /* Product workspace navigation keeps quotations, catalog data and vendors reachable at scale. */
 .product-workspace-tabs {
-  position: sticky;
-  top: 0;
-  z-index: 24;
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
@@ -13504,6 +13503,39 @@ button:is(
 @media(max-width:1050px){.quotation-item-internal-cost{grid-template-columns:minmax(190px,.75fr) minmax(0,1.25fr)}.quotation-cost-bearer{grid-column:1/-1}.quotation-item-internal-cost>small{grid-column:1/-1}}
 @media(max-width:700px){.quotation-item-internal-cost{grid-template-columns:1fr}.quotation-cost-bearer,.quotation-item-internal-cost>small{grid-column:auto}.quotation-yoga-mat-cost{align-items:flex-start;flex-direction:column}.quotation-settlement-adjustments article{grid-template-columns:1fr 1fr}.quotation-settlement-adjustments article input:nth-of-type(2){grid-column:1/-1}.quotation-settlement-adjustments article>button{grid-column:2;justify-self:end}.quotation-settlement-output-actions{grid-template-columns:1fr}}
 .quotation-settlement-output-actions{display:block}
+
+/* The settlement tools always live in a narrow sidebar, even on a wide desktop. */
+.quotation-settlement-adjustments article { grid-template-columns: 1fr; gap: 8px; padding: 10px; border: 1px solid #e1e7f2; border-radius: 8px; background: #f9fbff; }
+.quotation-settlement-adjustments article > select,
+.quotation-settlement-adjustments article > input,
+.quotation-settlement-adjustments article > .formatted-money-input { grid-column: 1 / -1; width: 100%; }
+.quotation-settlement-adjustments article > button { grid-column: 1; justify-self: end; width: 36px; }
+.quotation-settlement-output-actions { display: grid; gap: 8px; }
+.quotation-settlement-output-actions > button { min-height: 42px; border: 1px solid #3157e6; border-radius: 8px; background: #3157e6; color: #fff; font-size: 12px; font-weight: 900; cursor: pointer; }
+.quotation-settlement-output-actions > button + button { background: #fff; color: #3157e6; }
+.quotation-settlement-output-actions > button:disabled { cursor: not-allowed; opacity: .45; }
+.quotation-output-spacing { align-items: stretch; flex-direction: column; gap: 10px; margin: 12px 0 4px; padding: 13px; }
+.quotation-output-spacing > div:last-child { width: 100%; justify-content: space-between; padding-top: 9px; border-top: 1px solid #e0e6f1; }
+.quotation-output-spacing b { flex: 1; }
+
+@media (max-width: 700px) {
+  .quote-consortium-settlement { margin-inline: 10px; padding: 12px; }
+  .quotation-settlement-adjustments { gap: 10px; margin: 12px 0; padding: 11px; }
+  .quotation-settlement-adjustments > div { align-items: stretch; flex-direction: column; }
+  .quotation-settlement-adjustments > div button { width: 100%; }
+  .quotation-settlement-adjustments article { grid-template-columns: 1fr; gap: 8px; padding: 10px; border: 1px solid #e1e7f2; border-radius: 8px; background: #f9fbff; }
+  .quotation-settlement-adjustments article > select,
+  .quotation-settlement-adjustments article > input,
+  .quotation-settlement-adjustments article > .formatted-money-input { grid-column: 1 / -1 !important; width: 100%; }
+  .quotation-settlement-adjustments article > button { grid-column: 1; justify-self: end; width: 36px; }
+  .quotation-output-menu-settlement > summary { display: none; }
+  .quotation-output-menu-settlement > .quotation-output-menu-panel,
+  .quotation-output-menu-settlement:not([open]) > .quotation-output-menu-panel { position: static; display: grid; width: 100%; min-width: 0; gap: 8px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+  .quotation-output-menu-settlement .quotation-output-menu-panel > button { min-height: 42px; justify-content: center; text-align: center; }
+  .quotation-output-spacing { align-items: stretch; flex-direction: column; gap: 10px; margin: 12px 0 4px; padding: 13px; }
+  .quotation-output-spacing > div:last-child { width: 100%; justify-content: space-between; padding-top: 9px; border-top: 1px solid #e0e6f1; }
+  .quotation-output-spacing b { flex: 1; }
+}
 
 @media print{
   .equipment-kit-print-header .airpass-print-brand{display:flex;align-items:center;justify-content:center;align-self:stretch;margin:0;color:#18365f;font-size:14pt;font-weight:900;letter-spacing:-.02em}

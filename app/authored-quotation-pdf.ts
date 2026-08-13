@@ -2,6 +2,7 @@ import type { AuthoredQuotation, AuthoredQuotationItem } from "../lib/authored-q
 import { airpassEquipmentKitOutputLines, airpassEquipmentKitTotal } from "../lib/airpass-equipment-kit";
 import { quotationFileStem } from "../lib/quotation-file-name";
 import { AIRPASS_COMPANY, AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "../lib/airpass-company";
+import { formatQuotationItemNameForOutput } from "../lib/quotation-output-text";
 
 export { quotationFileStem } from "../lib/quotation-file-name";
 
@@ -249,7 +250,7 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
     pageItems.forEach((item, rowIndex) => {
       const y = tableTop + 48 + rowIndex * rowHeight;
       const values = [
-        String(pageIndex * ITEMS_PER_PAGE + rowIndex + 1), item.name, item.specification,
+        String(pageIndex * ITEMS_PER_PAGE + rowIndex + 1), formatQuotationItemNameForOutput(item.name), item.specification,
         identifier(item), String(item.quantity), item.unit, `${won.format(item.unitPrice)}원`,
         `${won.format(item.quantity * item.unitPrice)}원`, outputNote(item),
       ];

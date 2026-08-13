@@ -21,7 +21,7 @@ export default function OrganizationQuotationHistory({
 }: {
   organization: string;
   businessRound: number;
-  onOpen?: (id: number, mode: "edit") => void;
+  onOpen?: (quotation: AuthoredQuotation, mode: "edit") => void;
   onCreate?: () => void;
   onLoaded?: () => void;
   readOnly?: boolean;
@@ -177,7 +177,7 @@ export default function OrganizationQuotationHistory({
         </details>}
         {quote.status === "final" && fileAction(quote.excelUrl, "Excel 다운로드")}
         {quote.status === "final" && quote.sourceOriginalUrl && fileAction(quote.sourceOriginalUrl, "참고 원본")}
-        {onOpen && (canEdit || !readOnly) ? <button className="quotation-history-action primary" type="button" onClick={() => onOpen(quote.id, "edit")}>{quote.status === "draft" ? "이어서 작성" : "견적 수정"}</button> : null}
+        {onOpen && (canEdit || !readOnly) ? <button className="quotation-history-action primary" type="button" onClick={() => onOpen(quote, "edit")}>{quote.status === "draft" ? "이어서 작성" : "견적 수정"}</button> : null}
       </div>
     </article>)}</div> : <div className="quotation-history-empty"><p>이 사업 차수에 최종 저장된 견적서가 없습니다.</p>{onCreate && canEdit ? <button className="quotation-history-action primary" type="button" onClick={onCreate}>이 기관 견적서 만들기</button> : null}</div>}
     </section>
