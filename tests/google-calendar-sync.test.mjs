@@ -19,6 +19,8 @@ const [api, sync, store, route, calendar, crm, migration, connectionMigration, c
   readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
 ]);
 const title = await readFile(new URL("../lib/google-calendar-title.ts", import.meta.url), "utf8");
+const aiOrganizer = await readFile(new URL("../app/api/ai/organize/route.ts", import.meta.url), "utf8");
+const constructionPage = await readFile(new URL("../app/construction-schedule-page.tsx", import.meta.url), "utf8");
 
 test("사이트 일정은 Google 이벤트 식별자와 재시도 가능한 동기화 상태를 보존한다", () => {
   for (const column of [
@@ -107,6 +109,32 @@ test("Google API 등록·수정·삭제는 사이트 일정 ID로 중복을 방�
   assert.match(route, /scheduleDedupeKey/);
   assert.match(route, /if \(!merged\.has\(key\)\)/);
   assert.match(api, /summary,/);
+});
+
+test("과거 형식의 시작 시간을 정규화하고 잘못된 값은 Google 400 대신 종일 일정으로 안전 처리한다", () => {
+  assert.match(api, /normalizeGoogleCalendarTime/);
+  assert.match(api, /오전\|오후/);
+  assert.match(api, /const allDay = !startTime/);
+  assert.match(api, /defaultTimedEnd\(endDate, startTime\)/);
+});
+
+test("AI 취소 문구는 확인 후 사이트와 Google 일정에 함께 반영한다", () => {
+  assert.match(aiOrganizer, /ScheduleCancellationIntent/);
+  assert.match(aiOrganizer, /재문의 대기/);
+  assert.match(route, /preview-schedule-cancellation/);
+  assert.match(route, /cancel-schedule-candidates/);
+  assert.match(route, /flushGoogleCalendarSync\(\{ ids \}\)/);
+  assert.match(crm, /아래 일정을 사이트와 Google Calendar에서 함께 취소할까요/);
+  assert.match(crm, /취소·연기 여부가 불명확해 기존 일정은 유지했습니다/);
+});
+
+test("시공 일정표 기관 삭제는 본계정만 노출·실행하고 모바일은 현황 필터를 제공한다", () => {
+  assert.match(route, /시공·납품 일정표의 기관 삭제·복원은 기본 운영자만/);
+  assert.match(constructionPage, /isPrimaryOwner \? <button/);
+  assert.match(constructionPage, /construction-mobile-summary/);
+  assert.match(constructionPage, /missingSchedule/);
+  assert.match(calendar, /home-calendar-agenda-backdrop/);
+  assert.match(calendar, /mobileAgendaOpen/);
 });
 
 test("같은 기관·날짜·제목 일정은 서버와 DB에서 한 번만 저장한다", () => {

@@ -181,6 +181,31 @@ function addDays(value: string, days: number) {
   return date.toISOString().slice(0, 10);
 }
 
+export function normalizeGoogleCalendarTime(value: unknown) {
+  const raw = String(value ?? "")
+    .normalize("NFKC")
+    .trim()
+    .toLocaleLowerCase("ko-KR");
+  if (!raw) return "";
+
+  const korean = raw.match(/^(오전|오후)\s*(\d{1,2})(?:\s*시)?(?:\s*(\d{1,2})\s*분?)?$/);
+  if (korean) {
+    let hour = Number(korean[2]);
+    const minute = Number(korean[3] || 0);
+    if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return "";
+    if (korean[1] === "오전" && hour === 12) hour = 0;
+    if (korean[1] === "오후" && hour !== 12) hour += 12;
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+
+  const numeric = raw.match(/^(\d{1,2})\s*[:시]\s*(\d{1,2})(?:\s*분)?(?::\d{1,2})?$/);
+  if (!numeric) return "";
+  const hour = Number(numeric[1]);
+  const minute = Number(numeric[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return "";
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
 function defaultTimedEnd(dateValue: string, timeValue: string) {
   const [hour, minute] = timeValue.split(":").map(Number);
   const total = (Number.isFinite(hour) ? hour : 0) * 60 + (Number.isFinite(minute) ? minute : 0) + 60;
@@ -191,16 +216,18 @@ function defaultTimedEnd(dateValue: string, timeValue: string) {
 }
 
 function eventBody(schedule: GoogleCalendarWriteSchedule) {
-  const allDay = !schedule.startTime;
+  const startTime = normalizeGoogleCalendarTime(schedule.startTime);
+  const endTime = startTime ? normalizeGoogleCalendarTime(schedule.endTime) : "";
+  const allDay = !startTime;
   const endDate = schedule.endDate && schedule.endDate >= schedule.scheduledDate
     ? schedule.endDate
     : schedule.scheduledDate;
   const start = allDay
     ? { date: schedule.scheduledDate }
-    : { dateTime: `${schedule.scheduledDate}T${schedule.startTime}:00+09:00`, timeZone: "Asia/Seoul" };
-  const fallbackEnd = schedule.endTime
-    ? { date: endDate, time: schedule.endTime }
-    : defaultTimedEnd(endDate, schedule.startTime);
+    : { dateTime: `${schedule.scheduledDate}T${startTime}:00+09:00`, timeZone: "Asia/Seoul" };
+  const fallbackEnd = endTime
+    ? { date: endDate, time: endTime }
+    : defaultTimedEnd(endDate, startTime);
   const end = allDay
     ? { date: addDays(endDate, 1) }
     : { dateTime: `${fallbackEnd.date}T${fallbackEnd.time}:00+09:00`, timeZone: "Asia/Seoul" };

@@ -2,6 +2,7 @@ import { after } from "next/server";
 import {
   AccessError,
   accessErrorResponse,
+  isPrimaryOwner,
   requireApprovedMember,
 } from "../../../lib/collaboration";
 import {
@@ -10,6 +11,7 @@ import {
   deleteOrganizationSchedule,
   listConstructionScheduleBoard,
   listConstructionStageOptions,
+  listScheduleCancellationCandidates,
   listOrganizationSchedules,
   normalizeScheduleSemanticLabel,
   removeConstructionScheduleProject,
@@ -228,6 +230,25 @@ export async function POST(request: Request) {
       await retryGoogleCalendarSync(payload.scheduleId);
       return Response.json({ syncIssues: await listCalendarSyncIssues() });
     }
+    if (payload.action === "preview-schedule-cancellation") {
+      return Response.json({
+        schedules: await listScheduleCancellationCandidates({
+          organizations: payload.organizations,
+          scheduledDates: payload.scheduledDates,
+        }),
+      });
+    }
+    if (payload.action === "cancel-schedule-candidates") {
+      const ids = Array.isArray(payload.scheduleIds)
+        ? [...new Set(payload.scheduleIds.map(Number))].filter(
+            (id) => Number.isSafeInteger(id) && id > 0,
+          ).slice(0, 50)
+        : [];
+      if (!ids.length) throw new Error("취소할 일정을 확인해 주세요.");
+      for (const id of ids) await deleteOrganizationSchedule({ id, member });
+      await flushGoogleCalendarSync({ ids });
+      return Response.json({ cancelledIds: ids });
+    }
     if (payload.action === "link-google-schedule") {
       const linked = await linkGoogleCalendarSchedule({
         googleEventId: payload.googleEventId,
@@ -268,6 +289,12 @@ export async function POST(request: Request) {
       });
     }
     if (payload.action === "hide-construction-project" || payload.action === "restore-construction-project") {
+      if (!(await isPrimaryOwner(member))) {
+        return Response.json(
+          { error: "시공·납품 일정표의 기관 삭제·복원은 기본 운영자만 할 수 있습니다." },
+          { status: 403 },
+        );
+      }
       return Response.json(await setConstructionScheduleProjectHidden({
         organization: payload.organization,
         businessRound: payload.businessRound,
@@ -305,6 +332,12 @@ export async function DELETE(request: Request) {
     }
     if (payload.action !== "remove-construction-project") {
       throw new Error("삭제할 일정표 기관을 확인해 주세요.");
+    }
+    if (!(await isPrimaryOwner(member))) {
+      return Response.json(
+        { error: "시공·납품 일정표의 기관 삭제는 기본 운영자만 할 수 있습니다." },
+        { status: 403 },
+      );
     }
     const board = await removeConstructionScheduleProject({
       organization: payload.organization,
