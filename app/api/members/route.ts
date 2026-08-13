@@ -10,7 +10,7 @@ import { ensureActivityChangeLedgerReady } from "../../../lib/activity-change-le
 import {
   ensureDirectAuthReady,
   setMemberPassword,
-} from "../../../lib/local-auth";
+} from "../../../lib/app-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const d1 = await ensureCollaborationReady();
+    const d1 = await ensureDirectAuthReady();
     await d1
       .prepare("DELETE FROM member_rejections WHERE lower(email) = ?")
       .bind(email)
@@ -146,7 +146,7 @@ export async function PUT(request: Request) {
     )
       ? String(payload.status)
       : "pending";
-    const d1 = await ensureCollaborationReady();
+    const d1 = await ensureDirectAuthReady();
     const target = await d1
       .prepare("SELECT id, role, is_sales FROM members WHERE id = ?")
       .bind(id)
@@ -167,16 +167,11 @@ export async function PUT(request: Request) {
       );
     }
 
-    const role =
-      actor.role === "admin" && payload.role === "assistant"
-        ? "assistant"
-        : "member";
     const requestedPermissions = normalizeMemberPermissions(payload.permissions);
-    const aiInputPermissions = requestedPermissions.filter((permission) =>
-      ["ai:voice", "ai:images"].includes(permission),
-    );
-    const permissions =
-      role === "assistant" ? requestedPermissions : aiInputPermissions;
+    const permissions = requestedPermissions;
+    const role = permissions.some((permission) => !["ai:voice", "ai:images"].includes(permission))
+      ? "assistant"
+      : "member";
     const isSales =
       actor.role === "admin" && typeof payload.isSales === "boolean"
         ? payload.isSales
@@ -207,6 +202,9 @@ export async function PUT(request: Request) {
     if (!result) {
       return Response.json({ error: "사용자를 찾을 수 없습니다." }, { status: 404 });
     }
+    if (status !== "approved") {
+      await d1.prepare("DELETE FROM member_sessions WHERE member_id = ?").bind(id).run();
+    }
     return Response.json({ member: result });
   } catch (error) {
     return accessErrorResponse(error);
@@ -221,6 +219,7 @@ export async function PATCH(request: Request) {
       displayName?: string;
       jobTitle?: string;
       isSales?: boolean;
+      email?: string;
       temporaryPassword?: string;
     };
     const id = Number(payload.id);
@@ -228,11 +227,11 @@ export async function PATCH(request: Request) {
     if (!Number.isInteger(id) || id < 1) {
       return Response.json({ error: "사용자를 확인할 수 없습니다." }, { status: 400 });
     }
-    const d1 = await ensureCollaborationReady();
+    const d1 = await ensureDirectAuthReady();
     const target = await d1
-      .prepare("SELECT role FROM members WHERE id = ?")
+      .prepare("SELECT role, email FROM members WHERE id = ?")
       .bind(id)
-      .first<{ role: string }>();
+      .first<{ role: string; email: string }>();
     if (!target) {
       return Response.json({ error: "사용자를 찾을 수 없습니다." }, { status: 404 });
     }
@@ -283,6 +282,23 @@ export async function PATCH(request: Request) {
       return Response.json({ member });
     }
 
+    const requestedEmail = typeof payload.email === "string"
+      ? payload.email.trim().toLowerCase()
+      : target.email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestedEmail)) {
+      return Response.json({ error: "로그인 이메일 주소를 확인해 주세요." }, { status: 400 });
+    }
+    const emailChanged = requestedEmail !== target.email.trim().toLowerCase();
+    if (emailChanged) {
+      const duplicate = await d1
+        .prepare("SELECT id FROM members WHERE lower(email) = ? AND id <> ? LIMIT 1")
+        .bind(requestedEmail, id)
+        .first<{ id: number }>();
+      if (duplicate) {
+        return Response.json({ error: "이미 다른 구성원이 사용하는 이메일입니다." }, { status: 409 });
+      }
+    }
+
     const displayName = String(payload.displayName ?? "").trim();
     if (!displayName) {
       return Response.json({ error: "표시 이름을 입력해주세요." }, { status: 400 });
@@ -310,11 +326,12 @@ export async function PATCH(request: Request) {
     const member = await d1
       .prepare(`
         UPDATE members SET
+          email = ?,
           display_name = ?,
           job_title = COALESCE(?, job_title)
         WHERE id = ? RETURNING *
       `)
-      .bind(displayName, jobTitle, id)
+      .bind(requestedEmail, displayName, jobTitle, id)
       .first();
     if (!member) {
       return Response.json({ error: "사용자를 찾을 수 없습니다." }, { status: 404 });
@@ -327,7 +344,20 @@ export async function PATCH(request: Request) {
       .bind(displayName, id)
       .run();
 
-    return Response.json({ member });
+    if (emailChanged) {
+      await d1.batch([
+        d1.prepare("DELETE FROM member_credentials WHERE member_id = ?").bind(id),
+        d1.prepare("DELETE FROM member_sessions WHERE member_id = ?").bind(id),
+        d1.prepare("DELETE FROM member_rejections WHERE lower(email) = ?").bind(requestedEmail),
+        d1.prepare(`
+          UPDATE member_password_reset_requests
+          SET status = 'resolved', resolved_at = CURRENT_TIMESTAMP, resolved_by = ?
+          WHERE member_id = ? AND status = 'pending'
+        `).bind(actor.id, id),
+      ]);
+    }
+
+    return Response.json({ member, passwordSetupRequired: emailChanged });
   } catch (error) {
     return accessErrorResponse(error);
   }
@@ -352,7 +382,7 @@ export async function DELETE(request: Request) {
       );
     }
 
-    const d1 = await ensureCollaborationReady();
+    const d1 = await ensureDirectAuthReady();
     const target = await d1
       .prepare("SELECT * FROM members WHERE id = ?")
       .bind(id)
@@ -435,6 +465,7 @@ export async function DELETE(request: Request) {
         tx.prepare("DELETE FROM oauth_codes WHERE member_id = ?").bind(id),
         tx.prepare("DELETE FROM oauth_tokens WHERE member_id = ?").bind(id),
         tx.prepare("DELETE FROM local_auth_sessions WHERE member_id = ?").bind(id),
+        tx.prepare("DELETE FROM member_sessions WHERE member_id = ?").bind(id),
         tx
         .prepare("UPDATE app_settings SET updated_by = ? WHERE updated_by = ?")
         .bind(actor.id, id),

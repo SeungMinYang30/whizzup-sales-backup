@@ -2989,7 +2989,18 @@ tr:hover .row-actions { opacity: 1; }
 .member-sales-editor label { flex: 0 0 auto; min-height: 34px; padding: 0 10px; border: 1px solid #d9e1ee; background: white; display: inline-flex; align-items: center; gap: 7px; color: #60708b; font-size: 8px; font-weight: 800; cursor: pointer; }
 .member-sales-editor.active label { border-color: #b9caf2; color: #315fc7; }
 .member-sales-editor input { accent-color: #315fc7; }
-.member-access-editor { grid-column: 2 / 5; padding: 12px; border: 1px solid #e2e7f0; background: #f8faff; display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; align-items: end; gap: 12px; }
+.member-login-email-editor { display:grid; gap:4px; margin-top:8px; }
+.member-login-email-editor > span { color:#718099; font-size:9px; font-weight:800; }
+.member-login-email-editor input { width:100%; min-height:38px; border:1px solid #d8dfeb; background:#fff; padding:0 10px; color:#334664; font-size:11px; }
+.member-login-email-editor small { color:#7f8ca0; font-size:9px; line-height:1.45; }
+.member-access-editor { grid-column: 2 / 5; border: 1px solid #e2e7f0; background: #f8faff; }
+.member-permission-disclosure > summary { min-height:48px; padding:10px 12px; display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; list-style:none; }
+.member-permission-disclosure > summary::-webkit-details-marker { display:none; }
+.member-permission-disclosure > summary > span { display:grid; gap:3px; }
+.member-permission-disclosure > summary strong { color:#334867; font-size:13px; }
+.member-permission-disclosure > summary small { color:#7f8ca0; font-size:11px; }
+.member-permission-disclosure > summary > b { border-radius:999px; background:#e8eeff; color:#315fc7; padding:5px 9px; font-size:11px; white-space:nowrap; }
+.member-permission-disclosure-body { padding:0 12px 12px; display:grid; gap:10px; }
 .member-role-select > span { display: block; margin-bottom: 6px; color: #718099; font-size: 8px; font-weight: 800; }
 .member-role-select select { width: 100%; height: 35px; padding: 0 9px; border: 1px solid #d8dfeb; background: white; color: #334664; font-size: 9px; font-weight: 750; }
 .member-permission-groups { grid-column: 1 / -1; display: grid; gap: 10px; }

@@ -94,4 +94,3 @@ export async function clearPasswordSetupTicket() {
     expires: new Date(0),
   });
 }
-

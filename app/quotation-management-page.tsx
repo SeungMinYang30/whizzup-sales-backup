@@ -122,6 +122,12 @@ type EquipmentKitEditor = {
   editingItemId?: string;
 };
 
+type RecentConsortiumRate = {
+  rate: number;
+  quoteNumber: string;
+  quoteDate: string;
+};
+
 const won = new Intl.NumberFormat("ko-KR");
 const CONSTRUCTION_PRODUCT_ID = "__construction_cost__";
 
@@ -194,6 +200,15 @@ function normalizedEquipmentKitName(value: string) {
     .normalize("NFKC")
     .toLocaleLowerCase("ko-KR")
     .replace(/[^0-9a-z가-힣]/g, "");
+}
+
+function draftItemLookupKeys(item: Pick<DraftItem, "productId" | "procurementNumber" | "name" | "specification">) {
+  const normalize = (value: string) => value.normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/[^0-9a-z가-힣]/g, "");
+  return [
+    item.productId && item.productId !== CONSTRUCTION_PRODUCT_ID ? `product:${item.productId}` : "",
+    item.procurementNumber ? `procurement:${normalize(item.procurementNumber)}` : "",
+    item.name ? `item:${normalize(item.name)}|${normalize(item.specification)}` : "",
+  ].filter(Boolean);
 }
 
 function procurementChannelFromText(...values: string[]) {
@@ -504,6 +519,7 @@ export default function QuotationManagementPage({
   const [quotes, setQuotes] = useState<AuthoredQuotation[]>([]);
   const [trashedQuotes, setTrashedQuotes] = useState<AuthoredQuotation[]>([]);
   const [products, setProducts] = useState<ProductCatalogItem[]>([]);
+  const [recentConsortiumRates, setRecentConsortiumRates] = useState<Record<string, RecentConsortiumRate>>({});
   const [draft, setDraft] = useState<Draft | null>(null);
   const [query, setQuery] = useState("");
   const [quotationPage, setQuotationPage] = useState(1);
@@ -657,13 +673,14 @@ export default function QuotationManagementPage({
         fetch(`/api/quotations?${trashParams}`, { cache: "no-store" }),
         fetch("/api/product-catalog", { cache: "no-store" }),
       ]);
-      const quotePayload = await quoteResponse.json() as { quotations?: AuthoredQuotation[]; error?: string };
+      const quotePayload = await quoteResponse.json() as { quotations?: AuthoredQuotation[]; recentConsortiumRates?: Record<string, RecentConsortiumRate>; error?: string };
       const trashPayload = await trashResponse.json() as { quotations?: AuthoredQuotation[]; error?: string };
       const productPayload = await productResponse.json() as { products?: ProductCatalogItem[]; favoriteProductIds?: unknown[]; error?: string };
       if (!quoteResponse.ok) throw new Error(quotePayload.error || "견적서를 불러오지 못했습니다.");
       if (!trashResponse.ok) throw new Error(trashPayload.error || "삭제된 견적서를 불러오지 못했습니다.");
       if (!productResponse.ok) throw new Error(productPayload.error || "제품을 불러오지 못했습니다.");
       setQuotes(quotePayload.quotations ?? []);
+      setRecentConsortiumRates(quotePayload.recentConsortiumRates ?? {});
       setTrashedQuotes(trashPayload.quotations ?? []);
       setProducts(productPayload.products ?? []);
       setFavoriteProductIds((productPayload.favoriteProductIds ?? []).map(String));
@@ -1347,6 +1364,12 @@ export default function QuotationManagementPage({
     const earningRate = product.supplyType === "direct" ? product.marginRate ?? 0 : product.commissionRate ?? 0;
     const procurement = product.procurement === true || hasProcurementSignal(product.note, product.specification);
     const procurementChannel = procurement ? product.procurementChannel || (/S\s*2\s*B/iu.test(product.note) ? "S2B" : /디지털서비스몰/iu.test(product.note) ? "디지털서비스몰" : /혁신장터/iu.test(product.note) ? "혁신장터" : "G2B") : "";
+    const consortiumSuggestion = draftItemLookupKeys({
+      productId: product.id,
+      procurementNumber: product.procurementNumber || procurementNumbersFromText(product.note, product.specification)[0] || "",
+      name: product.name,
+      specification: product.specification,
+    }).map((key) => recentConsortiumRates[key]).find(Boolean);
     const nextItem: DraftItem = {
         id: crypto.randomUUID(),
         productId: product.id,
@@ -1365,7 +1388,9 @@ export default function QuotationManagementPage({
         procurementChannel,
         procurementNumber: procurement ? product.procurementNumber || procurementNumbersFromText(product.note, product.specification)[0] || "" : "",
         procurementFeeRate: procurement && !isS2BChannel(procurementChannel) ? product.procurementFeeRate ?? 0.0054 : 0,
-        consortiumRate: 0,
+        consortiumRate: draft.executionType === "컨소"
+          ? Math.min(earningRate, consortiumSuggestion?.rate ?? 0)
+          : 0,
         ...internalCostFields(product.name, product.specification, 1),
       };
     if (isAirpassEquipmentKitProduct(product.name)) {
@@ -1388,6 +1413,25 @@ export default function QuotationManagementPage({
     setDraft({
       ...draft,
       items: [...draft.items.filter((item) => !isConstructionItem(item)), nextItem, ...(construction ? [construction] : [])],
+    });
+  }
+
+  function setExecutionType(executionType: Draft["executionType"]) {
+    if (!draft) return;
+    setDraft({
+      ...draft,
+      executionType,
+      items: executionType === "컨소"
+        ? draft.items.map((item) => {
+            if (isConstructionItem(item) || item.consortiumRate > 0) return item;
+            const suggestion = draftItemLookupKeys(item)
+              .map((key) => recentConsortiumRates[key])
+              .find(Boolean);
+            return suggestion
+              ? { ...item, consortiumRate: Math.min(item.earningRate, suggestion.rate) }
+              : item;
+          })
+        : draft.items,
     });
   }
 
@@ -2387,7 +2431,12 @@ export default function QuotationManagementPage({
                       {item.contractType === "g2b" ? <label><span>공급처</span><input value={item.supplierVendorName ?? ""} onChange={(event) => updateItem(item.id, { supplierVendorId: null, supplierVendorName: event.target.value })} placeholder="조달 공급처명" /></label> : null}
                       <label><span>조달 수수료율</span><div className="quotation-rate-input"><EditableRateInput label="조달 수수료율" value={item.procurementFeeRate} step={0.01} disabled={!appliesProcurementFee(item)} onChange={(procurementFeeRate) => updateItem(item.id, { procurementFeeRate })} /><b>%</b></div></label>
                       <label><span>당사 수수료율</span><div className="quotation-rate-input"><EditableRateInput label="당사 수수료율" value={item.earningRate} onChange={(earningRate) => updateItem(item.id, { earningRate, consortiumRate: Math.min(item.consortiumRate, earningRate) })} /><b>%</b></div></label>
-                      {draft.executionType === "컨소" ? <label><span>컨소 지급률</span><div className="quotation-rate-input"><EditableRateInput label="컨소 지급률" value={item.consortiumRate} max={item.earningRate * 100} onChange={(consortiumRate) => updateItem(item.id, { consortiumRate })} /><b>%</b></div></label> : null}
+                      {draft.executionType === "컨소" ? <label><span>컨소 지급률</span><div className="quotation-rate-input"><EditableRateInput label="컨소 지급률" value={item.consortiumRate} max={item.earningRate * 100} onChange={(consortiumRate) => updateItem(item.id, { consortiumRate })} /><b>%</b></div>{(() => {
+                        const recent = draftItemLookupKeys(item).map((key) => recentConsortiumRates[key]).find(Boolean);
+                        return recent && Math.abs(recent.rate - item.consortiumRate) < 0.000001
+                          ? <small className="quotation-recent-rate">최근 적용 {(recent.rate * 100).toFixed(2).replace(/\.00$/, "")}% · {recent.quoteDate}</small>
+                          : null;
+                      })()}</label> : null}
                       <div className="quotation-item-margin"><span>당사 마진</span><strong>{won.format(companyMargin)}원</strong>{internalCost > 0 ? <small>내부 원가 {won.format(internalCost)}원 차감</small> : draft.executionType === "컨소" ? <small>컨소 지급 {won.format(consortiumPayment)}원 차감</small> : <small>예상 수익 기준</small>}</div>
                       {internalCostDefaults.kind && <div className="quotation-item-internal-cost">
                         <label><input type="checkbox" checked={item.internalCostEnabled} onChange={(event) => {
@@ -2438,7 +2487,7 @@ export default function QuotationManagementPage({
 
           <aside className="quotation-profit-panel quote-internal no-print">
             <div><span className="section-kicker">SALES INFO</span><h4>영업 정보</h4></div>
-            <label>협업 구분<select value={draft.executionType} onChange={(event) => setDraft({ ...draft, executionType: event.target.value === "컨소" ? "컨소" : "직영" })}><option>직영</option><option>컨소</option></select></label>
+            <label>협업 구분<select value={draft.executionType} onChange={(event) => setExecutionType(event.target.value === "컨소" ? "컨소" : "직영")}><option>직영</option><option>컨소</option></select></label>
             {draft.executionType === "컨소" && <><label>컨소 업체<input value={draft.consortiumCompany} onChange={(event) => setDraft({ ...draft, consortiumCompany: event.target.value })} placeholder="업체명" /></label><p>컨소 지급률은 품목마다 다르게 입력합니다. 각 품목의 지급률은 위즈업 수수료율을 넘을 수 없습니다.</p></>}
             <section className="quote-profit-box"><header><strong>수익 분석</strong><small>내부용</small></header><dl><dt>예상 수익</dt><dd>{won.format(numbers.earning)}원</dd><dt>컨소 지급</dt><dd>{numbers.consortium > 0 ? `-${won.format(numbers.consortium)}원` : "0원"}</dd>{numbers.projectorInstallationCost > 0 && <><dt>빔프로젝터 설치</dt><dd className="deduction">-{won.format(numbers.projectorInstallationCost)}원</dd></>}{numbers.yogaMatServiceCost > 0 && <><dt>요가매트 제공</dt><dd className="deduction">-{won.format(numbers.yogaMatServiceCost)}원</dd></>}{numbers.additionalConstructionCost > 0 && <><dt>추가 공사 원가</dt><dd className="deduction">-{won.format(numbers.additionalConstructionCost)}원</dd></>}{numbers.internalCost > 0 && <><dt>내부 원가 합계</dt><dd className="deduction">-{won.format(numbers.internalCost)}원</dd></>}<dt>최종 총이익</dt><dd>{won.format(numbers.margin)}원</dd><dt>마진%</dt><dd>{(numbers.marginRate * 100).toFixed(1)}%</dd></dl></section>
             {draft.executionType === "컨소" && <section className="quote-consortium-settlement">
@@ -2456,9 +2505,14 @@ export default function QuotationManagementPage({
                 {!draft.settlementAdjustments.length && <small>추가 지급이나 정산 차감이 생기면 항목을 추가해 주세요.</small>}
               </div>
               <div className="quotation-settlement-output-actions">
-                <button type="button" onClick={() => void exportConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>정산서 PDF 보기·출력</button>
-                <button type="button" onClick={() => void downloadConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>정산서 PDF 다운로드</button>
-                <button type="button" onClick={() => void exportConsortiumSettlementExcel()} disabled={!draft.items.length}>정산서 Excel 다운로드</button>
+                <details className="quotation-output-menu quotation-output-menu-settlement">
+                  <summary>정산서 출력·다운로드</summary>
+                  <div className="quotation-output-menu-panel">
+                    <button type="button" onClick={() => void exportConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>정산서 PDF 보기·출력</button>
+                    <button type="button" onClick={() => void downloadConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>정산서 PDF 다운로드</button>
+                    <button type="button" onClick={() => void exportConsortiumSettlementExcel()} disabled={!draft.items.length}>정산서 Excel 다운로드</button>
+                  </div>
+                </details>
               </div>
               <p>품목별 지급률과 비용 처리 방식, 정산 조정 내역을 표시하며 위즈업 수익·마진은 포함하지 않습니다. 직인 포함 설정도 동일하게 적용됩니다.</p>
             </section>}

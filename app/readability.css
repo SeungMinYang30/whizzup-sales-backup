@@ -125,6 +125,14 @@
   .restore-safety strong { font-size: 13px; }
 }
 
+.quotation-recent-rate {
+  display: block;
+  margin-top: 5px;
+  color: #16815d;
+  font-size: 11px;
+  font-weight: 850;
+}
+
 @media (max-width: 460px) {
   /* Preserve the icon-only narrow mobile header. */
   .top-actions .ai-button,
@@ -1682,10 +1690,143 @@
   .topbar.has-dashboard-status .top-actions > button,
   .top-actions .ai-button,
   .top-actions .primary-button {
-    min-width: 40px;
+    min-width: 44px;
+    min-height: 44px;
     padding-inline: 6px;
-    font-size: 9px;
+    font-size: 11px;
   }
-  .top-actions .quotation-quick-button { max-width: 54px; font-size: 9px; }
+  .top-actions .quotation-quick-button { max-width: 72px; font-size: 11px; }
   .top-actions .ai-button span { display: none; }
+}
+
+/* Field-first mobile pass: keep primary work readable and operable with one hand. */
+@media (max-width: 760px) {
+  .ai-entry-grid > small,
+  .ai-entry-grid small {
+    font-size: 11px;
+    line-height: 1.55;
+  }
+
+  .ai-voice-button,
+  .ai-image-button,
+  .ai-submit-button {
+    min-height: 44px;
+    padding-inline: 12px;
+    font-size: 12px;
+  }
+
+  .member-permission-disclosure > summary {
+    min-height: 52px;
+  }
+
+  .member-permission-disclosure > summary strong,
+  .member-login-editor label,
+  .member-sales-editor strong {
+    font-size: 13px;
+  }
+
+  .member-permission-disclosure > summary small,
+  .member-login-editor small,
+  .member-permission-list small {
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  .member-permission-disclosure-body {
+    padding: 2px 10px 12px;
+  }
+
+  .member-login-editor input,
+  .member-name-editor input,
+  .member-login-editor button,
+  .member-name-editor button,
+  .member-access-editor .save-access {
+    min-height: 44px;
+    font-size: 13px;
+  }
+
+  .manager-priority-header,
+  .team-work-header {
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .manager-header-actions,
+  .manager-selection-actions,
+  .team-work-controls,
+  .team-period-switch {
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+
+  .manager-header-actions::-webkit-scrollbar,
+  .manager-selection-actions::-webkit-scrollbar,
+  .team-work-controls::-webkit-scrollbar,
+  .team-period-switch::-webkit-scrollbar {
+    display: none;
+  }
+
+  .manager-header-actions button,
+  .manager-selection-actions button,
+  .team-work-controls button,
+  .team-period-switch button {
+    min-width: max-content;
+    min-height: 44px;
+    flex: 0 0 auto;
+    font-size: 12px;
+  }
+
+  .manager-inspection-table,
+  .team-work-table {
+    min-width: 920px;
+  }
+
+  .manager-inspection-table th,
+  .team-work-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #f4f6fa;
+  }
+
+  .data-list-table {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .record-modal {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .modal-body {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .modal-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 4;
+    flex-wrap: wrap;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  .modal-footer-actions {
+    width: 100%;
+  }
+
+  .modal-footer-actions button {
+    min-width: 0;
+    flex: 1;
+  }
 }

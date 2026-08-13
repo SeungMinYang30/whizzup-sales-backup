@@ -38,10 +38,10 @@ export async function POST(request: Request) {
     .bind(email)
     .first<{ email: string }>();
   if (rejection) {
-    return Response.json(
-      { error: "거절되어 삭제된 가입 요청입니다. 운영자에게 다시 등록을 요청해 주세요." },
-      { status: 403 },
-    );
+    await d1
+      .prepare("DELETE FROM member_rejections WHERE lower(email) = ?")
+      .bind(email)
+      .run();
   }
   const member = await d1
     .prepare(`

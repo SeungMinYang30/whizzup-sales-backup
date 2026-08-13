@@ -15,6 +15,44 @@ import { removeDriveFile } from "../../../lib/google-drive-storage";
 
 export const dynamic = "force-dynamic";
 
+function normalizedItemKey(value: string) {
+  return value.normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/[^0-9a-z가-힣]/g, "");
+}
+
+function quotationItemKeys(item: AuthoredQuotation["items"][number]) {
+  return [
+    item.productId && item.productId !== "__construction_cost__" ? `product:${item.productId}` : "",
+    item.procurementNumber ? `procurement:${normalizedItemKey(item.procurementNumber)}` : "",
+    item.name ? `item:${normalizedItemKey(item.name)}|${normalizedItemKey(item.specification)}` : "",
+  ].filter(Boolean);
+}
+
+function latestConsortiumRates(quotations: AuthoredQuotation[]) {
+  const rates: Record<string, { rate: number; quoteNumber: string; quoteDate: string }> = {};
+  [...quotations]
+    .filter((quote) => quote.status === "final" && quote.executionType === "컨소")
+    .sort((left, right) =>
+      right.quoteDate.localeCompare(left.quoteDate) ||
+      right.revisionNumber - left.revisionNumber ||
+      right.id - left.id,
+    )
+    .forEach((quote) => {
+      quote.items.forEach((item) => {
+        if (item.productId === "__construction_cost__" || item.consortiumRate <= 0) return;
+        quotationItemKeys(item).forEach((key) => {
+          if (!rates[key]) {
+            rates[key] = {
+              rate: item.consortiumRate,
+              quoteNumber: quote.quoteNumber,
+              quoteDate: quote.quoteDate,
+            };
+          }
+        });
+      });
+    });
+  return rates;
+}
+
 export async function GET(request: Request) {
   try {
     const member = await requireApprovedMember();
@@ -96,7 +134,10 @@ export async function GET(request: Request) {
       });
       return Response.json({ summaries });
     }
-    return Response.json({ quotations });
+    const consortiumRates = deleted === "active"
+      ? latestConsortiumRates(await listAuthoredQuotations({ deleted: "active", member }) as AuthoredQuotation[])
+      : {};
+    return Response.json({ quotations, recentConsortiumRates: consortiumRates });
   } catch (error) {
     return accessErrorResponse(error);
   }

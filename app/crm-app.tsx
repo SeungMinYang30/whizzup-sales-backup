@@ -1446,98 +1446,6 @@ const memberAiInputPermissionOptions: {
 ];
 
 const openAIModelOptions = ["gpt-5.4-mini", "gpt-5.4", "gpt-5-mini"];
-type MemberAccessPreset =
-  | "sales"
-  | "salesManager"
-  | "accounting"
-  | "operations"
-  | "custom";
-
-const memberAccessPresetDefinitions: Record<
-  Exclude<MemberAccessPreset, "custom">,
-  {
-    label: string;
-    role: "member" | "assistant";
-    permissions: MemberPermission[];
-    isSales: boolean;
-    description: string;
-  }
-> = {
-  sales: {
-    label: "영업 담당자",
-    role: "member",
-    permissions: [],
-    isSales: true,
-    description: "일상 영업 기록·기관·수주·지도 업무를 사용합니다.",
-  },
-  salesManager: {
-    label: "영업 관리자",
-    role: "assistant",
-    permissions: ["records:manage"],
-    isSales: true,
-    description: "영업 업무와 팀 업무 현황·관리자 영업 점검을 사용합니다.",
-  },
-  accounting: {
-    label: "회계 담당자",
-    role: "assistant",
-    permissions: ["accounting:manage", "analytics:view"],
-    isSales: false,
-    description: "입금 예정·실 수금·채권 관리와 수주·제품 통계를 사용합니다.",
-  },
-  operations: {
-    label: "운영 관리자",
-    role: "assistant",
-    permissions: memberPermissionOptions
-      .map((option) => option.id)
-      .filter((permission) => permission !== "activity-history:manage"),
-    isSales: false,
-    description: "구성원·회계·통계·물류·재고·휴지통·API·백업 등 모든 운영 도구를 사용합니다.",
-  },
-};
-
-const memberAccessPresetLabels: Record<MemberAccessPreset, string> = {
-  sales: "영업 담당자",
-  salesManager: "영업 관리자",
-  accounting: "회계 담당자",
-  operations: "운영 관리자",
-  custom: "직접 설정",
-};
-
-function memberAccessPresetDescription(preset: MemberAccessPreset) {
-  return preset === "custom"
-    ? "선택한 운영 도구별로 접근 권한을 직접 설정합니다."
-    : memberAccessPresetDefinitions[preset].description;
-}
-
-function hasExactPermissions(
-  current: MemberPermission[],
-  expected: MemberPermission[],
-) {
-  const currentOperations = current.filter((permission) =>
-    memberPermissionOptions.some((option) => option.id === permission),
-  );
-  return (
-    currentOperations.length === expected.length &&
-    expected.every((permission) => current.includes(permission))
-  );
-}
-
-function memberAccessPreset(
-  member: Pick<TeamMember, "role" | "permissions" | "isSales">,
-): MemberAccessPreset {
-  const matched = (
-    Object.entries(memberAccessPresetDefinitions) as [
-      Exclude<MemberAccessPreset, "custom">,
-      (typeof memberAccessPresetDefinitions)[Exclude<MemberAccessPreset, "custom">],
-    ][]
-  ).find(
-    ([, definition]) =>
-      member.role === definition.role &&
-      member.isSales === definition.isSales &&
-      hasExactPermissions(member.permissions, definition.permissions),
-  );
-  return matched?.[0] ?? "custom";
-}
 
 type OpenAISettingsStatus = {
   configured: boolean;
@@ -6697,9 +6605,7 @@ export default function CrmApp({
   useEffect(() => {
     function releaseWhenHidden() {
       if (document.visibilityState === "hidden") {
-        if (voiceRecorderRef.current?.state === "recording") {
-          stopVoiceRecording();
-        } else {
+        if (voiceRecorderRef.current?.state !== "recording") {
           releaseVoiceStream();
         }
       }
@@ -12642,6 +12548,9 @@ export default function CrmApp({
         }
         void transcribeVoiceRecording(recording);
       };
+      recorder.onerror = () => {
+        setVoiceError("녹음 연결이 중단되었습니다. 지금까지 녹음된 내용은 종료 후 변환을 시도합니다.");
+      };
       recorder.start(500);
       voiceStartedAtRef.current = Date.now();
       setVoiceElapsedSeconds(0);
@@ -12651,7 +12560,10 @@ export default function CrmApp({
           (Date.now() - voiceStartedAtRef.current) / 1000,
         );
         setVoiceElapsedSeconds(elapsed);
-        if (elapsed >= 5 * 60) {
+        if (elapsed === 9 * 60) {
+          setVoiceError("긴 녹음을 보호하기 위해 1분 후 자동 종료됩니다. 계속 기록하려면 변환 후 다시 녹음해 주세요.");
+        }
+        if (elapsed >= 10 * 60) {
           stopVoiceRecording();
         }
       }, 1000);
@@ -14279,12 +14191,7 @@ export default function CrmApp({
 
   async function saveMemberAccess(member: TeamMember) {
     if (await updateMember(member, member.status, member.role)) {
-      const preset = memberAccessPreset(member);
-      setToast(
-        preset === "custom"
-          ? `${memberLabel(member)}의 권한을 직접 설정했습니다.`
-          : `${memberLabel(member)}을 ${memberAccessPresetLabels[preset]}로 설정했습니다.`,
-      );
+      setToast(`${memberLabel(member)}의 기능 권한을 저장했습니다.`);
     }
   }
 
@@ -14296,21 +14203,24 @@ export default function CrmApp({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: member.id,
+          email: member.email,
           displayName,
           jobTitle: member.jobTitle,
         }),
       });
       const payload = (await response.json()) as {
         member?: Record<string, unknown>;
+        passwordSetupRequired?: boolean;
         error?: string;
       };
       if (!response.ok) {
         throw new Error(payload.error || "표시 이름을 저장하지 못했습니다.");
       }
       const savedName = String(payload.member?.display_name ?? displayName);
+      const savedEmail = String(payload.member?.email ?? member.email);
       setTeamMembers((current) =>
         current.map((item) =>
-          item.id === member.id ? { ...item, displayName: savedName } : item,
+          item.id === member.id ? { ...item, displayName: savedName, email: savedEmail } : item,
         ),
       );
       if (member.id === session?.member.id) {
@@ -14323,7 +14233,9 @@ export default function CrmApp({
             : current,
         );
       }
-      setToast(`${savedName} 이름으로 저장했습니다.`);
+      setToast(payload.passwordSetupRequired
+        ? `${savedName}의 로그인 이메일을 변경했습니다. 새 이메일로 로그인하면 비밀번호 설정 화면이 표시됩니다.`
+        : `${savedName}의 계정 정보를 저장했습니다.`);
     } catch (caught) {
       setToast(
         caught instanceof Error ? caught.message : "표시 이름을 저장하지 못했습니다.",
@@ -15971,7 +15883,7 @@ export default function CrmApp({
                   PC는 Enter로 AI 정리, Shift+Enter로 줄바꿈합니다. 모바일은
                   Enter로 줄바꿈합니다.
                   {canUseVoiceInput &&
-                    " 음성은 버튼을 다시 누르면 글자로 바뀝니다."}
+                    " 음성은 짧은 침묵이나 잠깐의 화면 전환에도 계속 녹음되며, 종료 버튼을 다시 눌러야 글자로 바뀝니다."}
                   {canUseImageInput &&
                     " 사진은 선택·드래그앤드롭·Ctrl+V로 추가할 수 있습니다."}
                   {(canUseVoiceInput || canUseImageInput) &&
@@ -16769,10 +16681,28 @@ export default function CrmApp({
                               disabled={!isOwner && member.role !== "member"}
                               onClick={() => void updateMemberDisplayName(member)}
                             >
-                              이름·직책 저장
+                              계정 정보 저장
                             </button>
                           </div>
-                          <small>{member.email}</small>
+                          <label className="member-login-email-editor">
+                            <span>로그인 이메일</span>
+                            <input
+                              type="email"
+                              aria-label={`${member.displayName} 로그인 이메일`}
+                              value={member.email}
+                              onChange={(event) =>
+                                setTeamMembers((current) =>
+                                  current.map((item) =>
+                                    item.id === member.id
+                                      ? { ...item, email: event.target.value }
+                                      : item,
+                                  ),
+                                )
+                              }
+                              disabled={!isOwner || member.role === "admin"}
+                            />
+                            {isOwner && member.role !== "admin" && <small>변경하면 기존 로그인은 종료되고 새 이메일에서 비밀번호를 다시 설정합니다.</small>}
+                          </label>
                           <div className="member-job-title-editor">
                             <input
                               aria-label={`${member.email} 직책`}
@@ -16831,9 +16761,9 @@ export default function CrmApp({
                           <small>
                             {member.role === "admin"
                               ? "운영자"
-                              : memberAccessPresetLabels[
-                                  memberAccessPreset(member)
-                                ]}
+                              : member.permissions.length
+                                ? `추가 권한 ${member.permissions.length}개`
+                                : "기본 업무 이용"}
                           </small>
                           <small
                             className={`member-sales-state ${
@@ -16938,55 +16868,12 @@ export default function CrmApp({
                         )}
                         {isOwner && member.role !== "admin" && (
                           <div className="member-access-editor">
-                            <label className="member-role-select">
-                              <span>역할</span>
-                              <select
-                                aria-label={`${memberLabel(member)} 역할`}
-                                value={memberAccessPreset(member)}
-                                onChange={(event) => {
-                                  const preset = event.target
-                                    .value as MemberAccessPreset;
-                                  setTeamMembers((current) =>
-                                    current.map((item) =>
-                                      item.id === member.id
-                                        ? preset === "custom"
-                                          ? {
-                                              ...item,
-                                              role: "assistant",
-                                            }
-                                          : {
-                                              ...item,
-                                              role:
-                                                memberAccessPresetDefinitions[preset]
-                                                  .role,
-                                              permissions: [
-                                                ...memberAccessPresetDefinitions[
-                                                  preset
-                                                ].permissions,
-                                                ...item.permissions.filter(
-                                                  (permission) =>
-                                                    memberAiInputPermissionOptions.some(
-                                                      (option) =>
-                                                        option.id === permission,
-                                                    ),
-                                                ),
-                                              ],
-                                              isSales:
-                                                memberAccessPresetDefinitions[preset]
-                                                  .isSales,
-                                            }
-                                        : item,
-                                    ),
-                                  );
-                                }}
-                              >
-                                <option value="sales">영업 담당자</option>
-                                <option value="salesManager">영업 관리자</option>
-                                <option value="accounting">회계 담당자</option>
-                                <option value="operations">운영 관리자</option>
-                                <option value="custom">직접 설정</option>
-                              </select>
-                            </label>
+                            <details className="member-permission-disclosure">
+                              <summary>
+                                <span><strong>추가 기능 권한</strong><small>기본 업무 기능은 승인 즉시 이용합니다.</small></span>
+                                <b>{member.permissions.length}개 선택</b>
+                              </summary>
+                              <div className="member-permission-disclosure-body">
                             <section className="member-permission-group">
                               <div className="member-permission-heading">
                                 <strong>AI 입력 기능</strong>
@@ -17036,8 +16923,7 @@ export default function CrmApp({
                               기록 삭제, 지도 확인·위치 수정, 엑셀 내보내기 등
                               공동 업무를 기본으로 이용합니다.
                             </p>
-                            {memberAccessPreset(member) === "custom" ? (
-                              <div className="member-permission-groups">
+                            <div className="member-permission-groups">
                                 {[
                                   {
                                     id: "operations" as const,
@@ -17097,23 +16983,7 @@ export default function CrmApp({
                                     </div>
                                   </section>
                                 ))}
-                              </div>
-                            ) : (
-                              <div className="member-permission-summary">
-                                <strong>
-                                  {
-                                    memberAccessPresetLabels[
-                                      memberAccessPreset(member)
-                                    ]
-                                  }
-                                </strong>
-                                <span>
-                                  {memberAccessPresetDescription(
-                                    memberAccessPreset(member),
-                                  )}
-                                </span>
-                              </div>
-                            )}
+                            </div>
                             <p className="owner-only-access-note">
                               선택한 운영 도구 메뉴만 왼쪽 메뉴에 표시됩니다.
                               운영자 권한 변경은 운영자만 가능합니다.
@@ -17123,8 +16993,10 @@ export default function CrmApp({
                               className="save-access"
                               onClick={() => void saveMemberAccess(member)}
                             >
-                              역할·기능 권한 저장
+                              기능 권한 저장
                             </button>
+                              </div>
+                            </details>
                           </div>
                         )}
                       </div>
