@@ -130,11 +130,15 @@ test("내부 수익표 Excel은 PDF형 요약과 품목별 수식을 포함하�
   });
   const files = unzipSync(workbook);
   const sheet = strFromU8(files["xl/worksheets/sheet1.xml"]);
+  const styles = strFromU8(files["xl/styles.xml"]);
   const workbookXml = strFromU8(files["xl/workbook.xml"]);
   assert.match(workbookXml, /내부 수익표/);
   assert.match(sheet, /내 부  수 익 표/);
-  assert.match(sheet, /품목별 수익 내역/);
+  assert.match(sheet, /품목별 수익 내역 · 단위: 원/);
   assert.match(sheet, /FLOOR\(F15\*G15,10\)/);
   assert.match(sheet, /I15-K15-L15/);
   assert.match(sheet, /orientation="landscape"/);
+  assert.ok(sheet.indexOf("<autoFilter") < sheet.indexOf("<mergeCells"));
+  assert.match(sheet, /<col min="13" max="13" width="22"/);
+  assert.doesNotMatch(styles, /#,##0&quot;원&quot;/);
 });

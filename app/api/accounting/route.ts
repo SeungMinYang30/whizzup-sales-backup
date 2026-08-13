@@ -297,6 +297,7 @@ const awardAccountingQuery = `
 async function buildAnalyticsPayload() {
   const d1 = await ensureAccountingReady();
   await ensureBudgetNamesReady();
+  await ensureAuthoredQuotationsReady();
   await linkEquipmentProjectsToWhizzupAwards(d1);
   await ensureLegacyReceiptLedgerMigration(d1);
   await ensureProductVendorLinksReady();
@@ -309,6 +310,7 @@ async function buildAnalyticsPayload() {
     linked2025ProjectResult,
     budgetAliasResult,
     catalogSetting,
+    finalQuotationResult,
   ] = await Promise.all([
     d1.prepare(`
       WITH entry_totals AS (
@@ -518,6 +520,12 @@ async function buildAnalyticsPayload() {
     d1
       .prepare("SELECT value FROM app_settings WHERE key = 'product_catalog_v1'")
       .first<{ value: string }>(),
+    d1.prepare(`
+      SELECT * FROM authored_quotations
+      WHERE status = 'final' AND deleted_at = ''
+      ORDER BY quote_date DESC, revision_number DESC, id DESC
+      LIMIT 2000
+    `).all<Record<string, unknown>>(),
   ]);
   const canonicalBudgetNames = new Map<string, string>(
     budgetAliasResult.results.map(
@@ -532,6 +540,17 @@ async function buildAnalyticsPayload() {
     return canonicalBudgetNames.get(normalizeBudgetNameKey(original)) || original;
   };
   const groupedAwardRows = completedWhizzupAwardRows(awardResult.results);
+  const latestFinalQuotationByBusiness = new Map<string, AuthoredQuotation>();
+  finalQuotationResult.results.forEach((row) => {
+    const quotation = authoredQuotationFromRow(row);
+    const businessKey = analyticsBusinessRoundKey(
+      quotation.organization,
+      quotation.businessRound,
+    );
+    if (!latestFinalQuotationByBusiness.has(businessKey)) {
+      latestFinalQuotationByBusiness.set(businessKey, quotation);
+    }
+  });
   const eligibleActivityIds = new Set(
     groupedAwardRows.flatMap((row) =>
       Array.isArray(row.grouped_activity_ids)
@@ -895,6 +914,9 @@ async function buildAnalyticsPayload() {
     },
   );
   const awards = awardsBase.map((award) => {
+    const finalQuotation = latestFinalQuotationByBusiness.get(
+      award.businessKey,
+    );
     const registeredQuote = calculateRegisteredQuote({
       items: itemQuotesByBusiness.get(award.businessKey) ?? [],
       constructions:
@@ -904,10 +926,10 @@ async function buildAnalyticsPayload() {
       return {
         ...award,
         confirmedAmount: 0,
-        quoteStatus: registeredQuote.quoteStatus,
-        quoteItemCount: registeredQuote.quoteItemCount,
+        quoteStatus: finalQuotation ? "complete" as const : registeredQuote.quoteStatus,
+        quoteItemCount: finalQuotation?.items.length ?? registeredQuote.quoteItemCount,
         quoteMissingAmountItemCount:
-          registeredQuote.quoteMissingAmountItemCount,
+          finalQuotation ? 0 : registeredQuote.quoteMissingAmountItemCount,
       };
     }
     const source = productTotalsByBusiness.get(award.businessKey) ?? {
@@ -919,6 +941,15 @@ async function buildAnalyticsPayload() {
     };
     const expectedConstructionMargin =
       constructionMarginByBusiness.get(award.businessKey) ?? 0;
+    const finalQuotationPartnerEarning = finalQuotation?.items
+      .filter((item) => item.supplyType !== "direct")
+      .reduce((sum, item) => sum + item.expectedEarning, 0);
+    const finalQuotationDirectEarning = finalQuotation?.items
+      .filter((item) => item.supplyType === "direct")
+      .reduce((sum, item) => sum + item.expectedEarning, 0);
+    const finalQuotationDirectSales = finalQuotation?.items
+      .filter((item) => item.supplyType === "direct" && !item.complimentary)
+      .reduce((sum, item) => sum + item.amount, 0);
     const projection = calculateAwardSettlementProjection({
       expectedPartnerCommission: source.partnerCommission,
       expectedDirectSalesCollection: source.directSalesCollection,
@@ -931,17 +962,23 @@ async function buildAnalyticsPayload() {
     return {
       ...award,
       confirmedAmount:
-        registeredQuote.quoteStatus === "complete"
+        finalQuotation
+          ? finalQuotation.totalAmount
+          : registeredQuote.quoteStatus === "complete"
           ? registeredQuote.contractAmount
           : 0,
-      quoteStatus: registeredQuote.quoteStatus,
-      quoteItemCount: registeredQuote.quoteItemCount,
+      quoteStatus: finalQuotation ? "complete" as const : registeredQuote.quoteStatus,
+      quoteItemCount: finalQuotation?.items.length ?? registeredQuote.quoteItemCount,
       quoteMissingAmountItemCount:
-        registeredQuote.quoteMissingAmountItemCount,
-      expectedCommission: source.partnerCommission,
-      expectedPartnerCommission: source.partnerCommission,
-      expectedDirectSalesCollection: source.directSalesCollection,
-      expectedDirectMargin: source.directMargin,
+        finalQuotation ? 0 : registeredQuote.quoteMissingAmountItemCount,
+      expectedCommission:
+        finalQuotationPartnerEarning ?? source.partnerCommission,
+      expectedPartnerCommission:
+        finalQuotationPartnerEarning ?? source.partnerCommission,
+      expectedDirectSalesCollection:
+        finalQuotationDirectSales ?? source.directSalesCollection,
+      expectedDirectMargin:
+        finalQuotationDirectEarning ?? source.directMargin,
       expectedConstructionMargin,
       rawExpectedCollectionTotal: projection.rawExpectedCollectionTotal,
       expectedCollectionTotal: projection.expectedCollectionTotal,
@@ -952,7 +989,7 @@ async function buildAnalyticsPayload() {
         0,
         projection.expectedCollectionTotal - collectedAmount,
       ),
-      netRevenue: projection.expectedProfit,
+      netRevenue: finalQuotation?.marginAmount ?? projection.expectedProfit,
     };
   });
   const unlinkedProjects = unlinkedProjectResult.results.filter(

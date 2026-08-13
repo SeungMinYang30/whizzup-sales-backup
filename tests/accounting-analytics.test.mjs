@@ -191,7 +191,10 @@ test("전체 통계는 공사 프로젝트를 품목과 분리해 한 번만 집
     route,
     /expectedCollectionTotal: projection\.expectedCollectionTotal/,
   );
-  assert.match(route, /netRevenue: projection\.expectedProfit/);
+  assert.match(
+    route,
+    /netRevenue: finalQuotation\?\.marginAmount \?\? projection\.expectedProfit/,
+  );
   assert.match(
     route,
     /projection\.expectedCollectionTotal - collectedAmount/,

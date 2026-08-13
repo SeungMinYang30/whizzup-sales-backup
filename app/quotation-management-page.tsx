@@ -949,6 +949,7 @@ export default function QuotationManagementPage({
 
   function printInternalProfitReport() {
     if (!draft) return;
+    document.body.classList.remove("quotation-printing", "settlement-printing");
     document.body.classList.add("internal-profit-printing");
     requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
     setMessage("내부 수익표 인쇄 창을 열었습니다. 프린터 출력 또는 PDF로 저장할 수 있습니다.");
@@ -2568,11 +2569,14 @@ export default function QuotationManagementPage({
                 </article>)}
                 {!draft.settlementAdjustments.length && <small>추가 지급이나 정산 차감이 생기면 항목을 추가해 주세요.</small>}
               </div>
-              <div className="quotation-settlement-output-actions">
-                <button type="button" className="primary" onClick={() => void exportConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>PDF 보기·인쇄</button>
-                <button type="button" onClick={() => void downloadConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>PDF 다운로드</button>
-                <button type="button" onClick={() => void exportConsortiumSettlementExcel()} disabled={!draft.items.length}>Excel 다운로드</button>
-              </div>
+              <details className="quotation-output-menu quotation-output-menu-settlement">
+                <summary>정산서 출력·다운로드</summary>
+                <div className="quotation-output-menu-panel">
+                  <button type="button" className="primary" onClick={() => void exportConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>정산서 PDF 보기·인쇄</button>
+                  <button type="button" onClick={() => void downloadConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>정산서 PDF 다운로드</button>
+                  <button type="button" onClick={() => void exportConsortiumSettlementExcel()} disabled={!draft.items.length}>정산서 Excel 다운로드</button>
+                </div>
+              </details>
               <p>품목별 지급률과 비용 처리 방식, 정산 조정 내역을 표시하며 위즈업 수익·마진은 포함하지 않습니다. 직인 포함 설정도 동일하게 적용됩니다.</p>
             </section>}
             {directPurchaseWarning && <section className="quotation-procurement-warning quotation-direct-purchase-warning" role="alert"><strong>물품 수의계약 한도 확인</strong><div><b>수의계약 · 학교장터 합산</b><span>{won.format(directPurchaseWarning.totalAmount)}원 · {directPurchaseWarning.itemCount}개 품목</span><small>부가세 포함 2,200만원을 초과했습니다. 공사비와 일반 조달·디지털서비스몰·혁신장터 품목은 제외한 참고 경고입니다.</small></div></section>}
@@ -2707,7 +2711,7 @@ export default function QuotationManagementPage({
           </section>
         </div>}
 
-        {printPortalReady ? createPortal(<section className="quotation-print-stack quotation-print-portal print-only" aria-label="관공서 제출용 견적서 인쇄본">
+        {printPortalReady && !internalReportOpen ? createPortal(<section className="quotation-print-stack quotation-print-portal print-only" aria-label="관공서 제출용 견적서 인쇄본">
           {printItemPages.map((page, pageIndex) => {
             const pageItems = page.rows;
             const isFirstPage = pageIndex === 0;

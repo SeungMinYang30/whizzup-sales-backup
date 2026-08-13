@@ -7675,7 +7675,10 @@ export default function CrmApp({
       ),
     ];
   };
-  const registeredContractDisplay = (record: Activity) => {
+  const registeredContractDisplay = (
+    record: Activity,
+    jointMembers: Activity[] = [record],
+  ) => {
     if (record.awardStatus !== "위즈업 수주") {
       return {
         amount: "회계 연계 없음",
@@ -7690,24 +7693,58 @@ export default function CrmApp({
         status: "loading" as const,
       };
     }
-    const quote = equipmentQuoteSummaryForRecord(record);
-    if (!quote || quote.quoteStatus === "missing") {
+    const targetMembers = record.jointProjectId
+      ? jointMembers.filter((member) => member.jointProjectRole !== "sponsor")
+      : [record];
+    const quoteMembers = targetMembers.length > 0 ? targetMembers : [record];
+    const quotes = quoteMembers.map((member) => ({
+      member,
+      quote: equipmentQuoteSummaryForRecord(member),
+    }));
+    const missingQuotes = quotes.filter(
+      ({ quote }) => !quote || quote.quoteStatus === "missing",
+    );
+    if (missingQuotes.length === quotes.length) {
       return {
         amount: "견적 미등록",
-        detail: "품목 관리에서 견적을 등록해 주세요.",
+        detail: record.jointProjectId
+          ? "설치기관별 견적을 등록해 주세요."
+          : "품목 관리에서 견적을 등록해 주세요.",
         status: "missing" as const,
       };
     }
-    if (quote.quoteStatus === "partial") {
+    const registeredQuotes = quotes.filter(
+      ({ quote }) => quote && quote.quoteStatus !== "missing",
+    );
+    const totalAmount = registeredQuotes.reduce(
+      (sum, { quote }) => sum + (quote?.contractAmountReference ?? 0),
+      0,
+    );
+    const incompleteQuotes = quotes.filter(
+      ({ quote }) =>
+        !quote ||
+        quote.quoteStatus === "missing" ||
+        quote.quoteStatus === "partial" ||
+        quote.quoteStatus === "draft",
+    );
+    if (incompleteQuotes.length > 0) {
+      const missingItemCount = registeredQuotes.reduce(
+        (sum, { quote }) => sum + (quote?.quoteMissingAmountItemCount ?? 0),
+        0,
+      );
       return {
         amount: "견적 금액 확인 필요",
-        detail: `현재 입력 합계 ${quote.contractAmountReference.toLocaleString("ko-KR")}원 · ${quote.quoteMissingAmountItemCount.toLocaleString("ko-KR")}개 품목 확인`,
+        detail: record.jointProjectId
+          ? `설치기관 ${registeredQuotes.length.toLocaleString("ko-KR")}/${quotes.length.toLocaleString("ko-KR")}곳 · 현재 합계 ${totalAmount.toLocaleString("ko-KR")}원`
+          : `현재 입력 합계 ${totalAmount.toLocaleString("ko-KR")}원 · ${missingItemCount.toLocaleString("ko-KR")}개 품목 확인`,
         status: "partial" as const,
       };
     }
     return {
-      amount: `${quote.contractAmountReference.toLocaleString("ko-KR")}원`,
-      detail: "",
+      amount: `${totalAmount.toLocaleString("ko-KR")}원`,
+      detail: record.jointProjectId
+        ? `설치기관 ${quotes.length.toLocaleString("ko-KR")}곳 견적 합계`
+        : "",
       status: "complete" as const,
     };
   };
@@ -8719,7 +8756,15 @@ export default function CrmApp({
       : detailOrganization;
   const detailRegisteredContract =
     detailDisplayRecord && detailDisplayRecord.awardStatus !== "미정"
-      ? registeredContractDisplay(detailDisplayRecord)
+      ? registeredContractDisplay(
+          detailDisplayRecord,
+          detailDisplayRecord.jointProjectId
+            ? latestAwardRecords.filter(
+                (record) =>
+                  record.jointProjectId === detailDisplayRecord.jointProjectId,
+              )
+            : [detailDisplayRecord],
+        )
       : null;
   const detailBudgetAmountDisplay = detailDisplayRecord
     ? budgetAmountDisplayForRecord(detailDisplayRecord)
@@ -8994,16 +9039,35 @@ export default function CrmApp({
               .filter(
                 ([, record]) => record.awardStatus === "위즈업 수주",
               )
-              .map(([businessKey, record]) => {
-                const summary =
-                  equipmentQuoteSummaryByBusinessKey.get(businessKey);
-                return {
-                  businessRound: record.businessRound,
-                  status: summary?.quoteStatus ?? "missing",
-                  itemCount: summary?.quoteItemCount ?? 0,
-                  missingAmountItemCount:
-                    summary?.quoteMissingAmountItemCount ?? 0,
-                };
+              .flatMap(([businessKey, record]) => {
+                const jointSites =
+                  record.jointProjectId && record.jointProjectRole === "sponsor"
+                    ? latestAwardRecords.filter(
+                        (member) =>
+                          member.jointProjectId === record.jointProjectId &&
+                          member.jointProjectRole !== "sponsor" &&
+                          member.awardStatus === "위즈업 수주",
+                      )
+                    : [];
+                const quoteRecords = jointSites.length ? jointSites : [record];
+                return quoteRecords.map((quoteRecord) => {
+                  const quoteBusinessKey =
+                    quoteRecord === record
+                      ? businessKey
+                      : analyticsBusinessRoundKey(
+                          quoteRecord.organization,
+                          quoteRecord.businessRound,
+                        );
+                  const summary =
+                    equipmentQuoteSummaryByBusinessKey.get(quoteBusinessKey);
+                  return {
+                    businessRound: quoteRecord.businessRound,
+                    status: summary?.quoteStatus ?? "missing",
+                    itemCount: summary?.quoteItemCount ?? 0,
+                    missingAmountItemCount:
+                      summary?.quoteMissingAmountItemCount ?? 0,
+                  };
+                });
               })
               .filter((quote) => quote.status !== "complete")
           : [];
@@ -9112,6 +9176,7 @@ export default function CrmApp({
   }, [
     equipmentQuoteSummariesHydrated,
     equipmentQuoteSummaryByBusinessKey,
+    latestAwardRecords,
     records,
     todayValue,
   ]);
@@ -19530,8 +19595,10 @@ export default function CrmApp({
                           </td>
                           <td>
                             {(() => {
-                              const contract =
-                                registeredContractDisplay(record);
+                              const contract = registeredContractDisplay(
+                                record,
+                                awardPageGroupByPrimaryId.get(record.id)?.members,
+                              );
                               return (
                                 <>
                                   <strong

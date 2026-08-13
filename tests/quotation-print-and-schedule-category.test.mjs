@@ -36,6 +36,7 @@ test("내부 수익표는 별도 창 없이 현재 문서의 전용 인쇄 영�
   assert.match(quotationPage, /className="internal-profit-print-portal print-only"/);
   assert.match(quotationPage, /품목별 수익 내역/);
   assert.match(styles, /body\.internal-profit-printing > \*:not\(\.internal-profit-print-portal\)/);
+  assert.match(styles, /body:not\(\.quotation-printing\):not\(\.internal-profit-printing\):not\(\.settlement-printing\)/);
   assert.match(styles, /\.internal-profit-print-summary[\s\S]*?grid-template-columns: repeat\(3,minmax\(0,1fr\)\)/);
   assert.match(styles, /\.internal-profit-print-items > article[\s\S]*?break-inside: avoid/);
 });
