@@ -112,10 +112,12 @@ export function createInternalProfitReportWorkbook(input: InternalProfitReportWo
   const sheet = sheetXml(input);
   const lastColumn = input.compactView ? "G" : "N";
   const endRow = sheet.match(new RegExp(`<dimension ref="A1:${lastColumn}(\\d+)"`))?.[1] ?? "40";
-  const workbookStyles = styles.replace(
-    '#,##0&quot;원&quot;;[Red]-#,##0&quot;원&quot;;-',
-    '#,##0;[Red]-#,##0;-',
-  );
+  const workbookStyles = styles
+    .replace(
+      '#,##0&quot;원&quot;;[Red]-#,##0&quot;원&quot;;-',
+      '#,##0;[Red]-#,##0;-',
+    )
+    .replaceAll('borderId="2"', 'borderId="1"');
   const now = new Date().toISOString();
   return zipSync({
     "[Content_Types].xml": bytes(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`),

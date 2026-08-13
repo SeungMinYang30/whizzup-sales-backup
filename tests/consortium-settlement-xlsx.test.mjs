@@ -143,6 +143,7 @@ test("내부 수익표 Excel은 PDF형 요약과 품목별 수식을 포함하�
   assert.match(sheet, /zoomScale="100"/);
   assert.match(sheet, /<col min="13" max="13" width="18"/);
   assert.doesNotMatch(styles, /#,##0&quot;원&quot;/);
+  assert.doesNotMatch(styles, /<xf[^>]*borderId="2"/);
 });
 
 test("모바일 내부 수익표 Excel은 화면 이동이 쉬운 7열 간편 레이아웃을 만든다", () => {
