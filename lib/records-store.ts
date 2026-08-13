@@ -1471,10 +1471,57 @@ export async function insertActivity(
   }
   const lightweightSystemRecord = payload.skipInstitutionStateLookup === true;
   const requestedBusinessRound = Number(payload.businessRound);
-  const businessRound =
+  let businessRound =
     Number.isSafeInteger(requestedBusinessRound) && requestedBusinessRound > 0
       ? Math.min(99, requestedBusinessRound)
       : 1;
+  const originallyRequestedBusinessRound = businessRound;
+  let startsFreshBusiness = false;
+  if (!lightweightSystemRecord) {
+    const roundRows = await d1
+      .prepare(
+        `SELECT business_round AS "businessRound", award_stage AS "awardStage"
+         FROM activities
+         WHERE organization = ?
+         ORDER BY business_round ASC, activity_date DESC, id DESC`,
+      )
+      .bind(organization)
+      .all<{ businessRound: number; awardStage: string }>();
+    const completedRounds = new Set(
+      (roundRows.results ?? [])
+        .filter((row) => isCompletedAwardStage(clean(row.awardStage)))
+        .map((row) => Math.max(1, Number(row.businessRound) || 1)),
+    );
+    const latestCompletedRound = Math.max(0, ...completedRounds);
+    if (latestCompletedRound > 0 && businessRound <= latestCompletedRound) {
+      const reusableActiveRound = (roundRows.results ?? [])
+        .map((row) => Math.max(1, Number(row.businessRound) || 1))
+        .filter((round) => round > latestCompletedRound && !completedRounds.has(round))
+        .sort((left, right) => left - right)[0];
+      businessRound = reusableActiveRound ?? Math.min(99, latestCompletedRound + 1);
+      startsFreshBusiness = reusableActiveRound === undefined;
+    } else if (latestCompletedRound > 0 && businessRound > latestCompletedRound) {
+      startsFreshBusiness = !(roundRows.results ?? []).some(
+        (row) => Math.max(1, Number(row.businessRound) || 1) === businessRound,
+      );
+    }
+  }
+  const advancedFromCompletedBusiness = businessRound > originallyRequestedBusinessRound;
+  if (advancedFromCompletedBusiness || startsFreshBusiness) {
+    // A later inquiry must start a fresh opportunity.  Do not carry a completed
+    // result/stage from the prior business merely because an older client sent it.
+    payload = {
+      ...payload,
+      awardStatus: "미정",
+      awardCompany: "",
+      awardStage: "미정",
+      awardCompletedDate: "",
+      executionType: "직영",
+      consortiumCompany: "",
+      status: "상담 진행",
+      statusManual: false,
+    };
+  }
   const previousStateRows = lightweightSystemRecord
     ? { results: [] as InstitutionStateSnapshot[] }
     : await d1

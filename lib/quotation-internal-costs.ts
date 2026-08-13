@@ -2,6 +2,36 @@ export type QuotationInternalCostKind = "projector-installation" | "aifit-yoga-m
 
 export const PROJECTOR_INSTALLATION_COST = 220_000;
 export const AIFIT_YOGA_MAT_COST = 300_000;
+export const CONTENT_SUBSTITUTION_DEFAULT_EARNING_RATE = 0.5;
+
+type ContentSubstitutionRateInput = {
+  earningRate?: number;
+  internalCostBaseEarningRate?: number;
+};
+
+function safeRate(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(1, Math.max(0, parsed)) : 0;
+}
+
+/** 콘텐츠 대체비용을 켜기 전의 실제 수수료율을 복구합니다. */
+export function contentSubstitutionBaseEarningRate(item: ContentSubstitutionRateInput) {
+  if (Number.isFinite(Number(item.internalCostBaseEarningRate))) {
+    return safeRate(item.internalCostBaseEarningRate);
+  }
+  const currentRate = safeRate(item.earningRate);
+  // 구버전에서 사용자가 바이패스를 표현하려고 100%로 저장한 콘텐츠는 기존 기본 50%로 복구합니다.
+  return currentRate >= 0.999999 ? CONTENT_SUBSTITUTION_DEFAULT_EARNING_RATE : currentRate;
+}
+
+/**
+ * 콘텐츠 판매금액 중 대체비용으로 쓰지 않은 잔액에 원래 수수료율만 적용합니다.
+ * 대체비용이 판매금액보다 크면 음수 마진을 그대로 보존합니다.
+ */
+export function contentSubstitutionMargin(lineAmount: number, replacementCost: number, baseRate: number) {
+  const raw = (Math.max(0, Number(lineAmount) || 0) - Math.max(0, Number(replacementCost) || 0)) * safeRate(baseRate);
+  return Math.trunc(raw / 10) * 10;
+}
 
 function normalizedProductName(value: string) {
   return value

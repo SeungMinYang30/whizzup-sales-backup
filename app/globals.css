@@ -11943,6 +11943,69 @@ details.complex-section > summary { cursor: pointer; font-size: 17px; font-weigh
   .equipment-kit-print-sheet{padding-top:0}.equipment-kit-print-header{display:grid;grid-template-columns:38mm 1fr 55mm;align-items:start;min-height:31mm;border-top:2px solid #3157e6;border-bottom:1px solid #c8d4e5}.equipment-kit-print-header img{width:29mm;height:21mm;margin:3mm 0 0 4mm;object-fit:contain}.equipment-kit-print-header>div{text-align:center}.equipment-kit-print-header h1{margin:5mm 0 0;font-size:17pt;letter-spacing:.25em}.equipment-kit-print-header p{margin:2mm 0 0;color:#6d7990}.equipment-kit-print-header dl{display:grid;grid-template-columns:20mm 1fr;margin:3.5mm 0 0}.equipment-kit-print-header dt,.equipment-kit-print-header dd{min-height:7mm;margin:0;padding:1.5mm;border:1px solid #ccd6e6;border-bottom:0;text-align:center}.equipment-kit-print-header dt{background:#f2f5fa;font-weight:800}.equipment-kit-print-header dd{border-left:0}.equipment-kit-print-header dt:nth-last-of-type(1),.equipment-kit-print-header dd:last-child{border-bottom:1px solid #ccd6e6}.equipment-kit-print-band{margin-top:4mm;padding:2.2mm 3mm;background:#182842;color:#fff;font-weight:850}.equipment-kit-print-table{width:100%;margin-top:2mm;border-collapse:collapse;table-layout:fixed}.equipment-kit-print-table col.no{width:6%}.equipment-kit-print-table col.name{width:38%}.equipment-kit-print-table col.quantity{width:8%}.equipment-kit-print-table col.unit{width:8%}.equipment-kit-print-table col.price{width:13%}.equipment-kit-print-table col.amount{width:15%}.equipment-kit-print-table col.note{width:12%}.equipment-kit-print-table th{height:8mm;background:#eaf1ff;text-align:center}.equipment-kit-print-table td{height:9.5mm;padding:1mm;border-bottom:1px solid #ccd7e7;text-align:center}.equipment-kit-print-table th+th,.equipment-kit-print-table td+td{border-left:1px solid #ccd7e7}.equipment-kit-print-table td:nth-child(2){text-align:left}.equipment-kit-print-table td:nth-child(5),.equipment-kit-print-table td:nth-child(6){text-align:right;white-space:nowrap}.equipment-kit-print-table tr{break-inside:avoid;page-break-inside:avoid}.equipment-kit-print-total{display:grid;grid-template-columns:1fr 55mm;align-items:center;min-height:13mm;margin-top:4mm;border-top:1.5px solid #3157e6;border-bottom:1.5px solid #3157e6;background:#eaf1ff}.equipment-kit-print-total span{padding-left:4mm;font-weight:850}.equipment-kit-print-total strong{padding-right:3mm;color:#2454d5;font-size:15pt;text-align:right}.equipment-kit-print-footer{display:flex;justify-content:space-between;margin-top:6mm;padding-top:3mm;border-top:1px solid #d6deeb;color:#6f7c90}.equipment-kit-print-footer b{color:#40557a}
 }
 
+/* Mobile dashboard and Google-link dialogs: fixed controls, scrollable content. */
+.schedule-readonly-dialog {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.schedule-readonly-dialog > header,
+.schedule-readonly-dialog > footer { flex: 0 0 auto; }
+.schedule-readonly-dialog > dl {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 700px) {
+  .schedule-readonly-dialog { padding: 15px 14px max(14px, env(safe-area-inset-bottom)); }
+  .schedule-readonly-dialog > dl { grid-template-columns: 78px minmax(0, 1fr); margin-top: 12px; }
+  .schedule-readonly-dialog > dl > * { padding: 10px; overflow-wrap: anywhere; }
+  .schedule-readonly-dialog > footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+  }
+  .schedule-readonly-dialog > footer > span { display: none; }
+  .schedule-readonly-dialog > footer button {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    margin: 0;
+    padding-inline: 7px;
+    white-space: normal;
+    line-height: 1.25;
+  }
+
+  .topbar.has-dashboard-status .top-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .topbar.has-dashboard-status .top-actions > button {
+    min-width: 0;
+    white-space: normal;
+    line-height: 1.15;
+  }
+  .topbar.has-dashboard-status .dashboard-status-strip {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .topbar.has-dashboard-status .dashboard-status-strip::-webkit-scrollbar { display: none; }
+  .topbar.has-dashboard-status .dashboard-status-card { flex: 0 0 154px; min-width: 154px; }
+  .ai-quick-record,
+  .ai-entry-panel,
+  .ai-entry-card { max-width: 100%; overflow: hidden; }
+  .ai-entry-panel,
+  .ai-entry-card { padding: 15px 13px; }
+  .ai-entry-panel h2,
+  .ai-entry-card h2 { font-size: 19px; line-height: 1.25; }
+  .ai-entry-panel textarea,
+  .ai-entry-card textarea { min-width: 0; min-height: 86px; font-size: 14px; }
+}
+
 /* Mobile construction workflow and calendar day sheet */
 .construction-mobile-action-menu,
 .construction-mobile-summary,

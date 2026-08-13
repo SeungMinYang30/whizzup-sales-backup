@@ -7893,8 +7893,12 @@ export default function CrmApp({
       }
       if (awardSort === "stage") {
         return (
-          awardStageOptions.indexOf(a.awardStage) -
-            awardStageOptions.indexOf(b.awardStage) ||
+          awardStageOptions.indexOf(
+            a.awardStage as (typeof awardStageOptions)[number],
+          ) -
+            awardStageOptions.indexOf(
+              b.awardStage as (typeof awardStageOptions)[number],
+            ) ||
           b.activityDate.localeCompare(a.activityDate)
         );
       }
@@ -12932,31 +12936,25 @@ export default function CrmApp({
       return;
     }
     let resolvedBusinessRound = form.businessRound;
-    if (!editingId && form.businessRound === 1) {
+    if (!editingId) {
       const organizationKey = institutionAliasKey(form.organization);
       const organizationRecords = records.filter(
         (record) =>
           institutionAliasKey(record.organization) === organizationKey &&
           !isPdfCampaignRegistration(record),
       );
-      const hasCompletedBusiness = organizationRecords.some(
-        (record) =>
-          ["위즈업 수주", "협력사 수주"].includes(record.awardStatus) &&
-          completedAwardStages.has(record.awardStage),
+      const completedRounds = new Set(
+        organizationRecords
+          .filter((record) => isCompletedAwardStage(record.awardStage))
+          .map((record) => Math.max(1, record.businessRound)),
       );
-      const isNewOpportunity = ["신규 접촉", "재영업 상담"].includes(
-        normalizeSalesProgress(form.status, form.awardStatus),
-      );
-      if (hasCompletedBusiness && isNewOpportunity) {
-        const nextRound =
-          Math.max(1, ...organizationRecords.map((record) => record.businessRound)) + 1;
-        if (
-          window.confirm(
-            `기존에 완료된 수주 사업이 있습니다.\n이번 기록을 ${nextRound}차 신규 사업으로 분리할까요?\n\n확인: 새 사업으로 분리\n취소: 기존 사업에 기록`,
-          )
-        ) {
-          resolvedBusinessRound = nextRound;
-        }
+      const latestCompletedRound = Math.max(0, ...completedRounds);
+      if (latestCompletedRound > 0 && resolvedBusinessRound <= latestCompletedRound) {
+        const reusableActiveRound = organizationRecords
+          .map((record) => Math.max(1, record.businessRound))
+          .filter((round) => round > latestCompletedRound && !completedRounds.has(round))
+          .sort((left, right) => left - right)[0];
+        resolvedBusinessRound = reusableActiveRound ?? latestCompletedRound + 1;
       }
     }
     try {
@@ -13219,7 +13217,8 @@ export default function CrmApp({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: record.id }),
       });
-      if (!response.ok) throw new Error("삭제하지 못했습니다.");
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "삭제하지 못했습니다.");
       setRecords((current) => current.filter((item) => item.id !== record.id));
       setToast("기록을 휴지통으로 이동했습니다. 관리자가 30일 안에 복원할 수 있습니다.");
       return true;

@@ -88,6 +88,7 @@ import {
   ACTIVITY_CHANGE_MAX_OPERATION_ID_LENGTH,
   ACTIVITY_CHANGE_SCOPE_AWARDS,
   ACTIVITY_CHANGE_WRITE_CHUNK_SIZE,
+  type ActivityChangeScope,
   ensureActivityChangeLedgerReady,
   existingActivityChangeItemIds,
   getActivityChangeBatch,
@@ -1280,7 +1281,8 @@ export async function PATCH(request: Request) {
     );
     const operationId = clean(payload.operationId);
     const requestedOperationScope =
-      clean(payload.operationScope) || ACTIVITY_CHANGE_SCOPE_AWARDS;
+      (clean(payload.operationScope) ||
+        ACTIVITY_CHANGE_SCOPE_AWARDS) as ActivityChangeScope;
     const operationLabel =
       clean(payload.operationLabel).slice(0, 200) || "기록 일괄 변경";
     const requestedOperationTotal = Number(payload.operationTotal);
@@ -2226,7 +2228,6 @@ export async function DELETE(request: Request) {
         "activity_id",
         selectedActivityIds,
       ),
-      ...deleteRowsByIds("activities", "id", selectedActivityIds),
       ...deleteRowsByIds(
         "organization_schedules",
         "id",
@@ -2244,6 +2245,9 @@ export async function DELETE(request: Request) {
         "id",
         rowIds("quotation_documents"),
       ),
+      // Keep the parent activity until every optional business child has gone.
+      // PostgreSQL enforces these relations more strictly than the legacy store.
+      ...deleteRowsByIds("activities", "id", selectedActivityIds),
     ];
     const cleanupChunks = Array.from(
       { length: Math.ceil(cleanupOrganizations.length / 50) },

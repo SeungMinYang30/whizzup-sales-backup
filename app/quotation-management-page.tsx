@@ -18,7 +18,12 @@ import { createConsortiumSettlementWorkbook, type ConsortiumSettlementWorkbookIn
 import { createConsortiumSettlementPdf } from "./consortium-settlement-pdf";
 import { hasProcurementSignal, procurementNumbersFromText } from "../lib/procurement-product";
 import { createAuthoredQuotationPdf, quotationFileStem } from "./authored-quotation-pdf";
-import { quotationInternalCostDefaults, quotationInternalCostKind } from "../lib/quotation-internal-costs";
+import {
+  contentSubstitutionBaseEarningRate,
+  contentSubstitutionMargin,
+  quotationInternalCostDefaults,
+  quotationInternalCostKind,
+} from "../lib/quotation-internal-costs";
 import { directPurchaseLimitWarning, procurementContractWarnings } from "../lib/procurement-contract-warning";
 import { applyCatalogSuppliers } from "../lib/quotation-supplier";
 import {
@@ -193,6 +198,17 @@ function internalCostFields(name: string, specification = "", quantity = 1) {
     internalCostUnitAmount: defaults.unitAmount,
     internalCostAutoQuantity: defaults.autoQuantity,
   };
+}
+
+function isContentSubstitutionItem(item: Pick<DraftItem, "name" | "specification" | "internalCostEnabled">) {
+  return item.internalCostEnabled && quotationInternalCostKind(item.name, item.specification) === "content-substitution";
+}
+
+function draftItemExpectedEarning(item: DraftItem) {
+  const lineAmount = Math.max(0, item.quantity) * Math.max(0, item.unitPrice);
+  return isContentSubstitutionItem(item)
+    ? contentSubstitutionMargin(lineAmount, item.internalCostAmount, contentSubstitutionBaseEarningRate(item))
+    : Math.floor(lineAmount * Math.max(0, item.earningRate) / 10) * 10;
 }
 
 function normalizedEquipmentKitName(value: string) {
@@ -820,7 +836,7 @@ export default function QuotationManagementPage({
     const supply = Math.round(adjusted / 1.1);
     const tax = adjusted - supply;
     const procurementFee = draft.items.reduce((sum, item) => sum + (appliesProcurementFee(item) ? Math.floor(item.quantity * item.unitPrice * item.procurementFeeRate / 10) * 10 : 0), 0);
-    const earning = draft.items.reduce((sum, item) => sum + Math.floor(item.quantity * item.unitPrice * item.earningRate / 10) * 10, 0);
+    const earning = draft.items.reduce((sum, item) => sum + draftItemExpectedEarning(item), 0);
     const settlement = calculateConsortiumSettlement(draft.items, draft.executionType, draft.settlementAdjustments);
     const consortiumGross = settlement.grossPayment;
     const consortiumCost = settlement.consortiumCost;
@@ -846,15 +862,16 @@ export default function QuotationManagementPage({
 
   const internalReportRows = useMemo(() => (draft?.items ?? []).map((item, index) => {
     const lineAmount = Math.max(0, item.quantity) * Math.max(0, item.unitPrice);
-    const earning = Math.floor(lineAmount * Math.max(0, item.earningRate) / 10) * 10;
-    const grossConsortium = draft?.executionType === "컨소"
+    const contentSubstitution = isContentSubstitutionItem(item);
+    const earning = draftItemExpectedEarning(item);
+    const grossConsortium = draft?.executionType === "컨소" && !contentSubstitution
       ? Math.min(earning, Math.floor(lineAmount * Math.max(0, item.consortiumRate) / 10) * 10)
       : 0;
     const consortiumCost = draft?.executionType === "컨소" && item.internalCostEnabled && item.internalCostBearer === "consortium"
       ? Math.max(0, item.internalCostAmount)
       : 0;
     const consortium = grossConsortium - consortiumCost;
-    const internalCost = item.internalCostEnabled && (draft?.executionType !== "컨소" || item.internalCostBearer === "whizzup")
+    const internalCost = !contentSubstitution && item.internalCostEnabled && (draft?.executionType !== "컨소" || item.internalCostBearer === "whizzup")
       ? Math.max(0, item.internalCostAmount)
       : 0;
     return {
@@ -2368,14 +2385,17 @@ export default function QuotationManagementPage({
                   const productAmount = Math.max(0, item.quantity) * Math.max(0, item.unitPrice);
                   const procurementFee = appliesProcurementFee(item) ? Math.floor(productAmount * item.procurementFeeRate / 10) * 10 : 0;
                   const quotationAmount = productAmount + procurementFee;
-                  const expectedEarning = Math.floor(productAmount * item.earningRate / 10) * 10;
-                  const consortiumPayment = draft.executionType === "컨소" ? Math.min(expectedEarning, Math.floor(productAmount * item.consortiumRate / 10) * 10) : 0;
+                  const contentSubstitution = isContentSubstitutionItem(item);
+                  const expectedEarning = draftItemExpectedEarning(item);
+                  const consortiumPayment = draft.executionType === "컨소" && !contentSubstitution ? Math.min(expectedEarning, Math.floor(productAmount * item.consortiumRate / 10) * 10) : 0;
                   const internalCost = item.internalCostEnabled ? Math.max(0, item.internalCostAmount) : 0;
                   const internalCostDefaults = quotationInternalCostDefaults(item.name, item.specification, item.quantity);
-                  const settledConsortiumPayment = item.internalCostEnabled && item.internalCostBearer === "consortium"
+                  const settledConsortiumPayment = !contentSubstitution && item.internalCostEnabled && item.internalCostBearer === "consortium"
                     ? consortiumPayment - internalCost
                     : consortiumPayment;
-                  const companyMargin = expectedEarning - settledConsortiumPayment - (item.internalCostBearer === "whizzup" ? internalCost : 0);
+                  const companyMargin = contentSubstitution
+                    ? expectedEarning
+                    : expectedEarning - settledConsortiumPayment - (item.internalCostBearer === "whizzup" ? internalCost : 0);
                   return <article
                     className={`quotation-item-card${dragOverItemId === item.id ? " drag-over" : ""}`}
                     key={item.id}
@@ -2433,17 +2453,26 @@ export default function QuotationManagementPage({
                       {item.contractType === "g2b" ? <label><span>조달 채널</span><select value={item.procurementChannel || "G2B"} onChange={(event) => updateItem(item.id, { procurementChannel: event.target.value })}><option value="G2B">G2B</option><option value="디지털서비스몰">디지털서비스몰</option><option value="혁신장터">혁신장터</option><option value="기타">기타</option></select></label> : null}
                       {item.contractType === "g2b" ? <label><span>공급처</span><input value={item.supplierVendorName ?? ""} onChange={(event) => updateItem(item.id, { supplierVendorId: null, supplierVendorName: event.target.value })} placeholder="조달 공급처명" /></label> : null}
                       <label><span>조달 수수료율</span><div className="quotation-rate-input"><EditableRateInput label="조달 수수료율" value={item.procurementFeeRate} step={0.01} disabled={!appliesProcurementFee(item)} onChange={(procurementFeeRate) => updateItem(item.id, { procurementFeeRate })} /><b>%</b></div></label>
-                      <label><span>당사 수수료율</span><div className="quotation-rate-input"><EditableRateInput label="당사 수수료율" value={item.earningRate} onChange={(earningRate) => updateItem(item.id, { earningRate, consortiumRate: Math.min(item.consortiumRate, earningRate) })} /><b>%</b></div></label>
+                      <label><span>당사 수수료율</span><div className="quotation-rate-input"><EditableRateInput label="당사 수수료율" value={item.earningRate} disabled={contentSubstitution} onChange={(earningRate) => updateItem(item.id, { earningRate, consortiumRate: Math.min(item.consortiumRate, earningRate) })} /><b>%</b></div>{contentSubstitution ? <small>바이패스 100% · 잔액에는 기존 {(contentSubstitutionBaseEarningRate(item) * 100).toFixed(2).replace(/\.00$/, "")}% 적용</small> : null}</label>
                       {draft.executionType === "컨소" ? <label><span>컨소 지급률</span><div className="quotation-rate-input"><EditableRateInput label="컨소 지급률" value={item.consortiumRate} max={item.earningRate * 100} onChange={(consortiumRate) => updateItem(item.id, { consortiumRate })} /><b>%</b></div>{(() => {
                         const recent = draftItemLookupKeys(item).map((key) => recentConsortiumRates[key]).find(Boolean);
                         return recent && Math.abs(recent.rate - item.consortiumRate) < 0.000001
                           ? <small className="quotation-recent-rate">최근 적용 {(recent.rate * 100).toFixed(2).replace(/\.00$/, "")}% · {recent.quoteDate}</small>
                           : null;
                       })()}</label> : null}
-                      <div className="quotation-item-margin"><span>당사 마진</span><strong>{won.format(companyMargin)}원</strong>{internalCost > 0 ? <small>내부 원가 {won.format(internalCost)}원 반영</small> : draft.executionType === "컨소" ? <small>컨소 지급 {won.format(consortiumPayment)}원 차감</small> : <small>예상 수익 기준</small>}</div>
+                      <div className="quotation-item-margin"><span>당사 마진</span><strong>{won.format(companyMargin)}원</strong>{contentSubstitution ? <small>대체 후 잔액 × 기존 수수료율</small> : internalCost > 0 ? <small>내부 원가 {won.format(internalCost)}원 반영</small> : draft.executionType === "컨소" ? <small>컨소 지급 {won.format(consortiumPayment)}원 차감</small> : <small>예상 수익 기준</small>}</div>
                       {internalCostDefaults.kind && <div className="quotation-item-internal-cost">
                         <label><input type="checkbox" checked={item.internalCostEnabled} onChange={(event) => {
-                          if (event.target.checked && internalCostDefaults.kind === "aifit-yoga-mat" && !item.internalCostAmount) {
+                          if (internalCostDefaults.kind === "content-substitution") {
+                            const checked = event.target.checked;
+                            const baseRate = contentSubstitutionBaseEarningRate(item);
+                            updateItem(item.id, {
+                              internalCostEnabled: checked,
+                              internalCostBaseEarningRate: baseRate,
+                              earningRate: checked ? 1 : baseRate,
+                              consortiumRate: checked ? 0 : Math.min(item.consortiumRate, baseRate),
+                            });
+                          } else if (event.target.checked && internalCostDefaults.kind === "aifit-yoga-mat" && !item.internalCostAmount) {
                             updateItem(item.id, { internalCostEnabled: true, internalCostQuantity: internalCostDefaults.quantity, internalCostUnitAmount: internalCostDefaults.unitAmount, internalCostAmount: internalCostDefaults.amount, internalCostAutoQuantity: true });
                           } else {
                             updateItem(item.id, { internalCostEnabled: event.target.checked });
@@ -2459,8 +2488,8 @@ export default function QuotationManagementPage({
                           <b>합계 {won.format(item.internalCostAmount)}원</b>
                           <button type="button" onClick={() => updateItem(item.id, { internalCostEnabled: true, internalCostQuantity: internalCostDefaults.quantity, internalCostUnitAmount: internalCostDefaults.unitAmount, internalCostAmount: internalCostDefaults.amount, internalCostAutoQuantity: true })}>아이핏 수량 적용</button>
                         </div> : <span className="quotation-money-input"><FormattedMoneyInput value={item.internalCostAmount} onChange={(internalCostAmount) => updateItem(item.id, { internalCostAmount })} label={`${internalCostDefaults.label} 내부 원가`} /><b>원</b></span>}
-                        {draft.executionType === "컨소" ? <div className="quotation-cost-bearer"><span>비용 처리 방식</span><div><button type="button" className={item.internalCostBearer === "consortium" ? "active" : ""} onClick={() => updateItem(item.id, { internalCostBearer: "consortium" })}>정산서 반영</button><button type="button" className={item.internalCostBearer === "whizzup" ? "active" : ""} onClick={() => updateItem(item.id, { internalCostBearer: "whizzup" })}>위즈업 별도 처리</button></div></div> : null}
-                        <small>{draft.executionType === "컨소" && item.internalCostBearer === "consortium" ? "컨소 정산서의 비용 내역과 최종 지급 예정액에 반영됩니다." : "위즈업 내부 비용으로 처리되며 고객 견적 금액에는 반영되지 않습니다."}</small>
+                        {draft.executionType === "컨소" && internalCostDefaults.kind !== "content-substitution" ? <div className="quotation-cost-bearer"><span>비용 처리 방식</span><div><button type="button" className={item.internalCostBearer === "consortium" ? "active" : ""} onClick={() => updateItem(item.id, { internalCostBearer: "consortium" })}>정산서 반영</button><button type="button" className={item.internalCostBearer === "whizzup" ? "active" : ""} onClick={() => updateItem(item.id, { internalCostBearer: "whizzup" })}>위즈업 별도 처리</button></div></div> : null}
+                        <small>{internalCostDefaults.kind === "content-substitution" ? "체크 시 바이패스 100%로 표시하고, 대체 후 남은 금액에 기존 수수료율을 적용합니다. 초과 비용은 음수 마진으로 반영됩니다." : draft.executionType === "컨소" && item.internalCostBearer === "consortium" ? "컨소 정산서의 비용 내역과 최종 지급 예정액에 반영됩니다." : "위즈업 내부 비용으로 처리되며 고객 견적 금액에는 반영되지 않습니다."}</small>
                       </div>}
                     </div>
                     <label className="quotation-item-card-note"><span>비고</span><input value={item.note} onChange={(event) => updateItem(item.id, { note: event.target.value })} placeholder="품목별 비고" /></label>

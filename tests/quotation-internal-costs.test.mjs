@@ -4,7 +4,12 @@ import test from "node:test";
 import { register } from "node:module";
 
 register(new URL("./typescript-resolver.mjs", import.meta.url));
-const { isYogaMatEligibleAifitProduct, quotationInternalCostDefaults } = await import("../lib/quotation-internal-costs.ts");
+const {
+  contentSubstitutionBaseEarningRate,
+  contentSubstitutionMargin,
+  isYogaMatEligibleAifitProduct,
+  quotationInternalCostDefaults,
+} = await import("../lib/quotation-internal-costs.ts");
 
 const page = await readFile(new URL("../app/quotation-management-page.tsx", import.meta.url), "utf8");
 const store = await readFile(new URL("../lib/authored-quotations.ts", import.meta.url), "utf8");
@@ -64,4 +69,16 @@ test("internal deductions persist with a bearer and preserve legacy quotes as Wh
 test("customer PDF and Excel remain free of internal cost fields", () => {
   assert.doesNotMatch(pdf, /internalCost|additionalInternalConstructionCost/);
   assert.doesNotMatch(workbook, /internalCost|additionalInternalConstructionCost/);
+});
+
+test("content substitution shows a 100% bypass but applies the preserved base rate only to the balance", () => {
+  assert.equal(contentSubstitutionMargin(2_700_000, 2_000_000, 0.5), 350_000);
+  assert.equal(contentSubstitutionMargin(2_700_000, 2_800_000, 0.5), -50_000);
+  assert.equal(contentSubstitutionBaseEarningRate({
+    earningRate: 1,
+    internalCostBaseEarningRate: 0.5,
+  }), 0.5);
+  assert.equal(contentSubstitutionBaseEarningRate({ earningRate: 1 }), 0.5);
+  assert.match(page, /earningRate: checked \? 1 : baseRate/);
+  assert.match(page, /internalCostBaseEarningRate/);
 });

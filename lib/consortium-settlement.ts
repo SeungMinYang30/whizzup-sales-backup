@@ -1,4 +1,9 @@
-import { quotationInternalCostDefaults, quotationInternalCostKind } from "./quotation-internal-costs";
+import {
+  contentSubstitutionBaseEarningRate,
+  contentSubstitutionMargin,
+  quotationInternalCostDefaults,
+  quotationInternalCostKind,
+} from "./quotation-internal-costs";
 
 export type InternalCostBearer = "consortium" | "whizzup";
 
@@ -8,6 +13,7 @@ export type ConsortiumSettlementItemInput = {
   quantity: number;
   unitPrice: number;
   earningRate: number;
+  internalCostBaseEarningRate?: number;
   consortiumRate: number;
   internalCostEnabled?: boolean;
   internalCostAmount?: number;
@@ -62,9 +68,19 @@ export function calculateConsortiumSettlement(
 ) {
   const settlementItems: ConsortiumSettlementItem[] = items.map((item) => {
     const lineAmount = Math.round(Math.max(0, item.quantity) * Math.max(0, item.unitPrice));
-    const earning = Math.floor(lineAmount * safeRate(item.earningRate) / 10) * 10;
+    const kind = quotationInternalCostKind(item.name, item.specification ?? "");
+    const defaults = quotationInternalCostDefaults(item.name, item.specification ?? "", item.quantity);
+    const internalCostEnabled = typeof item.internalCostEnabled === "boolean" ? item.internalCostEnabled : defaults.enabled;
+    const internalCostAmount = item.internalCostAmount === undefined ? defaults.amount : safeAmount(item.internalCostAmount);
+    const earning = kind === "content-substitution" && internalCostEnabled
+      ? contentSubstitutionMargin(
+          lineAmount,
+          internalCostAmount,
+          contentSubstitutionBaseEarningRate(item),
+        )
+      : Math.floor(lineAmount * safeRate(item.earningRate) / 10) * 10;
     const consortiumRate = safeRate(item.consortiumRate);
-    const grossPayment = executionType === "컨소"
+    const grossPayment = executionType === "컨소" && kind !== "content-substitution"
       ? Math.min(earning, Math.floor(lineAmount * consortiumRate / 10) * 10)
       : 0;
     return { name: item.name, lineAmount, consortiumRate, grossPayment };
@@ -82,6 +98,8 @@ export function calculateConsortiumSettlement(
     if (!amount) return [];
     const bearer = item.internalCostBearer === "consortium" ? "consortium" : "whizzup";
     const kind = quotationInternalCostKind(item.name, item.specification ?? "");
+    // 콘텐츠 대체비용은 위즈업 내부 바이패스 계산 기준이며 별도 비용으로 다시 차감하지 않습니다.
+    if (kind === "content-substitution") return [];
     const unitAmount = safeAmount(item.internalCostUnitAmount) || defaults.unitAmount || amount;
     const quantity = kind === "aifit-yoga-mat"
       ? Math.max(1, Math.round(Number(item.internalCostQuantity) || Math.max(1, Math.round(amount / Math.max(1, unitAmount)))))

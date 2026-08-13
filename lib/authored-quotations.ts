@@ -3,7 +3,12 @@ import { AccessError, ensureCollaborationReady, type Member } from "./collaborat
 import { personDisplayLabel } from "./person-label";
 import { hasProcurementSignal, procurementNumbersFromText, resolveProcurementFeeRate } from "./procurement-product";
 import { normalizeAirpassEquipmentKit, type AirpassEquipmentKit } from "./airpass-equipment-kit";
-import { quotationInternalCostDefaults } from "./quotation-internal-costs";
+import {
+  contentSubstitutionBaseEarningRate,
+  contentSubstitutionMargin,
+  quotationInternalCostDefaults,
+  quotationInternalCostKind,
+} from "./quotation-internal-costs";
 import {
   calculateConsortiumSettlement,
   type InternalCostBearer,
@@ -23,6 +28,7 @@ export type AuthoredQuotationItem = {
   supplierVendorId?: number | null;
   supplierVendorName?: string;
   earningRate: number;
+  internalCostBaseEarningRate?: number;
   amount: number;
   expectedEarning: number;
   contractType: "direct" | "g2b" | "s2b";
@@ -250,7 +256,7 @@ function parseItems(value: unknown) {
     const quantity = Math.max(1, Number(item.quantity) || 1);
     const unitPrice = amount(item.unitPrice);
     const lineAmount = Math.round(quantity * unitPrice);
-    const earningRate = rate(item.earningRate);
+    const parsedEarningRate = rate(item.earningRate);
     const requestedContractType = text(item.contractType, 20);
     const inferredProcurement = item.procurement === true || hasProcurementSignal(item.note, item.specification);
     const inferredChannel = text(item.procurementChannel, 80) || (String(item.note ?? "").match(/S\s*2\s*B/iu) ? "S2B" : String(item.note ?? "").includes("디지털서비스몰") ? "디지털서비스몰" : String(item.note ?? "").includes("혁신장터") ? "혁신장터" : "G2B");
@@ -265,8 +271,6 @@ function parseItems(value: unknown) {
     const procurementFeeRate = procurement && appliesProcurementFee(procurementChannel) ? resolveProcurementFeeRate(item.procurementFeeRate, item.note, item.specification) ?? 0.0054 : 0;
     const procurementFee = procurement && appliesProcurementFee(procurementChannel) ? Math.floor(lineAmount * procurementFeeRate / 10) * 10 : 0;
     const consortiumRate = rate(item.consortiumRate);
-    const expectedEarning = Math.floor(lineAmount * earningRate / 10) * 10;
-    const consortiumPayment = Math.min(expectedEarning, Math.floor(lineAmount * consortiumRate / 10) * 10);
     const equipmentKit = normalizeAirpassEquipmentKit(item.equipmentKit);
     const internalCostDefaults = quotationInternalCostDefaults(name, text(item.specification, 1_000), quantity);
     const internalCostEnabled = typeof item.internalCostEnabled === "boolean"
@@ -284,6 +288,20 @@ function parseItems(value: unknown) {
         : internalCostDefaults.quantity
     )));
     const internalCostAutoQuantity = item.internalCostAutoQuantity === true;
+    const contentSubstitutionEnabled = internalCostEnabled && quotationInternalCostKind(name, text(item.specification, 1_000)) === "content-substitution";
+    const internalCostBaseEarningRate = contentSubstitutionEnabled
+      ? contentSubstitutionBaseEarningRate({
+          earningRate: parsedEarningRate,
+          internalCostBaseEarningRate: Number(item.internalCostBaseEarningRate),
+        })
+      : undefined;
+    const earningRate = contentSubstitutionEnabled ? 1 : parsedEarningRate;
+    const expectedEarning = contentSubstitutionEnabled
+      ? contentSubstitutionMargin(lineAmount, internalCostAmount, internalCostBaseEarningRate ?? parsedEarningRate)
+      : Math.floor(lineAmount * earningRate / 10) * 10;
+    const consortiumPayment = contentSubstitutionEnabled
+      ? 0
+      : Math.min(expectedEarning, Math.floor(lineAmount * consortiumRate / 10) * 10);
     return [{
       id: text(item.id, 160) || `line-${index + 1}`,
       productId: text(item.productId, 160),
@@ -299,6 +317,7 @@ function parseItems(value: unknown) {
         : null,
       supplierVendorName: text(item.supplierVendorName, 300),
       earningRate,
+      ...(internalCostBaseEarningRate === undefined ? {} : { internalCostBaseEarningRate }),
       amount: lineAmount,
       expectedEarning,
       contractType,
