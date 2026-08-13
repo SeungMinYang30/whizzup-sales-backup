@@ -3845,8 +3845,14 @@ tr:hover .row-actions { opacity: 1; }
 .organization-current-schedule { position: relative; margin-bottom: 14px; border: 1px solid #d8e2f3; background: linear-gradient(135deg, #fbfcff, #f2f6ff); }
 .organization-current-schedule .history-section-heading { background: rgba(255,255,255,.72); }
 .organization-current-schedule-list { display: grid; gap: 8px; padding: 14px 18px 8px; }
-.organization-current-schedule-list > div { display: grid; grid-template-columns: 108px minmax(0,1fr) auto auto; align-items: center; gap: 12px; min-height: 46px; padding: 9px 11px; border: 1px solid #dfe6f2; border-radius: 9px; background: white; }
+.organization-current-schedule-list > div { display: grid; grid-template-columns: 108px auto minmax(0,1fr) auto auto; align-items: center; gap: 12px; min-height: 46px; padding: 9px 11px; border: 1px solid #dfe6f2; border-radius: 9px; background: white; }
 .organization-current-schedule-list time { color: #365fc8; font-size: 11px; font-weight: 850; }
+.organization-current-schedule-list .schedule-category { padding: 4px 7px; border-radius: 999px; background: #edf2ff; color: #3157df; font-size: 9px; font-style: normal; font-weight: 850; white-space: nowrap; }
+.organization-current-schedule-list .schedule-category.meeting { background: #f0edff; color: #6547c7; }
+.organization-current-schedule-list .schedule-category.construction { background: #fff0db; color: #a55b12; }
+.organization-current-schedule-list .schedule-category.showroom { background: #ffeaf1; color: #b53f69; }
+.organization-current-schedule-list .schedule-category.other { background: #eef1f5; color: #5e6b7d; }
+.organization-current-schedule-list .schedule-category.personal { background: #e7f8f1; color: #14815d; }
 .organization-current-schedule-list strong { min-width: 0; color: #263858; font-size: 12px; line-height: 1.45; }
 .organization-current-schedule-list small { padding: 5px 8px; border-radius: 999px; background: #e9f6f0; color: #197554; font-size: 9px; font-weight: 850; white-space: nowrap; }
 .organization-current-schedule-list > div.completed { opacity: .72; background: #f7f9fc; }
@@ -3858,8 +3864,8 @@ tr:hover .row-actions { opacity: 1; }
 .organization-current-schedule > button { min-height: 36px; margin: 8px 18px 16px; padding: 0 12px; border: 1px solid #cbd7ed; border-radius: 7px; background: white; color: #3f5f9d; font-size: 10px; font-weight: 850; cursor: pointer; }
 .organization-current-schedule > button:hover { border-color: #879bea; background: #f7f8ff; }
 .organization-schedule-editor { display: grid; gap: 9px; padding: 14px 18px 17px; }
-.organization-schedule-editor-row { display: grid; grid-template-columns: auto minmax(150px,1fr) 150px auto; gap: 8px; align-items: center; }
-.organization-schedule-editor-row > input { min-height: 40px; padding: 0 11px; border: 1px solid #ccd8eb; border-radius: 8px; background: #fff; color: #203352; font-size: 12px; }
+.organization-schedule-editor-row { display: grid; grid-template-columns: auto minmax(150px,1fr) 150px 112px auto; gap: 8px; align-items: center; }
+.organization-schedule-editor-row > input, .organization-schedule-editor-row > select { min-height: 40px; padding: 0 11px; border: 1px solid #ccd8eb; border-radius: 8px; background: #fff; color: #203352; font-size: 12px; }
 .organization-schedule-complete { min-height: 40px; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid #dbe3ef; border-radius: 8px; background: #fff; color: #53657e; font-size: 10px; font-weight: 800; }
 .organization-schedule-editor-row > button, .organization-schedule-editor-actions button { min-height: 38px; padding: 0 11px; border: 1px solid #cad6e8; border-radius: 8px; background: #fff; color: #3f5f9d; font-size: 10px; font-weight: 850; cursor: pointer; }
 .organization-schedule-editor-row > button.danger { border-color: #efc9c3; color: #b54d43; }
@@ -5039,6 +5045,7 @@ tr:hover .row-actions { opacity: 1; }
   .organization-schedule-editor-row { grid-template-columns: auto 1fr auto; }
   .organization-schedule-editor-row > input[type="text"] { grid-column: 2 / -1; }
   .organization-schedule-editor-row > input[type="date"] { grid-column: 2; }
+  .organization-schedule-editor-row > select { grid-column: 2; }
   .equipment-project-card > header { flex-direction: column; }
   .equipment-finance-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .equipment-construction-form { grid-template-columns: 1fr 1fr; }
@@ -13472,6 +13479,63 @@ button:is(
 .quote-internal-report-dialog > footer { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 24px 20px; }
 .quote-internal-report-dialog > footer button { min-height: 40px; padding: 0 15px; border: 1px solid #d2dcea; border-radius: 9px; background: #fff; color: #344b6f; font-size: 13px; font-weight: 850; cursor: pointer; }
 .quote-internal-report-dialog > footer button.primary { border-color: #3157e6; background: #3157e6; color: #fff; }
+
+@media print {
+  body.internal-profit-printing > *:not(.internal-profit-print-portal) { display: none !important; visibility: hidden !important; }
+  body.internal-profit-printing > .internal-profit-print-portal,
+  body.internal-profit-printing > .internal-profit-print-portal * { visibility: visible !important; }
+  body.internal-profit-printing > .internal-profit-print-portal { display: block !important; width: 100% !important; margin: 0 !important; }
+  .internal-profit-print-sheet { box-sizing: border-box; width: 100%; max-width: 192mm; margin: 0 auto; color: #17233d; font-family: "맑은 고딕", Malgun Gothic, sans-serif; font-size: 8pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .internal-profit-print-sheet::before { display: block; height: 1.2mm; margin-bottom: 5mm; background: linear-gradient(90deg,#16b978 0 18%,#3157e6 18% 100%); content: ""; }
+  .internal-profit-print-header { display: grid; grid-template-columns: 1fr 61mm; align-items: start; gap: 6mm; padding-bottom: 4mm; border-bottom: 1px solid #d8e1ee; }
+  .internal-profit-print-title { display: flex; align-items: center; gap: 5mm; }
+  .internal-profit-print-title img { width: 28mm; height: 18mm; object-fit: contain; }
+  .internal-profit-print-title span { color: #6682d7; font-size: 7pt; font-weight: 800; letter-spacing: .14em; }
+  .internal-profit-print-title h1 { margin: 1.5mm 0 1mm; color: #17233d; font-size: 20pt; letter-spacing: -.04em; }
+  .internal-profit-print-title p { margin: 0; color: #71809a; font-size: 8pt; }
+  .internal-profit-print-header dl { display: grid; grid-template-columns: 21mm 1fr; margin: 0; border: 1px solid #d8e0ef; }
+  .internal-profit-print-header dt,.internal-profit-print-header dd { min-height: 7mm; margin: 0; padding: 1.4mm 1.8mm; border-bottom: 1px solid #d8e0ef; }
+  .internal-profit-print-header dt { display: grid; place-items: center; background: #f2f5fb; color: #5d6d88; font-weight: 800; }
+  .internal-profit-print-header dd { display: flex; align-items: center; border-left: 1px solid #d8e0ef; color: #24314d; overflow-wrap: anywhere; }
+  .internal-profit-print-header dt:nth-last-of-type(1),.internal-profit-print-header dd:last-child { border-bottom: 0; }
+  .internal-profit-print-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 2mm; margin: 4mm 0 2.5mm; }
+  .internal-profit-print-summary span { display: grid; min-height: 18mm; align-content: center; gap: 1.4mm; padding: 2.5mm 3mm; border: 1px solid #d8e0ef; border-radius: 2.5mm; background: #fbfcff; color: #74829a; }
+  .internal-profit-print-summary b { color: #244eea; font-size: 13pt; white-space: nowrap; }
+  .internal-profit-print-summary .cost b { color: #ce453c; }
+  .internal-profit-print-summary .result { border-color: #9eb2ff; background: #f0f4ff; }
+  .internal-profit-print-formula { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 2mm; margin-bottom: 4mm; padding: 2.5mm 3mm; border: 1px solid #d9e1f0; border-radius: 2.5mm; background: #f7f9fd; }
+  .internal-profit-print-formula span { color: #65738d; }
+  .internal-profit-print-formula b { display: block; margin-top: 1mm; color: #22304e; font-size: 9.5pt; }
+  .internal-profit-print-formula i { color: #8390a9; font-style: normal; font-weight: 900; }
+  .internal-profit-print-formula .result { padding: 2mm; border-radius: 2mm; background: #eaf0ff; }
+  .internal-profit-print-formula .result b { color: #244eea; }
+  .internal-profit-print-section-heading { display: flex; align-items: end; justify-content: space-between; margin-bottom: 2mm; }
+  .internal-profit-print-section-heading h2 { margin: 0; color: #22304d; font-size: 11pt; }
+  .internal-profit-print-section-heading span { color: #8190aa; font-size: 7pt; }
+  .internal-profit-print-items { margin: -1mm; font-size: 0; }
+  .internal-profit-print-items > article { display: inline-block; box-sizing: border-box; width: calc(50% - 2mm); margin: 1mm; padding: 2.5mm 3mm; border: 1px solid #d9e1f0; border-radius: 2.5mm; background: #fff; font-size: 7pt; vertical-align: top; break-inside: avoid; page-break-inside: avoid; }
+  .internal-profit-print-items > article.complimentary { border-color: #a9dfcf; background: #fbfffd; }
+  .internal-profit-print-items article > header { display: grid; grid-template-columns: 6mm minmax(0,1fr) auto; align-items: center; gap: 2mm; padding-bottom: 2mm; border-bottom: 1px solid #e3e8f2; }
+  .internal-profit-print-items .number { display: grid; width: 6mm; height: 6mm; place-items: center; border-radius: 2mm; background: #3157e6; color: #fff; font-weight: 900; }
+  .internal-profit-print-items .title { display: grid; min-width: 0; gap: .7mm; }
+  .internal-profit-print-items .title b { overflow: hidden; color: #22304d; font-size: 7.6pt; text-overflow: ellipsis; white-space: nowrap; }
+  .internal-profit-print-items .title small { overflow: hidden; color: #8290a8; font-size: 6.3pt; text-overflow: ellipsis; white-space: nowrap; }
+  .internal-profit-print-items article > header > strong { color: #244eea; font-size: 8pt; white-space: nowrap; }
+  .internal-profit-print-items article > header > em { grid-column: 3; padding: 1mm 1.5mm; border-radius: 999px; background: #ddf6ed; color: #08765b; font-size: 6pt; font-style: normal; font-weight: 900; }
+  .internal-profit-print-items dl { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 1.5mm; margin: 2mm 0 0; }
+  .internal-profit-print-items dl div { min-width: 0; }
+  .internal-profit-print-items dt,.internal-profit-print-items dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .internal-profit-print-items dt { color: #7b89a1; font-size: 6.2pt; }
+  .internal-profit-print-items dd { margin-top: .7mm; color: #30405e; font-size: 6.8pt; font-weight: 800; }
+  .internal-profit-print-items .deduction dd { color: #ce453c; }
+  .internal-profit-print-deduction { margin: 2mm 1mm 0; color: #b04d3b; font-weight: 800; }
+  .internal-profit-print-total { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 5mm; margin-top: 4mm; padding: 3mm 4mm; border-top: 1.5px solid #3157e6; border-bottom: 1.5px solid #3157e6; background: #eef3ff; break-inside: avoid; page-break-inside: avoid; }
+  .internal-profit-print-total span { color: #52617c; font-weight: 800; }
+  .internal-profit-print-total small { display: block; margin-top: 1mm; color: #20304d; }
+  .internal-profit-print-total strong { color: #244eea; font-size: 16pt; white-space: nowrap; }
+  .internal-profit-print-note { display: flex; justify-content: space-between; gap: 5mm; margin: 4mm 0 0; color: #8793a7; font-size: 6.5pt; }
+  .internal-profit-print-note b { color: #52617c; white-space: nowrap; }
+}
 
 @media screen {
   .quote-studio { color: #243650; font-size: 14px; }

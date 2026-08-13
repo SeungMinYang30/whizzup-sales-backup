@@ -374,7 +374,7 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
   }
   for (const parentItem of quote.items.filter((item) => item.equipmentKit)) {
     const detailLines = airpassEquipmentKitOutputLines(parentItem.equipmentKit);
-    const detailItemsPerPage = 10;
+    const detailItemsPerPage = 16;
     const detailPageCount = Math.max(1, Math.ceil(detailLines.length / detailItemsPerPage));
     for (let detailPageIndex = 0; detailPageIndex < detailPageCount; detailPageIndex += 1) {
       const canvas = document.createElement("canvas");
@@ -438,14 +438,14 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
       context.fillRect(72, tableTop, 1096, 46);
       headings.forEach((heading, index) => drawCell(context, heading, columns[index], tableTop, columns[index + 1] - columns[index], 46, { bold: true, align: "center", maxLines: 1, fontSize: 14 }));
       const pageLines = detailLines.slice(detailPageIndex * detailItemsPerPage, (detailPageIndex + 1) * detailItemsPerPage);
-      const rowHeight = 68;
+      const rowHeight = pageLines.length > 13 ? 48 : 54;
       pageLines.forEach((line, rowIndex) => {
         const y = tableTop + 46 + rowIndex * rowHeight;
         const values = [String(detailPageIndex * detailItemsPerPage + rowIndex + 1), line.name, String(line.quantity), line.unit, parentItem.complimentary ? "무상" : `${won.format(line.unitPrice)}원`, parentItem.complimentary ? "무상" : `${won.format(line.quantity * line.unitPrice)}원`, parentItem.complimentary ? "무상 제공" : ""];
         values.forEach((value, index) => drawCell(context, value, columns[index], y, columns[index + 1] - columns[index], rowHeight, {
           align: [0, 2, 3, 6].includes(index) ? "center" : [4, 5].includes(index) ? "right" : "left",
-          maxLines: index === 1 ? 3 : 1,
-          fontSize: index >= 4 ? 14 : 15,
+          maxLines: index === 1 ? 2 : 1,
+          fontSize: index >= 4 ? 13 : 14,
         }));
         context.strokeStyle = "#cfd8ea";
         context.strokeRect(72, y, 1096, rowHeight);

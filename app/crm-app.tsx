@@ -2875,6 +2875,7 @@ type OrganizationScheduleRecord = {
   businessRound: number;
   label: string;
   scheduledDate: string;
+  category: OrganizationScheduleCategory;
   completed: boolean;
   updatedByName: string;
   syncStatus: "pending" | "synced" | "failed";
@@ -2882,11 +2883,27 @@ type OrganizationScheduleRecord = {
   syncAttempts: number;
 };
 
+type OrganizationScheduleCategory = "general" | "meeting" | "construction" | "showroom" | "other" | "personal";
+
+const ORGANIZATION_SCHEDULE_CATEGORIES: Array<{ value: OrganizationScheduleCategory; label: string }> = [
+  { value: "general", label: "영업" },
+  { value: "meeting", label: "회의" },
+  { value: "construction", label: "시공" },
+  { value: "showroom", label: "쇼룸" },
+  { value: "other", label: "기타" },
+  { value: "personal", label: "내 일정" },
+];
+
+function organizationScheduleCategoryLabel(category: OrganizationScheduleCategory) {
+  return ORGANIZATION_SCHEDULE_CATEGORIES.find((item) => item.value === category)?.label ?? "영업";
+}
+
 type OrganizationScheduleDraft = {
   id?: number;
   key: string;
   label: string;
   scheduledDate: string;
+  category: OrganizationScheduleCategory;
   completed: boolean;
 };
 
@@ -8531,6 +8548,7 @@ export default function CrmApp({
             key: `saved-${schedule.id}`,
             label: schedule.label,
             scheduledDate: schedule.scheduledDate,
+            category: schedule.category || "general",
             completed: schedule.completed,
           })),
         );
@@ -8556,6 +8574,7 @@ export default function CrmApp({
         key: `saved-${schedule.id}`,
         label: schedule.label,
         scheduledDate: schedule.scheduledDate,
+        category: schedule.category || "general",
         completed: schedule.completed,
       })),
     );
@@ -8569,6 +8588,7 @@ export default function CrmApp({
         key: `saved-${schedule.id}`,
         label: schedule.label,
         scheduledDate: schedule.scheduledDate,
+        category: schedule.category || "general",
         completed: schedule.completed,
       })),
     );
@@ -8597,6 +8617,7 @@ export default function CrmApp({
             id: schedule.id,
             label: schedule.label.trim(),
             scheduledDate: schedule.scheduledDate,
+            category: schedule.category,
             completed: schedule.completed,
           })),
         }),
@@ -8618,6 +8639,7 @@ export default function CrmApp({
           key: `saved-${schedule.id}`,
           label: schedule.label,
           scheduledDate: schedule.scheduledDate,
+          category: schedule.category || "general",
           completed: schedule.completed,
         })),
       );
@@ -20550,6 +20572,23 @@ export default function CrmApp({
                             )
                           }
                         />
+                        <select
+                          value={item.category}
+                          aria-label={`${index + 1}번째 일정 분류`}
+                          onChange={(event) =>
+                            setDetailScheduleDrafts((current) =>
+                              current.map((schedule, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...schedule, category: event.target.value as OrganizationScheduleCategory }
+                                  : schedule,
+                              ),
+                            )
+                          }
+                        >
+                          {ORGANIZATION_SCHEDULE_CATEGORIES.map((category) => (
+                            <option key={category.value} value={category.value}>{category.label}</option>
+                          ))}
+                        </select>
                         <button
                           type="button"
                           className="danger"
@@ -20573,6 +20612,7 @@ export default function CrmApp({
                               key: `new-${Date.now()}-${current.length}`,
                               label: "",
                               scheduledDate: todayValue,
+                              category: "general",
                               completed: false,
                             },
                           ])
@@ -20594,7 +20634,7 @@ export default function CrmApp({
                       </button>
                     </div>
                     <p>
-                      일정 완료 여부와 날짜만 저장됩니다. 영업 진행상황이나 수주 진행단계는 자동으로 바뀌지 않습니다.
+                      선택한 분류로 통합 일정에 표시됩니다. 일정 저장은 영업 진행상황이나 수주 진행단계를 자동으로 바꾸지 않습니다.
                     </p>
                   </div>
                 ) : detailSchedulesLoading ? (
@@ -20611,6 +20651,7 @@ export default function CrmApp({
                         <time dateTime={item.scheduledDate}>
                           {formatDate(item.scheduledDate)}
                         </time>
+                        <em className={`schedule-category ${item.category}`}>{organizationScheduleCategoryLabel(item.category)}</em>
                         <strong>{item.label}</strong>
                         <small>
                           {item.completed

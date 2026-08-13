@@ -56,6 +56,7 @@ export type OrganizationScheduleInput = {
   scheduledDate: string;
   startTime?: string;
   endTime?: string;
+  category?: string;
   completed?: boolean;
 };
 
@@ -454,7 +455,7 @@ function scheduleNaturalKey(scheduledDate: unknown, label: unknown, category: un
 
 function normalizeScheduleCategory(value: unknown) {
   const category = clean(value);
-  return ["general", "meeting", "showroom", "other", "personal"].includes(category)
+  return ["general", "meeting", "construction", "showroom", "other", "personal"].includes(category)
     ? category
     : "general";
 }
@@ -469,13 +470,15 @@ export function normalizeOrganizationScheduleInputs(value: unknown) {
     const scheduledDate = validDate(input.scheduledDate ?? input.date);
     const startTime = validTime(input.startTime);
     const endTime = startTime ? validTime(input.endTime) : "";
+    const category = normalizeScheduleCategory(input.category);
     if (!label || !scheduledDate) return;
-    unique.set(scheduleNaturalKey(scheduledDate, label), {
+    unique.set(scheduleNaturalKey(scheduledDate, label, category), {
       id: Number.isSafeInteger(Number(input.id)) && Number(input.id) > 0 ? Number(input.id) : undefined,
       label,
       scheduledDate,
       startTime,
       endTime,
+      category,
       completed: input.completed === true,
     });
   });
@@ -709,7 +712,7 @@ async function listStoredOrganizationSchedules(
        FROM organization_schedules
        WHERE organization = ? AND business_round = ?
          AND TRIM(COALESCE(deleted_at, '')) = ''
-         AND COALESCE(category, 'general') <> 'construction'
+         AND (COALESCE(category, 'general') <> 'construction' OR TRIM(COALESCE(stage, '')) = '')
        ORDER BY completed ASC, scheduled_date ASC, id ASC`,
     )
     .bind(organization, businessRound)
@@ -914,7 +917,7 @@ export async function addOrganizationSchedule(input: {
      WHERE LOWER(TRIM(organization)) = LOWER(TRIM(?))
        AND business_round = ?
        AND scheduled_date = ?
-       AND COALESCE(category, 'general') <> 'construction'
+       AND (COALESCE(category, 'general') <> 'construction' OR TRIM(COALESCE(stage, '')) = '')
        AND TRIM(COALESCE(deleted_at, '')) = ''
      ORDER BY CASE WHEN TRIM(COALESCE(google_event_id, '')) <> '' THEN 0 ELSE 1 END, id ASC`,
   ).bind(organization, businessRound, scheduledDate).all<Record<string, unknown>>();
@@ -1229,7 +1232,7 @@ export async function removeConstructionScheduleProject(input: {
   const generalResult = await d1.prepare(
     `SELECT * FROM organization_schedules
      WHERE organization = ? AND business_round = ?
-       AND COALESCE(category, 'general') <> 'construction'
+       AND (COALESCE(category, 'general') <> 'construction' OR TRIM(COALESCE(stage, '')) = '')
        AND TRIM(COALESCE(deleted_at, '')) = ''
      ORDER BY completed ASC, scheduled_date ASC, id ASC`,
   ).bind(organization, businessRound).all<Record<string, unknown>>();
@@ -1400,7 +1403,7 @@ export async function replaceOrganizationSchedules(input: {
   const existingResult = await d1.prepare(
     `SELECT * FROM organization_schedules
      WHERE organization = ? AND business_round = ?
-       AND COALESCE(category, 'general') <> 'construction'
+       AND (COALESCE(category, 'general') <> 'construction' OR TRIM(COALESCE(stage, '')) = '')
        AND TRIM(COALESCE(deleted_at, '')) = ''
      ORDER BY id ASC`,
   ).bind(organization, businessRound).all<Record<string, unknown>>();
@@ -1409,6 +1412,7 @@ export async function replaceOrganizationSchedules(input: {
     scheduleNaturalKey(
       row.scheduled_date,
       normalizeScheduleSemanticLabel(organization, row.label),
+      row.category,
     ),
     row,
   ]));
@@ -1418,13 +1422,14 @@ export async function replaceOrganizationSchedules(input: {
       || byNaturalKey.get(scheduleNaturalKey(
         schedule.scheduledDate,
         normalizeScheduleSemanticLabel(organization, schedule.label),
+        schedule.category,
       ));
     if (existing) {
       const id = Number(existing.id);
       retained.add(id);
       return d1.prepare(
         `UPDATE organization_schedules
-         SET label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, completed = ?,
+         SET label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, category = ?, completed = ?,
              sync_status = 'pending', sync_operation = 'upsert', sync_error = '',
              updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
@@ -1434,6 +1439,7 @@ export async function replaceOrganizationSchedules(input: {
          schedule.startTime || "",
          schedule.endTime || "",
          schedule.scheduledDate,
+         schedule.category || "general",
         schedule.completed ? 1 : 0,
         input.memberId,
         input.memberName,
@@ -1444,7 +1450,7 @@ export async function replaceOrganizationSchedules(input: {
       `INSERT OR IGNORE INTO organization_schedules (
          organization, business_round, label, scheduled_date, start_time, end_time, category, completed,
          created_by, created_by_name, updated_by, updated_by_name
-       ) VALUES (?, ?, ?, ?, ?, ?, 'general', ?, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       organization,
       businessRound,
@@ -1452,6 +1458,7 @@ export async function replaceOrganizationSchedules(input: {
       schedule.scheduledDate,
       schedule.startTime || "",
       schedule.endTime || "",
+      schedule.category || "general",
       schedule.completed ? 1 : 0,
       input.memberId,
       input.memberName,

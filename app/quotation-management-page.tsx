@@ -382,15 +382,6 @@ function csvCell(value: unknown) {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-function escapeHtml(value: unknown) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 function downloadBytes(bytes: Uint8Array, name: string) {
   const blob = new Blob([bytes as BlobPart], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -639,14 +630,14 @@ export default function QuotationManagementPage({
   useEffect(() => {
     setPrintPortalReady(true);
     const preparePrint = () => {
-      if (document.body.classList.contains("settlement-printing")) return;
+      if (document.body.classList.contains("settlement-printing") || document.body.classList.contains("internal-profit-printing")) return;
       if (document.querySelector(".quotation-print-portal")) {
         document.body.classList.add("quotation-printing");
       }
     };
     const finishPrint = () => {
       const settlementPrinting = document.body.classList.contains("settlement-printing");
-      document.body.classList.remove("quotation-printing", "settlement-printing");
+      document.body.classList.remove("quotation-printing", "settlement-printing", "internal-profit-printing");
       if (settlementPrinting) setSettlementPrintPages([]);
     };
     window.addEventListener("beforeprint", preparePrint);
@@ -969,15 +960,9 @@ export default function QuotationManagementPage({
 
   function printInternalProfitReport() {
     if (!draft) return;
-    const popup = window.open("", "_blank");
-    if (!popup) {
-      setMessage("내부 수익표 인쇄 창이 차단되었습니다. 브라우저 팝업을 허용해 주세요.");
-      return;
-    }
-    popup.opener = null;
-    const rows = internalReportRows.map((row) => `<article><header><b>${row.number}. ${escapeHtml(row.name)}</b><span>${row.complimentary ? "무상 제공" : `${won.format(row.amount)}원`}</span></header><small>${escapeHtml(row.specification || `${row.quantity}${row.unit}`)}</small><dl><dt>예상 수익</dt><dd>${won.format(row.earning)}원</dd><dt>컨소 지급</dt><dd>-${won.format(row.consortium)}원</dd><dt>내부 원가</dt><dd>-${won.format(row.internalCost)}원</dd><dt>품목 순이익</dt><dd><strong>${won.format(row.netProfit)}원</strong></dd></dl></article>`).join("");
-    popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>내부 수익표</title><style>body{font-family:Arial,'Noto Sans KR',sans-serif;margin:32px;color:#17233d}h1{font-size:24px;margin:0 0 8px}p{margin:4px 0 20px;color:#52617a}.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}.summary span,article{border:1px solid #d8e0ef;border-radius:12px;padding:14px}.summary b{display:block;margin-top:5px;font-size:18px;color:#244eea}.items{display:grid;grid-template-columns:1fr 1fr;gap:12px}article header{display:flex;justify-content:space-between;gap:12px}article small{display:block;color:#71809b;margin:7px 0 12px}dl{display:grid;grid-template-columns:1fr auto;margin:0;gap:7px 14px}dt,dd{margin:0}dd{text-align:right}@media print{body{margin:10mm}.items{gap:8px}article{break-inside:avoid}}</style></head><body><h1>내부 수익표</h1><p>${escapeHtml(draft.organization)} · ${escapeHtml(draft.projectTitle)} · ${escapeHtml(draft.quoteNumber || "저장 전")}</p><section class="summary"><span>견적금액<b>${won.format(numbers.total)}원</b></span><span>예상 수익<b>${won.format(numbers.earning)}원</b></span><span>최종 총이익<b>${won.format(numbers.margin)}원</b></span><span>마진율<b>${(numbers.marginRate * 100).toFixed(1)}%</b></span></section><section class="items">${rows}</section><script>window.onload=()=>window.print()<\/script></body></html>`);
-    popup.document.close();
+    document.body.classList.add("internal-profit-printing");
+    requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+    setMessage("내부 수익표 인쇄 창을 열었습니다. 프린터 출력 또는 PDF로 저장할 수 있습니다.");
   }
 
   const effectiveBudgets = useMemo(() => {
@@ -1057,12 +1042,13 @@ export default function QuotationManagementPage({
   }, [draft, outputBlankRows]);
 
   const equipmentKitPrintPages = useMemo(() => {
-    if (!draft) return [] as Array<{ item: DraftItem; lines: NonNullable<DraftItem["equipmentKit"]>["lines"]; page: number; pages: number }>;
+    if (!draft) return [] as Array<{ item: DraftItem; lines: NonNullable<DraftItem["equipmentKit"]>["lines"]; page: number; pages: number; startIndex: number }>;
+    const itemsPerPage = 16;
     return draft.items.flatMap((item) => {
       const lines = airpassEquipmentKitOutputLines(item.equipmentKit);
       if (!lines.length) return [];
-      const chunks = Array.from({ length: Math.ceil(lines.length / 10) }, (_, index) => lines.slice(index * 10, (index + 1) * 10));
-      return chunks.map((chunk, index) => ({ item, lines: chunk, page: index + 1, pages: chunks.length }));
+      const chunks = Array.from({ length: Math.ceil(lines.length / itemsPerPage) }, (_, index) => lines.slice(index * itemsPerPage, (index + 1) * itemsPerPage));
+      return chunks.map((chunk, index) => ({ item, lines: chunk, page: index + 1, pages: chunks.length, startIndex: index * itemsPerPage }));
     });
   }, [draft]);
 
@@ -2639,6 +2625,34 @@ export default function QuotationManagementPage({
 
         {settlementPrintPreparing && createPortal(<div className="settlement-print-preparing no-print" role="status"><span /><strong>업체 정산서 인쇄 화면을 준비하고 있습니다.</strong></div>, document.body)}
         {settlementPrintPages.length > 0 && createPortal(<section className="settlement-print-portal print-only" aria-label="업체 정산서 인쇄본">{settlementPrintPages.map((url, index) => <img key={url} src={url} alt={`업체 정산서 ${index + 1}페이지`} />)}</section>, document.body)}
+        {printPortalReady && createPortal(<section className="internal-profit-print-portal print-only" aria-label="내부 수익표 인쇄본">
+          <article className="internal-profit-print-sheet">
+            <header className="internal-profit-print-header">
+              <div className="internal-profit-print-title">
+                <img src="/whizzup-logo.png" alt="위즈업" />
+                <div><span>INTERNAL PROFIT REPORT</span><h1>내부 수익표</h1><p>{draft.organization} · {draft.projectTitle || `${draft.businessRound}차 사업`}</p></div>
+              </div>
+              <dl><dt>견적번호</dt><dd>{draft.quoteNumber || "저장 전"}</dd><dt>작성일</dt><dd>{draft.quoteDate}</dd><dt>협업 구분</dt><dd>{draft.executionType}</dd></dl>
+            </header>
+            <div className="internal-profit-print-summary">
+              <span>견적금액<b>{won.format(numbers.total)}원</b></span>
+              <span>기준·반영 수익<b>{won.format(numbers.earning)}원</b></span>
+              <span>컨소 지급<b>{numbers.consortium ? `-${won.format(numbers.consortium)}원` : "0원"}</b></span>
+              <span className="cost">내부 비용<b>{numbers.internalCost ? `-${won.format(numbers.internalCost)}원` : "0원"}</b></span>
+              <span className="result">최종 총이익<b>{won.format(numbers.margin)}원</b></span>
+              <span>마진율<b>{(numbers.marginRate * 100).toFixed(1)}%</b></span>
+            </div>
+            <div className="internal-profit-print-formula"><span>예상 수익<b>{won.format(numbers.earning)}원</b></span><i>−</i><span>컨소·내부 비용<b>{won.format(numbers.consortium + numbers.internalCost)}원</b></span><i>=</i><span className="result">최종 총이익<b>{won.format(numbers.margin)}원</b></span></div>
+            <div className="internal-profit-print-section-heading"><h2>품목별 수익 내역</h2><span>{internalReportRows.length}개 품목 · VAT 포함 기준</span></div>
+            <div className="internal-profit-print-items">{internalReportRows.map((row) => <article key={`internal-print-${row.number}-${row.name}`} className={row.complimentary ? "complimentary" : ""}>
+              <header><span className="number">{row.number}</span><span className="title"><b>{row.name}</b><small>{row.specification || `${row.quantity}${row.unit} · ${won.format(row.unitPrice)}원`}</small></span>{row.complimentary && <em>무상 제공</em>}<strong>{won.format(row.netProfit)}원</strong></header>
+              <dl><div><dt>견적금액</dt><dd>{row.complimentary ? "무상" : `${won.format(row.amount)}원`}</dd></div><div><dt>예상 수익</dt><dd>{won.format(row.earning)}원</dd></div><div className="deduction"><dt>컨소·내부 비용</dt><dd>{row.consortium + row.internalCost ? `-${won.format(row.consortium + row.internalCost)}원` : "0원"}</dd></div><div><dt>상태</dt><dd>{row.status}</dd></div></dl>
+            </article>)}</div>
+            {numbers.additionalConstructionCost > 0 && <p className="internal-profit-print-deduction">별도 추가 공사 원가 -{won.format(numbers.additionalConstructionCost)}원이 최종 총이익에 반영되었습니다.</p>}
+            <footer className="internal-profit-print-total"><span>컨소·내부 비용을 반영한 최종 예상 수익<small>마진율 {(numbers.marginRate * 100).toFixed(1)}%</small></span><strong>{won.format(numbers.margin)}원</strong></footer>
+            <p className="internal-profit-print-note"><span>본 자료는 내부 수익 검토용이며 외부 견적서에는 포함되지 않습니다.</span><b>주식회사 위즈업</b></p>
+          </article>
+        </section>, document.body)}
 
         {importMode && createPortal(<QuotationImportDialog
           mode={importMode}
@@ -2758,7 +2772,7 @@ export default function QuotationManagementPage({
             <table className="equipment-kit-print-table">
               <colgroup><col className="no" /><col className="name" /><col className="quantity" /><col className="unit" /><col className="price" /><col className="amount" /><col className="note" /></colgroup>
               <thead><tr><th>No</th><th>품명</th><th>수량</th><th>단위</th><th>단가</th><th>금액</th><th>비고</th></tr></thead>
-              <tbody>{kitPage.lines.map((line, lineIndex) => <tr key={line.id}><td>{(kitPage.page - 1) * 10 + lineIndex + 1}</td><td>{line.name}</td><td>{line.quantity}</td><td>{line.unit}</td><td>{kitPage.item.complimentary ? "무상" : `${won.format(line.unitPrice)}원`}</td><td>{kitPage.item.complimentary ? "무상" : `${won.format(line.quantity * line.unitPrice)}원`}</td><td>{kitPage.item.complimentary ? "무상 제공" : ""}</td></tr>)}</tbody>
+              <tbody>{kitPage.lines.map((line, lineIndex) => <tr key={line.id}><td>{kitPage.startIndex + lineIndex + 1}</td><td>{line.name}</td><td>{line.quantity}</td><td>{line.unit}</td><td>{kitPage.item.complimentary ? "무상" : `${won.format(line.unitPrice)}원`}</td><td>{kitPage.item.complimentary ? "무상" : `${won.format(line.quantity * line.unitPrice)}원`}</td><td>{kitPage.item.complimentary ? "무상 제공" : ""}</td></tr>)}</tbody>
             </table>
             {kitPage.page === kitPage.pages && <div className="equipment-kit-print-total"><span>{kitPage.item.complimentary ? "제공 조건" : "합계금액 (VAT 포함)"}</span><strong>{kitPage.item.complimentary ? "무상 제공" : `${won.format(airpassEquipmentKitTotal(kitPage.item.equipmentKit))}원`}</strong></div>}
             <footer className="equipment-kit-print-footer"><span>{AIRPASS_COMPANY.name} · 본 세부견적은 본 견적서와 함께 제출됩니다.</span>{kitPage.page === kitPage.pages && <img src="/airpass-seal.png" alt="에어패스 직인" />}<b>별첨 {kitPageIndex + 1}</b></footer>
