@@ -292,48 +292,512 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
 
   useEffect(() => {
     const query = editor.organizationQuery.trim();
-    const requestId = ++institutionRequestSequenceïo}¶‰Ëkºwµçq•¹‘…ÈµÍÑ…Ñ”ˆù½½±”ƒ²vó²‚Tƒ¶fW²vàƒ²’GŠ˜ğ½Íµ…±°ø€è¹Õ±±ô4(€€€€€€€€ñ±…‰•°±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…Èµ½µÁ±•Ñ•µ™¥±Ñ•Èˆøñ¥¹ÁÕĞÑåÁ”ô‰¡•­‰½àˆ¡•­•õí¡¥‘•½µÁ±•Ñ•‘ô½¹¡…¹”õì¡•Ù•¹Ğ¤€ôøÍ•Ñ!¥‘•½µÁ±•Ñ•¡•Ù•¹Ğ¹Ñ…É•Ğ¹¡•­•¥ô€¼øƒ²f®0ƒ²vó²‚Tƒ²"£ªâÃªâÀğ½±…‰•°ø4(€€€€€€ğ½‘¥Øø4(€€€€€íÍå¹%ÍÍÕ•Ì¹±•¹Ñ €ü€ñ‘¥Ø±…ÍÍ9…µ”ô‰…±•¹‘…ÈµÍå¹Œµ¥ÍÍÕ•ÌˆÉ½±”ô‰ÍÑ…ÑÕÌˆø4(€€€€€€€€ñÍÑÉ½¹œù½½±”…±•¹‘…Èƒ®>gªâÃ¶fPƒ².“¶2 íÍå¹%ÍÍÕ•Ì¹±•¹Ñ¡÷ªÆĞğ½ÍÑÉ½¹œø4(€€€€€€€íÍå¹%ÍÍÕ•Ì¹Í±¥” À°€Ì¤¹µ…À ¡¥ÍÍÕ”¤€ôø€ñ‘¥Ø­•äõí¥ÍÍÕ”¹¥‘ôø4(€€€€€€€€€€ñÍÁ…¸ùí¥ÍÍÕ”¹½É…¹¥é…Ñ¥½¹ôƒ
-Üí¥ÍÍÕ”¹±…‰•±ôñÍµ…±°ùí¥ÍÍÕ”¹½Á•É…Ñ¥½¸€ôôô€‰‘•±•Ñ”ˆ€ü€‹²
-·²‚pˆ€è¥ÍÍÕ”¹½Á•É…Ñ¥½¸€ôôô€‰Õ¹±¥¹¬ˆ€ü€‰½½±”ƒªÎ×²r€ƒ¶VÓ²‚pˆ€è€‹®NÇ®†w
-ß²"c²‚T‰ôƒ
-Üí¥ÍÍÕ”¹•ÉÉ½Éôğ½Íµ…±°øğ½ÍÁ…¸ø4(€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ‘¥Í…‰±•õíÉ•ÑÉå¥¹%€ôôô¥ÍÍÕ”¹¥‘ô½¹±¥¬õì ¤€ôøÙ½¥É•ÑÉåMå¹Œ¡¥ÍÍÕ”¹¥¥ôùíÉ•ÑÉå¥¹%€ôôô¥ÍÍÕ”¹¥€ü€‹²z³².s®>ƒ²’Dˆ€è€‹²z³².s®>‰ôğ½‰ÕÑÑ½¸ø4(€€€€€€€€ğ½‘¥Øø¥ô4(€€€€€€ğ½‘¥Øø€è¹Õ±±ô4(€€€€€í•ÉÉ½È€ü€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…Èµ•ÉÉ½Èˆùí•ÉÉ½Éôğ½‘¥Øø€è¹Õ±±ô4(€€€€€í¹½Ñ¥”€ü€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…Èµ¹½Ñ¥”ˆÉ½±”ô‰ÍÑ…ÑÕÌˆùí¹½Ñ¥•ôğ½‘¥Øø€è¹Õ±±ô4(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…Èµ±…å½ÕĞˆø4(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…ÈµÉ¥ˆ…É¥„µ‰ÕÍäõí±½…‘¥¹ôø4(€€€€€€€€€íl‹²vğˆ°€‹²nPˆ°€‹¶fPˆ°€‹²"`ˆ°€‹®ª¤ˆ°€‹ªâ ˆ°€‹¶€‰t¹µ…À ¡‘…ä¤€ôø€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…Èµİ••­‘…äˆ­•äõí‘…åôùí‘…åôğ½‘¥Øø¥ô4(€€€€€€€€€í‘…Ñ•Ì¹µ…À ¡‘…Ñ”¤€ôøì4(€€€€€€€€€€€½¹ÍĞÙ…±Õ”€ô‘…Ñ•Y…±Õ”¡‘…Ñ”¤ì½¹ÍĞ¥Ñ•µÌ€ôÉ½ÕÁ•¹•Ğ¡Ù…±Õ”¤ñğmtì4(€€€€€€€€€€€É•ÑÕÉ¸€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ±…ÍÍ9…µ”õí¡½µ”µ…±•¹‘…Èµ‘…ä‘íÙ…±Õ”¹ÍÑ…ÉÑÍ]¥Ñ ¡µ½¹Ñ¡AÉ•™¥à¤€ü€ˆˆ€è€ˆ½ÕÑÍ¥‘”‰ô‘íÙ…±Õ”€ôôôÑ½‘…ä€ü€ˆÑ½‘…äˆ€è€ˆ‰ô‘íÙ…±Õ”€ôôôÍ•±•Ñ•‘…Ñ”€ü€ˆÍ•±•Ñ•ˆ€è€ˆ‰õô­•äõíÙ…±Õ•ô½¹±¥¬õì ¤€ôøìÍ•ÑM•±•Ñ•‘…Ñ”¡Ù…±Õ”¤ìÍ•Ñ5½‰¥±••¹‘…=Á•¸¡ÑÉÕ”¤ìõôø(€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…Èµ‘…äµ¹Õµ‰•Èˆùí‘…Ñ”¹•Ñ…Ñ” ¥ôğ½ÍÁ…¸ø4(€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…Èµ‘…äµ¥Ñ•µÌˆø4(€€€€€€€€€€€€€€€í¥Ñ•µÌ¹Í±¥” À°€Ì¤¹µ…À ¡¥Ñ•´¤€ôø€ñÍÁ…¸±…ÍÍ9…µ”õí€‘í¥Ñ•´¹…Ñ•½Éåô‘í¥Ñ•´¹½µÁ±•Ñ•€ü€ˆ½µÁ±•Ñ•ˆ€è€ˆ‰õô­•äõí¥Ñ•´¹¥‘ôÑ¥Ñ±”õí€‘í¥Ñ•´¹½É…¹¥é…Ñ¥½¹ôƒ
-Ü€‘í¥Ñ•´¹±…‰•±õôø4(€€€€€€€€€€€€€€€€€€ñˆø4(€€€€€€€€€€€€€€€€€€€í¥Ñ•´¹ÍÑ…ÉÑQ¥µ”€ü€‘í¥Ñ•´¹ÍÑ…ÉÑQ¥µ•ô€€è€ˆ‰ô4(€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰…±•¹‘…Èµ½É…¹¥é…Ñ¥½¸µ™Õ±°ˆùí¥Ñ•´¹½É…¹¥é…Ñ¥½¹ôğ½ÍÁ…¸ø4(€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰…±•¹‘…Èµ½É…¹¥é…Ñ¥½¸µ½µÁ…Ğˆùí½µÁ…Ñ…±•¹‘…É=É…¹¥é…Ñ¥½¸¡¥Ñ•´¹½É…¹¥é…Ñ¥½¸¥ôğ½ÍÁ…¸ø4(€€€€€€€€€€€€€€€€€€ğ½ˆøñÍµ…±°ùí±•…¹M¡•‘Õ±•Q¥Ñ±”¡¥Ñ•´¹±…‰•°¥ôğ½Íµ…±°ø4(€€€€€€€€€€€€€€€€ğ½ÍÁ…¸ø¥ô4(€€€€€€€€€€€€€€€í¥Ñ•µÌ¹±•¹Ñ €ø€Ì€ü€ñ•´ø­í¥Ñ•µÌ¹±•¹Ñ €´€Í÷ªÆĞƒ®6S®ÎÓªâÀğ½•´ø€è¹Õ±±ô4(€€€€€€€€€€€€€€ğ½ÍÁ…¸ø4(€€€€€€€€€€€€ğ½‰ÕÑÑ½¸øì4(€€€€€€€€€ô¥ô4(€€€€€€€€ğ½‘¥Øø4(€€€€€€€íµ½‰¥±••¹‘…=Á•¸€ü€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…Èµ…•¹‘„µ‰…­‘É½Àˆ…É¥„µ±…‰•°ô‹²vó²‚Tƒ®ª§®†tƒ®.¯ªâÀˆ½¹±¥¬õì ¤€ôøÍ•Ñ5½‰¥±••¹‘…=Á•¸¡™…±Í”¥ô€¼ø€è¹Õ±±ô(€€€€€€€€ñ…Í¥‘”±…ÍÍ9…µ”õí¡½µ”µ…±•¹‘…Èµ…•¹‘„‘íµ½‰¥±••¹‘…=Á•¸€ü€ˆµ½‰¥±”µ½Á•¸ˆ€è€ˆ‰õô…É¥„µ±…‰•°õí€‘íÍ•±•Ñ•‘…Ñ•Q¥Ñ±”¡Í•±•Ñ•‘…Ñ”¥ôƒ²vó²‚Tƒ®ª§®†uôø(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…Èµ…•¹‘„µ¡•…‘¥¹œˆøñÍÁ…¸ùíÍ•±•Ñ•‘…Ñ”€ôôôÑ½‘…ä€ü€‹²b“®*`ˆ€è€‹²ƒ¶tƒ®
-ƒ²p‰ôğ½ÍÁ…¸øñ ÌùíÍ•±•Ñ•‘…Ñ•Q¥Ñ±”¡Í•±•Ñ•‘…Ñ”¥ôğ½ ÌøñˆùíÍ•±•Ñ•‘M¡•‘Õ±•Ì¹±•¹Ñ¡÷ªÆĞğ½ˆøñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…Èµ…•¹‘„µ±½Í”ˆ…É¥„µ±…‰•°ô‹²vó²‚Tƒ®ª§®†tƒ®.¯ªâÀˆ½¹±¥¬õì ¤€ôøÍ•Ñ5½‰¥±••¹‘…=Á•¸¡™…±Í”¥ôû\ğ½‰ÕÑÑ½¸øğ½‘¥Øø(€€€€€€€€€í±½…‘¥¹œ€ü€ñÀ±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…Èµ…•¹‘„µ•µÁÑäˆû²vó²‚W²vƒ¶fW²vã¶Vc®*Pƒ²’G²z®.#®.¸ğ½Àø€èÍ•±•Ñ•‘M¡•‘Õ±•Ì¹±•¹Ñ €ü€ 4(€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…Èµ…•¹‘„µ±¥ÍĞˆùíÍ•±•Ñ•‘M¡•‘Õ±•Ì¹µ…À ¡¥Ñ•´¤€ôø€ 4(€€€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ±…ÍÍ9…µ”õí¥Ñ•´¹½µÁ±•Ñ•€ü€‰½µÁ±•Ñ•ˆ€è€ˆ‰ô­•äõí¥Ñ•´¹¥‘ô½¹±¥¬õì ¤€ôø½Á•¹‘¥Ğ¡¥Ñ•´¥ôø4(€€€€€€€€€€€€€€€€ñ¤±…ÍÍ9…µ”õí¥Ñ•´¹…Ñ•½Éåô€¼øñÍÁ…¸øñÍÑÉ½¹œùí¥Ñ•´¹ÍÑ…ÉÑQ¥µ”€ü€‘í¥Ñ•´¹ÍÑ…ÉÑQ¥µ•ô€€è€ˆ‰õí¥Ñ•´¹½É…¹¥é…Ñ¥½¹ôğ½ÍÑÉ½¹œøñÍµ…±°ùí±•…¹M¡•‘Õ±•Q¥Ñ±”¡¥Ñ•´¹±…‰•°¥ôğ½Íµ…±°øñÍµ…±°±…ÍÍ9…µ”ô‰Í¡•‘Õ±”µ…ÍÍ¥¹•”ˆû®.Ó®.äí¥Ñ•´¹…ÍÍ¥¹••9…µ”ñğ€‹®¾ã²‚T‰õí¥Ñ•´¹½½±•=É¥¥¸€ü€ˆƒ
-Ü½½±—²^C²pƒ²^ÃªÊÀˆ€è€ˆ‰ôğ½Íµ…±°ùí¥Ñ•´¹Íå¹ÉÉ½È€ôôô==1}Y9Q}1Q}Me9}II=H€ü€ñÍµ…±°±…ÍÍ9…µ”ô‰Í¡•‘Õ±”µÍå¹Œ™…¥±•ˆù½½±—²^C²pƒ²
-·²‚s®B ƒ
-Üƒ²
-³²vÓ¶*àƒ²vó²‚Tƒ²rƒ² ƒ²’Dğ½Íµ…±°ø€è¥Ñ•´¹Íå¹MÑ…ÑÕÌ€ôôô€‰™…¥±•ˆ€ü€ñÍµ…±°±…ÍÍ9…µ”ô‰Í¡•‘Õ±”µÍå¹Œ™…¥±•ˆù½½±”ƒ®>gªâÃ¶fPƒ².“¶2 ƒ
-Üƒ²z³².s®>ƒ¶V²jPğ½Íµ…±°ø€è¥Ñ•´¹Íå¹MÑ…ÑÕÌ€ôôô€‰Á•¹‘¥¹œˆ€ü€ñÍµ…±°±…ÍÍ9…µ”ô‰Í¡•‘Õ±”µÍå¹ŒÁ•¹‘¥¹œˆù½½±”ƒ®>gªâÃ¶fPƒ®2ªâÀğ½Íµ…±°ø€è¥Ñ•´¹Íå¹MÑ…ÑÕÌ€ôôô€‰±½…±}½¹±äˆ€ü€ñÍµ…±°±…ÍÍ9…µ”ô‰Í¡•‘Õ±”µÍå¹Œ±½…°µ½¹±äˆû²
-³²vÓ¶*àƒ²‚²j¤ƒ²vó²‚Tƒ
-Ü½½±”ƒªÎ×²r€ƒ²V ƒ¶V ğ½Íµ…±°ø€è¥Ñ•´¹½½±•Ù•¹Ñ%€ü€ñÍµ…±°±…ÍÍ9…µ”ô‰Í¡•‘Õ±”µÍå¹ŒÍå¹•ˆù½½±”ƒ²^ÃªÊÃ®B ğ½Íµ…±°ø€è¹Õ±±ôğ½ÍÁ…¸øñ•´±…ÍÍ9…µ”õí¥Ñ•´¹…Ñ•½ÉåôùíQ=Ie}1	1m¥Ñ•´¹…Ñ•½Éåuôğ½•´ø4(€€€€€€€€€€€€€€ğ½‰ÕÑÑ½¸ø4(€€€€€€€€€€€€¤¥ôğ½‘¥Øø4(€€€€€€€€€€¤€è€ñÀ±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…Èµ…•¹‘„µ•µÁÑäˆû²vĞƒ®
-ƒ²s²^@ƒ®NÇ®†w®Bpƒ²vó²‚W²vĞƒ²^²*×®.#®.¸ğ½Àùô4(€€€€€€€€ğ½…Í¥‘”ø4(€€€€€€ğ½‘¥Øø4(4(€€€€€í•‘¥Ñ½É=Á•¸€ü€ñ‘¥Ø±…ÍÍ9…µ”ô‰Í¡•‘Õ±”µ•‘¥Ñ½ÈµÍ¡•±°ˆÉ½±”ô‰ÁÉ•Í•¹Ñ…Ñ¥½¸ˆ½¹5½ÕÍ•½İ¸õì¡•Ù•¹Ğ¤€ôøì¥˜€¡•Ù•¹Ğ¹ÕÉÉ•¹ÑQ…É•Ğ€ôôô•Ù•¹Ğ¹Ñ…É•Ğ¤Í•Ñ‘¥Ñ½É=Á•¸¡™…±Í”¤ìõôø4(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µÍ¡•‘Õ±”µ•‘¥Ñ½ÈˆÉ½±”ô‰‘¥…±½œˆ…É¥„µµ½‘…°ô‰ÑÉÕ”ˆø4(€€€€€€€€€€ñ¡•…‘•Èøñ‘¥ØøñÍÁ…¸±…ÍÍ9…µ”ô‰Í•Ñ¥½¸µ­¥­•Èˆùí•‘¥Ñ½È¹½½±•Ù•¹Ñ%€ü€‰=99P==1M!U1ˆ€è•‘¥Ñ½È¹Í¡•‘Õ±•%€ü€‰%PM!U1ˆ€è€‰9\M!U1‰ôğ½ÍÁ…¸øñ Ìùí•‘¥Ñ½È¹½½±•Ù•¹Ñ%€ü€‰½½±”ƒ²vó²‚Tƒ²^ÃªÊÀˆ€è•‘¥Ñ½È¹Í¡•‘Õ±•%€ü€‹²vó²‚Tƒ²"c²‚Tˆ€è€‹²vó²‚Tƒ®NÇ®†t‰ôğ½ ÌøñÀùí•‘¥Ñ½È¹½½±•Ù•¹Ñ%€ü€‹²ÚS²Êpƒ®
-Ó²j§²vƒ¶fW²vã¶VcªÎ€ƒªâÃªÒ
-ß®Ú®–c
-ß®.Ó®.ç²zC®–ğƒ²^ÃªÊÃ¶VĞƒ²ó²ã²jP¸ˆ€è€‹².sªÎÔƒ²vó²‚W²v ƒ².sªÎ×
-ß®
-§¶J ƒ²vó²‚W¶Fs²^C²pƒªÒ®š³¶VcªÎ€ƒ²vĞƒ¶fS®¦Ó²^C®*Pƒ²zC®>dƒ²^Ã®>g®B§®.#®.¸‰ôğ½Àøğ½‘¥Øøñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ…É¥„µ±…‰•°ô‹®.¯ªâÀˆ½¹±¥¬õì ¤€ôøÍ•Ñ‘¥Ñ½É=Á•¸¡™…±Í”¥ôû\ğ½‰ÕÑÑ½¸øğ½¡•…‘•Èø4(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µÍ¡•‘Õ±”µ­¥¹ˆùì ¡•‘¥Ñ½È¹½½±•Ù•¹Ñ%€ül‹²b²^ˆ°€‹¶j3²v`ˆ°€‹².sªÎÔˆ°€‹²ó®àˆ°€‹ªâÃ¶ ‰t€è•‘¥Ñ½È¹Í¡•‘Õ±•%€ül‹²b²^ˆ°€‹¶j3²v`ˆ°€‹².sªÎÔˆ°€‹²ó®àˆ°€‹ªâÃ¶ ˆ°€‹®
-Ğƒ²vó²‚T‰t€èl‹²b²^ˆ°€‹¶j3²v`ˆ°€‹².sªÎÔˆ°€‹²ó®àˆ°€‹ªâÃ¶ ˆ°€‹®
-Ğƒ²vó²‚T‰t¤…Ì‘¥Ñ½É-¥¹‘mt¤¹µ…À ¡­¥¹¤€ôø€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ­•äõí­¥¹‘ô±…ÍÍ9…µ”õí•‘¥Ñ½È¹­¥¹€ôôô­¥¹€ü€‰…Ñ¥Ù”ˆ€è€ˆ‰ô½¹±¥¬õì ¤€ôøÍ•Ñ‘¥Ñ½È ¡ÕÉÉ•¹Ğ¤€ôø€¡ì€¸¸¹ÕÉÉ•¹Ğ°­¥¹ô¤¥ôùí­¥¹‘ôğ½‰ÕÑÑ½¸ø¥ôğ½‘¥Øø4(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µÍ¡•‘Õ±”µ¥¹ÍÑ¥ÑÕÑ¥½¸ˆø4(€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰¡½µ”µÍ¡•‘Õ±”µ¥¹ÍÑ¥ÑÕÑ¥½¸µ¥¹ÁÕĞˆùí•‘¥Ñ½È¹½½±•Ù•¹Ñ%€ü€‹²^ÃªÊÃ¶V€ƒªâÃªÒ ˆ€è€‹ªâÃªÒ ƒ®bC®*Pƒ²vó²‚Tƒ²z—²0‰ô€ñˆø¨ğ½ˆøğ½±…‰•°ø4(€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µÍ¡•‘Õ±”µ¥¹ÍÑ¥ÑÕÑ¥½¸µÍ•…É ˆø4(€€€€€€€€€€€€€€ñ¥¹ÁÕĞ¥ô‰¡½µ”µÍ¡•‘Õ±”µ¥¹ÍÑ¥ÑÕÑ¥½¸µ¥¹ÁÕĞˆÙ…±Õ”õí•‘¥Ñ½È¹½É…¹¥é…Ñ¥½¹EÕ•Éåô4(€€€€€€€€€€€€€€€½¹%¹ÁÕĞõì¡•Ù•¹Ğ¤€ôøÕÁ‘…Ñ•%¹ÍÑ¥ÑÕÑ¥½¹EÕ•Éä¡•Ù•¹Ğ¹ÕÉÉ•¹ÑQ…É•Ğ¹Ù…±Õ”¥ô4(€€€€€€€€€€€€€€€½¹½µÁ½Í¥Ñ¥½¹¹õì¡•Ù•¹Ğ¤€ôøÕÁ‘…Ñ•%¹ÍÑ¥ÑÕÑ¥½¹EÕ•Éä¡•Ù•¹Ğ¹ÕÉÉ•¹ÑQ…É•Ğ¹Ù…±Õ”¥ô4(€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ğ¤€ôøì4(€€€€€€€€€€€€€€€€€½¹ÍĞÙ…±Õ”€ô•Ù•¹Ğ¹ÕÉÉ•¹ÑQ…É•Ğ¹Ù…±Õ”ì4(€€€€€€€€€€€€€€€€€ÕÁ‘…Ñ•%¹ÍÑ¥ÑÕÑ¥½¹EÕ•Éä¡Ù…±Õ”¤ì4(€€€€€€€€€€€€€€€õô4(€€€€€€€€€€€€€€€Á±…•¡½±‘•Èô‹ªâÃªÒ®ª€Ëªâ²z@ƒ²vÓ²ƒªÊ²$ƒ®bC®*Pƒ²²‚Dƒ²z®‚”ˆ€¼ø4(€€€€€€€€€€€€€ì…•‘¥Ñ½È¹±¥¹­•€˜˜•‘¥Ñ½È¹½É…¹¥é…Ñ¥½¹EÕ•Éä¹ÑÉ¥´ ¤¹±•¹Ñ €øô€È€ü€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µÍ¡•‘Õ±”µ¥¹ÍÑ¥ÑÕÑ¥½¸µÉ•ÍÕ±ÑÌˆø4(€€€€€€€€€€€€€€€í¥¹ÍÑ¥ÑÕÑ¥½¹Ì¹µ…À ¡¥Ñ•´¤€ôø€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ­•äõí€‘í¥Ñ•´¹½É…¹¥é…Ñ¥½¹ô´‘í¥Ñ•´¹‰ÕÍ¥¹•ÍÍI½Õ¹‘õô½¹±¥¬õì ¤€ôøÍ•±•Ñ%¹ÍÑ¥ÑÕÑ¥½¸¡¥Ñ•´¥ôøñÍÑÉ½¹œùí¥Ñ•´¹½É…¹¥é…Ñ¥½¹ôğ½ÍÑÉ½¹œøñÍµ…±°ùí¥Ñ•´¹É•¥½¸ñğ€‹²²^´ƒ®¾ã®NÇ®†t‰ôƒ
-Üí¥Ñ•´¹‰ÕÍ¥¹•ÍÍI½Õ¹‘÷²Â ƒ²
-³²^ƒ
-Üí¥Ñ•´¹ÁÉ½É•ÍÍ5…¹…•Èñğ€‹®.Ó®.ç²z@ƒ®¾ã²‚T‰ôğ½Íµ…±°øğ½‰ÕÑÑ½¸ø¥ô4(€€€€€€€€€€€€€€€í¥¹ÍÑ¥ÑÕÑ¥½¹M•…É¡MÑ…Ñ”€ôôô€‰‘•‰½Õ¹¥¹œˆñğ¥¹ÍÑ¥ÑÕÑ¥½¹M•…É¡MÑ…Ñ”€ôôô€‰±½…‘¥¹œˆ€ü€ñÀ±…ÍÍ9…µ”ô‰Í•…É¡¥¹œˆûªâÃªÒ²vƒªÊ²'¶Vc®*Pƒ²’G²z®.#®.¸ğ½Àø€è¹Õ±±ô4(€€€€€€€€€€€€€€€í¥¹ÍÑ¥ÑÕÑ¥½¹M•…É¡MÑ…Ñ”€ôôô€‰•µÁÑäˆ€ü€ñÀûªÊ²$ƒªÊÃªÎóªÂ ƒ²^²*×®.#®.¸ğ½Àø€è¹Õ±±ô4(€€€€€€€€€€€€€€€í¥¹ÍÑ¥ÑÕÑ¥½¹M•…É¡MÑ…Ñ”€ôôô€‰•ÉÉ½Èˆ€ü€ñÀ±…ÍÍ9…µ”ô‰Í•…É µ•ÉÉ½ÈˆûªÊ²'²vĞƒ²²^Ã®BcªÎ€ƒ²z#²*×®.#®.¸ƒ²zƒ².pƒ¶nƒ®.“².pƒ²z®‚—¶VĞƒ²ó²ã²jP¸ğ½Àø€è¹Õ±±ô4(€€€€€€€€€€€€€€ğ½‘¥Øø€è¹Õ±±ô4(€€€€€€€€€€€€ğ½‘¥Øø4(€€€€€€€€€€€€ñÍµ…±°±…ÍÍ9…µ”ô‰¡½µ”µÍ¡•‘Õ±”µ±¥¹¬µ¹½Ñ”ˆùí•‘¥Ñ½È¹±¥¹­•€ü•‘¥Ñ½È¹­¥¹€ôôô€‹².sªÎÔˆ€ü€‹².sªÎ×
-ß®
-§¶J ƒ²vó²‚W¶Fs²f ƒªâÃªÒ ƒ²²ã²v`ƒ²b#²‚Tƒ²vó²‚W²^@ƒ²^ÃªÊÃ®B§®.#®.¸ˆ€è€‹ªâÃªÒ ƒ²²ã²v`ƒ²b#²‚Tƒ²vó²‚W²^@ƒ²^ÃªÊÃ®B§®.#®.¸ˆ€è•‘¥Ñ½È¹­¥¹€ôôô€‹².sªÎÔˆ€ü€‹².sªÎÔƒ²vó²‚W²v ƒªâÃ²†ĞƒªâÃªÒ²vƒ²ƒ¶w¶VÓ²Vğƒ¶Vc®¦À°ƒ²vó²‚W¶Fpƒ®¾ã®NÇ®†tƒªâÃªÒ²v ƒ²‚²z—¶V€ƒ®V0ƒ®NÇ®†tƒ²^³®Ú®–ğƒ¶fW²vã¶V§®.#®.¸ˆ€è•‘¥Ñ½È¹½½±•Ù•¹Ñ%€ü€‹²ÚS²ÊpƒªâÃªÒ²vƒ²ƒ¶w¶Vpƒ®Jƒ²^ÃªÊÃ¶V€ƒ²"`ƒ²z#²*×®.#®.¸ˆ€è•‘¥Ñ½È¹­¥¹€ôôô€‹²b²^ˆ€ü€‹²b²^ƒ²vó²‚W²v ƒªâÃ²†ĞƒªâÃªÒ²vƒ²ƒ¶w¶VcªÆÃ®
-`ƒ² ƒªâÃªÒ²ró®†pƒ®NÇ®†w¶VÓ²Vğƒ¶V§®.#®.¸ˆ€è€‹¶j3²vc
-ß²ó®ã
-ßªâÃ¶
-ß®
-Ğƒ²vó²‚W²v ƒªâÃªÒ ƒ²^ÃªÊÀƒ®bC®*Pƒ²zC²r€ƒ²z—²0ƒ²z®‚—²vĞƒ®ª£®F@ƒªÂ®*—¶V§®.#®.¸‰ôğ½Íµ…±°ø4(€€€€€€€€€€€ì…•‘¥Ñ½È¹±¥¹­•€˜˜•‘¥Ñ½È¹­¥¹€„ôô€‹².sªÎÔˆ€˜˜•‘¥Ñ½È¹½É…¹¥é…Ñ¥½¹EÕ•Éä¹ÑÉ¥´ ¤¹±•¹Ñ €øô€È€ü€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µÍ¡•‘Õ±”µ¥¹ÍÑ¥ÑÕÑ¥½¸µÉ•…Ñ”ˆøñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ±…ÍÍ9…µ”ô‰Í¡•‘Õ±”µÉ•…Ñ”µ¥¹ÍÑ¥ÑÕÑ¥½¸ˆ‘¥Í…‰±•õí¥¹ÍÑ¥ÑÕÑ¥½¹É•…Ñ¥¹œñğÍ…Ù¥¹ô½¹±¥¬õì ¤€ôøÙ½¥É•…Ñ•%¹ÍÑ¥ÑÕÑ¥½¸ ¥ôùí¥¹ÍÑ¥ÑÕÑ¥½¹É•…Ñ¥¹œ€ü€‹ªâÃªÒ ƒ®NÇ®†tƒ²’GŠ˜ˆ€è€ˆ¬ƒ² ƒªâÃªÒ ƒ®NÇ®†tƒ¶nƒ²^ÃªÊÀ‰ôğ½‰ÕÑÑ½¸øğ½‘¥Øø€è¹Õ±±ô4(€€€€€€€€€€ğ½‘¥Øø4(€€€€€€€€€í•‘¥Ñ½È¹­¥¹€ôôô€‹².sªÎÔˆ€ü€ñ±…‰•°û².sªÎÔƒªÎ×²‚T€ñˆø¨ğ½ˆøñ¥¹ÁÕĞ±¥ÍĞô‰½¹ÍÑÉÕÑ¥½¸µÍÑ…”µ½ÁÑ¥½¹Ìˆµ…á1•¹Ñ õìĞÁôÙ…±Õ”õí•‘¥Ñ½È¹Ñ¥Ñ±•ô½¹¡…¹”õì¡•Ù•¹Ğ¤€ôøÍ•Ñ‘¥Ñ½È ¡ÕÉÉ•¹Ğ¤€ôø€¡ì€¸¸¹ÕÉÉ•¹Ğ°Ñ¥Ñ±”è•Ù•¹Ğ¹Ñ…É•Ğ¹Ù…±Õ”ô¤¥ôÁ±…•¡½±‘•Èô‹®ª§®†w²^C²pƒ²ƒ¶w¶VcªÆÃ®
-`ƒªÎ×²‚W®ªƒ²²‚Dƒ²z®‚”ˆ€¼øñ‘…Ñ…±¥ÍĞ¥ô‰½¹ÍÑÉÕÑ¥½¸µÍÑ…”µ½ÁÑ¥½¹Ìˆùí½¹ÍÑÉÕÑ¥½¹MÑ…•Ì¹µ…À ¡ÍÑ…”¤€ôø€ñ½ÁÑ¥½¸­•äõíÍÑ…•ôÙ…±Õ”õíÍÑ…•ô€¼ø¥ôğ½‘…Ñ…±¥ÍĞøñÍµ…±°û®ª§®†w²^@ƒ²^²ZÓ®>ƒ²²‚Dƒ²z®‚—¶Vc®¦Ğƒ²‚²z”ƒ¶nƒ®.“²v0ƒ²ƒ¶w®Ú¶Àƒ²z³²
-³²j§®B§®.#®.¸ğ½Íµ…±°øğ½±…‰•°ø€è€ñ±…‰•°û²vó²‚Tƒ²‚s®ª¤€ñˆø¨ğ½ˆøñ¥¹ÁÕĞÙ…±Õ”õí•‘¥Ñ½È¹Ñ¥Ñ±•ô½¹¡…¹”õì¡•Ù•¹Ğ¤€ôøÍ•Ñ‘¥Ñ½È ¡ÕÉÉ•¹Ğ¤€ôø€¡ì€¸¸¹ÕÉÉ•¹Ğ°Ñ¥Ñ±”è•Ù•¹Ğ¹Ñ…É•Ğ¹Ù…±Õ”ô¤¥ôÁ±…•¡½±‘•Èô‹²b èƒ®.Ó®.ç²z@ƒ®Â§®²àƒ®¾ã¶2ˆ€¼øğ½±…‰•°ùô4(€€€€€€€€€€ñ±…‰•°û²vó²‚Tƒ®.Ó®.ç²z@€ñˆø¨ğ½ˆøñÍ•±•ĞÙ…±Õ”õí•‘¥Ñ½È¹…ÍÍ¥¹••5•µ‰•É%ñğ€ˆ‰ô½¹¡…¹”õì¡•Ù•¹Ğ¤€ôø¡…¹•ÍÍ¥¹•”¡•Ù•¹Ğ¹Ñ…É•Ğ¹Ù…±Õ”¥ôøñ½ÁÑ¥½¸Ù…±Õ”ôˆˆû®.Ó®.ç²z@ƒ²ƒ¶tğ½½ÁÑ¥½¸ùíµ•µ‰•ÉÌ¹µ…À ¡µ•µ‰•È¤€ôø€ñ½ÁÑ¥½¸­•äõíµ•µ‰•È¹¥‘ôÙ…±Õ”õíµ•µ‰•È¹¥‘ôùíÁ•ÉÍ½¹¥ÍÁ±…å1…‰•°¡µ•µ‰•È¥ôğ½½ÁÑ¥½¸ø¥ôğ½Í•±•Ğøğ½±…‰•°ø4(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µÍ¡•‘Õ±”µ‘…Ñ”µÉ¥ˆøñ±…‰•°û®
-ƒ²p€ñˆø¨ğ½ˆøñ¥¹ÁÕĞÑåÁ”ô‰‘…Ñ”ˆÙ…±Õ”õí•‘¥Ñ½È¹Í¡•‘Õ±•‘…Ñ•ô½¹¡…¹”õì¡•Ù•¹Ğ¤€ôøÍ•Ñ‘¥Ñ½È ¡ÕÉÉ•¹Ğ¤€ôø€¡ì€¸¸¹ÕÉÉ•¹Ğ°Í¡•‘Õ±•‘…Ñ”è•Ù•¹Ğ¹Ñ…É•Ğ¹Ù…±Õ”ô¤¥ô€¼øğ½±…‰•°ø4(€€€€€€€€€€€€ñ±…‰•°±…ÍÍ9…µ”ô‰Í¡•‘Õ±”µ…±°µ‘…äˆøñ¥¹ÁÕĞÑåÁ”ô‰¡•­‰½àˆ¡•­•õí•‘¥Ñ½È¹…±±…åô½¹¡…¹”õì¡•Ù•¹Ğ¤€ôøÍ•Ñ‘¥Ñ½È ¡ÕÉÉ•¹Ğ¤€ôø€¡ì€¸¸¹ÕÉÉ•¹Ğ°…±±…äè•Ù•¹Ğ¹Ñ…É•Ğ¹¡•­•°ÍÑ…ÉÑQ¥µ”è•Ù•¹Ğ¹Ñ…É•Ğ¹¡•­•€ü€ˆˆ€èÕÉÉ•¹Ğ¹ÍÑ…ÉÑQ¥µ”°•¹‘Q¥µ”è•Ù•¹Ğ¹Ñ…É•Ğ¹¡•­•€ü€ˆˆ€èÕÉÉ•¹Ğ¹•¹‘Q¥µ”ô¤¥ô€¼øƒ²Š²vğƒ²vó²‚Tğ½±…‰•°ø4(€€€€€€€€€€ğ½‘¥Øø4(€€€€€€€€€ì…•‘¥Ñ½È¹…±±…ä€ü€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µÍ¡•‘Õ±”µÑ¥µ”µÉ¥ˆøñ±…‰•°û².s²zDƒ².sªÂ€ñˆø¨ğ½ˆøñÍ•±•ĞÙ…±Õ”õí•‘¥Ñ½È¹ÍÑ…ÉÑQ¥µ•ô½¹¡…¹”õì¡•Ù•¹Ğ¤€ôøÍ•Ñ‘¥Ñ½È ¡ÕÉÉ•¹Ğ¤€ôø€¡ì€¸¸¹ÕÉÉ•¹Ğ°ÍÑ…ÉÑQ¥µ”è•Ù•¹Ğ¹Ñ…É•Ğ¹Ù…±Õ”ô¤¥ôøñ½ÁÑ¥½¸Ù…±Õ”ôˆˆû²ƒ¶tğ½½ÁÑ¥½¸ùíQ%5}=AQ%=9L¹µ…À ¡Ñ¥µ”¤€ôø€ñ½ÁÑ¥½¸­•äõíÑ¥µ•ôÙ…±Õ”õíÑ¥µ•ôùíÑ¥µ•ôğ½½ÁÑ¥½¸ø¥ôğ½Í•±•Ğøğ½±…‰•°øñ±…‰•°û²Š®0ƒ².sªÂñÍ•±•ĞÙ…±Õ”õí•‘¥Ñ½È¹•¹‘Q¥µ•ô½¹¡…¹”õì¡•Ù•¹Ğ¤€ôøÍ•Ñ‘¥Ñ½È ¡ÕÉÉ•¹Ğ¤€ôø€¡ì€¸¸¹ÕÉÉ•¹Ğ°•¹‘Q¥µ”è•Ù•¹Ğ¹Ñ…É•Ğ¹Ù…±Õ”ô¤¥ôøñ½ÁÑ¥½¸Ù…±Õ”ôˆˆû²ƒ¶tƒ²V ƒ¶V ğ½½ÁÑ¥½¸ùíQ%5}=AQ%=9L¹µ…À ¡Ñ¥µ”¤€ôø€ñ½ÁÑ¥½¸­•äõíÑ¥µ•ôÙ…±Õ”õíÑ¥µ•ôùíÑ¥µ•ôğ½½ÁÑ¥½¸ø¥ôğ½Í•±•Ğøğ½±…‰•°øğ½‘¥Øø€è¹Õ±±ô4(€€€€€€€€€€ñ±…‰•°û®¦S®ª €ñÍµ…±°û²ƒ¶tƒ²z®‚”ƒ
-Üƒ² ƒ²vó²‚W®Ú¶Àƒ²‚²z—®B§®.#®.¸ğ½Íµ…±°øñÑ•áÑ…É•„Ù…±Õ”õí•‘¥Ñ½È¹‘•Ñ…¥±Íôµ…á1•¹Ñ õìÔÀÁôÉ½İÌõìÑô½¹¡…¹”õì¡•Ù•¹Ğ¤€ôøÍ•Ñ‘¥Ñ½È ¡ÕÉÉ•¹Ğ¤€ôø€¡ì€¸¸¹ÕÉÉ•¹Ğ°‘•Ñ…¥±Ìè•Ù•¹Ğ¹Ñ…É•Ğ¹Ù…±Õ”ô¤¥ôÁ±…•¡½±‘•Èô‹®Â§®²àƒ®ª§²‚°ƒ²’®æ²
-³¶V´ƒ®NÄƒ¶V²jS¶Vpƒ®
-Ó²j§²vƒ²z®‚—¶Vc²ã²jP¸½½±”ƒ²vó²‚Tƒ²“®ª²^C®>ƒ¶Fs².s®B§®.#®.¸ˆ€¼øğ½±…‰•°ø4(€€€€€€€€€í•‘¥Ñ½È¹Í¡•‘Õ±•%€ü€ñ±…‰•°±…ÍÍ9…µ”ô‰Í¡•‘Õ±”µ½µÁ±•Ñ•ˆøñ¥¹ÁÕĞÑåÁ”ô‰¡•­‰½àˆ¡•­•õí•‘¥Ñ½È¹½µÁ±•Ñ•‘ô½¹¡…¹”õì¡•Ù•¹Ğ¤€ôøÍ•Ñ‘¥Ñ½È ¡ÕÉÉ•¹Ğ¤€ôø€¡ì€¸¸¹ÕÉÉ•¹Ğ°½µÁ±•Ñ•è•Ù•¹Ğ¹Ñ…É•Ğ¹¡•­•ô¤¥ô€¼øƒ²vĞƒ²vó²‚W²vƒ²f®0ƒ²¶s®†pƒ²²‚Tğ½±…‰•°ø€è¹Õ±±ô4(€€€€€€€€€í•‘¥Ñ½ÉÉÉ½È€ü€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µ…±•¹‘…Èµ•ÉÉ½ÈˆÉ½±”ô‰…±•ÉĞˆùí•‘¥Ñ½ÉÉÉ½Éôğ½‘¥Øø€è¹Õ±±ô4(€€€€€€€€€€ñ™½½Ñ•Èùí•‘¥Ñ½È¹Í¡•‘Õ±•%€ü€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ±…ÍÍ9…µ”ô‰‘…¹•Èµ‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôøÙ½¥‘•±•Ñ•M¡•‘Õ±” ¥ôû²
-³²vÓ¶*ã²^C²pƒ²
-·²‚pğ½‰ÕÑÑ½¸ø€è¹Õ±±õí±¥¹­•‘•Ñ…¥±Ù…¥±…‰±”€ü€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôøìÍ•Ñ‘¥Ñ½É=Á•¸¡™…±Í”¤ì½¹=Á•¹=É…¹¥é…Ñ¥½¸¡•‘¥Ñ½È¹½É…¹¥é…Ñ¥½¸°•‘¥Ñ½È¹‰ÕÍ¥¹•ÍÍI½Õ¹¤ìõôûªâÃªÒ ƒ²²àƒ®ÎÓªâÀğ½‰ÕÑÑ½¸ø€è¹Õ±±ôñÍÁ…¸€¼øñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ‘¥Í…‰±•õí¥¹ÍÑ¥ÑÕÑ¥½¹É•…Ñ¥¹œñğÍ…Ù¥¹ô½¹±¥¬õì ¤€ôøÍ•Ñ‘¥Ñ½É=Á•¸¡™…±Í”¥ôû²Ş£²0ğ½‰ÕÑÑ½¸øñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ±…ÍÍ9…µ”ô‰ÁÉ¥µ…Éäµ‰ÕÑÑ½¸ˆ‘¥Í…‰±•õí¥¹ÍÑ¥ÑÕÑ¥½¹É•…Ñ¥¹œñğÍ…Ù¥¹œñğ€…•‘¥Ñ½È¹Ñ¥Ñ±”¹ÑÉ¥´ ¤ñğ€…•‘¥Ñ½È¹½É…¹¥é…Ñ¥½¹EÕ•Éä¹ÑÉ¥´ ¤ñğ€…•‘¥Ñ½È¹…ÍÍ¥¹••5•µ‰•É%ñğ€ ¡•‘¥Ñ½È¹­¥¹€ôôô€‹²b²^ˆñğ•‘¥Ñ½È¹­¥¹€ôôô€‹².sªÎÔˆñğ	½½±•…¸¡•‘¥Ñ½È¹½½±•Ù•¹Ñ%¤¤€˜˜€…•‘¥Ñ½È¹±¥¹­•¥ô½¹±¥¬õì ¤€ôøÙ½¥Í…Ù•M¡•‘Õ±” ¥ôùíÍ…Ù¥¹œ€ü€‹²‚²z”ƒ²’Dˆ€è•‘¥Ñ½È¹Íå¹ÉÉ½È€ôôô==1}Y9Q}1Q}Me9}II=H€ü€‰½½±—²^@ƒ®.“².pƒ²^ÃªÊÀˆ€è•‘¥Ñ½È¹½½±•Ù•¹Ñ%€ü€‹²vÓ®2®†pƒ²^ÃªÊÀˆ€è€‹²‚²z”‰ôğ½‰ÕÑÑ½¸øğ½™½½Ñ•Èø4(€€€€€€€€ğ½‘¥Øø4(€€€€€€ğ½‘¥Øø€è¹Õ±±ô4(4(€€€€€íÉ•…‘=¹±åM¡•‘Õ±”€ü€ñ‘¥Ø±…ÍÍ9…µ”ô‰Í¡•‘Õ±”µ•‘¥Ñ½ÈµÍ¡•±°ˆÉ½±”ô‰ÁÉ•Í•¹Ñ…Ñ¥½¸ˆ½¹5½ÕÍ•½İ¸õì¡•Ù•¹Ğ¤€ôøì¥˜€¡•Ù•¹Ğ¹ÕÉÉ•¹ÑQ…É•Ğ€ôôô•Ù•¹Ğ¹Ñ…É•Ğ¤Í•ÑI•…‘=¹±åM¡•‘Õ±”¡¹Õ±°¤ìõôø4(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰¡½µ”µÍ¡•‘Õ±”µ•‘¥Ñ½ÈÍ¡•‘Õ±”µÉ•…‘½¹±äµ‘¥…±½œˆÉ½±”ô‰‘¥…±½œˆ…É¥„µµ½‘…°ô‰ÑÉÕ”ˆø4(€€€€€€€€€€ñ¡•…‘•Èøñ‘¥ØøñÍÁ…¸±…ÍÍ9…µ”ô‰Í•Ñ¥½¸µ­¥­•Èˆù==1=99Q%=89ğ½ÍÁ…¸øñ Ìù½½±”ƒ²vó²‚Tƒ²^ÃªÊÀƒ¶V²jPğ½ ÌøñÀû¶2²n@ƒ®"ªÖ³®
-`ƒªâÃªÒ
-ß®Ú®–c
-ß®.Ó®.ç²zC®–ğƒ¶fW²vã¶VcªÎ€ƒ²^ÃªÊÃ¶V€ƒ²"`ƒ²z#²*×®.#®.¸ğ½Àøğ½‘¥Øøñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ…É¥„µ±…‰•°ô‹®.¯ªâÀˆ½¹±¥¬õì ¤€ôøÍ•ÑI•…‘=¹±åM¡•‘Õ±”¡¹Õ±°¥ôû\ğ½‰ÕÑÑ½¸øğ½¡•…‘•Èø4(€€€€€€€€€€ñ‘°øñ‘¥Øøñ‘Ğû²‚s®ª¤ğ½‘Ğøñ‘ùíÉ•…‘=¹±åM¡•‘Õ±”¹±…‰•±ôğ½‘øğ½‘¥Øøñ‘¥Øøñ‘Ğû²z—²0ğ½‘Ğøñ‘ùíÉ•…‘=¹±åM¡•‘Õ±”¹½É…¹¥é…Ñ¥½¸ñğ€‹®¾ã²z®‚”‰ôğ½‘øğ½‘¥Øøñ‘¥Øøñ‘Ğû²vó².pğ½‘Ğøñ‘ùíÉ•…‘=¹±åM¡•‘Õ±”¹Í¡•‘Õ±•‘…Ñ•õíÉ•…‘=¹±åM¡•‘Õ±”¹ÍÑ…ÉÑQ¥µ”€ü€€‘íÉ•…‘=¹±åM¡•‘Õ±”¹ÍÑ…ÉÑQ¥µ•õ€€è€ˆ€£²Š²vğ¤‰õíÉ•…‘=¹±åM¡•‘Õ±”¹•¹‘Q¥µ”€ü€ø€‘íÉ•…‘=¹±åM¡•‘Õ±”¹•¹‘Q¥µ•õ€€è€ˆ‰ôğ½‘øğ½‘¥ØùíÉ•…‘=¹±åM¡•‘Õ±”¹‘•Ñ…¥±Ì€ü€ñ‘¥Øøñ‘Ğû®
-Ó²j¤ğ½‘Ğøñ‘ùíÉ•…‘=¹±åM¡•‘Õ±”¹‘•Ñ…¥±Íôğ½‘øğ½‘¥Øø€è¹Õ±±ôğ½‘°ø4(€€€€€€€€€€ñ™½½Ñ•ÈùíÕÉÉ•¹Ñ5•µ‰•È¹É½±”€ôôô€‰…‘µ¥¸ˆ€ü€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ±…ÍÍ9…µ”ô‰‘…¹•Èµ‰ÕÑÑ½¸ˆ‘¥Í…‰±•õíÍ…Ù¥¹ô½¹±¥¬õì ¤€ôøÙ½¥‘•±•Ñ•½½±•M¡•‘Õ±”¡É•…‘=¹±åM¡•‘Õ±”¥ôù½½±—²^C²s®>ƒ²
-·²‚pğ½‰ÕÑÑ½¸ø€è¹Õ±±ôñÍÁ…¸€¼øñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôøÍ•ÑI•…‘=¹±åM¡•‘Õ±”¡¹Õ±°¥ôû®.¯ªâÀğ½‰ÕÑÑ½¸øñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôøİ¥¹‘½Ü¹½Á•¸¡É•…‘=¹±åM¡•‘Õ±”¹•áÑ•É¹…±UÉ°ñğ€‰¡ÑÑÁÌè¼½…±•¹‘…È¹½½±”¹½´½…±•¹‘…È½Ô¼À½Èˆ°€‰}‰±…¹¬ˆ°€‰¹½½Á•¹•È±¹½É•™•ÉÉ•Èˆ¥ôù½½±—²^C²pƒ²^ÓªâÀğ½‰ÕÑÑ½¸øñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ±…ÍÍ9…µ”ô‰ÁÉ¥µ…Éäµ‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½Á•¹½½±•1¥¹¬¡É•…‘=¹±åM¡•‘Õ±”¥ôûªâÃªÒªÎğƒ²^ÃªÊÀğ½‰ÕÑÑ½¸øğ½™½½Ñ•Èø4(€€€€€€€€ğ½‘¥Øø4(€€€€€€ğ½‘¥Øø€è¹Õ±±ô4(€€€€ğ½Í•Ñ¥½¸ø4(€€¤ì4)ô4(
+    const requestId = ++institutionRequestSequence.current;
+    if (!editorOpen || query.length < 2 || editor.linked) {
+      setInstitutions([]);
+      setInstitutionSearchState("idle");
+      return;
+    }
+    const normalizedQuery = normalizedInstitution(query);
+    if (institutionIndex.length) {
+      const candidates = institutionIndex
+        .filter((item) => normalizedInstitution([
+          item.organization,
+          item.region,
+          item.progressManager,
+          item.contactName,
+          item.contactPhone,
+          item.contactEmail,
+        ].filter(Boolean).join(" ")).includes(normalizedQuery))
+        .sort((left, right) => institutionSearchRank(left, normalizedQuery) - institutionSearchRank(right, normalizedQuery)
+          || left.organization.localeCompare(right.organization, "ko-KR")
+          || right.businessRound - left.businessRound)
+        .slice(0, 10);
+      setInstitutions(candidates);
+      setInstitutionSearchState(candidates.length ? "success" : "empty");
+      if (editor.googleEventId) {
+        const exact = candidates.find((item) => normalizedInstitution(item.organization) === normalizedQuery);
+        if (exact) selectInstitution(exact);
+      }
+      return;
+    }
+    const controller = new AbortController();
+    setInstitutions([]);
+    setInstitutionSearchState("debouncing");
+    const timer = window.setTimeout(() => {
+      if (requestId !== institutionRequestSequence.current) return;
+      setInstitutionSearchState("loading");
+      void fetch(`/api/institutions/search?q=${encodeURIComponent(query)}`, { cache: "no-store", signal: controller.signal })
+        .then(async (response) => {
+          const payload = await response.json() as { institutions?: Institution[]; error?: string };
+          if (!response.ok) throw new Error(payload.error || "ê¸°ê´€ ê²€ìƒ‰ì„ ì™„ë£Œí•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+          return payload;
+        })
+        .then((payload: { institutions?: Institution[] }) => {
+          if (requestId !== institutionRequestSequence.current) return;
+          const candidates = Array.isArray(payload.institutions) ? payload.institutions.slice(0, 10) : [];
+          setInstitutions(candidates);
+          setInstitutionSearchState(candidates.length ? "success" : "empty");
+          if (editor.googleEventId) {
+            const normalizedQuery = normalizedInstitution(query);
+            const exact = candidates.find((item) => normalizedInstitution(item.organization) === normalizedQuery);
+            if (exact) selectInstitution(exact);
+          }
+        })
+        .catch((caught: unknown) => {
+          if (controller.signal.aborted || requestId !== institutionRequestSequence.current) return;
+          setInstitutions([]);
+          setInstitutionSearchState("error");
+          console.warn("Institution search failed", caught);
+        });
+    }, 120);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [editor.googleEventId, editor.organizationQuery, editor.linked, editorOpen, institutionIndex]);
+
+  function openNew(date = selectedDate) {
+    setReadOnlySchedule(null);
+    setEditorError("");
+    setNotice("");
+    setEditor({ ...emptyEditor(date), assigneeMemberId: currentMember.id, assigneeName: currentMember.displayName });
+    setEditorOpen(true);
+  }
+  function updateInstitutionQuery(value: string) {
+    setEditor((current) => ({
+      ...current,
+      organizationQuery: value,
+      organization: "",
+      businessRound: 0,
+      linked: false,
+    }));
+  }
+  function openEdit(schedule: HomeCalendarSchedule) {
+    setMobileAgendaOpen(false);
+    if (schedule.category === "construction") { onOpenConstructionSchedule(); return; }
+    if (schedule.category === "google") { setReadOnlySchedule(schedule); return; }
+    if (!schedule.editable || typeof schedule.id !== "number") return;
+    setEditorError("");
+    setEditor({
+      scheduleId: schedule.id, googleEventId: "", organization: schedule.organization, businessRound: schedule.businessRound,
+      organizationQuery: schedule.organization, linked: schedule.businessRound > 0, kind: kindFromSchedule(schedule),
+      title: cleanScheduleTitle(schedule.label), scheduledDate: schedule.scheduledDate,
+      allDay: !schedule.startTime, startTime: schedule.startTime || "", endTime: schedule.endTime || "",
+      assigneeMemberId: schedule.assigneeMemberId || 0, assigneeName: schedule.assigneeName,
+      details: schedule.details || "", completed: Boolean(schedule.completed), syncError: schedule.syncError || "",
+    });
+    setEditorOpen(true);
+  }
+  function openGoogleLink(schedule: HomeCalendarSchedule) {
+    const suggestedKind: Record<string, EditorKind> = {
+      sales: "ì˜ì—…", meeting: "íšŒì˜", construction: "ì‹œê³µ", showroom: "ì‡¼ë£¸", other: "ê¸°íƒ€",
+    };
+    const organization = schedule.organization === "Google Calendar" ? "" : schedule.organization;
+    const structured = structuredGoogleDescription(schedule.details || "");
+    const title = cleanScheduleTitle(schedule.label) || structured.constructionStage || structured.content;
+    setReadOnlySchedule(null);
+    setEditorError("");
+    setNotice("");
+    setEditor({
+      ...emptyEditor(schedule.scheduledDate),
+      googleEventId: schedule.googleEventId || "",
+      organizationQuery: organization,
+      kind: schedule.suggestedCategory === "construction"
+        ? suggestedKind.construction
+        : suggestedKind.sales,
+      title,
+      allDay: !schedule.startTime,
+      startTime: schedule.startTime || "",
+      endTime: schedule.endTime || "",
+      assigneeMemberId: currentMember.id,
+      assigneeName: currentMember.displayName,
+      details: structured.memo,
+    });
+    setEditorOpen(true);
+  }
+  function selectInstitution(item: Institution) {
+    const member = members.find((candidate) => candidate.display_name === item.progressManager);
+    setEditor((current) => ({
+      ...current, organization: item.organization, businessRound: item.businessRound, organizationQuery: item.organization,
+      linked: true, assigneeMemberId: member?.id || current.assigneeMemberId || currentMember.id,
+      assigneeName: member ? personDisplayLabel(member) : item.progressManager || current.assigneeName || currentMember.displayName,
+    }));
+    setInstitutions([]);
+  }
+  function changeAssignee(value: string) {
+    const id = Number(value) || 0;
+    const member = members.find((candidate) => candidate.id === id);
+    setEditor((current) => ({ ...current, assigneeMemberId: id, assigneeName: member ? personDisplayLabel(member) : "" }));
+  }
+
+  function scheduleValidationMessage(draft: CalendarEditor, institutionWillBeLinked = false) {
+    const organization = (draft.linked ? draft.organization : draft.organizationQuery).trim();
+    if (!organization) return "ì—°ê²°í•  ê¸°ê´€ ë˜ëŠ” ì¼ì • ì¥ì†Œë¥¼ ì…ë ¥í•´ ì£¼ì„¸ìš”.";
+    if (!draft.title.trim()) return "ì¼ì • ì œëª©ì„ ì…ë ¥í•´ ì£¼ì„¸ìš”.";
+    if (!draft.assigneeMemberId) return "ì¼ì • ë‹´ë‹¹ìë¥¼ ì„ íƒí•´ ì£¼ì„¸ìš”.";
+    if ((draft.kind === "ì˜ì—…" || draft.kind === "ì‹œê³µ" || draft.googleEventId) && !draft.linked && !institutionWillBeLinked) {
+      return "ê¸°ì¡´ ê¸°ê´€ì„ ê²€ìƒ‰í•´ ì„ íƒí•œ ë’¤ ì—°ê²°í•´ ì£¼ì„¸ìš”.";
+    }
+    if (!draft.allDay && !draft.startTime) return "ì‹œê°„ ì¼ì •ì€ ì‹œì‘ ì‹œê°„ì„ ì„ íƒí•´ ì£¼ì„¸ìš”.";
+    if (!draft.allDay && draft.endTime && draft.endTime < draft.startTime) {
+      return "ì¢…ë£Œ ì‹œê°„ì€ ì‹œì‘ ì‹œê°„ ì´í›„ì—¬ì•¼ í•©ë‹ˆë‹¤.";
+    }
+    return "";
+  }
+
+  async function createInstitution() {
+    if (institutionCreatingRef.current || scheduleSavingRef.current || saving) return;
+    institutionCreatingRef.current = true;
+    setInstitutionCreating(true);
+    const organizationQuery = editor.organizationQuery.trim();
+    const validationError = scheduleValidationMessage(editor, true);
+    if (organizationQuery.length < 2 || validationError) {
+      setEditorError(validationError || "ê¸°ê´€ëª…ì„ ë‘ ê¸€ì ì´ìƒ ì…ë ¥í•´ ì£¼ì„¸ìš”.");
+      institutionCreatingRef.current = false;
+      setInstitutionCreating(false);
+      return;
+    }
+    setEditorError("");
+    try {
+      const response = await fetch("/api/records", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organization: organizationQuery, activityDate: today, activityType: "ê¸°íƒ€", region: "",
+          summary: "í†µí•© ì¼ì •ì—ì„œ ì‹ ê·œ ê¸°ê´€ ë“±ë¡", businessRound: 1, awardStatus: "ë¯¸ì •", awardStage: "ë¯¸ì •",
+          skipInstitutionStateLookup: true, reuseExistingInstitution: true,
+        }),
+      });
+      const payload = await response.json() as {
+        error?: string;
+        reused?: boolean;
+        record?: { organization?: unknown; business_round?: unknown; region?: unknown; progress_manager?: unknown };
+      };
+      if (!response.ok) throw new Error(payload.error || "ê¸°ê´€ì„ ë“±ë¡í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      const institution: Institution = {
+        organization: String(payload.record?.organization || organizationQuery),
+        businessRound: Math.max(1, Number(payload.record?.business_round) || 1),
+        region: String(payload.record?.region || ""),
+        progressManager: String(payload.record?.progress_manager || currentMember.displayName),
+      };
+      const linkedEditor: CalendarEditor = {
+        ...editor,
+        organization: institution.organization,
+        organizationQuery: institution.organization,
+        businessRound: institution.businessRound,
+        linked: true,
+      };
+      setCreatedInstitutions((current) => [
+        ...current.filter((item) => !(
+          normalizedInstitution(item.organization) === normalizedInstitution(institution.organization)
+          && item.businessRound === institution.businessRound
+        )),
+        institution,
+      ]);
+      setInstitutions([institution]);
+      setInstitutionSearchState("success");
+      setEditor(linkedEditor);
+      setEditorError("");
+      const scheduleLinked = await persistSchedule(linkedEditor, "ê¸°ê´€ ë“±ë¡ ë° ì¼ì • ì—°ê²° ì™„ë£Œ");
+      if (scheduleLinked) {
+        await Promise.resolve(onRecordsChanged?.()).catch(() => undefined);
+      }
+    } catch (caught) { setEditorError(caught instanceof Error ? caught.message : "ê¸°ê´€ì„ ë“±ë¡í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤."); }
+    finally {
+      institutionCreatingRef.current = false;
+      setInstitutionCreating(false);
+    }
+  }
+  async function ensureConstructionProject(draft: CalendarEditor) {
+    if (draft.kind !== "ì‹œê³µ") return "ready" as const;
+    if (!draft.linked || !draft.organization.trim() || draft.businessRound <= 0) {
+      throw new Error("ì‹œê³µ ì¼ì •ì€ ì—°ê²°í•  ê¸°ê´€ì„ ë¨¼ì € ì„ íƒí•´ ì£¼ì„¸ìš”.");
+    }
+    const boardResponse = await fetch("/api/schedules?scope=construction-board", { cache: "no-store" });
+    const boardPayload = await boardResponse.json() as {
+      projects?: Array<{ organization?: string; businessRound?: number; hidden?: boolean }>;
+      error?: string;
+    };
+    if (!boardResponse.ok) throw new Error(boardPayload.error || "ì‹œê³µÂ·ë‚©í’ˆ ì¼ì •í‘œë¥¼ í™•ì¸í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+    const project = (boardPayload.projects ?? []).find((item) =>
+      normalizedInstitution(String(item.organization || "")) === normalizedInstitution(draft.organization)
+      && Math.max(1, Number(item.businessRound) || 1) === draft.businessRound,
+    );
+    if (project && !project.hidden) return "ready" as const;
+    const confirmed = window.confirm(
+      `â€˜${draft.organization}â€™ì´(ê°€) ì‹œê³µÂ·ë‚©í’ˆ ì¼ì •í‘œì— ì—†ìŠµë‹ˆë‹¤.\nê¸°ê´€ì„ ìë™ ë“±ë¡í•˜ê³  í˜„ì¬ ì¼ì •ì„ ì—°ê²°í• ê¹Œìš”?`,
+    );
+    if (!confirmed) return false;
+    const addResponse = await fetch("/api/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "add-construction-project",
+        organization: draft.organization,
+        businessRound: draft.businessRound,
+        workSummary: "",
+      }),
+    });
+    const addPayload = await addResponse.json() as { error?: string };
+    if (!addResponse.ok) throw new Error(addPayload.error || "ì‹œê³µÂ·ë‚©í’ˆ ì¼ì •í‘œì— ê¸°ê´€ì„ ë“±ë¡í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+    return "created" as const;
+  }
+  async function persistSchedule(draft: CalendarEditor, successNotice = "") {
+    if (scheduleSavingRef.current) return false;
+    const validationError = scheduleValidationMessage(draft);
+    if (validationError) { setEditorError(validationError); return false; }
+    const organization = (draft.linked ? draft.organization : draft.organizationQuery).trim();
+    scheduleSavingRef.current = true;
+    let completed = draft.completed;
+    if (draft.googleEventId && draft.scheduledDate < today && !completed) {
+      completed = window.confirm("ì§€ë‚œ ì¼ì •ì…ë‹ˆë‹¤. ì™„ë£Œ ìƒíƒœë¡œ ì €ì¥í• ê¹Œìš”?\nì™„ë£Œ ì²˜ë¦¬í•´ë„ ì¼ì •ì€ ìº˜ë¦°ë”ì— ê³„ì† í‘œì‹œë˜ë©° ì·¨ì†Œì„ ìœ¼ë¡œ êµ¬ë¶„ë©ë‹ˆë‹¤.");
+    }
+    setEditorError("");
+    setSaving(true);
+    try {
+      const constructionProjectState = await ensureConstructionProject(draft);
+      if (!constructionProjectState) return false;
+      const response = await fetch("/api/schedules", {
+        method: draft.scheduleId ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: draft.scheduleId ? "update-general-schedule" : draft.googleEventId ? "link-google-schedule" : "add-general-schedule",
+          scheduleId: draft.scheduleId, googleEventId: draft.googleEventId,
+          organization, businessRound: draft.linked ? draft.businessRound : 0,
+          title: draft.title.trim(),
+          label: draft.kind === "ì‹œê³µ" ? draft.title.trim() : `${draft.kind} Â· ${draft.title.trim()}`, scheduledDate: draft.scheduledDate,
+          startTime: draft.allDay ? "" : draft.startTime, endTime: draft.allDay ? "" : draft.endTime,
+          category: KIND_CATEGORY[draft.kind], linked: draft.linked,
+          assigneeMemberId: draft.assigneeMemberId, assigneeName: draft.assigneeName,
+          details: draft.details.trim(), completed,
+        }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "ì¼ì •ì„ ì €ì¥í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      setEditorOpen(false); setReloadVersion((value) => value + 1); setEditorError(""); setError("");
+      if (successNotice) setNotice(successNotice);
+      else if (constructionProjectState === "created") setNotice("ì‹œê³µì¼ì •í‘œ ê¸°ê´€ ë“±ë¡ ë° ì¼ì • ì—°ê²° ì™„ë£Œ");
+      return true;
+    } catch (caught) {
+      setEditorError(caught instanceof Error ? caught.message : "ì¼ì •ì„ ì €ì¥í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      return false;
+    } finally {
+      scheduleSavingRef.current = false;
+      setSaving(false);
+    }
+  }
+  async function saveSchedule() {
+    if (institutionCreatingRef.current) return;
+    await persistSchedule(editor);
+  }
+  async function deleteSchedule() {
+    if (!editor.scheduleId || saving || !window.confirm("ì´ ì¼ì •ì„ ì‚­ì œí• ê¹Œìš”?")) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/schedules", {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete-general-schedule", scheduleId: editor.scheduleId }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "ì¼ì •ì„ ì‚­ì œí•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      setEditorOpen(false); setReloadVersion((value) => value + 1);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "ì¼ì •ì„ ì‚­ì œí•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤."); }
+    finally { setSaving(false); }
+  }
+
+  async function deleteGoogleSchedule(schedule: HomeCalendarSchedule) {
+    if (!schedule.googleEventId || saving || !window.confirm("Google ìœ„ì¦ˆì—… ê³µìœ  ìº˜ë¦°ë”ì˜ ì›ë³¸ì—ì„œë„ ì™„ì „íˆ ì‚­ì œë©ë‹ˆë‹¤. ì‚­ì œí• ê¹Œìš”?")) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/schedules", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete-google-calendar-event", googleEventId: schedule.googleEventId }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Google ì¼ì •ì„ ì‚­ì œí•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      setReadOnlySchedule(null);
+      setReloadVersion((value) => value + 1);
+      setError("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Google ì¼ì •ì„ ì‚­ì œí•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤. ë‹¤ì‹œ ì‹œë„í•´ ì£¼ì„¸ìš”.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function retrySync(scheduleId: number) {
+    if (retryingId) return;
+    setRetryingId(scheduleId);
+    try {
+      const response = await fetch("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "retry-google-sync", scheduleId }),
+      });
+      const payload = await response.json() as { syncIssues?: SyncIssue[]; error?: string };
+      if (!response.ok) throw new Error(payload.error || "ë™ê¸°í™”ë¥¼ ì¬ì‹œë„í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      setSyncIssues(Array.isArray(payload.syncIssues) ? payload.syncIssues : []);
+      setReloadVersion((value) => value + 1);
+      setError("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "ë™ê¸°í™”ë¥¼ ì¬ì‹œë„í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+    } finally {
+      setRetryingId(null);
+    }
+  }
+
+  const visibleSchedules = useMemo(
+    () => schedules.filter((item) =>
+      (!hideCompleted || !item.completed)),
+    [hideCompleted, schedules],
+  );
+  const filtered = useMemo(
+    () => visibleSchedules.filter((item) => filter === "all" || item.category === filter),
+    [filter, visibleSchedules],
+  );
+  const grouped = useMemo(() => {
+    const map = new Map<string, HomeCalendarSchedule[]>();
+    filtered.forEach((item) => {
+      let day = item.scheduledDate;
+      while (day <= (item.endDate || item.scheduledDate)) {
+        map.set(day, [...(map.get(day) || []), item]);
+        day = dateValue(addDays(dateFromValue(day), 1));
+      }
+    });
+    map.forEach((items, key) => map.set(key, [...items].sort((a, b) => {
+      const timeA = eventTime(a); const timeB = eventTime(b);
+      if (!timeA && timeB) return -1; if (timeA && !timeB) return 1;
+      const timeOrder = timeA.localeCompare(timeB);
+      if (timeOrder) return timeOrder;
+      if (a.category === "construction" && b.category === "construction") {
+        const stageOrder = constructionStageIndex(a.label) - constructionStageIndex(b.label);
+        if (stageOrder) return stageOrder;
+      }
+      return a.organization.localeCompare(b.organization, "ko");
+    })));
+    return map;
+  }, [filtered]);
+  const monthPrefix = `${monthValue}-`;
+  const counts = useMemo(() => {
+    const inMonth = visibleSchedules.filter((item) => item.scheduledDate.startsWith(monthPrefix));
+    return Object.fromEntries(FILTERS.map(([key]) => [key, key === "all" ? inMonth.length : inMonth.filter((item) => item.category === key).length])) as Record<CalendarFilter, number>;
+  }, [monthPrefix, visibleSchedules]);
+  const selectedSchedules = grouped.get(selectedDate) || [];
+  const changeMonth = (value: string) => {
+    setMonthValue(value);
+    setSelectedDate(`${value}-01`);
+    setMobileAgendaOpen(false);
+  };
+  const linkedDetailAvailable = editor.linked && editor.businessRound > 0;
+
+  return (
+    <section className="home-calendar-panel" aria-labelledby="home-calendar-title">
+      <header className="home-calendar-header">
+        <div><span className="section-kicker">WORK CALENDAR</span><h2 id="home-calendar-title">í†µí•© ì¼ì •</h2><p>ê³µìœ  ì—…ë¬´ ì¼ì •ì€ Googleê³¼ ì—°ê²°í•˜ê³ , ë‚´ ì¼ì •ì€ ë‚˜ì—ê²Œë§Œ í‘œì‹œí•©ë‹ˆë‹¤.</p></div>
+        <div className="home-calendar-month-controls">
+          <button type="button" className="home-calendar-add" onClick={() => openNew()}>+ ì¼ì • ë“±ë¡</button>
+          <button type="button" onClick={() => changeMonth(moveMonth(monthValue, -1))}>ì´ì „</button>
+          <button type="button" onClick={() => { setMonthValue(today.slice(0, 7)); setSelectedDate(today); setMobileAgendaOpen(false); }}>ì˜¤ëŠ˜</button>
+          <button type="button" onClick={() => changeMonth(moveMonth(monthValue, 1))}>ë‹¤ìŒ</button>
+          <strong>{monthTitle(monthValue)}</strong>
+        </div>
+      </header>
+      <div className="home-calendar-filters">
+        {FILTERS.map(([key, label]) => (
+          <button type="button" key={key} className={`home-calendar-filter home-calendar-filter-${key}${filter === key ? " active" : ""}`}
+            disabled={key === "google" && !googleState.configured}
+            title={key === "google" && !googleState.configured ? "ìœ„ì¦ˆì—… ê³µìœ  ìº˜ë¦°ë” ì£¼ì†Œê°€ ì•„ì§ ë“±ë¡ë˜ì§€ ì•Šì•˜ìŠµë‹ˆë‹¤." : ""}
+            onClick={() => setFilter(key)}>{label} <b>{counts[key]}</b></button>
+        ))}
+        {googleState.configured && !googleState.connected ? <small className="google-calendar-state">ìœ„ì¦ˆì—… ê³µìœ ì¼ì • ì—°ê²°ì„ í™•ì¸í•´ ì£¼ì„¸ìš”.</small> : null}
+        {googleState.connected && !googleState.writable ? <small className="google-calendar-state">Google ì¼ì •ì€ ì½ê¸° ì „ìš©ìœ¼ë¡œ ì—°ê²°ë˜ì—ˆìŠµë‹ˆë‹¤.</small> : null}
+        {googleRefreshing ? <small className="google-calendar-state">Google ì¼ì • í™•ì¸ ì¤‘â€¦</small> : null}
+        <label className="home-calendar-completed-filter"><input type="checkbox" checked={hideCompleted} onChange={(event) => setHideCompleted(event.target.checked)} /> ì™„ë£Œ ì¼ì • ìˆ¨ê¸°ê¸°</label>
+      </div>
+      {syncIssues.length ? <div className="calendar-sync-issues" role="status">
+        <strong>Google Calendar ë™ê¸°í™” ì‹¤íŒ¨ {syncIssues.length}ê±´</strong>
+        {syncIssues.slice(0, 3).map((issue) => <div key={issue.id}>
+          <span>{issue.organization} Â· {issue.label}<small>{issue.operation === "delete" ? "ì‚­ì œ" : issue.operation === "unlink" ? "Google ê³µìœ  í•´ì œ" : "ë“±ë¡Â·ìˆ˜ì •"} Â· {issue.error}</small></span>
+          <button type="button" disabled={retryingId === issue.id} onClick={() => void retrySync(issue.id)}>{retryingId === issue.id ? "ì¬ì‹œë„ ì¤‘" : "ì¬ì‹œë„"}</button>
+        </div>)}
+      </div> : null}
+      {error ? <div className="home-calendar-error">{error}</div> : null}
+      {notice ? <div className="home-calendar-notice" role="status">{notice}</div> : null}
+      <div className="home-calendar-layout">
+        <div className="home-calendar-grid" aria-busy={loading}>
+          {["ì¼", "ì›”", "í™”", "ìˆ˜", "ëª©", "ê¸ˆ", "í† "].map((day) => <div className="home-calendar-weekday" key={day}>{day}</div>)}
+          {dates.map((date) => {
+            const value = dateValue(date); const items = grouped.get(value) || [];
+            return <button type="button" className={`home-calendar-day${value.startsWith(monthPrefix) ? "" : " outside"}${value === today ? " today" : ""}${value === selectedDate ? " selected" : ""}`} key={value} onClick={() => { setSelectedDate(value); setMobileAgendaOpen(true); }}>
+              <span className="home-calendar-day-number">{date.getDate()}</span>
+              <span className="home-calendar-day-items">
+                {items.slice(0, 3).map((item) => <span className={`${item.category}${item.completed ? " completed" : ""}`} key={item.id} title={`${item.organization} Â· ${item.label}`}>
+                  <b>
+                    {item.startTime ? `${item.startTime} ` : ""}
+                    <span className="calendar-organization-full">{item.organization}</span>
+                    <span className="calendar-organization-compact">{compactCalendarOrganization(item.organization)}</span>
+                  </b><small>{cleanScheduleTitle(item.label)}</small>
+                </span>)}
+                {items.length > 3 ? <em>+{items.length - 3}ê±´ ë”ë³´ê¸°</em> : null}
+              </span>
+            </button>;
+          })}
+        </div>
+        {mobileAgendaOpen ? <button type="button" className="home-calendar-agenda-backdrop" aria-label="ì¼ì • ëª©ë¡ ë‹«ê¸°" onClick={() => setMobileAgendaOpen(false)} /> : null}
+        <aside className={`home-calendar-agenda${mobileAgendaOpen ? " mobile-open" : ""}`} aria-label={`${selectedDateTitle(selectedDate)} ì¼ì • ëª©ë¡`}>
+          <div className="home-calendar-agenda-heading"><span>{selectedDate === today ? "ì˜¤ëŠ˜" : "ì„ íƒ ë‚ ì§œ"}</span><h3>{selectedDateTitle(selectedDate)}</h3><b>{selectedSchedules.length}ê±´</b><button type="button" className="home-calendar-agenda-close" aria-label="ì¼ì • ëª©ë¡ ë‹«ê¸°" onClick={() => setMobileAgendaOpen(false)}>Ã—</button></div>
+          {loading ? <p className="home-calendar-agenda-empty">ì¼ì •ì„ í™•ì¸í•˜ëŠ” ì¤‘ì…ë‹ˆë‹¤.</p> : selectedSchedules.length ? (
+            <div className="home-calendar-agenda-list">{selectedSchedules.map((item) => (
+              <button type="button" className={item.completed ? "completed" : ""} key={item.id} onClick={() => openEdit(item)}>
+                <i className={item.category} /><span><strong>{item.startTime ? `${item.startTime} ` : ""}{item.organization}</strong><small>{cleanScheduleTitle(item.label)}</small><small className="schedule-assignee">ë‹´ë‹¹ {item.assigneeName || "ë¯¸ì •"}{item.googleOrigin ? " Â· Googleì—ì„œ ì—°ê²°" : ""}</small>{item.syncError === GOOGLE_EVENT_DELETED_SYNC_ERROR ? <small className="schedule-sync failed">Googleì—ì„œ ì‚­ì œë¨ Â· ì‚¬ì´íŠ¸ ì¼ì • ìœ ì§€ ì¤‘</small> : item.syncStatus === "failed" ? <small className="schedule-sync failed">Google ë™ê¸°í™” ì‹¤íŒ¨ Â· ì¬ì‹œë„ í•„ìš”</small> : item.syncStatus === "pending" ? <small className="schedule-sync pending">Google ë™ê¸°í™” ëŒ€ê¸°</small> : item.syncStatus === "local_only" ? <small className="schedule-sync local-only">ì‚¬ì´íŠ¸ ì „ìš© ì¼ì • Â· Google ê³µìœ  ì•ˆ í•¨</small> : item.googleEventId ? <small className="schedule-sync synced">Google ì—°ê²°ë¨</small> : null}</span><em className={item.category}>{CATEGORY_LABEL[item.category]}</em>
+              </button>
+            ))}</div>
+          ) : <p className="home-calendar-agenda-empty">ì´ ë‚ ì§œì— ë“±ë¡ëœ ì¼ì •ì´ ì—†ìŠµë‹ˆë‹¤.</p>}
+        </aside>
+      </div>
+
+      {editorOpen ? <div className="schedule-editor-shell" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setEditorOpen(false); }}>
+        <div className="home-schedule-editor" role="dialog" aria-modal="true">
+          <header><div><span className="section-kicker">{editor.googleEventId ? "CONNECT GOOGLE SCHEDULE" : editor.scheduleId ? "EDIT SCHEDULE" : "NEW SCHEDULE"}</span><h3>{editor.googleEventId ? "Google ì¼ì • ì—°ê²°" : editor.scheduleId ? "ì¼ì • ìˆ˜ì •" : "ì¼ì • ë“±ë¡"}</h3><p>{editor.googleEventId ? "ì¶”ì²œ ë‚´ìš©ì„ í™•ì¸í•˜ê³  ê¸°ê´€Â·ë¶„ë¥˜Â·ë‹´ë‹¹ìë¥¼ ì—°ê²°í•´ ì£¼ì„¸ìš”." : "ì‹œê³µ ì¼ì •ì€ ì‹œê³µÂ·ë‚©í’ˆ ì¼ì •í‘œì—ì„œ ê´€ë¦¬í•˜ê³  ì´ í™”ë©´ì—ëŠ” ìë™ ì—°ë™ë©ë‹ˆë‹¤."}</p></div><button type="button" aria-label="ë‹«ê¸°" onClick={() => setEditorOpen(false)}>Ã—</button></header>
+          <div className="home-schedule-kind">{((editor.googleEventId ? ["ì˜ì—…", "íšŒì˜", "ì‹œê³µ", "ì‡¼ë£¸", "ê¸°íƒ€"] : editor.scheduleId ? ["ì˜ì—…", "íšŒì˜", "ì‹œê³µ", "ì‡¼ë£¸", "ê¸°íƒ€", "ë‚´ ì¼ì •"] : ["ì˜ì—…", "íšŒì˜", "ì‹œê³µ", "ì‡¼ë£¸", "ê¸°íƒ€", "ë‚´ ì¼ì •"]) as EditorKind[]).map((kind) => <button type="button" key={kind} className={editor.kind === kind ? "active" : ""} onClick={() => setEditor((current) => ({ ...current, kind }))}>{kind}</button>)}</div>
+          <div className="home-schedule-institution">
+            <label htmlFor="home-schedule-institution-input">{editor.googleEventId ? "ì—°ê²°í•  ê¸°ê´€" : "ê¸°ê´€ ë˜ëŠ” ì¼ì • ì¥ì†Œ"} <b>*</b></label>
+            <div className="home-schedule-institution-search">
+              <input id="home-schedule-institution-input" value={editor.organizationQuery}
+                onInput={(event) => updateInstitutionQuery(event.currentTarget.value)}
+                onCompositionEnd={(event) => updateInstitutionQuery(event.currentTarget.value)}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  updateInstitutionQuery(value);
+                }}
+                placeholder="ê¸°ê´€ëª… 2ê¸€ì ì´ìƒ ê²€ìƒ‰ ë˜ëŠ” ì§ì ‘ ì…ë ¥" />
+              {!editor.linked && editor.organizationQuery.trim().length >= 2 ? <div className="home-schedule-institution-results">
+                {institutions.map((item) => <button type="button" key={`${item.organization}-${item.businessRound}`} onClick={() => selectInstitution(item)}><strong>{item.organization}</strong><small>{item.region || "ì§€ì—­ ë¯¸ë“±ë¡"} Â· {item.businessRound}ì°¨ ì‚¬ì—… Â· {item.progressManager || "ë‹´ë‹¹ì ë¯¸ì •"}</small></button>)}
+                {institutionSearchState === "debouncing" || institutionSearchState === "loading" ? <p className="searching">ê¸°ê´€ì„ ê²€ìƒ‰í•˜ëŠ” ì¤‘ì…ë‹ˆë‹¤.</p> : null}
+                {institutionSearchState === "empty" ? <p>ê²€ìƒ‰ ê²°ê³¼ê°€ ì—†ìŠµë‹ˆë‹¤.</p> : null}
+                {institutionSearchState === "error" ? <p className="search-error">ê²€ìƒ‰ì´ ì§€ì—°ë˜ê³  ìˆìŠµë‹ˆë‹¤. ì ì‹œ í›„ ë‹¤ì‹œ ì…ë ¥í•´ ì£¼ì„¸ìš”.</p> : null}
+              </div> : null}
+            </div>
+            <small className="home-schedule-link-note">{editor.linked ? editor.kind === "ì‹œê³µ" ? "ì‹œê³µÂ·ë‚©í’ˆ ì¼ì •í‘œì™€ ê¸°ê´€ ìƒì„¸ì˜ ì˜ˆì • ì¼ì •ì— ì—°ê²°ë©ë‹ˆë‹¤." : "ê¸°ê´€ ìƒì„¸ì˜ ì˜ˆì • ì¼ì •ì— ì—°ê²°ë©ë‹ˆë‹¤." : editor.kind === "ì‹œê³µ" ? "ì‹œê³µ ì¼ì •ì€ ê¸°ì¡´ ê¸°ê´€ì„ ì„ íƒí•´ì•¼ í•˜ë©°, ì¼ì •í‘œ ë¯¸ë“±ë¡ ê¸°ê´€ì€ ì €ì¥í•  ë•Œ ë“±ë¡ ì—¬ë¶€ë¥¼ í™•ì¸í•©ë‹ˆë‹¤." : editor.googleEventId ? "ì¶”ì²œ ê¸°ê´€ì„ ì„ íƒí•œ ë’¤ ì—°ê²°í•  ìˆ˜ ìˆìŠµë‹ˆë‹¤." : editor.kind === "ì˜ì—…" ? "ì˜ì—… ì¼ì •ì€ ê¸°ì¡´ ê¸°ê´€ì„ ì„ íƒí•˜ê±°ë‚˜ ìƒˆ ê¸°ê´€ìœ¼ë¡œ ë“±ë¡í•´ì•¼ í•©ë‹ˆë‹¤." : "íšŒì˜Â·ì‡¼ë£¸Â·ê¸°íƒ€Â·ë‚´ ì¼ì •ì€ ê¸°ê´€ ì—°ê²° ë˜ëŠ” ììœ  ì¥ì†Œ ì…ë ¥ì´ ëª¨ë‘ ê°€ëŠ¥í•©ë‹ˆë‹¤."}</small>
+            {!editor.linked && editor.kind !== "ì‹œê³µ" && editor.organizationQuery.trim().length >= 2 ? <div className="home-schedule-institution-create"><button type="button" className="schedule-create-institution" disabled={institutionCreating || saving} onClick={() => void createInstitution()}>{institutionCreating ? "ê¸°ê´€ ë“±ë¡ ì¤‘â€¦" : "+ ìƒˆ ê¸°ê´€ ë“±ë¡ í›„ ì—°ê²°"}</button></div> : null}
+          </div>
+          {editor.kind === "ì‹œê³µ" ? <label>ì‹œê³µ ê³µì • <b>*</b><input list="construction-stage-options" maxLength={40} value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))} placeholder="ëª©ë¡ì—ì„œ ì„ íƒí•˜ê±°ë‚˜ ê³µì •ëª… ì§ì ‘ ì…ë ¥" /><datalist id="construction-stage-options">{constructionStages.map((stage) => <option key={stage} value={stage} />)}</datalist><small>ëª©ë¡ì— ì—†ì–´ë„ ì§ì ‘ ì…ë ¥í•˜ë©´ ì €ì¥ í›„ ë‹¤ìŒ ì„ íƒë¶€í„° ì¬ì‚¬ìš©ë©ë‹ˆë‹¤.</small></label> : <label>ì¼ì • ì œëª© <b>*</b><input value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))} placeholder="ì˜ˆ: ë‹´ë‹¹ì ë°©ë¬¸ ë¯¸íŒ…" /></label>}
+          <label>ì¼ì • ë‹´ë‹¹ì <b>*</b><select value={editor.assigneeMemberId || ""} onChange={(event) => changeAssignee(event.target.value)}><option value="">ë‹´ë‹¹ì ì„ íƒ</option>{members.map((member) => <option key={member.id} value={member.id}>{personDisplayLabel(member)}</option>)}</select></label>
+          <div className="home-schedule-date-grid"><label>ë‚ ì§œ <b>*</b><input type="date" value={editor.scheduledDate} onChange={(event) => setEditor((current) => ({ ...current, scheduledDate: event.target.value }))} /></label>
+            <label className="schedule-all-day"><input type="checkbox" checked={editor.allDay} onChange={(event) => setEditor((current) => ({ ...current, allDay: event.target.checked, startTime: event.target.checked ? "" : current.startTime, endTime: event.target.checked ? "" : current.endTime }))} /> ì¢…ì¼ ì¼ì •</label>
+          </div>
+          {!editor.allDay ? <div className="home-schedule-time-grid"><label>ì‹œì‘ ì‹œê°„ <b>*</b><select value={editor.startTime} onChange={(event) => setEditor((current) => ({ ...current, startTime: event.target.value }))}><option value="">ì„ íƒ</option>{TIME_OPTIONS.map((time) => <option key={time} value={time}>{time}</option>)}</select></label><label>ì¢…ë£Œ ì‹œê°„<select value={editor.endTime} onChange={(event) => setEditor((current) => ({ ...current, endTime: event.target.value }))}><option value="">ì„ íƒ ì•ˆ í•¨</option>{TIME_OPTIONS.map((time) => <option key={time} value={time}>{time}</option>)}</select></label></div> : null}
+          <label>ë©”ëª¨ <small>ì„ íƒ ì…ë ¥ Â· ìƒˆ ì¼ì •ë¶€í„° ì €ì¥ë©ë‹ˆë‹¤.</small><textarea value={editor.details} maxLength={500} rows={4} onChange={(event) => setEditor((current) => ({ ...current, details: event.target.value }))} placeholder="ë°©ë¬¸ ëª©ì , ì¤€ë¹„ì‚¬í•­ ë“± í•„ìš”í•œ ë‚´ìš©ì„ ì…ë ¥í•˜ì„¸ìš”. Google ì¼ì • ì„¤ëª…ì—ë„ í‘œì‹œë©ë‹ˆë‹¤." /></label>
+          {editor.scheduleId ? <label className="schedule-completed"><input type="checkbox" checked={editor.completed} onChange={(event) => setEditor((current) => ({ ...current, completed: event.target.checked }))} /> ì´ ì¼ì •ì„ ì™„ë£Œ ìƒíƒœë¡œ ì§€ì •</label> : null}
+          {editorError ? <div className="home-calendar-error" role="alert">{editorError}</div> : null}
+          <footer>{editor.scheduleId ? <button type="button" className="danger-button" onClick={() => void deleteSchedule()}>ì‚¬ì´íŠ¸ì—ì„œ ì‚­ì œ</button> : null}{linkedDetailAvailable ? <button type="button" onClick={() => { setEditorOpen(false); onOpenOrganization(editor.organization, editor.businessRound); }}>ê¸°ê´€ ìƒì„¸ ë³´ê¸°</button> : null}<span /><button type="button" disabled={institutionCreating || saving} onClick={() => setEditorOpen(false)}>ì·¨ì†Œ</button><button type="button" className="primary-button" disabled={institutionCreating || saving || !editor.title.trim() || !editor.organizationQuery.trim() || !editor.assigneeMemberId || ((editor.kind === "ì˜ì—…" || editor.kind === "ì‹œê³µ" || Boolean(editor.googleEventId)) && !editor.linked)} onClick={() => void saveSchedule()}>{saving ? "ì €ì¥ ì¤‘" : editor.syncError === GOOGLE_EVENT_DELETED_SYNC_ERROR ? "Googleì— ë‹¤ì‹œ ì—°ê²°" : editor.googleEventId ? "ì´ëŒ€ë¡œ ì—°ê²°" : "ì €ì¥"}</button></footer>
+        </div>
+      </div> : null}
+
+      {readOnlySchedule ? <div className="schedule-editor-shell" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setReadOnlySchedule(null); }}>
+        <div className="home-schedule-editor schedule-readonly-dialog" role="dialog" aria-modal="true">
+          <header><div><span className="section-kicker">GOOGLE CONNECTION NEEDED</span><h3>Google ì¼ì • ì—°ê²° í•„ìš”</h3><p>íŒ€ì› ëˆ„êµ¬ë‚˜ ê¸°ê´€Â·ë¶„ë¥˜Â·ë‹´ë‹¹ìë¥¼ í™•ì¸í•˜ê³  ì—°ê²°í•  ìˆ˜ ìˆìŠµë‹ˆë‹¤.</p></div><button type="button" aria-label="ë‹«ê¸°" onClick={() => setReadOnlySchedule(null)}>Ã—</button></header>
+          <dl><div><dt>ì œëª©</dt><dd>{readOnlySchedule.label}</dd></div><div><dt>ì¥ì†Œ</dt><dd>{readOnlySchedule.organization || "ë¯¸ì…ë ¥"}</dd></div><div><dt>ì¼ì‹œ</dt><dd>{readOnlySchedule.scheduledDate}{readOnlySchedule.startTime ? ` ${readOnlySchedule.startTime}` : " (ì¢…ì¼)"}{readOnlySchedule.endTime ? ` ~ ${readOnlySchedule.endTime}` : ""}</dd></div>{readOnlySchedule.details ? <div><dt>ë‚´ìš©</dt><dd>{readOnlySchedule.details}</dd></div> : null}</dl>
+          <footer>{currentMember.role === "admin" ? <button type="button" className="danger-button" disabled={saving} onClick={() => void deleteGoogleSchedule(readOnlySchedule)}>Googleì—ì„œë„ ì‚­ì œ</button> : null}<span /><button type="button" onClick={() => setReadOnlySchedule(null)}>ë‹«ê¸°</button><button type="button" onClick={() => window.open(readOnlySchedule.externalUrl || "https://calendar.google.com/calendar/u/0/r", "_blank", "noopener,noreferrer")}>Googleì—ì„œ ì—´ê¸°</button><button type="button" className="primary-button" onClick={() => openGoogleLink(readOnlySchedule)}>ê¸°ê´€ê³¼ ì—°ê²°</button></footer>
+        </div>
+      </div> : null}
+    </section>
+  );
+}
