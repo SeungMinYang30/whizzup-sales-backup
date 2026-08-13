@@ -52,6 +52,16 @@ test("콘텐츠 대체비용은 컨소 지급이 아니라 내부 바이패스 �
   assert.equal(result.finalPayment, 0);
 });
 
+test("무상 제공 품목은 컨소 지급 계산에서 제외하고 별도 내부 비용은 유지한다", () => {
+  const result = calculateConsortiumSettlement([
+    { name: "무상 교구", quantity: 1, unitPrice: 1_500_000, complimentary: true, earningRate: 0.3, consortiumRate: 0.2, internalCostEnabled: true, internalCostAmount: 100_000, internalCostBearer: "whizzup" },
+  ], "컨소");
+  assert.equal(result.items[0].lineAmount, 0);
+  assert.equal(result.grossPayment, 0);
+  assert.equal(result.finalPayment, 0);
+  assert.equal(result.whizzupCost, 100_000);
+});
+
 test("컨소 정산서 Excel은 내부 마진 없이 품목·비용 처리 방식·최종 지급액을 표시한다", () => {
   const workbook = createConsortiumSettlementWorkbook({
     organization: "테스트초등학교",

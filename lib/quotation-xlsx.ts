@@ -9,6 +9,7 @@ export type QuotationLine = {
   quantity: number;
   unit: string;
   unitPrice: number;
+  complimentary?: boolean;
   note: string;
   procurement?: boolean;
   procurementChannel?: string;
@@ -32,6 +33,7 @@ export type QuotationWorkbookInput = {
   airpassSealData?: Uint8Array;
   extraBlankRows?: number;
   equipmentKit?: AirpassEquipmentKit;
+  equipmentKitComplimentary?: boolean;
   lines: QuotationLine[];
 };
 
@@ -93,14 +95,15 @@ function contractLabel(line: QuotationLine) {
 }
 
 function outputNote(line: QuotationLine) {
+  if (line.complimentary) return "무상 제공";
   if (line.equipmentKit) return AIRPASS_EQUIPMENT_CONTRACT_NOTE;
   return contractLabel(line);
 }
 
 function calculations(input: QuotationWorkbookInput) {
-  const itemTotal = input.lines.reduce((sum, line) => sum + Math.max(0, line.quantity) * Math.max(0, line.unitPrice), 0);
+  const itemTotal = input.lines.reduce((sum, line) => sum + (line.complimentary ? 0 : Math.max(0, line.quantity) * Math.max(0, line.unitPrice)), 0);
   const procurementFee = input.lines.reduce((sum, line) => sum + (appliesProcurementFee(line)
-    ? Math.floor(Math.max(0, line.quantity) * Math.max(0, line.unitPrice) * Math.max(0, line.procurementFeeRate ?? 0.0054) / 10) * 10
+    && !line.complimentary ? Math.floor(Math.max(0, line.quantity) * Math.max(0, line.unitPrice) * Math.max(0, line.procurementFeeRate ?? 0.0054) / 10) * 10
     : 0), 0);
   const discount = Math.max(0, input.discountAmount ?? 0);
   const extra = Math.max(0, input.extraAmount ?? 0);
@@ -136,7 +139,7 @@ function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
       return `<row r="${row}" ht="34" customHeight="1">${inline(`A${row}`, "", 7)}${styledBlanks(row, ["B", "C", "D"], 8)}${inline(`E${row}`, "-", 7)}${styledBlanks(row, ["F", "G"], 7)}${styledBlanks(row, ["H", "I"], 9)}${inline(`J${row}`, "", 7)}</row>`;
     }
     const quantity = Math.max(0, line.quantity);
-    const unitPrice = Math.max(0, line.unitPrice);
+    const unitPrice = line.complimentary ? 0 : Math.max(0, line.unitPrice);
     const amount = quantity * unitPrice;
     const fee = appliesProcurementFee(line) ? Math.floor(amount * Math.max(0, line.procurementFeeRate ?? 0.0054) / 10) * 10 : 0;
     const specification = line.specification || "-";
@@ -151,8 +154,8 @@ function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
       ${inline(`E${row}`, procurement, 7)}
       ${numeric(`F${row}`, quantity, 7)}
       ${inline(`G${row}`, line.unit || "대", 7)}
-      ${numeric(`H${row}`, unitPrice, 9)}
-      ${formula(`I${row}`, `F${row}*H${row}`, amount, 9)}
+      ${line.complimentary ? inline(`H${row}`, "무상", 9) : numeric(`H${row}`, unitPrice, 9)}
+      ${line.complimentary ? inline(`I${row}`, "무상", 9) : formula(`I${row}`, `F${row}*H${row}`, amount, 9)}
       ${inline(`J${row}`, outputNote(line), 7)}
       ${numeric(`K${row}`, fee, 0)}
     </row>`;
@@ -254,6 +257,7 @@ function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
 
 function equipmentKitSheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
   const equipmentKit = input.equipmentKit!;
+  const complimentary = input.equipmentKitComplimentary === true;
   const lines = airpassEquipmentKitOutputLines(equipmentKit);
   const firstRow = 17;
   const lineRows = lines.map((line, index) => {
@@ -263,9 +267,9 @@ function equipmentKitSheetXml(input: QuotationWorkbookInput, hasDrawing: boolean
       ${inline(`B${row}`, line.name, 8)}${styledBlanks(row, ["C"], 8)}
       ${numeric(`D${row}`, line.quantity, 7)}
       ${inline(`E${row}`, line.unit, 7)}
-      ${numeric(`F${row}`, line.unitPrice, 9)}
-      ${numeric(`G${row}`, line.quantity * line.unitPrice, 9)}${inline(`H${row}`, "", 9)}
-      ${inline(`I${row}`, "", 7)}
+      ${complimentary ? inline(`F${row}`, "무상", 9) : numeric(`F${row}`, line.unitPrice, 9)}
+      ${complimentary ? inline(`G${row}`, "무상", 9) : numeric(`G${row}`, line.quantity * line.unitPrice, 9)}${inline(`H${row}`, "", 9)}
+      ${inline(`I${row}`, complimentary ? "무상 제공" : "", 7)}
     </row>`;
   }).join("");
   const totalRow = firstRow + Math.max(1, lines.length) + 1;
@@ -300,11 +304,11 @@ function equipmentKitSheetXml(input: QuotationWorkbookInput, hasDrawing: boolean
     <row r="8" ht="23" customHeight="1">${inline("A8", "계약구분", 3)}${inline("B8", "", 3)}${inline("C8", "수의계약", 4)}${inline("D8", "", 4)}${inline("E8", "대표자", 3)}${inline("F8", "", 3)}${inline("G8", AIRPASS_COMPANY.representative, 4)}${styledBlanks(8, ["H", "I"], 4)}</row>
     <row r="9" ht="30" customHeight="1">${inline("A9", "납품조건", 3)}${inline("B9", "", 3)}${inline("C9", "발주 후 일정 협의", 4)}${inline("D9", "", 4)}${inline("E9", "주소", 3)}${inline("F9", "", 3)}${inline("G9", AIRPASS_COMPANY.address, 5)}${styledBlanks(9, ["H", "I"], 5)}</row>
     <row r="10" ht="30" customHeight="1">${inline("A10", "유효기간", 3)}${inline("B10", "", 3)}${inline("C10", input.validUntil ? `${input.validUntil}까지` : "견적일로부터 30일", 4)}${inline("D10", "", 4)}${inline("E10", "업태·종목", 3)}${inline("F10", "", 3)}${inline("G10", `${AIRPASS_COMPANY.businessType} / ${AIRPASS_COMPANY.businessItems}`, 5)}${styledBlanks(10, ["H", "I"], 5)}</row>
-    <row r="12" ht="42" customHeight="1">${inline("A12", "견적금액 (VAT 포함)", 10)}${styledBlanks(12, ["B", "C"], 10)}${inline("D12", koreanAmount(airpassEquipmentKitTotal(equipmentKit)), 11)}${styledBlanks(12, ["E", "F"], 11)}${numeric("G12", airpassEquipmentKitTotal(equipmentKit), 12)}${styledBlanks(12, ["H", "I"], 12)}</row>
+    <row r="12" ht="42" customHeight="1">${inline("A12", complimentary ? "제공 조건" : "견적금액 (VAT 포함)", 10)}${styledBlanks(12, ["B", "C"], 10)}${inline("D12", complimentary ? "무상 제공" : koreanAmount(airpassEquipmentKitTotal(equipmentKit)), 11)}${styledBlanks(12, ["E", "F"], 11)}${complimentary ? inline("G12", "무상 제공", 12) : numeric("G12", airpassEquipmentKitTotal(equipmentKit), 12)}${styledBlanks(12, ["H", "I"], 12)}</row>
     <row r="14" ht="27" customHeight="1">${inline("A14", "에어패스 교구 세부내역", 2)}${styledBlanks(14, ["B", "C", "D", "E", "F", "G", "H", "I"], 2)}</row>
     <row r="16" ht="27" customHeight="1">${inline("A16", "No", 6)}${inline("B16", "품명", 6)}${inline("D16", "수량", 6)}${inline("E16", "단위", 6)}${inline("F16", "단가", 6)}${inline("G16", "금액", 6)}${inline("H16", "", 6)}${inline("I16", "비고", 6)}</row>
     ${lineRows || `<row r="${firstRow}" ht="31" customHeight="1">${inline(`A${firstRow}`, "", 7)}${inline(`B${firstRow}`, "출력할 교구 품목이 없습니다.", 8)}${inline(`C${firstRow}`, "", 8)}${styledBlanks(firstRow, ["D", "E", "F", "G", "H", "I"], 7)}</row>`}
-    <row r="${totalRow}" ht="34" customHeight="1">${inline(`A${totalRow}`, "합계금액 (VAT 포함)", 16)}${styledBlanks(totalRow, ["B", "C", "D", "E", "F"], 16)}${numeric(`G${totalRow}`, airpassEquipmentKitTotal(equipmentKit), 17)}${styledBlanks(totalRow, ["H", "I"], 17)}</row>
+    <row r="${totalRow}" ht="34" customHeight="1">${inline(`A${totalRow}`, complimentary ? "제공 금액" : "합계금액 (VAT 포함)", 16)}${styledBlanks(totalRow, ["B", "C", "D", "E", "F"], 16)}${complimentary ? inline(`G${totalRow}`, "무상 제공", 17) : numeric(`G${totalRow}`, airpassEquipmentKitTotal(equipmentKit), 17)}${styledBlanks(totalRow, ["H", "I"], 17)}</row>
     <row r="${noticeRow}" ht="25" customHeight="1">${inline(`A${noticeRow}`, `${AIRPASS_COMPANY.name} · 본 세부견적은 본 견적서와 함께 제출됩니다.`, 18)}</row>
     <row r="${signatureStartRow}" ht="26" customHeight="1">${inline(`A${signatureStartRow}`, `위와 같이 견적합니다.\n\n${koreanDate(input.quoteDate)}`, 18)}${inline(`F${signatureStartRow}`, `${AIRPASS_COMPANY.name}\n대표이사  ${AIRPASS_COMPANY.representative}`, 18)}${inline(`I${signatureStartRow}`, "", 18)}</row>
     <row r="${signatureStartRow + 1}" ht="26" customHeight="1"/><row r="${signatureEndRow}" ht="26" customHeight="1"/>

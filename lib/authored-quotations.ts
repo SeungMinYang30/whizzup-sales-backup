@@ -23,6 +23,7 @@ export type AuthoredQuotationItem = {
   quantity: number;
   unit: string;
   unitPrice: number;
+  complimentary?: boolean;
   note: string;
   supplyType: "partner" | "direct";
   supplierVendorId?: number | null;
@@ -255,7 +256,8 @@ function parseItems(value: unknown) {
     if (!name) return [];
     const quantity = Math.max(1, Number(item.quantity) || 1);
     const unitPrice = amount(item.unitPrice);
-    const lineAmount = Math.round(quantity * unitPrice);
+    const complimentary = item.complimentary === true;
+    const lineAmount = complimentary ? 0 : Math.round(quantity * unitPrice);
     const parsedEarningRate = rate(item.earningRate);
     const requestedContractType = text(item.contractType, 20);
     const inferredProcurement = item.procurement === true || hasProcurementSignal(item.note, item.specification);
@@ -312,6 +314,7 @@ function parseItems(value: unknown) {
       quantity,
       unit: text(item.unit, 40) || "대",
       unitPrice,
+      complimentary,
       note: text(item.note, 1_000),
       supplyType: item.supplyType === "direct" ? "direct" as const : "partner" as const,
       supplierVendorId: Number.isSafeInteger(Number(item.supplierVendorId)) && Number(item.supplierVendorId) > 0

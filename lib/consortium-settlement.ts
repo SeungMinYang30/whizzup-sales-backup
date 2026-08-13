@@ -12,6 +12,7 @@ export type ConsortiumSettlementItemInput = {
   specification?: string;
   quantity: number;
   unitPrice: number;
+  complimentary?: boolean;
   earningRate: number;
   internalCostBaseEarningRate?: number;
   consortiumRate: number;
@@ -73,7 +74,9 @@ export function calculateConsortiumSettlement(
   adjustmentInputs: ConsortiumSettlementAdjustmentInput[] = [],
 ) {
   const settlementItems: ConsortiumSettlementItem[] = items.map((item) => {
-    const lineAmount = Math.round(Math.max(0, item.quantity) * Math.max(0, item.unitPrice));
+    const lineAmount = item.complimentary
+      ? 0
+      : Math.round(Math.max(0, item.quantity) * Math.max(0, item.unitPrice));
     const kind = quotationInternalCostKind(item.name, item.specification ?? "");
     const defaults = quotationInternalCostDefaults(item.name, item.specification ?? "", item.quantity);
     const internalCostEnabled = typeof item.internalCostEnabled === "boolean" ? item.internalCostEnabled : defaults.enabled;

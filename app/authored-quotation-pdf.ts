@@ -11,11 +11,10 @@ const PAGE_HEIGHT = 1754;
 const PDF_RENDER_SCALE = 2;
 const PDF_WIDTH = 595.28;
 const PDF_HEIGHT = 841.89;
-const ITEMS_PER_PAGE = 6;
 
 type AuthoredQuotationPdfItem = Pick<
   AuthoredQuotationItem,
-  "name" | "specification" | "quantity" | "unit" | "unitPrice" | "note" | "contractType" | "procurement" | "procurementChannel" | "procurementNumber" | "procurementFee" | "equipmentKit"
+  "name" | "specification" | "quantity" | "unit" | "unitPrice" | "note" | "contractType" | "procurement" | "procurementChannel" | "procurementNumber" | "procurementFee" | "equipmentKit" | "complimentary"
 >;
 
 export type AuthoredQuotationPdfInput = Pick<
@@ -89,6 +88,7 @@ function contractLabel(item: AuthoredQuotationPdfItem) {
 }
 
 function outputNote(item: AuthoredQuotationPdfItem) {
+  if (item.complimentary) return "무상 제공";
   if (item.equipmentKit) return AIRPASS_EQUIPMENT_CONTRACT_NOTE;
   return contractLabel(item);
 }
@@ -101,11 +101,49 @@ function identifier(item: AuthoredQuotationPdfItem) {
 }
 
 function amounts(quote: AuthoredQuotationPdfInput) {
-  const subtotal = quote.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-  const procurementFee = quote.items.reduce((sum, item) => sum + item.procurementFee, 0);
+  const subtotal = quote.items.reduce((sum, item) => sum + (item.complimentary ? 0 : item.quantity * item.unitPrice), 0);
+  const procurementFee = quote.items.reduce((sum, item) => sum + (item.complimentary ? 0 : item.procurementFee), 0);
   const adjusted = Math.max(0, subtotal - quote.discountAmount + quote.extraAmount);
   const supply = Math.round(adjusted / 1.1);
   return { subtotal, procurementFee, supply, tax: adjusted - supply, total: adjusted + procurementFee };
+}
+
+function estimatedItemRowHeight(item: AuthoredQuotationPdfItem) {
+  const nameLines = Math.max(1, Math.ceil(item.name.trim().length / 17));
+  const specificationLines = Math.max(1, Math.ceil(item.specification.trim().length / 29));
+  const identifierLines = Math.max(1, Math.ceil(identifier(item).length / 14));
+  const noteLines = Math.max(1, Math.ceil(outputNote(item).length / 10));
+  const lines = Math.min(4, Math.max(nameLines, specificationLines, identifierLines, noteLines));
+  return Math.min(112, 64 + (lines - 1) * 15);
+}
+
+function paginateItems(items: AuthoredQuotationPdfItem[]) {
+  if (!items.length) return [{ items: [] as AuthoredQuotationPdfItem[], heights: [] as number[], startIndex: 0 }];
+  const pages: Array<{ items: AuthoredQuotationPdfItem[]; heights: number[]; startIndex: number }> = [];
+  let cursor = 0;
+  while (cursor < items.length) {
+    const isFirstPage = pages.length === 0;
+    const finalCapacity = isFirstPage ? 650 : 1040;
+    const continuationCapacity = isFirstPage ? 925 : 1370;
+    const remaining = items.slice(cursor);
+    const remainingHeights = remaining.map(estimatedItemRowHeight);
+    const capacity = remainingHeights.reduce((sum, height) => sum + height, 0) <= finalCapacity
+      ? finalCapacity
+      : continuationCapacity;
+    const pageItems: AuthoredQuotationPdfItem[] = [];
+    const pageHeights: number[] = [];
+    let used = 0;
+    for (let index = cursor; index < items.length; index += 1) {
+      const height = estimatedItemRowHeight(items[index]);
+      if (pageItems.length && used + height > capacity) break;
+      pageItems.push(items[index]);
+      pageHeights.push(height);
+      used += height;
+    }
+    pages.push({ items: pageItems, heights: pageHeights, startIndex: cursor });
+    cursor += pageItems.length;
+  }
+  return pages;
 }
 
 async function loadImage(path: string) {
@@ -166,7 +204,8 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
     quote.includeStamp ? loadImage("/whizzup-seal.png") : Promise.resolve(null),
     quote.items.some((item) => item.equipmentKit) ? loadImage("/airpass-seal.png") : Promise.resolve(null),
   ]);
-  const pageCount = Math.max(1, Math.ceil(quote.items.length / ITEMS_PER_PAGE));
+  const itemPages = paginateItems(quote.items);
+  const pageCount = itemPages.length;
   const total = amounts(quote);
   const pages: Array<{ blob: Blob; width: number; height: number }> = [];
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
@@ -245,14 +284,18 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
     context.fillStyle = "#eaf0ff";
     context.fillRect(columns[0], tableTop, columns.at(-1)! - columns[0], 48);
     headings.forEach((heading, index) => drawCell(context, heading, columns[index], tableTop, columns[index + 1] - columns[index], 48, { bold: true, align: "center", maxLines: 1, fontSize: 14 }));
-    const rowHeight = pageIndex === 0 ? 94 : 126;
-    const pageItems = quote.items.slice(pageIndex * ITEMS_PER_PAGE, (pageIndex + 1) * ITEMS_PER_PAGE);
+    const pageItems = itemPages[pageIndex].items;
+    const pageRowHeights = itemPages[pageIndex].heights;
+    let rowsHeight = 0;
     pageItems.forEach((item, rowIndex) => {
-      const y = tableTop + 48 + rowIndex * rowHeight;
+      const rowHeight = pageRowHeights[rowIndex] ?? 64;
+      const y = tableTop + 48 + rowsHeight;
+      rowsHeight += rowHeight;
+      const itemAmount = item.complimentary ? 0 : item.quantity * item.unitPrice;
       const values = [
-        String(pageIndex * ITEMS_PER_PAGE + rowIndex + 1), formatQuotationItemNameForOutput(item.name), item.specification,
-        identifier(item), String(item.quantity), item.unit, `${won.format(item.unitPrice)}원`,
-        `${won.format(item.quantity * item.unitPrice)}원`, outputNote(item),
+        String(itemPages[pageIndex].startIndex + rowIndex + 1), formatQuotationItemNameForOutput(item.name), item.specification,
+        identifier(item), String(item.quantity), item.unit, item.complimentary ? "무상" : `${won.format(item.unitPrice)}원`,
+        item.complimentary ? "무상" : `${won.format(itemAmount)}원`, outputNote(item),
       ];
       values.forEach((value, index) => drawCell(context, value, columns[index], y, columns[index + 1] - columns[index], rowHeight, {
         align: [0, 4, 5].includes(index) ? "center" : [6, 7].includes(index) ? "right" : "left",
@@ -268,7 +311,7 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
 
     const isLastPage = pageIndex === pageCount - 1;
     if (isLastPage) {
-      const bottomY = tableTop + 48 + pageItems.length * rowHeight + 22;
+      const bottomY = tableTop + 48 + rowsHeight + 22;
       const bottomHeight = 250;
       context.fillStyle = "#17233f";
       context.fillRect(72, bottomY, 1096, 40);
@@ -386,7 +429,7 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
       context.fillStyle = "#eaf0ff";
       context.fillRect(72, amountY, 1096, 60);
       drawCell(context, "견적금액 (VAT 포함)", 72, amountY, 350, 60, { bold: true, align: "center", maxLines: 1, fontSize: 17 });
-      drawCell(context, `${won.format(airpassEquipmentKitTotal(parentItem.equipmentKit))}원`, 422, amountY, 746, 60, { bold: true, align: "right", maxLines: 1, fontSize: 27 });
+      drawCell(context, parentItem.complimentary ? "무상 제공" : `${won.format(airpassEquipmentKitTotal(parentItem.equipmentKit))}원`, 422, amountY, 746, 60, { bold: true, align: "right", maxLines: 1, fontSize: 27 });
 
       const tableTop = 500;
       const columns = [72, 118, 560, 650, 730, 900, 1060, 1168];
@@ -398,7 +441,7 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
       const rowHeight = 68;
       pageLines.forEach((line, rowIndex) => {
         const y = tableTop + 46 + rowIndex * rowHeight;
-        const values = [String(detailPageIndex * detailItemsPerPage + rowIndex + 1), line.name, String(line.quantity), line.unit, `${won.format(line.unitPrice)}원`, `${won.format(line.quantity * line.unitPrice)}원`, ""];
+        const values = [String(detailPageIndex * detailItemsPerPage + rowIndex + 1), line.name, String(line.quantity), line.unit, parentItem.complimentary ? "무상" : `${won.format(line.unitPrice)}원`, parentItem.complimentary ? "무상" : `${won.format(line.quantity * line.unitPrice)}원`, parentItem.complimentary ? "무상 제공" : ""];
         values.forEach((value, index) => drawCell(context, value, columns[index], y, columns[index + 1] - columns[index], rowHeight, {
           align: [0, 2, 3, 6].includes(index) ? "center" : [4, 5].includes(index) ? "right" : "left",
           maxLines: index === 1 ? 3 : 1,
@@ -412,7 +455,7 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
         const totalY = tableTop + 46 + pageLines.length * rowHeight + 24;
         context.fillStyle = "#eaf0ff"; context.fillRect(72, totalY, 1096, 58);
         drawCell(context, "합계금액 (VAT 포함)", 72, totalY, 760, 58, { bold: true, align: "center", maxLines: 1, fontSize: 18 });
-        drawCell(context, `${won.format(airpassEquipmentKitTotal(parentItem.equipmentKit))}원`, 832, totalY, 336, 58, { bold: true, align: "right", maxLines: 1, fontSize: 23 });
+        drawCell(context, parentItem.complimentary ? "무상 제공" : `${won.format(airpassEquipmentKitTotal(parentItem.equipmentKit))}원`, 832, totalY, 336, 58, { bold: true, align: "right", maxLines: 1, fontSize: 23 });
         const signatureY = totalY + 105;
         context.fillStyle = "#17233f";
         context.font = '500 17px "Malgun Gothic", sans-serif';

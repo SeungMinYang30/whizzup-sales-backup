@@ -1218,7 +1218,7 @@ type TeamPeriod = 7 | 30 | "all";
 type ScheduleRange = 14 | 30 | "all";
 type DashboardActivityScope = "mine" | "all";
 type TeamMetricFocus = "all" | "active" | "attention";
-type TeamDetailMode = "activity" | "attention" | "conversion";
+type TeamDetailMode = "activity" | "organizations" | "followup" | "attention" | "conversion";
 
 type ManagerAlertAcknowledgement = {
   organization: string;
@@ -7856,7 +7856,9 @@ export default function CrmApp({
   }, [deferredSearch, filteredBeforeSearch, recordSearchIndex]);
 
   const displayedRecords = useMemo(() => {
-    if (view !== "awards") return filtered;
+    if (view !== "awards") return [...filtered].sort((left, right) =>
+      right.activityDate.localeCompare(left.activityDate) || right.id - left.id,
+    );
     return [...filteredBeforeSearch].sort((a, b) => {
       if (awardSort === "date-asc") {
         return (
@@ -9493,6 +9495,36 @@ export default function CrmApp({
     [teamAttentionItems],
   );
 
+  const teamOrganizationRecords = useMemo(() => {
+    const latestByOrganization = new Map<string, Activity>();
+    teamPeriodRecords.forEach((record) => {
+      const manager = resolveRegisteredSalesName(record.progressManager, registeredSalesNames);
+      if (selectedTeamMember !== "전체" && manager !== selectedTeamMember) return;
+      const key = institutionAliasKey(record.organization);
+      const current = latestByOrganization.get(key);
+      if (!current || record.activityDate > current.activityDate || (record.activityDate === current.activityDate && record.id > current.id)) {
+        latestByOrganization.set(key, record);
+      }
+    });
+    return [...latestByOrganization.values()].sort((left, right) =>
+      right.activityDate.localeCompare(left.activityDate) || right.id - left.id,
+    );
+  }, [registeredSalesNames, selectedTeamMember, teamPeriodRecords]);
+
+  const teamFollowUpRecords = useMemo(() => teamPeriodLatestRecords
+    .filter((record) => {
+      const manager = resolveRegisteredSalesName(record.progressManager, registeredSalesNames);
+      return (selectedTeamMember === "전체" || manager === selectedTeamMember)
+        && !record.status.includes("완료")
+        && !completedAwardStages.has(record.awardStage)
+        && record.followUpRequired;
+    })
+    .sort((left, right) =>
+      (left.followUpDate || "9999-12-31").localeCompare(right.followUpDate || "9999-12-31")
+      || right.activityDate.localeCompare(left.activityDate)
+      || right.id - left.id,
+    ), [registeredSalesNames, selectedTeamMember, teamPeriodLatestRecords]);
+
   const teamConversionRecords = useMemo(
     () =>
       teamPeriodLatestRecords
@@ -9525,6 +9557,10 @@ export default function CrmApp({
       : view === "records"
       ? teamDetailMode === "attention"
         ? teamAttentionItems.map((item) => item.record)
+        : teamDetailMode === "organizations"
+          ? teamOrganizationRecords
+          : teamDetailMode === "followup"
+            ? teamFollowUpRecords
         : teamDetailMode === "conversion"
           ? teamConversionRecords
           : displayedRecords
@@ -9548,6 +9584,8 @@ export default function CrmApp({
     statusFilter,
     teamDetailMode,
     teamMetricFocus,
+    teamOrganizationRecords,
+    teamFollowUpRecords,
     teamPeriodDays,
     typeFilter,
     view,
@@ -18808,18 +18846,21 @@ export default function CrmApp({
                                 </small>
                               </td>
                               <td><strong>{metric.activityCount}건</strong></td>
-                              <td><strong>{metric.organizationCount}곳</strong></td>
+                              <td><button type="button" className="team-metric-detail-button" disabled={metric.organizationCount === 0} onClick={(event) => {
+                                event.stopPropagation();
+                                setSelectedTeamMember(metric.name);
+                                setTeamMetricFocus("all");
+                                setTeamDetailMode("organizations");
+                                document.getElementById("team-detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                              }} aria-label={`${metric.name} 접촉 기관 ${metric.organizationCount}곳 보기`}><strong>{metric.organizationCount}곳</strong><small>목록 보기</small></button></td>
                               <td>
-                                <strong>
-                                  {metric.followUpRate === null
-                                    ? "—"
-                                    : `${metric.followUpRate}%`}
-                                </strong>
-                                <small>
-                                  {metric.followUpCount
-                                    ? `관리 대상 ${metric.followUpCount}건`
-                                    : "현재 관리 대상 없음"}
-                                </small>
+                                <button type="button" className="team-metric-detail-button" disabled={metric.followUpCount === 0} onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedTeamMember(metric.name);
+                                  setTeamMetricFocus("all");
+                                  setTeamDetailMode("followup");
+                                  document.getElementById("team-detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                }} aria-label={`${metric.name} 후속 관리 대상 ${metric.followUpCount}건 보기`}><strong>{metric.followUpRate === null ? "—" : `${metric.followUpRate}%`}</strong><small>{metric.followUpCount ? `관리 대상 ${metric.followUpCount}건` : "현재 관리 대상 없음"}</small></button>
                               </td>
                               <td>
                                 <strong
@@ -18949,6 +18990,14 @@ export default function CrmApp({
                             ? selectedTeamMember !== "전체"
                               ? `${selectedTeamMember} · 수주 전환 기관`
                               : "팀 전체 수주 전환 기관"
+                          : teamDetailMode === "organizations"
+                            ? selectedTeamMember !== "전체"
+                              ? `${selectedTeamMember} · 접촉 기관`
+                              : "팀 전체 접촉 기관"
+                          : teamDetailMode === "followup"
+                            ? selectedTeamMember !== "전체"
+                              ? `${selectedTeamMember} · 후속 관리 대상`
+                              : "팀 전체 후속 관리 대상"
                         : selectedTeamMember !== "전체"
                           ? `${selectedTeamMember} · ${teamPeriodLabel} 상세 기록`
                           : `${teamPeriodLabel} 팀 상세 기록`}
@@ -18964,6 +19013,12 @@ export default function CrmApp({
                       {teamPeriodLabel} 기준 위즈업 수주로 전환된 기관입니다.
                       기관을 누르면 상세 내용과 이전 기록을 확인할 수 있습니다.
                     </p>
+                  )}
+                  {view === "records" && teamDetailMode === "organizations" && (
+                    <p className="team-detail-mode-copy">{teamPeriodLabel} 동안 접촉한 기관별 최신 기록입니다. 최신 활동일 순서로 표시합니다.</p>
+                  )}
+                  {view === "records" && teamDetailMode === "followup" && (
+                    <p className="team-detail-mode-copy">현재 후속 관리 대상입니다. 재연락 예정일이 빠른 순서로 표시합니다.</p>
                   )}
                 </div>
                 <div className="records-heading-actions">
@@ -19103,8 +19158,12 @@ export default function CrmApp({
                       ? `최신 ${dashboardRecentRecords.length}건`
                       : view === "records" && teamDetailMode === "attention"
                         ? `${teamAttentionItems.length}건`
-                        : view === "records" && teamDetailMode === "conversion"
+                      : view === "records" && teamDetailMode === "conversion"
                           ? `${teamConversionRecords.length}곳`
+                        : view === "records" && teamDetailMode === "organizations"
+                          ? `${teamOrganizationRecords.length}곳`
+                        : view === "records" && teamDetailMode === "followup"
+                          ? `${teamFollowUpRecords.length}건`
                         : `${filtered.length}건`}
                   </span>
                 </div>
@@ -19679,8 +19738,12 @@ export default function CrmApp({
                     ? dashboardRecentRecords.length === 0
                     : view === "records" && teamDetailMode === "attention"
                       ? teamAttentionItems.length === 0
-                      : view === "records" && teamDetailMode === "conversion"
+                    : view === "records" && teamDetailMode === "conversion"
                         ? teamConversionRecords.length === 0
+                      : view === "records" && teamDetailMode === "organizations"
+                        ? teamOrganizationRecords.length === 0
+                      : view === "records" && teamDetailMode === "followup"
+                        ? teamFollowUpRecords.length === 0
                       : filtered.length === 0) && (
                     <div className="empty-state large">
                       {view === "dashboard"
@@ -19693,6 +19756,10 @@ export default function CrmApp({
                           : view === "records" &&
                               teamDetailMode === "conversion"
                             ? "선택한 기간에 수주로 전환된 기관이 없습니다."
+                          : view === "records" && teamDetailMode === "organizations"
+                            ? "선택한 기간에 접촉한 기관이 없습니다."
+                          : view === "records" && teamDetailMode === "followup"
+                            ? "현재 후속 관리 대상이 없습니다."
                           : "조건에 맞는 기록이 없습니다."}
                     </div>
                   )}

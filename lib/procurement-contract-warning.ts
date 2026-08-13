@@ -10,6 +10,7 @@ export type ProcurementContractWarningItem = {
   productId?: string;
   quantity: number;
   unitPrice: number;
+  complimentary?: boolean;
 };
 
 export type ProcurementContractWarning = {
@@ -46,6 +47,7 @@ function isG2bContract(item: ProcurementContractWarningItem) {
 export function procurementContractWarnings(items: ProcurementContractWarningItem[]) {
   const groups = new Map<string, ProcurementContractWarning>();
   for (const item of items) {
+    if (item.complimentary) continue;
     if (!isG2bContract(item)) continue;
     const { channelGroup, channelLabel } = procurementChannelGroup(item);
     const supplierVendorId = Number(item.supplierVendorId);
@@ -80,6 +82,7 @@ function isConstructionItem(item: ProcurementContractWarningItem) {
 }
 
 function isDirectPurchaseItem(item: ProcurementContractWarningItem) {
+  if (item.complimentary) return false;
   if (isConstructionItem(item)) return false;
   if (item.contractType === "direct" || item.contractType === "s2b") return true;
   if (item.contractType === "g2b") return false;

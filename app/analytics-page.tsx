@@ -451,16 +451,27 @@ export default function AnalyticsPage({
     () => periodAwards.filter((row) => row.confirmed),
     [periodAwards],
   );
-  const executionTrend = useMemo(
-    () => buildExecutionTrend(awards, selectedYear, trendMetric),
-    [awards, selectedYear, trendMetric],
-  );
+  const executionTrend = useMemo(() => buildExecutionTrend(
+    trendExecutionFilter === "all"
+      ? awards
+      : awards.filter((row) => row.executionType === (trendExecutionFilter === "direct" ? "직영" : "컨소")),
+    selectedYear,
+    trendMetric,
+  ), [awards, selectedYear, trendExecutionFilter, trendMetric]);
   const executionTrendMax = Math.max(
     1,
     ...executionTrend.months.map(
       (month) => Math.abs(month.direct) + Math.abs(month.consortium),
     ),
   );
+  const executionTrendCumulative = executionTrend.months.reduce<number[]>((values, month) => {
+    values.push((values.at(-1) ?? 0) + month.total);
+    return values;
+  }, []);
+  const executionLineMax = Math.max(1, ...executionTrend.months.map((month) => Math.abs(month.total)), ...executionTrendCumulative.map(Math.abs));
+  const trendPoint = (value: number, index: number) => `${50 + index * 100},${250 - Math.abs(value) / executionLineMax * 190}`;
+  const monthlyTrendPath = executionTrend.months.map((month, index) => trendPoint(month.total, index)).join(" ");
+  const cumulativeTrendPath = executionTrendCumulative.map((value, index) => trendPoint(value, index)).join(" ");
   const totals = confirmedAwards.reduce(
     (current, row) => ({
       amount: current.amount + row.confirmedAmount,
@@ -1096,16 +1107,16 @@ export default function AnalyticsPage({
         <header>
           <div>
             <span className="section-kicker">DIRECT · CONSORTIUM TREND</span>
-            <h3>월별 직영·컨소 수주 비교</h3>
-            <p>
-              {selectedYear}년 납품 완료 수주를 기준으로 월별 실적과 연간 비율을
-              한 번에 비교합니다.
-            </p>
+            <h3>월별 수주 추세와 직영·컨소 비교</h3>
+            <p>{selectedYear}년 납품 완료 수주를 월별 흐름과 협업 유형으로 나누어 비교합니다.</p>
           </div>
           <div className="analytics-execution-controls">
             <button type="button" onClick={() => void toggleTvMode()}>
               {tvMode ? "전체화면 종료" : "전체화면"}
             </button>
+            <div className="analytics-execution-filter" aria-label="협업 유형 필터">
+              {([['all', '전체'], ['direct', '직영'], ['consortium', '컨소']] as const).map(([value, label]) => <button type="button" key={value} className={trendFilter === value ? "active" : ""} onClick={() => setTrendFilter(value)}>{label}</button>)}
+            </div>
             <select
               aria-label="비교 지표"
               value={trendMetric}
@@ -1114,14 +1125,14 @@ export default function AnalyticsPage({
               }
             >
               <option value="amount">수주금액</option>
-              <option value="margin">최종수익</option>
               <option value="count">수주 건수</option>
+              <option value="margin">예상수익</option>
             </select>
           </div>
         </header>
 
-        <div className="analytics-execution-layout">
-          <div className="analytics-execution-ratio">
+        <div className="analytics-execution-overview">
+          <div className="analytics-execution-ratio compact">
             <div
               className="analytics-execution-donut"
               style={{
@@ -1149,9 +1160,25 @@ export default function AnalyticsPage({
               </button>
             </div>
           </div>
+          <section className="analytics-execution-line-panel">
+            <header><div><strong>월별 실적 추세</strong><small>월 실적과 누적 실적을 함께 표시합니다.</small></div><div><span><i className="monthly" />월 실적</span><span><i className="cumulative" />누적</span></div></header>
+            <svg viewBox="0 0 1200 290" role="img" aria-label="월별 실적과 누적 실적 선 그래프" preserveAspectRatio="none">
+              {[60, 108, 156, 204, 252].map((y) => <line key={y} x1="50" y1={y} x2="1150" y2={y} className="grid" />)}
+              <polyline points={cumulativeTrendPath} className="cumulative" />
+              <polyline points={monthlyTrendPath} className="monthly" />
+              {executionTrend.months.map((month, index) => {
+                const [x, y] = trendPoint(month.total, index).split(',').map(Number);
+                return <g key={month.month}><circle cx={x} cy={y} r="5" className="monthly" /><text x={x} y="282" textAnchor="middle">{Number(month.month)}월</text></g>;
+              })}
+            </svg>
+            <div className="analytics-execution-month-buttons">{executionTrend.months.map((month) => <button type="button" key={month.month} className={periodMode === "month" && selectedMonth === month.month ? "active" : ""} onClick={() => { setSelectedMonth(month.month); setPeriodMode("month"); }} aria-label={`${Number(month.month)}월 ${formatTrendValue(month.total, trendMetric)}. 월간 통계로 보기`}><span>{Number(month.month)}월</span><b>{month.total ? formatTrendAxisValue(month.total, trendMetric) : "0"}</b></button>)}</div>
+          </section>
+        </div>
 
+        <section className="analytics-execution-bar-panel">
+          <header><div><strong>월별 직영·컨소 구성</strong><small>같은 달의 직영과 컨소 실적을 나란히 비교합니다.</small></div><div><span><i className="direct" />직영</span><span><i className="consortium" />컨소</span></div></header>
           <div className="analytics-execution-chart-wrap">
-            <div className="analytics-execution-chart" aria-label="월별 직영·컨소 비교 그래프">
+            <div className="analytics-execution-chart grouped" aria-label="월별 직영·컨소 비교 막대 그래프">
               {executionTrend.months.map((month) => {
                 const directValue = trendFilter === "consortium" ? 0 : month.direct;
                 const consortiumValue = trendFilter === "direct" ? 0 : month.consortium;
@@ -1179,15 +1206,9 @@ export default function AnalyticsPage({
                     <strong>
                       {displayedTotal === 0 ? "–" : formatTrendAxisValue(displayedTotal, trendMetric)}
                     </strong>
-                    <span className="analytics-execution-stack">
-                      <i
-                        className="consortium"
-                        style={{ height: `${consortiumHeight}%` }}
-                      />
-                      <i
-                        className="direct"
-                        style={{ height: `${directHeight}%` }}
-                      />
+                    <span className="analytics-execution-bars">
+                      {trendFilter !== "consortium" && <i className="direct" style={{ height: `${directHeight}%` }} />}
+                      {trendFilter !== "direct" && <i className="consortium" style={{ height: `${consortiumHeight}%` }} />}
                     </span>
                     <small>{Number(month.month)}월</small>
                   </button>
@@ -1195,7 +1216,7 @@ export default function AnalyticsPage({
               })}
             </div>
           </div>
-        </div>
+        </section>
         <footer>
           <span><i className="direct" /> 직영</span>
           <span><i className="consortium" /> 컨소</span>

@@ -96,3 +96,26 @@ test("교구 견적은 에어패스 공급자 정보와 직인을 사용하고 �
   assert.ok(files["xl/media/airpass-seal.png"]);
   assert.ok(files["xl/drawings/drawing2.xml"]);
 });
+
+test("무상 제공 품목은 기준 단가를 보존하고 견적 합계와 교구 별첨 금액에서는 제외한다", () => {
+  const equipmentKit = createAirpassEquipmentKit("one");
+  const workbook = createQuotationWorkbook({
+    customerName: "테스트 학교",
+    quoteDate: "2026-08-13",
+    projectTitle: "무상 교구 제공",
+    equipmentKit,
+    equipmentKitComplimentary: true,
+    lines: [
+      { name: "유상 제품", specification: "본품", quantity: 1, unit: "대", unitPrice: 10_000_000, note: "" },
+      { name: "교구 세트", specification: "별첨", quantity: 1, unit: "SET", unitPrice: 1_500_000, note: "", equipmentKit: true, complimentary: true },
+    ],
+  });
+  const files = unzipSync(workbook);
+  const mainSheet = strFromU8(files["xl/worksheets/sheet1.xml"]);
+  const detailSheet = strFromU8(files["xl/worksheets/sheet2.xml"]);
+  assert.match(mainSheet, /무상 제공/);
+  assert.match(mainSheet, /무상/);
+  assert.match(detailSheet, /제공 조건/);
+  assert.match(detailSheet, /무상 제공/);
+  assert.doesNotMatch(mainSheet, />11500000</);
+});
