@@ -13576,14 +13576,26 @@ button:is(
 @media (max-width: 700px) {
   .product-workspace-tabs { position: static; grid-template-columns: 1fr; }
   .product-workspace-tabs button { justify-content: space-between; }
-  .quote-internal-report-shell { padding: 8px; }
-  .quote-internal-report-dialog { max-height: calc(100dvh - 16px); border-radius: 13px; }
-  .quote-internal-report-summary { grid-template-columns: 1fr; }
+  .quote-internal-report-shell { align-items: stretch; padding: 8px; }
+  .quote-internal-report-dialog { display: flex; flex-direction: column; max-height: calc(100dvh - 16px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; border-radius: 13px; -webkit-overflow-scrolling: touch; }
+  .quote-internal-report-dialog > header { position: sticky; top: 0; z-index: 4; flex: 0 0 auto; padding: 16px 14px 13px; background: #fff; }
+  .quote-internal-report-dialog h3 { font-size: 20px; }
+  .quote-internal-report-dialog header p { padding-right: 4px; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+  .quote-internal-report-dialog header > button { flex: 0 0 36px; width: 36px; height: 36px; }
+  .quote-internal-report-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; padding: 12px; }
+  .quote-internal-report-summary span { min-width: 0; padding: 10px; font-size: 10px; }
+  .quote-internal-report-summary b { font-size: 15px; overflow-wrap: anywhere; }
   .quote-internal-report-flow { padding: 0 14px; }
-  .quote-internal-report-formula { display: grid; }
+  .quote-internal-report-formula { display: grid; margin: 12px; padding: 11px; }
   .quote-internal-report-formula i { display: none; }
   .quote-internal-report-items { grid-template-columns: 1fr; padding: 12px; }
-  .quote-internal-report-dialog > footer { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .quote-internal-report-items summary { grid-template-columns: 28px minmax(0, 1fr) auto; }
+  .quote-internal-report-items .profit { grid-column: 2 / -1; justify-self: stretch; text-align: left; }
+  .quote-internal-report-deduction { margin: 0 12px 12px; }
+  .quote-internal-report-dialog > footer { position: sticky; bottom: 0; z-index: 4; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); flex: 0 0 auto; gap: 6px; padding: 10px 12px max(10px, env(safe-area-inset-bottom)); border-top: 1px solid #dfe6f0; background: rgba(255, 255, 255, .97); box-shadow: 0 -8px 20px rgba(26, 42, 70, .08); }
+  .quote-internal-report-dialog > footer button { min-width: 0; min-height: 42px; padding: 0 6px; font-size: 11px; white-space: nowrap; }
+  .history-layer { overflow: hidden; }
+  .history-drawer { width: 100%; max-width: 100%; min-width: 0; }
 }
 .backup-cutover-card {
   display: grid;

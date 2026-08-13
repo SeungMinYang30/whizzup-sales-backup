@@ -39,3 +39,12 @@ test("내부 수익표는 별도 창 없이 현재 문서의 전용 인쇄 영�
   assert.match(styles, /\.internal-profit-print-summary[\s\S]*?grid-template-columns: repeat\(3,minmax\(0,1fr\)\)/);
   assert.match(styles, /\.internal-profit-print-items > article[\s\S]*?break-inside: avoid/);
 });
+
+test("모바일 내부 수익표는 세로 스크롤과 고정 하단 작업 버튼을 제공한다", () => {
+  assert.match(styles, /\.quote-internal-report-dialog \{ display: flex; flex-direction: column; max-height: calc\(100dvh - 16px\); overflow-x: hidden; overflow-y: auto;/);
+  assert.match(styles, /-webkit-overflow-scrolling: touch/);
+  assert.match(styles, /\.quote-internal-report-dialog > footer \{ position: sticky; bottom: 0;/);
+  assert.match(styles, /\.quote-internal-report-summary \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /\.history-layer \{ overflow: hidden; \}/);
+  assert.match(styles, /\.history-drawer \{ width: 100%; max-width: 100%; min-width: 0; \}/);
+});
