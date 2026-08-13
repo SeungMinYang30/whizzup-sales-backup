@@ -10,6 +10,17 @@ export type AirpassEquipmentKitLine = {
 export type AirpassEquipmentKit = {
   kind: "airpass-equipment";
   plan: "one" | "two";
+  templateId?: string;
+  templateName?: string;
+  lines: AirpassEquipmentKitLine[];
+};
+
+export type AirpassEquipmentKitPlan = {
+  id: string;
+  name: string;
+  systemPlan?: "one" | "two";
+  active: boolean;
+  sortOrder: number;
   lines: AirpassEquipmentKitLine[];
 };
 
@@ -57,6 +68,52 @@ export function createAirpassEquipmentKit(plan: "one" | "two" = "one"): AirpassE
   };
 }
 
+export function defaultAirpassEquipmentKitPlans(): AirpassEquipmentKitPlan[] {
+  return (["one", "two"] as const).map((systemPlan, index) => {
+    const kit = createAirpassEquipmentKit(systemPlan);
+    return {
+      id: `system-${systemPlan}`,
+      name: systemPlan === "one" ? "표준 1세트" : "표준 2세트",
+      systemPlan,
+      active: true,
+      sortOrder: index,
+      lines: kit.lines.map((line) => ({ ...line })),
+    };
+  });
+}
+
+export function normalizeAirpassEquipmentKitPlans(value: unknown): AirpassEquipmentKitPlan[] {
+  if (!Array.isArray(value)) return defaultAirpassEquipmentKitPlans();
+  const plans = value.slice(0, 30).flatMap((entry, index) => {
+    if (!entry || typeof entry !== "object") return [];
+    const source = entry as Record<string, unknown>;
+    const name = safeText(source.name, 120);
+    if (!name || !Array.isArray(source.lines)) return [];
+    const kit = normalizeAirpassEquipmentKit({ kind: "airpass-equipment", plan: source.systemPlan, lines: source.lines });
+    if (!kit?.lines.length) return [];
+    return [{
+      id: safeText(source.id, 160) || `plan-${index + 1}`,
+      name,
+      systemPlan: source.systemPlan === "two" ? "two" as const : source.systemPlan === "one" ? "one" as const : undefined,
+      active: source.active !== false,
+      sortOrder: Number.isFinite(Number(source.sortOrder)) ? Math.round(Number(source.sortOrder)) : index,
+      lines: kit.lines.map((line) => ({ ...line })),
+    }];
+  });
+  return (plans.length ? plans : defaultAirpassEquipmentKitPlans())
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, "ko-KR"));
+}
+
+export function createAirpassEquipmentKitFromPlan(plan: AirpassEquipmentKitPlan): AirpassEquipmentKit {
+  return {
+    kind: "airpass-equipment",
+    plan: plan.systemPlan ?? "one",
+    templateId: plan.id,
+    templateName: plan.name,
+    lines: plan.lines.map((line, index) => ({ ...line, id: line.id || `${plan.id}-${index + 1}` })),
+  };
+}
+
 export function normalizeAirpassEquipmentKit(value: unknown): AirpassEquipmentKit | undefined {
   if (!value || typeof value !== "object") return undefined;
   const source = value as Record<string, unknown>;
@@ -76,7 +133,13 @@ export function normalizeAirpassEquipmentKit(value: unknown): AirpassEquipmentKi
       custom: line.custom === true || undefined,
     }];
   });
-  return { kind: "airpass-equipment", plan, lines };
+  return {
+    kind: "airpass-equipment",
+    plan,
+    templateId: safeText(source.templateId, 160) || undefined,
+    templateName: safeText(source.templateName, 120) || undefined,
+    lines,
+  };
 }
 
 export function airpassEquipmentKitTotal(value: AirpassEquipmentKit | undefined) {

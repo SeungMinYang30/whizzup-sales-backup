@@ -114,7 +114,7 @@ test("teaching aids imports match by normalized item text and output only contra
   assert.match(page, /normalizedEquipmentKitName\(line\.name\) === normalizedEquipmentKitName\(imported\.name\)/);
   const teachingAidsImport = page.slice(
     page.indexOf('if (result.mode === "teaching-aids"'),
-    page.indexOf("let nextItems =", page.indexOf('if (result.mode === "teaching-aids"')),
+    page.indexOf("const nextItems =", page.indexOf('if (result.mode === "teaching-aids"')),
   );
   assert.match(teachingAidsImport, /quantity: 0/);
   assert.match(teachingAidsImport, /quantity: imported\.quantity/);

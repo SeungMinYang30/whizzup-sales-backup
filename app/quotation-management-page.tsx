@@ -31,8 +31,11 @@ import {
   airpassEquipmentKitOutputLines,
   airpassEquipmentKitTotal,
   createAirpassEquipmentKit,
+  createAirpassEquipmentKitFromPlan,
+  defaultAirpassEquipmentKitPlans,
   isAirpassEquipmentKitProduct,
   type AirpassEquipmentKit,
+  type AirpassEquipmentKitPlan,
 } from "../lib/airpass-equipment-kit";
 import QuotationImportDialog, {
   type ExternalQuotationImportResult,
@@ -139,6 +142,11 @@ const CONSTRUCTION_PRODUCT_ID = "__construction_cost__";
 
 function isConstructionItem(item: Pick<DraftItem, "productId">) {
   return item.productId === CONSTRUCTION_PRODUCT_ID;
+}
+
+function supportsTeachingAidDiscount(item: Pick<DraftItem, "name" | "specification" | "equipmentKit">) {
+  const text = `${item.name} ${item.specification}`.replace(/\s/g, "").toLocaleLowerCase("ko-KR");
+  return Boolean(item.equipmentKit) || isAirpassEquipmentKitProduct(item.name) || text.includes("교구");
 }
 
 function isS2BChannel(value: string) {
@@ -543,6 +551,9 @@ export default function QuotationManagementPage({
   const [trashOpen, setTrashOpen] = useState(false);
   const [quotationActionId, setQuotationActionId] = useState(0);
   const [equipmentKitEditor, setEquipmentKitEditor] = useState<EquipmentKitEditor | null>(null);
+  const [equipmentKitPlans, setEquipmentKitPlans] = useState<AirpassEquipmentKitPlan[]>(defaultAirpassEquipmentKitPlans());
+  const [canManageEquipmentKitPlans, setCanManageEquipmentKitPlans] = useState(false);
+  const [equipmentKitPlansSaving, setEquipmentKitPlansSaving] = useState(false);
   const [equipmentKitHideZero, setEquipmentKitHideZero] = useState(false);
   const [equipmentKitRecoveryId, setEquipmentKitRecoveryId] = useState("");
   const [dragOverItemId, setDragOverItemId] = useState("");
@@ -672,14 +683,16 @@ export default function QuotationManagementPage({
       const quoteUrl = `/api/quotations${quoteParams.size ? `?${quoteParams}` : ""}`;
       const trashParams = new URLSearchParams(quoteParams);
       trashParams.set("deleted", "only");
-      const [quoteResponse, trashResponse, productResponse] = await Promise.all([
+      const [quoteResponse, trashResponse, productResponse, equipmentKitPlansResponse] = await Promise.all([
         fetch(quoteUrl, { cache: "no-store" }),
         fetch(`/api/quotations?${trashParams}`, { cache: "no-store" }),
         fetch("/api/product-catalog", { cache: "no-store" }),
+        fetch("/api/equipment-kit-plans", { cache: "no-store" }),
       ]);
       const quotePayload = await quoteResponse.json() as { quotations?: AuthoredQuotation[]; recentConsortiumRates?: Record<string, RecentConsortiumRate>; error?: string };
       const trashPayload = await trashResponse.json() as { quotations?: AuthoredQuotation[]; error?: string };
       const productPayload = await productResponse.json() as { products?: ProductCatalogItem[]; favoriteProductIds?: unknown[]; error?: string };
+      const equipmentKitPlansPayload = await equipmentKitPlansResponse.json() as { plans?: AirpassEquipmentKitPlan[]; canManage?: boolean; error?: string };
       if (!quoteResponse.ok) throw new Error(quotePayload.error || "견적서를 불러오지 못했습니다.");
       if (!trashResponse.ok) throw new Error(trashPayload.error || "삭제된 견적서를 불러오지 못했습니다.");
       if (!productResponse.ok) throw new Error(productPayload.error || "제품을 불러오지 못했습니다.");
@@ -688,6 +701,10 @@ export default function QuotationManagementPage({
       setTrashedQuotes(trashPayload.quotations ?? []);
       setProducts(productPayload.products ?? []);
       setFavoriteProductIds((productPayload.favoriteProductIds ?? []).map(String));
+      if (equipmentKitPlansResponse.ok && equipmentKitPlansPayload.plans?.length) {
+        setEquipmentKitPlans(equipmentKitPlansPayload.plans);
+        setCanManageEquipmentKitPlans(Boolean(equipmentKitPlansPayload.canManage));
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "자료를 불러오지 못했습니다.");
     } finally {
@@ -818,7 +835,7 @@ export default function QuotationManagementPage({
   const editingTargetLabel = draft?.id ? "현재 견적" : "";
 
   const numbers = useMemo(() => {
-    if (!draft) return { subtotal: 0, adjusted: 0, supply: 0, tax: 0, procurementFee: 0, total: 0, earning: 0, consortiumGross: 0, consortiumCost: 0, consortiumAdjustmentAdditions: 0, consortiumAdjustmentDeductions: 0, consortium: 0, projectorInstallationCost: 0, yogaMatServiceCost: 0, itemInternalCost: 0, additionalConstructionCost: 0, internalCost: 0, margin: 0, marginRate: 0 };
+    if (!draft) return { subtotal: 0, adjusted: 0, supply: 0, tax: 0, procurementFee: 0, total: 0, earning: 0, consortiumGross: 0, consortiumCost: 0, consortiumAdjustmentAdditions: 0, consortiumAdjustmentDeductions: 0, consortium: 0, projectorInstallationCost: 0, yogaMatServiceCost: 0, teachingAidSupportCost: 0, itemInternalCost: 0, additionalConstructionCost: 0, internalCost: 0, margin: 0, marginRate: 0 };
     const subtotal = draft.items.reduce((sum, item) => sum + (item.complimentary ? 0 : Math.max(0, item.quantity) * Math.max(0, item.unitPrice)), 0);
     const adjusted = Math.max(0, subtotal - Math.max(0, draft.discountAmount) + Math.max(0, draft.extraAmount));
     const supply = Math.round(adjusted / 1.1);
@@ -842,10 +859,11 @@ export default function QuotationManagementPage({
         : 0
     ), 0);
     const itemInternalCost = settlement.whizzupCost;
+    const teachingAidSupportCost = draft.items.reduce((sum, item) => sum + Math.max(0, item.teachingAidSupportAmount ?? 0), 0);
     const additionalConstructionCost = Math.max(0, draft.additionalInternalConstructionCost);
-    const internalCost = itemInternalCost + additionalConstructionCost;
+    const internalCost = itemInternalCost + teachingAidSupportCost + additionalConstructionCost;
     const margin = earning - consortium - internalCost;
-    return { subtotal, adjusted, supply, tax, procurementFee, total: adjusted + procurementFee, earning, consortiumGross, consortiumCost, consortiumAdjustmentAdditions: settlement.adjustmentAdditions, consortiumAdjustmentDeductions: settlement.adjustmentDeductions, consortium, projectorInstallationCost, yogaMatServiceCost, itemInternalCost, additionalConstructionCost, internalCost, margin, marginRate: subtotal ? margin / subtotal : 0 };
+    return { subtotal, adjusted, supply, tax, procurementFee, total: adjusted + procurementFee, earning, consortiumGross, consortiumCost, consortiumAdjustmentAdditions: settlement.adjustmentAdditions, consortiumAdjustmentDeductions: settlement.adjustmentDeductions, consortium, projectorInstallationCost, yogaMatServiceCost, teachingAidSupportCost, itemInternalCost, additionalConstructionCost, internalCost, margin, marginRate: subtotal ? margin / subtotal : 0 };
   }, [draft]);
 
   const internalReportRows = useMemo(() => (draft?.items ?? []).map((item, index) => {
@@ -861,10 +879,11 @@ export default function QuotationManagementPage({
       ? Math.max(0, item.internalCostAmount)
       : 0;
     const consortium = grossConsortium - consortiumCost;
-    const internalCostDisplay = item.internalCostEnabled ? Math.max(0, item.internalCostAmount) : 0;
-    const internalCost = !contentSubstitution && item.internalCostEnabled && (draft?.executionType !== "컨소" || item.internalCostBearer === "whizzup")
+    const teachingAidSupportCost = Math.max(0, item.teachingAidSupportAmount ?? 0);
+    const internalCostDisplay = (item.internalCostEnabled ? Math.max(0, item.internalCostAmount) : 0) + teachingAidSupportCost;
+    const internalCost = (!contentSubstitution && item.internalCostEnabled && (draft?.executionType !== "컨소" || item.internalCostBearer === "whizzup")
       ? Math.max(0, item.internalCostAmount)
-      : 0;
+      : 0) + teachingAidSupportCost;
     const remaining = lineAmount - internalCostDisplay;
     const formula = contentSubstitution
       ? remaining > 0
@@ -890,7 +909,7 @@ export default function QuotationManagementPage({
       internalCostDisplay,
       netProfit: earning - consortium - internalCost,
       formula,
-      status: contentSubstitution ? "콘텐츠 대체" : internalCostDisplay > 0 ? "내부 비용 반영" : "일반",
+      status: contentSubstitution ? "콘텐츠 대체" : teachingAidSupportCost > 0 ? "교구 할인·지원" : internalCostDisplay > 0 ? "내부 비용 반영" : "일반",
     };
   }), [draft]);
 
@@ -1550,7 +1569,10 @@ export default function QuotationManagementPage({
         setEquipmentKitRecoveryId("");
       }
     }
-    equipmentKit ??= createAirpassEquipmentKit("one");
+    if (!equipmentKit) {
+      const defaultPlan = equipmentKitPlans.find((plan) => plan.active) ?? equipmentKitPlans[0];
+      equipmentKit = defaultPlan ? createAirpassEquipmentKitFromPlan(defaultPlan) : createAirpassEquipmentKit("one");
+    }
     setEquipmentKitEditor({
       item: {
         ...item,
@@ -1577,15 +1599,88 @@ export default function QuotationManagementPage({
     });
   }
 
-  function selectEquipmentKitPlan(plan: "one" | "two") {
+  function selectEquipmentKitPlan(plan: AirpassEquipmentKitPlan) {
     if (!equipmentKitEditor?.item.equipmentKit) return;
     const customLines = equipmentKitEditor.item.equipmentKit.lines.filter((line) => line.custom);
-    const equipmentKit = createAirpassEquipmentKit(plan);
-    equipmentKit.lines.push(...customLines.map((line) => ({ ...line })));
+    const equipmentKit = createAirpassEquipmentKitFromPlan(plan);
+    const plannedNames = new Set(equipmentKit.lines.map((line) => normalizedEquipmentKitName(line.name)));
+    equipmentKit.lines.push(...customLines
+      .filter((line) => !plannedNames.has(normalizedEquipmentKitName(line.name)))
+      .map((line) => ({ ...line })));
     setEquipmentKitEditor({
       ...equipmentKitEditor,
       item: { ...equipmentKitEditor.item, unitPrice: airpassEquipmentKitTotal(equipmentKit), equipmentKit },
     });
+  }
+
+  async function persistEquipmentKitPlans(plans: AirpassEquipmentKitPlan[], successMessage: string) {
+    setEquipmentKitPlansSaving(true);
+    try {
+      const response = await fetch("/api/equipment-kit-plans", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plans }),
+      });
+      const payload = await response.json() as { plans?: AirpassEquipmentKitPlan[]; error?: string };
+      if (!response.ok || !payload.plans) throw new Error(payload.error || "교구 기본안을 저장하지 못했습니다.");
+      setEquipmentKitPlans(payload.plans);
+      setMessage(successMessage);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "교구 기본안을 저장하지 못했습니다.");
+    } finally {
+      setEquipmentKitPlansSaving(false);
+    }
+  }
+
+  function saveCurrentEquipmentKitAsPlan() {
+    const equipmentKit = equipmentKitEditor?.item.equipmentKit;
+    if (!equipmentKit) return;
+    const name = window.prompt("새 기본안 이름을 입력해 주세요.", `교구 기본안 ${equipmentKitPlans.length + 1}`)?.trim();
+    if (!name) return;
+    const plan: AirpassEquipmentKitPlan = {
+      id: crypto.randomUUID(),
+      name: name.slice(0, 120),
+      active: true,
+      sortOrder: equipmentKitPlans.length,
+      lines: equipmentKit.lines.map((line) => ({ ...line, custom: undefined })),
+    };
+    setEquipmentKitEditor({
+      ...equipmentKitEditor!,
+      item: {
+        ...equipmentKitEditor!.item,
+        equipmentKit: { ...equipmentKit, templateId: plan.id, templateName: plan.name },
+      },
+    });
+    void persistEquipmentKitPlans([...equipmentKitPlans, plan], `‘${plan.name}’ 교구 기본안을 저장했습니다.`);
+  }
+
+  function overwriteCurrentEquipmentKitPlan() {
+    const equipmentKit = equipmentKitEditor?.item.equipmentKit;
+    const selectedId = equipmentKit?.templateId;
+    if (!equipmentKit || !selectedId) return;
+    const selected = equipmentKitPlans.find((plan) => plan.id === selectedId);
+    if (!selected || !window.confirm(`‘${selected.name}’ 기본안을 현재 구성으로 바꿀까요? 이미 저장된 견적은 변경되지 않습니다.`)) return;
+    const plans = equipmentKitPlans.map((plan) => plan.id === selectedId
+      ? { ...plan, lines: equipmentKit.lines.map((line) => ({ ...line, custom: undefined })) }
+      : plan);
+    void persistEquipmentKitPlans(plans, `‘${selected.name}’ 기본안을 현재 구성으로 변경했습니다.`);
+  }
+
+  function deleteCurrentEquipmentKitPlan() {
+    const selectedId = equipmentKitEditor?.item.equipmentKit?.templateId;
+    const selected = equipmentKitPlans.find((plan) => plan.id === selectedId);
+    if (!selected || equipmentKitPlans.length <= 1) return;
+    if (!window.confirm(`‘${selected.name}’ 기본안을 삭제할까요? 기존 견적의 교구 구성은 그대로 유지됩니다.`)) return;
+    const remaining = equipmentKitPlans.filter((plan) => plan.id !== selectedId);
+    const replacement = remaining.find((plan) => plan.active) ?? remaining[0];
+    if (replacement && equipmentKitEditor) {
+      const equipmentKit = createAirpassEquipmentKitFromPlan(replacement);
+      setEquipmentKitEditor({
+        ...equipmentKitEditor,
+        item: { ...equipmentKitEditor.item, unitPrice: airpassEquipmentKitTotal(equipmentKit), equipmentKit },
+      });
+    }
+    void persistEquipmentKitPlans(remaining, `‘${selected.name}’ 기본안을 삭제했습니다.`);
   }
 
   function addEquipmentKitLine() {
@@ -1600,7 +1695,7 @@ export default function QuotationManagementPage({
 
   function applyEquipmentKit() {
     if (!draft || !equipmentKitEditor?.item.equipmentKit) return;
-    const invalid = equipmentKitEditor.item.equipmentKit.lines.some((line) => line.custom && !line.name.trim());
+    const invalid = equipmentKitEditor.item.equipmentKit.lines.some((line) => !line.name.trim());
     if (invalid) {
       setMessage("추가한 교구 품목명을 입력해 주세요.");
       return;
@@ -1713,7 +1808,7 @@ export default function QuotationManagementPage({
       setMessage(`교구 견적서의 ${result.items.length}개 품목을 교구 세부견적에 불러왔습니다. 교구 창에서 확인한 뒤 견적에 적용해 주세요.`);
       return;
     }
-    let nextItems = [...draft.items.filter((item) => !isConstructionItem(item))];
+    const nextItems = [...draft.items.filter((item) => !isConstructionItem(item))];
     const importedItems: DraftItem[] = applyCatalogSuppliers(result.items.map((item) => ({
       id: crypto.randomUUID(),
       productId: item.productId,
@@ -2435,6 +2530,7 @@ export default function QuotationManagementPage({
                   const expectedEarning = draftItemExpectedEarning(item);
                   const consortiumPayment = draft.executionType === "컨소" && !contentSubstitution ? Math.min(expectedEarning, Math.floor(productAmount * item.consortiumRate / 10) * 10) : 0;
                   const internalCost = item.internalCostEnabled ? Math.max(0, item.internalCostAmount) : 0;
+                  const teachingAidSupportCost = Math.max(0, item.teachingAidSupportAmount ?? 0);
                   const internalCostDefaults = quotationInternalCostDefaults(item.name, item.specification, item.quantity);
                   const consortiumBearsInternalCost = draft.executionType === "컨소"
                     && !contentSubstitution
@@ -2443,9 +2539,10 @@ export default function QuotationManagementPage({
                   const settledConsortiumPayment = consortiumBearsInternalCost
                     ? consortiumPayment - internalCost
                     : consortiumPayment;
-                  const companyMargin = contentSubstitution
+                  const companyMarginBeforeTeachingAidSupport = contentSubstitution
                     ? expectedEarning
                     : expectedEarning - settledConsortiumPayment - (consortiumBearsInternalCost ? 0 : internalCost);
+                  const companyMargin = companyMarginBeforeTeachingAidSupport - teachingAidSupportCost;
                   return <article
                     className={`quotation-item-card${dragOverItemId === item.id ? " drag-over" : ""}`}
                     key={item.id}
@@ -2488,7 +2585,7 @@ export default function QuotationManagementPage({
                       <button type="button" aria-label={`${item.name || `${index + 1}번 품목`} 삭제`} onClick={() => setDraft({ ...draft, items: draft.items.filter((line) => line.id !== item.id) })}>×</button>
                     </header>
                     {(item.equipmentKit || isAirpassEquipmentKitProduct(item.name)) && <div className="quotation-equipment-kit-summary">
-                      <div><strong>교구 세부견적</strong><span>{item.equipmentKit ? `${item.equipmentKit.plan === "two" ? "표준 2세트" : "표준 1세트"} · 출력 ${airpassEquipmentKitOutputLines(item.equipmentKit).length}개 품목` : "아직 세부 품목이 입력되지 않았습니다."}</span></div>
+                      <div><strong>교구 세부견적</strong><span>{item.equipmentKit ? `${item.equipmentKit.templateName || (item.equipmentKit.plan === "two" ? "표준 2세트" : "표준 1세트")} · 출력 ${airpassEquipmentKitOutputLines(item.equipmentKit).length}개 품목` : "아직 세부 품목이 입력되지 않았습니다."}</span></div>
                       <button type="button" disabled={equipmentKitRecoveryId === item.id} onClick={() => void openEquipmentKitEditor(item)}>{equipmentKitRecoveryId === item.id ? "저장본 복구 중…" : item.equipmentKit ? "세부견적 수정" : "교구 세부견적 열기"}</button>
                     </div>}
                     <div className="quotation-item-card-summary">
@@ -2511,7 +2608,7 @@ export default function QuotationManagementPage({
                           ? <small className="quotation-recent-rate">최근 적용 {(recent.rate * 100).toFixed(2).replace(/\.00$/, "")}% · {recent.quoteDate}</small>
                           : null;
                       })()}</label> : null}
-                      <div className="quotation-item-margin"><span>당사 마진</span><strong>{won.format(companyMargin)}원</strong>{contentSubstitution ? <small>대체 후 잔액 × 기존 수수료율</small> : internalCost > 0 ? <small>내부 원가 {won.format(internalCost)}원 반영</small> : draft.executionType === "컨소" ? <small>컨소 지급 {won.format(consortiumPayment)}원 차감</small> : <small>예상 수익 기준</small>}</div>
+                      <div className="quotation-item-margin"><span>당사 마진</span><strong>{won.format(companyMargin)}원</strong>{teachingAidSupportCost > 0 ? <small>교구 할인·지원 {won.format(teachingAidSupportCost)}원 차감</small> : contentSubstitution ? <small>대체 후 잔액 × 기존 수수료율</small> : internalCost > 0 ? <small>내부 원가 {won.format(internalCost)}원 반영</small> : draft.executionType === "컨소" ? <small>컨소 지급 {won.format(consortiumPayment)}원 차감</small> : <small>예상 수익 기준</small>}</div>
                       {internalCostDefaults.kind && <div className="quotation-item-internal-cost">
                         <label><input type="checkbox" checked={item.internalCostEnabled} onChange={(event) => {
                           if (internalCostDefaults.kind === "content-substitution") {
@@ -2544,6 +2641,11 @@ export default function QuotationManagementPage({
                         </div> : <span className="quotation-money-input"><FormattedMoneyInput value={item.internalCostAmount} onChange={(internalCostAmount) => updateItem(item.id, { internalCostAmount })} label={`${internalCostDefaults.label} 내부 원가`} /><b>원</b></span>}
                         {draft.executionType === "컨소" && internalCostDefaults.kind !== "content-substitution" ? <div className="quotation-cost-bearer"><span>비용 처리 방식</span><div><button type="button" className={item.internalCostBearer === "consortium" ? "active" : ""} onClick={() => updateItem(item.id, { internalCostBearer: "consortium" })}>정산서 반영</button><button type="button" className={item.internalCostBearer === "whizzup" ? "active" : ""} onClick={() => updateItem(item.id, { internalCostBearer: "whizzup" })}>위즈업 별도 처리</button></div></div> : null}
                         <small>{internalCostDefaults.kind === "content-substitution" ? "체크 시 바이패스 100%로 표시하고, 대체 후 남은 금액에 기존 수수료율을 적용합니다. 초과 비용은 음수 마진으로 반영됩니다." : draft.executionType === "컨소" && item.internalCostBearer === "consortium" ? "컨소 정산서의 비용 내역과 최종 지급 예정액에 반영됩니다." : "위즈업 내부 비용으로 처리되며 고객 견적 금액에는 반영되지 않습니다."}</small>
+                      </div>}
+                      {supportsTeachingAidDiscount(item) && <div className="quotation-teaching-aid-support">
+                        <label><span>교구 할인·지원 차감</span><input value={item.teachingAidSupportLabel ?? "교구 할인 차감"} onChange={(event) => updateItem(item.id, { teachingAidSupportLabel: event.target.value })} placeholder="예: 교구 할인 차감" /></label>
+                        <label><span>내부 차감 금액</span><span className="quotation-money-input"><FormattedMoneyInput value={item.teachingAidSupportAmount ?? 0} onChange={(teachingAidSupportAmount) => updateItem(item.id, { teachingAidSupportAmount })} label="교구 할인·지원 차감 금액" /><b>원</b></span></label>
+                        <small>고객 견적금액과 PDF·Excel에는 반영하지 않고 내부 마진에서만 차감합니다.</small>
                       </div>}
                     </div>
                     <label className="quotation-item-card-note"><span>비고</span><input value={item.note} onChange={(event) => updateItem(item.id, { note: event.target.value })} placeholder="품목별 비고" /></label>
@@ -2694,13 +2796,26 @@ export default function QuotationManagementPage({
             <div className="equipment-kit-plan">
               <strong>기본 구성안</strong>
               <div>
-                {(["one", "two"] as const).map((plan) => <button key={plan} type="button" className={equipmentKitEditor.item.equipmentKit?.plan === plan ? "active" : ""} onClick={() => {
-                  if (equipmentKitEditor.item.equipmentKit?.plan === plan) return;
-                  if (window.confirm("기본 품목의 수정값을 선택한 구성안으로 다시 불러올까요? 직접 추가한 품목은 유지됩니다.")) selectEquipmentKitPlan(plan);
-                }}>{plan === "one" ? "표준 1세트" : "표준 2세트"}</button>)}
+                {equipmentKitPlans.filter((plan) => plan.active).map((plan) => {
+                  const selected = equipmentKitEditor.item.equipmentKit?.templateId
+                    ? equipmentKitEditor.item.equipmentKit.templateId === plan.id
+                    : Boolean(plan.systemPlan && equipmentKitEditor.item.equipmentKit?.plan === plan.systemPlan);
+                  return <button key={plan.id} type="button" className={selected ? "active" : ""} onClick={() => {
+                    if (selected) return;
+                    if (window.confirm("기본 품목의 수정값을 선택한 구성안으로 다시 불러올까요? 직접 추가한 품목은 유지됩니다.")) selectEquipmentKitPlan(plan);
+                  }}>{plan.name}</button>;
+                })}
               </div>
               <span>기본값 자동 입력 · 모든 수량·단위·단가 수정 가능</span>
             </div>
+            {canManageEquipmentKitPlans && <div className="equipment-kit-plan-actions">
+              <span>관리자가 현재 품목·수량·단가를 공용 기본안으로 저장할 수 있습니다. 기존 견적은 바뀌지 않습니다.</span>
+              <div>
+                <button type="button" disabled={equipmentKitPlansSaving} onClick={saveCurrentEquipmentKitAsPlan}>+ 현재 구성 새 기본안 저장</button>
+                {equipmentKitEditor.item.equipmentKit.templateId && <button type="button" disabled={equipmentKitPlansSaving} onClick={overwriteCurrentEquipmentKitPlan}>현재 기본안 덮어쓰기</button>}
+                {equipmentKitEditor.item.equipmentKit.templateId && equipmentKitPlans.length > 1 && <button type="button" className="danger" disabled={equipmentKitPlansSaving} onClick={deleteCurrentEquipmentKitPlan}>기본안 삭제</button>}
+              </div>
+            </div>}
             <div className="equipment-kit-guide">수량이 0인 품목은 입력창에는 유지되고, 견적 합계와 Excel·PDF 별첨에서는 자동 제외됩니다.</div>
             <div className="equipment-kit-toolbar">
               <strong>세부 품목 {equipmentKitEditor.item.equipmentKit.lines.length}개</strong>
@@ -2713,16 +2828,16 @@ export default function QuotationManagementPage({
                   if (equipmentKitHideZero && line.quantity === 0) return null;
                   return <tr key={line.id} className={line.quantity === 0 ? "zero" : line.custom ? "custom" : ""}>
                     <td>{index + 1}</td>
-                    <td>{line.custom ? <input value={line.name} onChange={(event) => updateEquipmentKitLine(line.id, { name: event.target.value })} placeholder="품목명 입력" aria-label={`${index + 1}번 추가 품목명`} /> : line.name}</td>
+                    <td><input value={line.name} onChange={(event) => updateEquipmentKitLine(line.id, { name: event.target.value })} placeholder="품목명 입력" aria-label={`${index + 1}번 품목명`} /></td>
                     <td><input type="number" min="0" step="1" value={line.quantity} onChange={(event) => updateEquipmentKitLine(line.id, { quantity: Math.max(0, Math.round(Number(event.target.value) || 0)) })} aria-label={`${line.name || `${index + 1}번 품목`} 수량`} /></td>
                     <td><select value={line.unit} onChange={(event) => updateEquipmentKitLine(line.id, { unit: event.target.value })} aria-label={`${line.name || `${index + 1}번 품목`} 단위`}><option>EA</option><option>SET</option><option>개</option><option>식</option><option>대</option></select></td>
                     <td><FormattedMoneyInput value={line.unitPrice} onChange={(unitPrice) => updateEquipmentKitLine(line.id, { unitPrice })} label={`${line.name || `${index + 1}번 품목`} 단가`} /></td>
                     <td>{won.format(line.quantity * line.unitPrice)}원</td>
                     <td>{line.quantity > 0 ? "포함" : "제외"}</td>
-                    <td>{line.custom ? <button type="button" className="remove" onClick={() => {
+                    <td><button type="button" className="remove" onClick={() => {
                       const equipmentKit: AirpassEquipmentKit = { ...equipmentKitEditor.item.equipmentKit!, lines: equipmentKitEditor.item.equipmentKit!.lines.filter((item) => item.id !== line.id) };
                       setEquipmentKitEditor({ ...equipmentKitEditor, item: { ...equipmentKitEditor.item, unitPrice: airpassEquipmentKitTotal(equipmentKit), equipmentKit } });
-                    }}>삭제</button> : "—"}</td>
+                    }}>삭제</button></td>
                   </tr>;
                 })}</tbody>
               </table>

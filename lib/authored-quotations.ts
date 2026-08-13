@@ -46,6 +46,8 @@ export type AuthoredQuotationItem = {
   internalCostQuantity?: number;
   internalCostUnitAmount?: number;
   internalCostAutoQuantity?: boolean;
+  teachingAidSupportAmount?: number;
+  teachingAidSupportLabel?: string;
   equipmentKit?: AirpassEquipmentKit;
 };
 
@@ -292,6 +294,8 @@ function parseItems(value: unknown) {
         : internalCostDefaults.quantity
     )));
     const internalCostAutoQuantity = item.internalCostAutoQuantity === true;
+    const teachingAidSupportAmount = amount(item.teachingAidSupportAmount);
+    const teachingAidSupportLabel = text(item.teachingAidSupportLabel, 200);
     const contentSubstitutionEnabled = internalCostEnabled && quotationInternalCostKind(name, text(item.specification, 1_000)) === "content-substitution";
     const internalCostBaseEarningRate = contentSubstitutionEnabled
       ? contentSubstitutionBaseEarningRate({
@@ -339,6 +343,8 @@ function parseItems(value: unknown) {
       internalCostQuantity,
       internalCostUnitAmount,
       internalCostAutoQuantity,
+      teachingAidSupportAmount,
+      teachingAidSupportLabel,
       ...(equipmentKit ? { equipmentKit } : {}),
     }];
   });
@@ -488,7 +494,8 @@ function normalized(value: Record<string, unknown>) {
   const consortiumRate = 0;
   const settlement = calculateConsortiumSettlement(items, executionType, settlementAdjustments);
   const consortiumPayment = settlement.finalPayment;
-  const marginAmount = expectedEarning - consortiumPayment - settlement.whizzupCost - additionalInternalConstructionCost;
+  const teachingAidSupportCost = items.reduce((sum, item) => sum + Math.max(0, item.teachingAidSupportAmount ?? 0), 0);
+  const marginAmount = expectedEarning - consortiumPayment - settlement.whizzupCost - additionalInternalConstructionCost - teachingAidSupportCost;
   return {
     organization, businessRound: Math.max(1, Number(value.businessRound) || 1),
     projectTitle: text(value.projectTitle, 500), quoteDate,
