@@ -85,15 +85,28 @@ test("buildExecutionTrend counts orders without including unconfirmed rows", () 
   assert.deepEqual(result.totals, { direct: 2, consortium: 1, total: 3 });
 });
 
-test("analytics execution panel keeps the annual overview compact and avoids duplicate chart labels", async () => {
+test("analytics execution panel shows the donut and a single large composition chart", async () => {
   const [page, styles] = await Promise.all([
     readFile(new URL("../app/analytics-page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /className="analytics-execution-summary"/);
-  assert.doesNotMatch(page, /className="analytics-execution-donut"/);
-  assert.match(page, /viewBox="0 0 1200 220"/);
-  assert.match(styles, /\.analytics-execution-line-panel svg\s*\{[^}]*height:\s*142px/s);
-  assert.match(styles, /\.analytics-execution-chart\.grouped\s*\{[^}]*height:\s*138px/s);
+  assert.match(page, /className="analytics-execution-donut"/);
+  assert.doesNotMatch(page, /className="analytics-execution-line-panel"/);
+  assert.doesNotMatch(page, /viewBox="0 0 1200 220"/);
+  assert.match(page, /className="analytics-execution-bar-panel primary"/);
+  assert.match(styles, /\.analytics-execution-chart\.grouped\s*\{[^}]*height:\s*286px/s);
+});
+
+test("analytics uses the final quotation consortium setting for legacy activity rows", async () => {
+  const route = await readFile(
+    new URL("../app/api/accounting/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    route,
+    /finalQuotation\?\.executionType === "컨소" \|\| award\.executionType === "컨소"/,
+  );
+  assert.match(route, /return \{\s*\.\.\.award,\s*executionType,/s);
 });

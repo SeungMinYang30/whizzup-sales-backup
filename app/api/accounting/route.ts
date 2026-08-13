@@ -99,8 +99,13 @@ function mapAccountingRow(row: RawAccountingRow, finalQuotation?: AuthoredQuotat
       finalQuotation ? 0 : registeredQuote.quoteMissingAmountItemCount,
     awardStatus: String(row.award_status ?? ""),
     awardCompany: String(row.award_company ?? ""),
-    executionType: String(row.execution_type ?? "") === "컨소" ? "컨소" : "직영",
-    consortiumCompany: String(row.consortium_company ?? ""),
+    executionType:
+      finalQuotation?.executionType === "컨소" ||
+      String(row.execution_type ?? "") === "컨소"
+        ? "컨소"
+        : "직영",
+    consortiumCompany:
+      finalQuotation?.consortiumCompany || String(row.consortium_company ?? ""),
     settlementId: row.settlement_id ? Number(row.settlement_id) : null,
     confirmedContractAmount,
     manufacturerCommissionExpected,
@@ -917,6 +922,10 @@ async function buildAnalyticsPayload() {
     const finalQuotation = latestFinalQuotationByBusiness.get(
       award.businessKey,
     );
+    const executionType =
+      finalQuotation?.executionType === "컨소" || award.executionType === "컨소"
+        ? "컨소" as const
+        : "직영" as const;
     const registeredQuote = calculateRegisteredQuote({
       items: itemQuotesByBusiness.get(award.businessKey) ?? [],
       constructions:
@@ -925,6 +934,7 @@ async function buildAnalyticsPayload() {
     if (!award.confirmed) {
       return {
         ...award,
+        executionType,
         confirmedAmount: 0,
         quoteStatus: finalQuotation ? "complete" as const : registeredQuote.quoteStatus,
         quoteItemCount: finalQuotation?.items.length ?? registeredQuote.quoteItemCount,
@@ -961,6 +971,7 @@ async function buildAnalyticsPayload() {
       collectedByBusiness.get(award.businessKey) ?? 0;
     return {
       ...award,
+      executionType,
       confirmedAmount:
         finalQuotation
           ? finalQuotation.totalAmount
