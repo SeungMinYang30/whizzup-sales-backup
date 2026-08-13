@@ -5,6 +5,10 @@ import type { AuthoredQuotation } from "../lib/authored-quotations";
 
 const won = new Intl.NumberFormat("ko-KR");
 
+function safeFileName(value: string) {
+  return value.trim().replace(/[\\/:*?"<>|]/g, "_") || "견적서";
+}
+
 export default function OrganizationQuotationHistory({
   organization,
   businessRound,
@@ -162,7 +166,15 @@ export default function OrganizationQuotationHistory({
       <span className="quotation-history-main"><b>{quote.quoteNumber}</b><small>{quote.quoteDate} · {quote.status === "final" ? "현재 최종본" : "작성 중"}</small>{displayedBudgets(quote).length > 0 ? <small>연결 예산 · {displayedBudgets(quote).map((budget) => `${budget.name} ${won.format(budget.allocatedAmount)}원`).join(" · ")}</small> : <small>예산 연결 필요</small>}</span>
       <div className="quotation-history-summary"><strong>{won.format(quote.totalAmount)}원</strong><small>품목 {quote.items.filter((item) => item.productId !== "__construction_cost__").length}개{quote.items.some((item) => item.productId === "__construction_cost__") ? ` · 공사비 ${won.format(quote.items.filter((item) => item.productId === "__construction_cost__").reduce((sum, item) => sum + item.amount, 0))}원` : ""}</small><em>{quote.status === "final" ? "최종" : "임시"}</em></div>
       <div className="quotation-history-actions">
-        {quote.status === "final" && fileAction(quote.pdfUrl, "PDF 보기", true)}
+        {quote.status === "final" && <details className="quotation-output-menu">
+          <summary>PDF</summary>
+          <div className="quotation-output-menu-panel">
+            {fileAction(quote.pdfUrl, "보기", true)}
+            {quote.pdfUrl
+              ? <a className="quotation-history-action" href={quote.pdfUrl} download={`${safeFileName(`${quote.organization}_${quote.quoteNumber}_견적서`)}.pdf`}>다운로드</a>
+              : <button className="quotation-history-action" type="button" disabled>다운로드</button>}
+          </div>
+        </details>}
         {quote.status === "final" && fileAction(quote.excelUrl, "Excel 다운로드")}
         {quote.status === "final" && quote.sourceOriginalUrl && fileAction(quote.sourceOriginalUrl, "참고 원본")}
         {onOpen && (canEdit || !readOnly) ? <button className="quotation-history-action primary" type="button" onClick={() => onOpen(quote.id, "edit")}>{quote.status === "draft" ? "이어서 작성" : "견적 수정"}</button> : null}

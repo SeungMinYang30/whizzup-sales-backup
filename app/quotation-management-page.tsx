@@ -363,11 +363,17 @@ function downloadBytes(bytes: Uint8Array, name: string) {
   const blob = new Blob([bytes as BlobPart], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
+  downloadBlob(blob, name);
+}
+
+function downloadBlob(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = name;
+  document.body.appendChild(anchor);
   anchor.click();
+  anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
@@ -1859,6 +1865,21 @@ export default function QuotationManagementPage({
     }
   }
 
+  async function downloadSavedPdf(quote: AuthoredQuotation) {
+    if (!quote.pdfUrl) {
+      setMessage("저장된 PDF 파일이 없습니다. 견적 수정에서 최종 저장하면 현재 PDF가 생성됩니다.");
+      return;
+    }
+    try {
+      const response = await fetch(quote.pdfUrl, { cache: "no-store" });
+      if (!response.ok) throw new Error("저장된 PDF를 내려받지 못했습니다.");
+      downloadBlob(await response.blob(), `${quotationFileStem(quote)}.pdf`);
+      setMessage("견적서 PDF를 다운로드했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "저장된 PDF를 내려받지 못했습니다.");
+    }
+  }
+
   async function deleteQuotation(quote: AuthoredQuotation) {
     if (quotationActionId || !window.confirm(
       `${quote.quoteNumber}\n${quote.quoteDate} · ${won.format(quote.totalAmount)}원\n\n이 견적서를 휴지통으로 이동할까요?`,
@@ -2101,6 +2122,21 @@ export default function QuotationManagementPage({
     }
   }
 
+  async function downloadConsortiumSettlementPdf() {
+    const output = consortiumSettlementOutputInput();
+    if (!output) return;
+    setSettlementPrintPreparing(true);
+    try {
+      const pdf = await createConsortiumSettlementPdf(output);
+      downloadBlob(pdf, pdf.name);
+      setMessage("정산서 PDF를 다운로드했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "정산서 PDF를 만들지 못했습니다.");
+    } finally {
+      setSettlementPrintPreparing(false);
+    }
+  }
+
   const regularDraftItems = draft?.items.filter((item) => !isConstructionItem(item)) ?? [];
   const constructionItem = draft?.items.find(isConstructionItem);
 
@@ -2152,7 +2188,13 @@ export default function QuotationManagementPage({
         </dl>
         <div className="quotation-row-actions">
           {quote.status === "final" ? <>
-            {!embedded && <button className="app-button app-button-secondary app-button-small" type="button" disabled={!quote.pdfUrl} onClick={() => void viewSavedPdf(quote)}>PDF 보기</button>}
+            {!embedded && <details className="quotation-output-menu">
+              <summary>PDF</summary>
+              <div className="quotation-output-menu-panel">
+                <button type="button" disabled={!quote.pdfUrl} onClick={() => void viewSavedPdf(quote)}>보기</button>
+                <button type="button" disabled={!quote.pdfUrl} onClick={() => void downloadSavedPdf(quote)}>다운로드</button>
+              </div>
+            </details>}
             {!embedded && <button className="app-button app-button-secondary app-button-small" type="button" disabled={!quote.excelUrl} onClick={() => void downloadSavedExcel(quote)}>Excel 다운로드</button>}
             <button className="app-button app-button-primary app-button-small" type="button" onClick={() => openQuotation(quote)}>견적 수정</button>
           </> : <button className="app-button app-button-primary app-button-small" type="button" onClick={() => openQuotation(quote)}>이어서 작성</button>}
@@ -2190,7 +2232,13 @@ export default function QuotationManagementPage({
           <nav aria-label="견적서 작업">
             <div className="quote-topbar-action-group quote-topbar-output-actions">
               <button type="button" onClick={exportExcel} disabled={!draft.items.length}>Excel 다운로드</button>
-              <button type="button" onClick={printQuotation} disabled={!draft.items.length}>PDF 출력</button>
+              <details className="quotation-output-menu quotation-output-menu-topbar">
+                <summary>견적서 PDF</summary>
+                <div className="quotation-output-menu-panel">
+                  <button type="button" onClick={printQuotation} disabled={!draft.items.length}>보기·출력</button>
+                  <button type="button" onClick={() => { const saved = draft.id ? quotes.find((quote) => quote.id === draft.id) : undefined; if (saved) void downloadSavedPdf(saved); }} disabled={!draft.id || !quotes.some((quote) => quote.id === draft.id && Boolean(quote.pdfUrl))}>다운로드</button>
+                </div>
+              </details>
             </div>
             <div className="quote-topbar-action-group quote-topbar-navigation-actions">
               {institutions.some((item) => item.organization === draft.organization && item.businessRound === draft.businessRound) && <button className="app-button app-button-secondary" type="button" onClick={() => { closeEditor(); onOpenOrganization?.(draft.organization, draft.businessRound); }}>기관 상세 보기</button>}
@@ -2400,7 +2448,7 @@ export default function QuotationManagementPage({
                 </article>)}
                 {!draft.settlementAdjustments.length && <small>추가 지급이나 정산 차감이 생기면 항목을 추가해 주세요.</small>}
               </div>
-              <div className="quotation-settlement-output-actions"><button type="button" onClick={() => void exportConsortiumSettlementExcel()} disabled={!draft.items.length}>정산서 Excel 다운로드</button><button type="button" onClick={() => void exportConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>정산서 PDF 출력</button></div>
+              <div className="quotation-settlement-output-actions"><details className="quotation-output-menu quotation-output-menu-settlement"><summary>정산서 출력·다운로드</summary><div className="quotation-output-menu-panel"><button type="button" onClick={() => void exportConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>정산서 PDF 보기·출력</button><button type="button" onClick={() => void downloadConsortiumSettlementPdf()} disabled={!draft.items.length || settlementPrintPreparing}>정산서 PDF 다운로드</button><button type="button" onClick={() => void exportConsortiumSettlementExcel()} disabled={!draft.items.length}>정산서 Excel 다운로드</button></div></details></div>
               <p>품목별 지급률과 비용 처리 방식, 정산 조정 내역을 표시하며 위즈업 수익·마진은 포함하지 않습니다. 직인 포함 설정도 동일하게 적용됩니다.</p>
             </section>}
             {directPurchaseWarning && <section className="quotation-procurement-warning quotation-direct-purchase-warning" role="alert"><strong>물품 수의계약 한도 확인</strong><div><b>수의계약 · 학교장터 합산</b><span>{won.format(directPurchaseWarning.totalAmount)}원 · {directPurchaseWarning.itemCount}개 품목</span><small>부가세 포함 2,200만원을 초과했습니다. 공사비와 일반 조달·디지털서비스몰·혁신장터 품목은 제외한 참고 경고입니다.</small></div></section>}

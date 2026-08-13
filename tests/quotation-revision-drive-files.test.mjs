@@ -27,6 +27,17 @@ test("quotation actions distinguish drafts, current final files and same-number 
   assert.doesNotMatch(page, />복사<\/button>/);
 });
 
+test("quotation and settlement PDF actions use compact download menus", () => {
+  assert.match(page, /function downloadBlob/);
+  assert.match(page, /async function downloadSavedPdf/);
+  assert.match(page, /async function downloadConsortiumSettlementPdf/);
+  assert.match(page, /quotation-output-menu/);
+  assert.match(page, /견적서 PDF/);
+  assert.match(page, /정산서 출력·다운로드/);
+  assert.match(page, /정산서 PDF 다운로드/);
+  assert.match(styles, /quotation-output-menu-panel/);
+});
+
 test("legacy revision lineage stays readable while current direct edits refresh files", () => {
   assert.match(store, /revision_root_id/);
   assert.match(store, /revision_parent_id/);

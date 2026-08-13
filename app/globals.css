@@ -12837,6 +12837,48 @@ button:is(
 .quotation-history-summary strong { color: #223352; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .quotation-history-summary em { padding: 4px 7px; border-radius: 999px; background: #e9f7f1; color: #16805d; white-space: nowrap; }
 .quotation-history-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
+.quotation-output-menu { position: relative; flex: 0 0 auto; }
+.quotation-output-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid #cbd6e8;
+  border-radius: 9px;
+  background: #fff;
+  color: #405b9d;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+  list-style: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.quotation-output-menu > summary::-webkit-details-marker { display: none; }
+.quotation-output-menu > summary::after { content: "▾"; font-size: 10px; transition: transform .16s ease; }
+.quotation-output-menu[open] > summary::after { transform: rotate(180deg); }
+.quotation-output-menu-panel {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  min-width: 150px;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid #d3ddec;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(31, 51, 91, .18);
+}
+.quotation-output-menu-panel > button,
+.quotation-output-menu-panel > a { width: 100%; min-height: 34px; justify-content: flex-start; text-align: left; }
+.quotation-output-menu-topbar > summary { min-height: 38px; padding: 0 14px; border-color: #d7dfeb; color: #435370; font-size: 13px; }
+.quotation-output-menu-topbar .quotation-output-menu-panel button { min-height: 36px; padding: 0 10px; font-size: 12px; }
+.quotation-output-menu-settlement { width: 100%; }
+.quotation-output-menu-settlement > summary { width: 100%; min-height: 38px; border-color: #3157e6; color: #3157e6; }
 .organization-quotation-history .quotation-history-action {
   display: inline-flex;
   align-items: center;
@@ -12895,6 +12937,15 @@ button:is(
   .organization-quotation-history article { grid-template-columns: 1fr; }
   .quotation-history-summary { justify-content: space-between; }
   .quotation-history-actions { grid-column: auto; }
+  .quotation-history-actions .quotation-output-menu,
+  .quotation-row-actions .quotation-output-menu,
+  .quote-topbar-output-actions .quotation-output-menu { flex: 1 1 110px; }
+  .quotation-history-actions .quotation-output-menu > summary,
+  .quotation-row-actions .quotation-output-menu > summary,
+  .quote-topbar-output-actions .quotation-output-menu > summary { width: 100%; }
+  .quotation-output-menu-panel { position: fixed; z-index: 300; top: auto; right: 10px; bottom: 10px; left: 10px; min-width: 0; padding: 10px; }
+  .quotation-output-menu-panel > button,
+  .quotation-output-menu-panel > a { min-height: 44px; justify-content: center; text-align: center; }
   .quotation-history-empty { align-items: stretch; flex-direction: column; }
   .quotation-history-empty .quotation-history-action { width: 100%; }
   .quotation-row-main { grid-template-columns: 1fr; }
@@ -13452,6 +13503,7 @@ button:is(
 
 @media(max-width:1050px){.quotation-item-internal-cost{grid-template-columns:minmax(190px,.75fr) minmax(0,1.25fr)}.quotation-cost-bearer{grid-column:1/-1}.quotation-item-internal-cost>small{grid-column:1/-1}}
 @media(max-width:700px){.quotation-item-internal-cost{grid-template-columns:1fr}.quotation-cost-bearer,.quotation-item-internal-cost>small{grid-column:auto}.quotation-yoga-mat-cost{align-items:flex-start;flex-direction:column}.quotation-settlement-adjustments article{grid-template-columns:1fr 1fr}.quotation-settlement-adjustments article input:nth-of-type(2){grid-column:1/-1}.quotation-settlement-adjustments article>button{grid-column:2;justify-self:end}.quotation-settlement-output-actions{grid-template-columns:1fr}}
+.quotation-settlement-output-actions{display:block}
 
 @media print{
   .equipment-kit-print-header .airpass-print-brand{display:flex;align-items:center;justify-content:center;align-self:stretch;margin:0;color:#18365f;font-size:14pt;font-weight:900;letter-spacing:-.02em}
