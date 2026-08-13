@@ -84,9 +84,14 @@ test("institution quotation cards remove horizontal scrolling and show stored PD
   assert.doesNotMatch(styles, /\.quotation-list\{overflow-x:auto/);
   assert.match(documents, /\/api\/quotations\?organization=/);
   assert.match(documents, /quotation-system-thumbnail/);
-  assert.match(documents, /#page=1&view=FitH&toolbar=0/);
-  assert.match(documents, /quotation-system-preview-frame/);
+  assert.match(documents, /renderStoredPdfPreviewPages/);
+  assert.match(documents, /quotation-system-preview-pages/);
+  assert.doesNotMatch(documents, /<iframe/);
   assert.match(documents, /setAuthoredPreview/);
+  assert.match(documents, /onOpenAuthoredQuotation\(quotation\.id\)/);
+  assert.match(documents, />견적 수정<\/button>/);
+  assert.match(crm, /canEditAuthoredQuotations=\{canManageRecords\}/);
+  assert.match(crm, /onOpenAuthoredQuotation=\{\(id\) =>/);
   assert.match(page, /저장된 PDF 파일이 없습니다/);
   assert.doesNotMatch(page, /const saved = await storeQuotationFiles\(quote\)/);
 });

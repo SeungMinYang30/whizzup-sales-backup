@@ -419,6 +419,10 @@ export function normalizeSqlForPostgres(query: string) {
     .replace(/\bjson_array\(/gi, "jsonb_build_array(")
     .replace(/\bjson_object\(/gi, "jsonb_build_object(")
     .replace(
+      /instr\(\s*lower\(([^)]+)\)\s*,\s*lower\((\?)\)\s*\)/gi,
+      "POSITION(lower($2) IN lower($1))",
+    )
+    .replace(
       /\)\)\s+END AS canonical_budgets_json/gi,
       "))::text END AS canonical_budgets_json",
     )

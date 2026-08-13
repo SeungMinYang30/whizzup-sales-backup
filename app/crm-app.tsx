@@ -20664,6 +20664,12 @@ export default function CrmApp({
                   businessRound={selectedDetailBusinessRound}
                   onToast={setToast}
                   canManageExternalQuotations={false}
+                  canEditAuthoredQuotations={canManageRecords}
+                  onOpenAuthoredQuotation={(id) => {
+                    window.sessionStorage.setItem("whizzup.quotationTarget", JSON.stringify({ id, mode: "edit" }));
+                    setDetailOrganization(null);
+                    void selectView("quotations");
+                  }}
                 />
               </Suspense>
 

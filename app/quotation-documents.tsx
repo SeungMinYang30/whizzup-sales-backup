@@ -312,18 +312,64 @@ async function renderPdfPages(
   return images;
 }
 
+async function renderStoredPdfPreviewPages(url: string) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(payload?.error || "PDF 견적서를 불러오지 못했습니다.");
+  }
+  const { GlobalWorkerOptions, getDocument } = await import("pdfjs-dist");
+  GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
+  const pdf = await getDocument({ data: new Uint8Array(await response.arrayBuffer()) }).promise;
+  if (pdf.numPages > 40) {
+    await pdf.destroy();
+    throw new Error("견적서는 40페이지 이하만 미리볼 수 있습니다.");
+  }
+  const urls: string[] = [];
+  try {
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const natural = page.getViewport({ scale: 1 });
+      const scale = Math.min(2.2, 1500 / Math.max(natural.width, natural.height));
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.ceil(viewport.width));
+      canvas.height = Math.max(1, Math.ceil(viewport.height));
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) throw new Error("PDF 미리보기 화면을 준비하지 못했습니다.");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvas, canvasContext: context, viewport }).promise;
+      urls.push(URL.createObjectURL(await canvasBlob(canvas)));
+      page.cleanup();
+      canvas.width = 1;
+      canvas.height = 1;
+    }
+    return urls;
+  } catch (error) {
+    urls.forEach((previewUrl) => URL.revokeObjectURL(previewUrl));
+    throw error;
+  } finally {
+    await pdf.destroy();
+  }
+}
+
 export default function QuotationDocuments({
   organization,
   businessRound = 1,
   onToast,
   onEquipmentImported,
   canManageExternalQuotations = false,
+  canEditAuthoredQuotations = false,
+  onOpenAuthoredQuotation,
 }: {
   organization: string;
   businessRound?: number;
   onToast: (message: string) => void;
   onEquipmentImported?: () => void;
   canManageExternalQuotations?: boolean;
+  canEditAuthoredQuotations?: boolean;
+  onOpenAuthoredQuotation?: (id: number) => void;
 }) {
   const [documents, setDocuments] = useState<QuotationDocument[]>([]);
   const [authoredQuotations, setAuthoredQuotations] = useState<AuthoredQuotation[]>([]);
@@ -336,6 +382,10 @@ export default function QuotationDocuments({
   const [uploadProgress, setUploadProgress] = useState("");
   const [preview, setPreview] = useState<QuotationDocument | null>(null);
   const [authoredPreview, setAuthoredPreview] = useState<AuthoredQuotation | null>(null);
+  const [authoredPreviewPages, setAuthoredPreviewPages] = useState<string[]>([]);
+  const [authoredPreviewLoading, setAuthoredPreviewLoading] = useState(false);
+  const [authoredPreviewError, setAuthoredPreviewError] = useState("");
+  const [authoredPreviewVersion, setAuthoredPreviewVersion] = useState(0);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const [analysisDraft, setAnalysisDraft] =
@@ -394,6 +444,33 @@ export default function QuotationDocuments({
     window.addEventListener("whizzup:quotation-files-updated", handleFilesUpdated);
     return () => window.removeEventListener("whizzup:quotation-files-updated", handleFilesUpdated);
   }, [businessRound, loadDocuments, organization]);
+
+  useEffect(() => {
+    const url = authoredPreview?.pdfUrl;
+    let cancelled = false;
+    let generatedUrls: string[] = [];
+    setAuthoredPreviewPages([]);
+    setAuthoredPreviewError("");
+    if (!url) {
+      setAuthoredPreviewLoading(false);
+      return () => undefined;
+    }
+    setAuthoredPreviewLoading(true);
+    void renderStoredPdfPreviewPages(url)
+      .then((urls) => {
+        generatedUrls = urls;
+        if (cancelled) urls.forEach((previewUrl) => URL.revokeObjectURL(previewUrl));
+        else setAuthoredPreviewPages(urls);
+      })
+      .catch((previewError) => {
+        if (!cancelled) setAuthoredPreviewError(previewError instanceof Error ? previewError.message : "PDF 견적서를 불러오지 못했습니다.");
+      })
+      .finally(() => { if (!cancelled) setAuthoredPreviewLoading(false); });
+    return () => {
+      cancelled = true;
+      generatedUrls.forEach((previewUrl) => URL.revokeObjectURL(previewUrl));
+    };
+  }, [authoredPreview?.id, authoredPreview?.pdfUrl, authoredPreviewVersion]);
 
   function selectPdf(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
@@ -1052,11 +1129,7 @@ export default function QuotationDocuments({
             <article className="quotation-document-card quotation-system-file-card" key={quotation.id}>
               <div className={`quotation-system-thumbnail${quotation.pdfUrl ? " ready" : " missing"}`}>
                 {quotation.pdfUrl ? (
-                  <iframe
-                    src={`${quotation.pdfUrl}#page=1&view=FitH&toolbar=0&navpanes=0&scrollbar=0`}
-                    title={`${quotation.quoteNumber} 첫 페이지 미리보기`}
-                    loading="lazy"
-                  />
+                  <div className="quotation-system-pdf-cover" aria-hidden="true"><b>PDF</b><span>{quotation.quoteNumber}</span></div>
                 ) : <div className="quotation-system-missing">PDF<br />미생성</div>}
                 <button
                   type="button"
@@ -1077,6 +1150,7 @@ export default function QuotationDocuments({
                   {quotation.pdfUrl && <a href={quotation.pdfUrl} target="_blank" rel="noreferrer">새 창에서 보기</a>}
                   {quotation.excelUrl && <a href={quotation.excelUrl}>Excel 다운로드</a>}
                   {quotation.sourceOriginalUrl && <a href={quotation.sourceOriginalUrl} target="_blank" rel="noreferrer">불러온 원본 보기</a>}
+                  {canEditAuthoredQuotations && onOpenAuthoredQuotation && <button type="button" onClick={() => onOpenAuthoredQuotation(quotation.id)}>견적 수정</button>}
                 </div>
               </div>
             </article>
@@ -1522,8 +1596,10 @@ export default function QuotationDocuments({
                 <button type="button" onClick={() => setAuthoredPreview(null)} aria-label="닫기">×</button>
               </div>
             </header>
-            <div className="quotation-system-preview-frame">
-              <iframe src={`${authoredPreview.pdfUrl}#view=FitH`} title={`${authoredPreview.quoteNumber} PDF`} />
+            <div className="quotation-preview-pages quotation-system-preview-pages">
+              {authoredPreviewLoading && <p className="quotation-preview-status">PDF 페이지를 불러오는 중입니다.</p>}
+              {authoredPreviewError && <div className="quotation-error" role="alert"><span>{authoredPreviewError}</span><button type="button" onClick={() => setAuthoredPreviewVersion((version) => version + 1)}>다시 불러오기</button></div>}
+              {!authoredPreviewLoading && !authoredPreviewError && authoredPreviewPages.map((url, index) => <figure key={url}><figcaption>{index + 1} / {authoredPreviewPages.length}</figcaption><img src={url} alt={`${authoredPreview.quoteNumber} 견적서 ${index + 1}페이지`} /></figure>)}
             </div>
           </div>
         </div>

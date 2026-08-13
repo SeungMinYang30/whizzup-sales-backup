@@ -30,18 +30,30 @@ export default function OrganizationQuotationHistory({
 }) {
   const [quotes, setQuotes] = useState<AuthoredQuotation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [reloadVersion, setReloadVersion] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
-    void fetch(`/api/quotations?q=${encodeURIComponent(organization)}`, { cache: "no-store", signal: controller.signal })
-      .then((response) => response.json())
-      .then((payload: { quotations?: AuthoredQuotation[] }) => {
+    setError("");
+    void fetch(`/api/quotations?organization=${encodeURIComponent(organization)}&businessRound=${businessRound}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = (await response.json()) as { quotations?: AuthoredQuotation[]; error?: string };
+        if (!response.ok) throw new Error(payload.error || "견적서를 불러오지 못했습니다.");
+        return payload;
+      })
+      .then((payload) => {
         setQuotes((payload.quotations ?? []).filter((quote) => quote.organization === organization && quote.businessRound === businessRound));
         onLoaded?.();
       })
+      .catch((loadError) => {
+        if (controller.signal.aborted) return;
+        setQuotes([]);
+        setError(loadError instanceof Error ? loadError.message : "견적서를 불러오지 못했습니다.");
+      })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [businessRound, organization]);
+  }, [businessRound, organization, reloadVersion]);
   const visibleQuotes = useMemo(() => {
     const latestByRoot = new Map<number, AuthoredQuotation>();
     quotes.forEach((quote) => {
@@ -146,7 +158,7 @@ export default function OrganizationQuotationHistory({
     </section> : null}
     <section className="organization-quotation-history">
     <header><div><span className="section-kicker">QUOTATION HISTORY</span><h3>견적서 내역</h3>{readOnly && <p>최종 저장된 견적서와 PDF·Excel 파일을 확인합니다.</p>}</div><span>{visibleQuotes.length}건</span></header>
-    {loading ? <p>견적서를 불러오는 중입니다.</p> : visibleQuotes.length ? <div>{visibleQuotes.map((quote) => <article key={quote.id}>
+    {error ? <div className="quotation-history-empty" role="alert"><p>{error}</p><button className="quotation-history-action primary" type="button" onClick={() => setReloadVersion((version) => version + 1)}>다시 불러오기</button></div> : loading ? <p>견적서를 불러오는 중입니다.</p> : visibleQuotes.length ? <div>{visibleQuotes.map((quote) => <article key={quote.id}>
       <span className="quotation-history-main"><b>{quote.quoteNumber}</b><small>{quote.quoteDate} · {quote.status === "final" ? "현재 최종본" : "작성 중"}</small>{displayedBudgets(quote).length > 0 ? <small>연결 예산 · {displayedBudgets(quote).map((budget) => `${budget.name} ${won.format(budget.allocatedAmount)}원`).join(" · ")}</small> : <small>예산 연결 필요</small>}</span>
       <div className="quotation-history-summary"><strong>{won.format(quote.totalAmount)}원</strong><small>품목 {quote.items.filter((item) => item.productId !== "__construction_cost__").length}개{quote.items.some((item) => item.productId === "__construction_cost__") ? ` · 공사비 ${won.format(quote.items.filter((item) => item.productId === "__construction_cost__").reduce((sum, item) => sum + item.amount, 0))}원` : ""}</small><em>{quote.status === "final" ? "최종" : "임시"}</em></div>
       <div className="quotation-history-actions">

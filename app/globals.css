@@ -3801,7 +3801,9 @@ tr:hover .row-actions { opacity: 1; }
 .quotation-document-card { display: grid; grid-template-columns: 136px minmax(0, 1fr); overflow: hidden; border: 1px solid #dfe5ee; background: #fff; }
 .quotation-system-file-card { min-width: 0; }
 .quotation-system-thumbnail { position: relative; min-height: 174px; overflow: hidden; border-right: 1px solid #e4e8ef; background: linear-gradient(145deg,#e7ecf4,#f8faff); }
-.quotation-system-thumbnail iframe { width: 100%; height: 174px; border: 0; display: block; background: #fff; pointer-events: none; }
+.quotation-system-pdf-cover { display: grid; height: 174px; place-content: center; gap: 8px; padding: 14px; background: linear-gradient(145deg,#edf2fb,#fff); color: #50617e; text-align: center; }
+.quotation-system-pdf-cover b { display: grid; width: 58px; height: 72px; margin: 0 auto; place-items: center; border: 1px solid #cbd7ea; border-radius: 7px; background: #fff; color: #3157e6; font-size: 16px; box-shadow: 0 7px 18px rgba(33,57,101,.1); }
+.quotation-system-pdf-cover span { overflow: hidden; max-width: 180px; font-size: 8px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 .quotation-system-thumbnail > button { position: absolute; inset: 0; width: 100%; padding: 0 8px 9px; border: 0; display: flex; align-items: flex-end; justify-content: center; background: linear-gradient(transparent 62%,rgba(17,28,49,.86)); color: #fff; font-size: 9px; font-weight: 850; cursor: zoom-in; }
 .quotation-system-thumbnail > button:disabled { align-items: flex-end; cursor: default; opacity: .78; }
 .quotation-system-missing { height: 174px; display: grid; place-items: center; color: #9aa5b5; font-size: 13px; font-weight: 850; line-height: 1.5; text-align: center; }
@@ -3832,8 +3834,8 @@ tr:hover .row-actions { opacity: 1; }
 .quotation-preview-pages figure { width: min(800px, 100%); margin: 0 auto 20px; }
 .quotation-preview-pages figcaption { margin-bottom: 7px; color: #69778d; font-size: 9px; font-weight: 800; text-align: center; }
 .quotation-preview-pages img { width: 100%; height: auto; display: block; background: #fff; box-shadow: 0 5px 18px rgba(24,34,53,.16); }
-.quotation-system-preview-frame { flex: 1; min-height: 0; padding: 14px; }
-.quotation-system-preview-frame iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; box-shadow: 0 5px 18px rgba(24,34,53,.16); }
+.quotation-system-preview-pages { min-height: 0; }
+.quotation-preview-status { width: min(800px,100%); margin: 30px auto; padding: 24px; border: 1px solid #dbe3ef; border-radius: 10px; background: #fff; color: #68778e; text-align: center; font-weight: 800; }
 .settlement-print-preparing{position:fixed;inset:0;z-index:240;display:grid;place-items:center;align-content:center;gap:12px;background:rgba(247,249,253,.96);color:#344760}.settlement-print-preparing span{width:34px;height:34px;border:4px solid #dce4f5;border-top-color:#3157e6;border-radius:50%;animation:settlement-print-spin .8s linear infinite}.settlement-print-preparing strong{font-size:14px}@keyframes settlement-print-spin{to{transform:rotate(360deg)}}
 @media print{body.settlement-printing>*:not(.settlement-print-portal){display:none!important;visibility:hidden!important}body.settlement-printing>.settlement-print-portal,body.settlement-printing>.settlement-print-portal *{display:block!important;visibility:visible!important}.settlement-print-portal{width:100%!important;margin:0!important}.settlement-print-portal img{display:block!important;width:100%!important;height:auto!important;margin:0 auto!important;break-after:page;page-break-after:always}.settlement-print-portal img:last-child{break-after:auto;page-break-after:auto}}
 .quotation-analysis-layer { position: fixed; inset: 0; z-index: 170; display: grid; place-items: center; padding: 20px; }
@@ -7828,7 +7830,7 @@ tr:hover .row-actions { opacity: 1; }
   .quotation-file-group-heading { padding: 14px 12px 0; }
   .quotation-document-card { grid-template-columns: 1fr; overflow: hidden; border-radius: 12px; box-shadow: 0 5px 18px rgba(33,49,78,.08); }
   .quotation-system-thumbnail { min-height: 190px; height: 190px; border-right: 0; border-bottom: 1px solid #e4e8ef; }
-  .quotation-system-thumbnail iframe, .quotation-system-missing { height: 190px; }
+  .quotation-system-pdf-cover, .quotation-system-missing { height: 190px; }
   .quotation-thumbnail { min-height: 190px; height: 190px; border-right: 0; border-bottom: 1px solid #e4e8ef; background: #f0f3f8; }
   .quotation-thumbnail img { width: 100%; min-height: 190px; height: 190px; object-fit: cover; object-position: top; }
   .quotation-thumbnail span { padding: 9px; font-size: 10px; }

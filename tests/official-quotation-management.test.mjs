@@ -101,6 +101,14 @@ test("final quotation consortium and item details flow into institution history"
   assert.doesNotMatch(crm, /PREVIOUS EQUIPMENT DATA/);
 });
 
+test("institution history uses the exact organization round query and exposes load failures", () => {
+  assert.match(institutionQuotationHistory, /\/api\/quotations\?organization=\$\{encodeURIComponent\(organization\)\}&businessRound=\$\{businessRound\}/);
+  assert.doesNotMatch(institutionQuotationHistory, /\/api\/quotations\?q=/);
+  assert.match(institutionQuotationHistory, /if \(!response\.ok\) throw new Error/);
+  assert.match(institutionQuotationHistory, /role="alert"/);
+  assert.match(institutionQuotationHistory, />다시 불러오기<\/button>/);
+});
+
 test("teaching aids imports match by normalized item text and output only contract labels", () => {
   assert.match(page, /function normalizedEquipmentKitName/);
   assert.match(page, /normalizedEquipmentKitName\(line\.name\) === normalizedEquipmentKitName\(imported\.name\)/);
