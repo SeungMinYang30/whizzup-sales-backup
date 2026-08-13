@@ -946,10 +946,12 @@ export default function QuotationManagementPage({
     };
   }
 
-  function downloadInternalProfitExcel() {
+  async function downloadInternalProfitExcel() {
     const input = internalProfitExportInput(window.matchMedia("(max-width: 700px)").matches);
     if (!input || !draft) return;
-    const bytes = createInternalProfitReportWorkbook(input);
+    const logoResponse = await fetch("/whizzup-logo.png");
+    const logoData = logoResponse.ok ? new Uint8Array(await logoResponse.arrayBuffer()) : undefined;
+    const bytes = createInternalProfitReportWorkbook({ ...input, logoData });
     downloadBytes(bytes, `${safeFileName(draft.organization)}_${draft.quoteNumber || "견적"}_내부수익표.xlsx`);
     setMessage("PDF와 같은 구성의 내부 수익표 Excel을 만들었습니다.");
   }

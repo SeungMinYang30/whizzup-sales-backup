@@ -114,6 +114,7 @@ test("컨소 정산서 Excel은 내부 마진 없이 품목·비용 처리 방�
 
 test("내부 수익표 Excel은 PDF형 요약과 품목별 수식을 포함하는 실제 xlsx다", () => {
   const workbook = createInternalProfitReportWorkbook({
+    logoData: new Uint8Array([1, 2, 3]),
     organization: "덕벌초등학교",
     projectTitle: "가상현실 스포츠실",
     quoteNumber: "WZ-TEST-002",
@@ -126,7 +127,7 @@ test("내부 수익표 Excel은 PDF형 요약과 품목별 수식을 포함하�
     internalCost: 0,
     margin: 0,
     marginRate: 0,
-    rows: [{ number: 1, name: "콘텐츠", specification: "교육용 콘텐츠", quantity: 1, unit: "식", unitPrice: 15_000_000, complimentary: false, amount: 15_000_000, baseRate: 0.3, baseEarning: 4_500_000, earning: 4_500_000, consortiumRate: 0.3, consortium: 4_500_000, internalCostDisplay: 0, netProfit: 0, status: "일반" }],
+    rows: [{ number: 1, name: "콘텐츠", specification: "교육용 콘텐츠", quantity: 1, unit: "식", unitPrice: 15_000_000, complimentary: false, amount: 15_000_000, baseRate: 0.3, baseEarning: 4_500_000, earning: 4_500_000, consortiumRate: 0.3, consortium: 4_500_000, internalCost: 0, internalCostDisplay: 0, netProfit: 0, status: "일반" }],
   });
   const files = unzipSync(workbook);
   const sheet = strFromU8(files["xl/worksheets/sheet1.xml"]);
@@ -134,28 +135,37 @@ test("내부 수익표 Excel은 PDF형 요약과 품목별 수식을 포함하�
   const workbookXml = strFromU8(files["xl/workbook.xml"]);
   assert.match(workbookXml, /내부 수익표/);
   assert.match(sheet, /내 부  수 익 표/);
-  assert.match(sheet, /품목별 수익 내역 · 단위: 원/);
-  assert.match(sheet, /FLOOR\(F15\*G15,10\)/);
-  assert.match(sheet, /I15-K15-L15/);
-  assert.match(sheet, /orientation="landscape"/);
+  assert.match(sheet, /품목별 수익 내역/);
+  assert.match(sheet, /M13\*N13/);
+  assert.match(sheet, /FLOOR\(G13\*O13,10\)/);
+  assert.match(sheet, /I13-Q13-R13/);
+  assert.match(sheet, /orientation="portrait"/);
+  assert.match(sheet, /fitToHeight="1"/);
   assert.doesNotMatch(sheet, /<autoFilter/);
-  assert.match(sheet, /<mergeCell ref="A12:N12"/);
-  assert.match(sheet, /zoomScale="100"/);
-  assert.match(sheet, /<col min="13" max="13" width="18"/);
+  assert.match(sheet, /<mergeCell ref="A12:L12"/);
+  assert.match(sheet, /<mergeCell ref="B13:F13"/);
+  assert.match(sheet, /zoomScale="90"/);
+  assert.match(sheet, /<col min="13" max="18" width="2" hidden="1"/);
+  assert.match(workbookXml, /\$A\$1:\$L\$/);
+  assert.ok(files["xl/media/logo.png"]);
   assert.doesNotMatch(styles, /#,##0&quot;원&quot;/);
   assert.doesNotMatch(styles, /<xf[^>]*borderId="2"/);
+  assert.match(styles, /<name val="맑은 고딕"/);
+  assert.match(sheet, /r="B5"[^>]*s="3"/);
+  assert.match(sheet, /r="F5"[^>]*s="4"/);
+  assert.match(sheet, /r="F13"[^>]*s="9"/);
 });
 
-test("모바일 내부 수익표 Excel은 화면 이동이 쉬운 7열 간편 레이아웃을 만든다", () => {
+test("모바일 내부 수익표 Excel도 PDF형 단일 보고서 레이아웃을 유지한다", () => {
   const workbook = createInternalProfitReportWorkbook({
     compactView: true, organization: "모바일 기관", projectTitle: "가상현실 스포츠실", quoteNumber: "WZ-MOBILE", quoteDate: "2026-08-13", executionType: "직영", consortiumCompany: "", total: 50_000_000, earning: 15_000_000, consortium: 0, internalCost: 300_000, margin: 14_700_000, marginRate: 0.294,
-    rows: [{ number: 1, name: "아이핏 슬림형", specification: "멀티미디어학습장치", quantity: 1, unit: "대", unitPrice: 19_500_000, complimentary: false, amount: 19_500_000, baseRate: 0.3, baseEarning: 5_850_000, earning: 5_850_000, consortiumRate: 0, consortium: 0, internalCostDisplay: 300_000, netProfit: 5_550_000, status: "내부 비용 반영" }],
+    rows: [{ number: 1, name: "아이핏 슬림형", specification: "멀티미디어학습장치", quantity: 1, unit: "대", unitPrice: 19_500_000, complimentary: false, amount: 19_500_000, baseRate: 0.3, baseEarning: 5_850_000, earning: 5_850_000, consortiumRate: 0, consortium: 0, internalCost: 300_000, internalCostDisplay: 300_000, netProfit: 5_550_000, status: "내부 비용 반영" }],
   });
   const files = unzipSync(workbook);
   const sheet = strFromU8(files["xl/worksheets/sheet1.xml"]);
   const workbookXml = strFromU8(files["xl/workbook.xml"]);
-  assert.match(sheet, /dimension ref="A1:G/);
-  assert.match(sheet, /품목별 수익 내역 · 모바일 간편 보기/);
-  assert.match(sheet, /컨소·내부비용/);
-  assert.match(workbookXml, /\$A\$1:\$G\$/);
+  assert.match(sheet, /dimension ref="A1:R/);
+  assert.match(sheet, /품목별 수익 내역/);
+  assert.match(sheet, /컨소·내부 비용을 반영한 최종 예상 수익/);
+  assert.match(workbookXml, /\$A\$1:\$L\$/);
 });
