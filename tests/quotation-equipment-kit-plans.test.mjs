@@ -22,6 +22,9 @@ test("teaching-aid support is stored as an internal margin deduction only", () =
   assert.match(store, /marginAmount[\s\S]*- teachingAidSupportCost/);
   assert.match(page, /교구 할인·지원 차감/);
   assert.match(page, /고객 견적금액과 PDF·Excel에는 반영하지 않고 내부 마진에서만 차감합니다/);
+  assert.match(page, /quotation-teaching-aid-support[\s\S]*?item\.equipmentKit \? <label className=\{\`quotation-complimentary-toggle/);
+  assert.equal(page.match(/quotation-complimentary-toggle/g)?.length, 1);
+  assert.match(page, /교구 세트 무상 제공/);
   assert.doesNotMatch(pdf, /teachingAidSupport/);
   assert.doesNotMatch(workbook, /teachingAidSupport/);
 });

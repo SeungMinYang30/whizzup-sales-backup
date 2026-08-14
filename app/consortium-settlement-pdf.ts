@@ -1,5 +1,4 @@
 import type { ConsortiumSettlementWorkbookInput } from "../lib/consortium-settlement-xlsx";
-import { internalProfitCostCategoryLabel } from "../lib/internal-profit-cost-details";
 import type { InternalProfitReportWorkbookInput } from "../lib/internal-profit-report-xlsx";
 import { formatQuotationItemNameForOutput } from "../lib/quotation-output-text";
 
@@ -329,28 +328,28 @@ function drawProfitCostDetails(
 ) {
   let y = sectionRow(context, startY, "내부 비용·지원·콘텐츠 대체 상세");
   rows.forEach((detail) => {
-    cell(context, 72, y, 220, 50, internalProfitCostCategoryLabel(detail.category), {
-      fill: "#fff5e8",
-      color: "#9b5a28",
-      bold: true,
-      size: 13,
-    });
-    cell(context, 292, y, 310, 50, detail.itemName || "공통", {
-      bold: true,
-      size: 13,
-    });
-    cell(context, 602, y, 350, 50, detail.note || "-", {
-      color: "#52617d",
-      size: 12,
-    });
-    cell(context, 952, y, 216, 50, `-${won.format(Math.abs(detail.amount))}원`, {
-      fill: "#fff5e8",
+    const description = [detail.itemName || "공통", detail.note].filter(Boolean).join(" · ");
+    context.fillStyle = "#ffffff";
+    context.fillRect(72, y, 880, 58);
+    context.strokeStyle = "#cbd6e7";
+    context.lineWidth = 1;
+    context.strokeRect(72, y, 880, 58);
+    context.textAlign = "left";
+    context.textBaseline = "middle";
+    context.fillStyle = "#263751";
+    context.font = '800 14px "Malgun Gothic", sans-serif';
+    context.fillText(fitText(context, detail.label, 850), 84, y + 20);
+    context.fillStyle = "#6c7c94";
+    context.font = '500 11px "Malgun Gothic", sans-serif';
+    context.fillText(fitText(context, description, 850), 84, y + 41);
+    cell(context, 952, y, 216, 58, `-${won.format(Math.abs(detail.amount))}원`, {
+      fill: "#ffffff",
       color: "#c24b3f",
       align: "right",
       bold: true,
       size: 15,
     });
-    y += 50;
+    y += 58;
   });
   return y;
 }

@@ -14,7 +14,13 @@ test("내부 수익 상세 분류에는 한글 표시명을 사용한다", () =>
   assert.equal(internalProfitCostCategoryLabel("support"), "교구 할인·지원");
   assert.equal(internalProfitCostCategoryLabel("internal-cost"), "내부 비용");
   assert.equal(internalProfitCostCategoryLabel("bypass"), "콘텐츠 대체");
-  assert.match(pdf, /internalProfitCostCategoryLabel\(detail\.category\)/);
+  assert.match(pdf, /context\.fillText\(fitText\(context, detail\.label/);
+  assert.match(pdf, /\[detail\.itemName \|\| "공통", detail\.note\]/);
+});
+
+test("바이패스 잔액이 없으면 잔액 수수료 문구를 표시하지 않는다", () => {
+  assert.match(page, /const remainingAmount = [\s\S]*?note: remainingAmount > 0/);
+  assert.match(page, /: "대체 비용 반영"/);
 });
 
 test("추가 공사비는 사업명이 아닌 공사비 항목으로 출력한다", () => {

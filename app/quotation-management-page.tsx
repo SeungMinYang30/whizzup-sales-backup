@@ -937,11 +937,14 @@ export default function QuotationManagementPage({
       const itemCost = item.internalCostEnabled ? Math.max(0, item.internalCostAmount) : 0;
       if (contentSubstitution && itemCost > 0) {
         const baseRate = contentSubstitutionBaseEarningRate(item);
+        const remainingAmount = (item.complimentary ? 0 : Math.max(0, item.quantity) * Math.max(0, item.unitPrice)) - itemCost;
         details.push({
           label: "콘텐츠 대체(바이패스)",
           itemName: item.name,
           amount: itemCost,
-          note: `대체 비용 반영 · 남은 금액에 ${(baseRate * 100).toFixed(1)}% 수수료 적용`,
+          note: remainingAmount > 0
+            ? `대체 비용 반영 · 남은 금액에 ${(baseRate * 100).toFixed(1)}% 수수료 적용`
+            : "대체 비용 반영",
           category: "bypass",
         });
       } else if (itemCost > 0 && (draft?.executionType !== "컨소" || item.internalCostBearer === "whizzup")) {
@@ -2677,7 +2680,6 @@ export default function QuotationManagementPage({
                       <div><span>조달수수료</span><strong>{won.format(procurementFee)}원</strong></div>
                       <div><span>견적금액</span><strong>{won.format(quotationAmount)}원</strong></div>
                     </div>
-                    <label className={`quotation-complimentary-toggle${item.complimentary ? " active" : ""}`}><input type="checkbox" checked={Boolean(item.complimentary)} onChange={(event) => updateItem(item.id, { complimentary: event.target.checked })} /><span><b>무상 제공</b><small>품명·규격·수량은 출력하고 금액과 수익 계산에서는 제외합니다.</small></span></label>
                     <div className="quotation-item-card-controls">
                       <div className="quotation-contract-type"><span>계약 구분</span><div><button type="button" className={!item.procurement ? "active" : ""} onClick={() => setItemContractType(item.id, "direct")}>수의계약</button><button type="button" className={item.procurement && !isS2BChannel(item.procurementChannel) ? "active" : ""} onClick={() => setItemContractType(item.id, "g2b")}>조달 계약</button><button type="button" className={item.procurement && isS2BChannel(item.procurementChannel) ? "active" : ""} onClick={() => setItemContractType(item.id, "s2b")}>학교장터</button></div></div>
                       {item.procurement ? <label><span>식별번호</span><input value={item.procurementNumber} onChange={(event) => updateItem(item.id, { procurementNumber: event.target.value.replace(/[^0-9-]/g, "") })} placeholder={isS2BChannel(item.procurementChannel) ? "S2B 번호" : "G2B 물품식별번호"} /></label> : null}
@@ -2728,6 +2730,7 @@ export default function QuotationManagementPage({
                       {supportsTeachingAidDiscount(item) && <div className="quotation-teaching-aid-support">
                         <label><span>교구 할인·지원 차감</span><input value={item.teachingAidSupportLabel ?? "교구 할인 차감"} onChange={(event) => updateItem(item.id, { teachingAidSupportLabel: event.target.value })} placeholder="예: 교구 할인 차감" /></label>
                         <label><span>내부 차감 금액</span><span className="quotation-money-input"><FormattedMoneyInput value={item.teachingAidSupportAmount ?? 0} onChange={(teachingAidSupportAmount) => updateItem(item.id, { teachingAidSupportAmount })} label="교구 할인·지원 차감 금액" /><b>원</b></span></label>
+                        {item.equipmentKit ? <label className={`quotation-complimentary-toggle${item.complimentary ? " active" : ""}`}><input type="checkbox" checked={Boolean(item.complimentary)} onChange={(event) => updateItem(item.id, { complimentary: event.target.checked })} /><span><b>교구 세트 무상 제공</b><small>품명·규격·수량은 출력하고 금액과 수익 계산에서는 제외합니다.</small></span></label> : null}
                         <small>고객 견적금액과 PDF·Excel에는 반영하지 않고 내부 마진에서만 차감합니다.</small>
                       </div>}
                     </div>
@@ -2847,7 +2850,7 @@ export default function QuotationManagementPage({
             </article>)}</div>
             {internalCostDetails.length > 0 && <section className="internal-profit-print-cost-details">
               <h2>내부 비용·지원·콘텐츠 대체 상세</h2>
-              <table><thead><tr><th>구분</th><th>적용 품목</th><th>처리 기준</th><th>차감 금액</th></tr></thead><tbody>{internalCostDetails.map((detail, index) => <tr key={`internal-profit-cost-${detail.label}-${index}`}><td>{detail.label}</td><td>{detail.itemName}</td><td>{detail.note || "최종 총이익 차감"}</td><td>-{won.format(detail.amount)}원</td></tr>)}</tbody></table>
+              <ul>{internalCostDetails.map((detail, index) => <li key={`internal-profit-cost-${detail.label}-${index}`}><span><strong>{detail.label}</strong><small>{detail.itemName}{detail.note ? ` · ${detail.note}` : ""}</small></span><b>-{won.format(detail.amount)}원</b></li>)}</ul>
             </section>}
             <footer className="internal-profit-print-total"><span>컨소·내부 비용을 반영한 최종 예상 수익<small>마진율 {(numbers.marginRate * 100).toFixed(1)}%</small></span><strong>{won.format(numbers.margin)}원</strong></footer>
             <p className="internal-profit-print-note"><span>본 자료는 내부 수익 검토용이며 외부 견적서에는 포함되지 않습니다.</span><b>주식회사 위즈업</b></p>
