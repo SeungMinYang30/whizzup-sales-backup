@@ -319,8 +319,8 @@ async function resolveCampaignTargetLink(
        JOIN sales_campaigns c ON c.id = t.campaign_id
        WHERE t.business_round = ?
          AND (
-           (? IS NOT NULL AND c.budget_group_id = ?)
-           OR (? IS NULL AND c.budget_type = ?)
+           (?::bigint IS NOT NULL AND c.budget_group_id = ?::bigint)
+           OR (?::bigint IS NULL AND c.budget_type = ?::text)
          )
        ORDER BY c.selection_date DESC, t.id DESC`,
     )
@@ -1161,7 +1161,8 @@ export async function createJointProject(
       `INSERT INTO joint_projects (
          name, sponsor_organization, campaign_id, budget_group_id,
          budget_type, project_year, joint_round, notes, status, created_by
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+       RETURNING id`,
     )
     .bind(
       name,
@@ -1175,7 +1176,7 @@ export async function createJointProject(
       member.id,
     )
     .run();
-  const projectId = Number(inserted.meta.last_row_id);
+  const projectId = Number(inserted.results[0]?.id ?? inserted.meta.last_row_id);
   try {
     await d1.batch([
       ...uniqueMembers.map((item) =>
