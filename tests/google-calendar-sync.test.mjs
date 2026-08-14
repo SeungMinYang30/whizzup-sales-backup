@@ -195,7 +195,8 @@ test("공유 업무만 Google로 보내고 입력 제목과 개인 일정 정책
   assert.match(api, /googleCalendarTitle\(schedule\)/);
   assert.match(title, /scheduleTitleForGoogle\(input\.label\)/);
   assert.match(title, /: scheduleTitle \|\| input\.organization/);
-  assert.match(title, /`\[시공\] \$\{input\.organization\} · \$\{input\.productSummary/);
+  assert.match(title, /const constructionStage = cleanLabel \|\| scheduleTitle \|\| "시공"/);
+  assert.match(title, /`\[\$\{constructionStage\}\] \$\{input\.organization\}/);
   assert.match(api, /removeOriginalGoogleTitleNote\(schedule\.details \|\| ""\)/);
   assert.doesNotMatch(sync, /`원본 Google 제목: \$\{/);
   assert.match(sync, /event\.summary\.trim\(\) !== expectedSummary/);
@@ -244,6 +245,10 @@ test("시공 일정 저장 응답은 Google 동기화를 기다리지 않고 범
   assert.doesNotMatch(branch, /await flushGoogleCalendarSync\(\{ limit:/);
   assert.match(branch, /project: saved\.project/);
   assert.match(branch, /googleSyncPending: saved\.syncIds\.length > 0/);
+  assert.match(constructionPage, /const savedScope = scopeKey\(editor\.organization, editor\.businessRound\)/);
+  assert.match(constructionPage, /setProjects\(\(current\) => \[/);
+  assert.match(constructionPage, /setSchedules\(\(current\) => \[/);
+  assert.match(constructionPage, /onSchedulesChanged\?\.\(\)/);
   assert.match(store, /Promise<ConstructionScheduleSaveResult>/);
   assert.match(store, /WHERE organization = \? AND business_round = \? AND category = 'construction'/);
 });

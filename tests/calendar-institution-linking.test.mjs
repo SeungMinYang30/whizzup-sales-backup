@@ -42,3 +42,10 @@ test("검색 결과와 신규 기관 버튼은 분리되고 작은 화면에서�
   assert.match(styles, /\.home-schedule-editor \{ width: min\(560px, 94vw\); max-height:/);
   assert.match(styles, /\.home-schedule-editor \{ width: 100%; max-height: calc\(100dvh - 16px\); padding: 18px 15px; overflow-y: auto;/);
 });
+
+test("Google 일정 연결창은 일반 편집창보다 조밀하게 한 화면에 표시한다", () => {
+  assert.match(calendar, /editor\.googleEventId \? " google-link-editor" : ""/);
+  assert.match(styles, /\.home-schedule-editor\.google-link-editor \{ max-height: calc\(100dvh - 24px\); padding: 16px 18px; \}/);
+  assert.match(styles, /\.google-link-editor > label textarea \{ min-height: 64px;[\s\S]*resize: none;/);
+  assert.match(styles, /\.google-link-editor footer \{ margin-top: 10px; padding-top: 10px; \}/);
+});

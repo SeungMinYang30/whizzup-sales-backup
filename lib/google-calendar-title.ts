@@ -31,8 +31,10 @@ export function googleCalendarTitle(input: CalendarTitleInput) {
   const cleanLabel = scheduleTitle
     .replace(new RegExp(`^${escapeRegExp(input.organization)}\\s*[·•-]?\\s*`, "u"), "")
     .trim();
+  const constructionStage = cleanLabel || scheduleTitle || "시공";
+  const constructionProducts = input.productSummary?.trim();
   const summary = category === "construction"
-    ? `[시공] ${input.organization} · ${input.productSummary?.trim() || cleanLabel || scheduleTitle}`
+    ? `[${constructionStage}] ${input.organization}${constructionProducts ? ` · ${constructionProducts}` : ""}`
     : scheduleTitle || input.organization;
   return { category, cleanLabel, summary };
 }

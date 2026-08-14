@@ -16428,6 +16428,10 @@ export default function CrmApp({
                   isPrimaryOwner={isPrimaryOwner}
                   formatManagerName={displayProgressManager}
                   onDashboardCounts={setConstructionDashboardCounts}
+                  onSchedulesChanged={() => {
+                    setScheduleReminderRefreshVersion((current) => current + 1);
+                    void loadRecords("full");
+                  }}
                   onOpenOrganization={(organization, businessRound) => {
                     setDetailBusinessRound(businessRound);
                     setDetailOrganization(organization);
@@ -16785,6 +16789,10 @@ export default function CrmApp({
                 isPrimaryOwner={isPrimaryOwner}
                 formatManagerName={displayProgressManager}
                 onDashboardCounts={setConstructionDashboardCounts}
+                onSchedulesChanged={() => {
+                  setScheduleReminderRefreshVersion((current) => current + 1);
+                  void loadRecords("full");
+                }}
                 onOpenOrganization={(organization, businessRound) => {
                   setDetailBusinessRound(businessRound);
                   setDetailOrganization(organization);

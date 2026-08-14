@@ -109,6 +109,7 @@ export default function ConstructionSchedulePage({
   embedded = false,
   isPrimaryOwner = false,
   onDashboardCounts,
+  onSchedulesChanged,
   formatManagerName = (name) => name || "미정",
 }: {
   records: ScheduleRecord[];
@@ -116,6 +117,7 @@ export default function ConstructionSchedulePage({
   embedded?: boolean;
   isPrimaryOwner?: boolean;
   onDashboardCounts?: (counts: { planned: number; active: number; completed: number }) => void;
+  onSchedulesChanged?: () => void | Promise<void>;
   formatManagerName?: (name: string) => string;
 }) {
   const today = localDate();
@@ -491,15 +493,25 @@ export default function ConstructionSchedulePage({
         }),
       });
       const payload = (await response.json()) as {
-        projects?: ConstructionProject[];
+        project?: ConstructionProject;
         schedules?: ConstructionSchedule[];
         error?: string;
       };
       if (!response.ok) throw new Error(payload.error || "일정을 저장하지 못했습니다.");
-      setProjects(payload.projects ?? []);
-      setSchedules(payload.schedules ?? []);
+      const savedScope = scopeKey(editor.organization, editor.businessRound);
+      if (payload.project) {
+        setProjects((current) => [
+          ...current.filter((project) => scopeKey(project.organization, project.businessRound) !== savedScope),
+          payload.project as ConstructionProject,
+        ]);
+      }
+      setSchedules((current) => [
+        ...current.filter((schedule) => scopeKey(schedule.organization, schedule.businessRound) !== savedScope),
+        ...(payload.schedules ?? []),
+      ]);
       setEditor(null);
       setMessage("일정이 기관 상세와 HOME에 함께 반영되었습니다.");
+      void Promise.resolve(onSchedulesChanged?.()).catch(() => undefined);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "일정을 저장하지 못했습니다.");
     } finally {

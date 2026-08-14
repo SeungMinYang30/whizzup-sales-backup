@@ -759,7 +759,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       </div>
 
       {editorOpen ? <div className="schedule-editor-shell" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setEditorOpen(false); }}>
-        <div className="home-schedule-editor" role="dialog" aria-modal="true">
+        <div className={`home-schedule-editor${editor.googleEventId ? " google-link-editor" : ""}`} role="dialog" aria-modal="true">
           <header><div><span className="section-kicker">{editor.googleEventId ? "CONNECT GOOGLE SCHEDULE" : editor.scheduleId ? "EDIT SCHEDULE" : "NEW SCHEDULE"}</span><h3>{editor.googleEventId ? "Google 일정 연결" : editor.scheduleId ? "일정 수정" : "일정 등록"}</h3><p>{editor.googleEventId ? "추천 내용을 확인하고 기관·분류·담당자를 연결해 주세요." : "시공 일정은 시공·납품 일정표에서 관리하고 이 화면에는 자동 연동됩니다."}</p></div><button type="button" aria-label="닫기" onClick={() => setEditorOpen(false)}>×</button></header>
           <div className="home-schedule-kind">{((editor.googleEventId ? ["영업", "회의", "시공", "쇼룸", "기타"] : editor.scheduleId ? ["영업", "회의", "시공", "쇼룸", "기타", "내 일정"] : ["영업", "회의", "시공", "쇼룸", "기타", "내 일정"]) as EditorKind[]).map((kind) => <button type="button" key={kind} className={editor.kind === kind ? "active" : ""} onClick={() => setEditor((current) => ({ ...current, kind }))}>{kind}</button>)}</div>
           <div className="home-schedule-institution">

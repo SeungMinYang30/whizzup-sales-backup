@@ -11746,6 +11746,24 @@ tr:hover .row-actions { opacity: 1; }
 .home-schedule-editor footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; padding-top: 15px; border-top: 1px solid #e5e9f0; }
 .home-schedule-editor .schedule-completed { font-size: 13px; line-height: 1.35; }
 .home-schedule-editor footer button { min-width: 82px; min-height: 40px; font-size: 13px; }
+.home-schedule-editor.google-link-editor { max-height: calc(100dvh - 24px); padding: 16px 18px; }
+.google-link-editor > header { padding-bottom: 10px; }
+.google-link-editor h3 { margin-block: 3px; font-size: 21px; }
+.google-link-editor header p { font-size: 12px; line-height: 1.4; }
+.google-link-editor .home-schedule-kind { gap: 6px; margin-top: 10px; }
+.google-link-editor .home-schedule-kind button { min-height: 36px; }
+.google-link-editor > label,
+.google-link-editor .home-schedule-institution { gap: 4px; margin-top: 8px; }
+.google-link-editor > label input,
+.google-link-editor > label select,
+.google-link-editor .home-schedule-institution-search > input,
+.google-link-editor .home-schedule-date-grid input,
+.google-link-editor .home-schedule-time-grid select { min-height: 40px; }
+.google-link-editor > label textarea { min-height: 64px; padding-block: 8px; line-height: 1.4; resize: none; }
+.google-link-editor .home-schedule-date-grid,
+.google-link-editor .home-schedule-time-grid { gap: 8px; margin-top: 8px; }
+.google-link-editor .home-schedule-date-grid > .schedule-all-day { min-height: 40px; }
+.google-link-editor footer { margin-top: 10px; padding-top: 10px; }
 
 /* 시공·납품 일정표의 화면/엑셀 공통 의미 색상: 토요일, 휴일, 오늘 */
 .construction-days > span { position: relative; flex-direction: column; gap: 2px; }
