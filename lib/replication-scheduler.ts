@@ -8,9 +8,31 @@ type VaultSecretRow = {
   id: string;
 };
 
+type VaultDecryptedSecretRow = {
+  decrypted_secret: string;
+};
+
 type CronJobRow = {
   jobid: number;
 };
+
+export async function getStoredStandbySyncSecret() {
+  try {
+    const row = await getD1()
+      .prepare(
+        `SELECT decrypted_secret
+         FROM vault.decrypted_secrets
+         WHERE name = ?
+         ORDER BY created_at DESC
+         LIMIT 1`,
+      )
+      .bind(VAULT_SECRET_NAME)
+      .first<VaultDecryptedSecretRow>();
+    return String(row?.decrypted_secret || "").trim();
+  } catch {
+    return "";
+  }
+}
 
 export async function getStandbyScheduleStatus() {
   try {

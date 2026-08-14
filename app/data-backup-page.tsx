@@ -88,6 +88,7 @@ export default function DataBackupPage({
     useState<StandbyScheduleState | null>(null);
   const [standbyScheduleAvailable, setStandbyScheduleAvailable] = useState(false);
   const [standbyScheduleError, setStandbyScheduleError] = useState("");
+  const [standbyConnectionKey, setStandbyConnectionKey] = useState("");
   const [safetyBackupDownloaded, setSafetyBackupDownloaded] = useState(false);
   useEffect(() => {
     const savedAt = window.localStorage.getItem("whizzup-last-full-backup-at");
@@ -164,7 +165,13 @@ export default function DataBackupPage({
     try {
       setBusy("configure-standby");
       setStandbyScheduleError("");
-      const response = await fetch("/api/standby-schedule", { method: "POST" });
+      const response = await fetch("/api/standby-schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          syncSecret: standbyConnectionKey.trim() || undefined,
+        }),
+      });
       const payload = (await response.json()) as {
         ok?: boolean;
         origin?: string;
@@ -180,6 +187,7 @@ export default function DataBackupPage({
         configured: true,
         schedule: payload.schedule?.schedule || "*/10 * * * *",
       });
+      setStandbyConnectionKey("");
       notify("Sites 대기판 예약과 즉시 동기화를 완료했습니다.");
     } catch (error) {
       setStandbyScheduleError(
@@ -502,6 +510,17 @@ export default function DataBackupPage({
                   ? "지금 동기화"
                   : "10분 자동 복제 시작"}
             </button>
+            <label className="standby-connection-key">
+              <span>연결키 재설정</span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={standbyConnectionKey}
+                placeholder="필요할 때만 입력"
+                disabled={Boolean(busy)}
+                onChange={(event) => setStandbyConnectionKey(event.target.value)}
+              />
+            </label>
           </div>
         )}
         {standbyScheduleError && (

@@ -4,6 +4,7 @@ import {
 } from "../../../lib/collaboration";
 import {
   configureStandbySchedule,
+  getStoredStandbySyncSecret,
   getStandbyScheduleStatus,
   removeStandbySchedule,
 } from "../../../lib/replication-scheduler";
@@ -17,8 +18,18 @@ function serverValue(name: string) {
   return String(process.env[name] ?? "").trim();
 }
 
-function syncSecret() {
+async function syncSecret(request?: Request) {
+  const body = request
+    ? ((await request.json().catch(() => null)) as { syncSecret?: unknown } | null)
+    : null;
+  const requested =
+    typeof body?.syncSecret === "string" ? body.syncSecret.trim() : "";
+  if (requested && requested.length < 32) {
+    throw new Error("대기판 연결키는 32자 이상이어야 합니다.");
+  }
   const secret =
+    requested ||
+    (await getStoredStandbySyncSecret()) ||
     serverValue("STANDBY_SYNC_SECRET") || serverValue("STANDBY_EXPORT_SECRET");
   if (!secret) {
     throw new Error("Standby replication secret is not configured");
@@ -46,11 +57,11 @@ export async function GET() {
   }
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     await requirePrimaryOwner();
     const origin = standbyOrigin();
-    const secret = syncSecret();
+    const secret = await syncSecret(request);
     const schedule = await configureStandbySchedule({
       syncUrl: `${origin}/api/standby-sync`,
       syncSecret: secret,

@@ -41,6 +41,10 @@ const scheduleRoute = await readFile(
   new URL("../app/api/standby-schedule/route.ts", import.meta.url),
   "utf8",
 );
+const exportRoute = await readFile(
+  new URL("../app/api/standby-export/route.ts", import.meta.url),
+  "utf8",
+);
 
 test("standby sync is one-way, authenticated, bounded, and uncached", () => {
   assert.match(syncRoute, /STANDBY_SYNC_SECRET/);
@@ -135,6 +139,9 @@ test("primary owner can schedule the current Sites standby every ten minutes", (
   assert.match(scheduleRoute, /STANDBY_EXPORT_SECRET/);
   assert.match(scheduleRoute, /fetch\(`\$\{origin\}\/api\/standby-sync`/);
   assert.match(scheduleRoute, /AbortSignal\.timeout\(90_000\)/);
+  assert.match(scheduleRoute, /getStoredStandbySyncSecret/);
+  assert.match(scheduleRoute, /syncSecret\?: unknown/);
+  assert.match(exportRoute, /getStoredStandbySyncSecret/);
   assert.match(syncRoute, /STANDBY_SYNC_SECRET[\s\S]*STANDBY_EXPORT_SECRET/);
   assert.match(syncRoute, /PRIMARY_EXPORT_SECRET[\s\S]*STANDBY_EXPORT_SECRET/);
 });

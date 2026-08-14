@@ -1,5 +1,6 @@
 import { createFullBackup } from "../../../lib/backup-store";
 import { createStandbyCredentialSnapshot } from "../../../lib/standby-credentials";
+import { getStoredStandbySyncSecret } from "../../../lib/replication-scheduler";
 
 export const dynamic = "force-dynamic";
 
@@ -23,14 +24,18 @@ function secureEqual(left: string, right: string) {
   return difference === 0;
 }
 
-function authorized(request: Request) {
-  const secret = runtimeSecret();
+async function authorized(request: Request) {
+  const secrets = [runtimeSecret(), await getStoredStandbySyncSecret()].filter(
+    Boolean,
+  );
   const authorization = request.headers.get("authorization") ?? "";
-  return Boolean(secret) && secureEqual(authorization, `Bearer ${secret}`);
+  return secrets.some((secret) =>
+    secureEqual(authorization, `Bearer ${secret}`),
+  );
 }
 
 export async function GET(request: Request) {
-  if (!authorized(request)) {
+  if (!(await authorized(request))) {
     return Response.json({ error: "인증되지 않은 요청입니다." }, { status: 401 });
   }
 
