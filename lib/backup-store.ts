@@ -188,6 +188,8 @@ export const BACKUP_TABLES = [
     name: "members",
     columns: [
       "id",
+      "sync_id",
+      "auth_user_id",
       "email",
       "display_name",
       "job_title",
@@ -207,6 +209,7 @@ export const BACKUP_TABLES = [
     name: "activities",
     columns: [
       "id",
+      "sync_id",
       "seed_key",
       "activity_date",
       "date_confidence",
@@ -704,6 +707,7 @@ export const BACKUP_TABLES = [
     name: "organization_locations",
     columns: [
       "organization",
+      "sync_id",
       "region",
       "address",
       "road_address",
@@ -720,6 +724,7 @@ export const BACKUP_TABLES = [
     name: "sales_campaigns",
     columns: [
       "id",
+      "sync_id",
       "name",
       "notes",
       "budget_type",
@@ -745,6 +750,7 @@ export const BACKUP_TABLES = [
     name: "sales_campaign_targets",
     columns: [
       "id",
+      "sync_id",
       "campaign_id",
       "organization",
       "region",
@@ -973,6 +979,7 @@ export const BACKUP_TABLES = [
     name: "equipment_projects",
     columns: [
       "id",
+      "sync_id",
       "activity_id",
       "organization",
       "business_round",
@@ -998,6 +1005,7 @@ export const BACKUP_TABLES = [
     name: "equipment_items",
     columns: [
       "id",
+      "sync_id",
       "project_id",
       "product_name",
       "specification",

@@ -83,6 +83,22 @@ test("full backup preserves accounting history whose source activity is already 
   );
 });
 
+test("Vercel identity and sync columns are preserved for every migrated core table", () => {
+  assert.match(backup, /"sync_id",\s*\n\s*"auth_user_id",\s*\n\s*"email"/);
+  for (const table of [
+    "activities",
+    "organization_locations",
+    "sales_campaigns",
+    "sales_campaign_targets",
+    "equipment_projects",
+    "equipment_items",
+  ]) {
+    const tableStart = backup.indexOf(`name: "${table}"`);
+    assert.notEqual(tableStart, -1);
+    assert.match(backup.slice(tableStart, tableStart + 240), /"sync_id"/);
+  }
+});
+
 test("activity CSV preserves and re-resolves every budget allocation", () => {
   assert.match(activityCsv, /"예산 목록 JSON"/);
   assert.match(activityCsv, /row\.budgets_json/);
