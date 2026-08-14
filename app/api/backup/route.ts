@@ -17,13 +17,16 @@ import {
 import {
   createEmergencyRecoveryPackage,
   createOfflineStandalonePackage,
+  verifyEmergencyRecoveryPackage,
 } from "../../../lib/recovery-packages";
 import {
+  createDriveResumableUpload,
   downloadDriveFile,
   ensureDrivePath,
   isDriveFolder,
   listDriveChildren,
   uploadDriveFile,
+  uploadDriveResumableChunk,
 } from "../../../lib/google-drive-storage";
 import { gunzipSync, gzipSync } from "node:zlib";
 
@@ -87,6 +90,75 @@ async function archiveFullBackupToDrive() {
     checksum: backup.checksum,
     totalRows: Object.values(backup.counts).reduce((sum, count) => sum + count, 0),
     ...stored,
+  };
+}
+
+function bytesArrayBuffer(bytes: Uint8Array) {
+  return bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+}
+
+async function sha256Bytes(bytes: Uint8Array) {
+  const digest = await crypto.subtle.digest("SHA-256", bytesArrayBuffer(bytes));
+  return Array.from(new Uint8Array(digest), (value) =>
+    value.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+async function archiveEmergencyRecoveryToDrive(createdBy: number) {
+  const backup = await createFullBackup();
+  const timestamp = backupTimestampValue(backup.createdAt);
+  const fileName = `WHIZZUP_emergency_recovery_${timestamp.fileStamp}.zip`;
+  const bytes = createEmergencyRecoveryPackage(backup);
+  const verification = verifyEmergencyRecoveryPackage(bytes, backup);
+  const packageSha256 = await sha256Bytes(bytes);
+  const session = await createDriveResumableUpload({
+    fileName,
+    mimeType: "application/zip",
+    sizeBytes: bytes.byteLength,
+    folderSegments: [
+      "WHIZZUP 비상복구",
+      "안전본",
+      timestamp.year,
+      timestamp.month,
+    ],
+    contextType: "emergency-recovery",
+    contextId: backup.checksum,
+    contextCategory: verification.sourceRelease,
+    createdBy,
+  });
+  const uploaded = await uploadDriveResumableChunk({
+    uploadUrl: session.uploadUrl,
+    body: bytesArrayBuffer(bytes),
+    contentRange: `bytes 0-${bytes.byteLength - 1}/${bytes.byteLength}`,
+    mimeType: "application/zip",
+  });
+  if (!uploaded.complete) {
+    throw new Error("Google Drive 비상복구 패키지 업로드가 완료되지 않았습니다.");
+  }
+  const storedResponse = await downloadDriveFile(uploaded.file.id);
+  if (!storedResponse.ok) {
+    throw new Error("Google Drive에 저장한 비상복구 패키지를 다시 확인하지 못했습니다.");
+  }
+  const storedBytes = new Uint8Array(await storedResponse.arrayBuffer());
+  const storedSha256 = await sha256Bytes(storedBytes);
+  if (
+    storedBytes.byteLength !== bytes.byteLength ||
+    storedSha256 !== packageSha256
+  ) {
+    throw new Error("Google Drive에 저장된 비상복구 패키지의 무결성이 일치하지 않습니다.");
+  }
+  return {
+    fileId: uploaded.file.id,
+    fileName,
+    folderPath: `WHIZZUP 비상복구/안전본/${timestamp.year}/${timestamp.month}`,
+    createdAt: backup.createdAt,
+    sizeBytes: storedBytes.byteLength,
+    packageSha256,
+    verified: true,
+    ...verification,
   };
 }
 
@@ -278,6 +350,10 @@ export async function POST(request: Request) {
 
     if (payload.action === "archive-full-backup") {
       const archive = await archiveFullBackupToDrive();
+      return Response.json({ ok: true, archive });
+    }
+    if (payload.action === "archive-emergency-recovery") {
+      const archive = await archiveEmergencyRecoveryToDrive(member.id);
       return Response.json({ ok: true, archive });
     }
     if (payload.action === "list-drive-backups") {

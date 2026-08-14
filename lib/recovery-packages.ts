@@ -1,10 +1,12 @@
-import { strToU8, zipSync } from "fflate";
+import { createHash } from "node:crypto";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { FullBackup } from "./backup-store";
 import {
   RECOVERY_SOURCE_ASSET_PATH,
   RECOVERY_SOURCE_FILE_COUNT,
+  RECOVERY_SOURCE_RELEASE,
   RECOVERY_SOURCE_SHA256,
 } from "./generated-recovery-source";
 
@@ -31,6 +33,7 @@ function emergencyGuide(backup: FullBackup) {
     `생성일시: ${backup.createdAt}`,
     `데이터 무결성 코드: ${backup.checksum}`,
     `소스 파일 수: ${RECOVERY_SOURCE_FILE_COUNT}`,
+    `소스 배포 버전: ${RECOVERY_SOURCE_RELEASE}`,
     "",
     "포함 파일",
     "1. WHIZZUP_source.zip",
@@ -65,6 +68,7 @@ export function createEmergencyRecoveryPackage(backup: FullBackup) {
     createdAt: backup.createdAt,
     sourceFileCount: RECOVERY_SOURCE_FILE_COUNT,
     sourceSha256: RECOVERY_SOURCE_SHA256,
+    sourceRelease: RECOVERY_SOURCE_RELEASE,
     backupChecksum: backup.checksum,
     counts: backup.counts,
     excludes: backup.security.excludes,
@@ -78,6 +82,46 @@ export function createEmergencyRecoveryPackage(backup: FullBackup) {
     },
     { level: 6 },
   );
+}
+
+export function verifyEmergencyRecoveryPackage(
+  bytes: Uint8Array,
+  expectedBackup: FullBackup,
+) {
+  const files = unzipSync(bytes);
+  const source = files["WHIZZUP_source.zip"];
+  const manifestBytes = files["MANIFEST.json"];
+  const guide = files["READ_THIS_FIRST.txt"];
+  const backupName = Object.keys(files).find(
+    (name) => name.startsWith("WHIZZUP_full_backup_") && name.endsWith(".json"),
+  );
+  if (!source || !manifestBytes || !guide || !backupName) {
+    throw new Error("비상복구 패키지의 필수 파일이 누락되었습니다.");
+  }
+  const sourceSha256 = createHash("sha256").update(source).digest("hex");
+  if (sourceSha256 !== RECOVERY_SOURCE_SHA256) {
+    throw new Error("비상복구 소스 ZIP의 무결성 코드가 일치하지 않습니다.");
+  }
+  const manifest = JSON.parse(strFromU8(manifestBytes)) as {
+    backupChecksum?: string;
+    sourceSha256?: string;
+    sourceRelease?: string;
+  };
+  const embeddedBackup = JSON.parse(strFromU8(files[backupName])) as FullBackup;
+  if (
+    manifest.backupChecksum !== expectedBackup.checksum ||
+    manifest.sourceSha256 !== sourceSha256 ||
+    manifest.sourceRelease !== RECOVERY_SOURCE_RELEASE ||
+    embeddedBackup.checksum !== expectedBackup.checksum
+  ) {
+    throw new Error("비상복구 패키지의 생성 정보가 현재 소스 또는 DB와 일치하지 않습니다.");
+  }
+  return {
+    backupChecksum: expectedBackup.checksum,
+    sourceSha256,
+    sourceRelease: RECOVERY_SOURCE_RELEASE,
+    sourceFileCount: RECOVERY_SOURCE_FILE_COUNT,
+  };
 }
 
 function createOfflineHtml(backup: FullBackup) {

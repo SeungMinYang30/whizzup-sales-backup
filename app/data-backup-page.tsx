@@ -191,6 +191,35 @@ export default function DataBackupPage({
         );
         return;
       }
+      if (kind === "emergency") {
+        const response = await fetch("/api/backup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "archive-emergency-recovery" }),
+        });
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          archive?: {
+            fileName?: string;
+            folderPath?: string;
+            verified?: boolean;
+          };
+          error?: string;
+        };
+        if (
+          !response.ok ||
+          !payload.ok ||
+          !payload.archive?.verified
+        ) {
+          throw new Error(
+            payload.error || "Google Drive 비상복구 패키지를 만들지 못했습니다.",
+          );
+        }
+        notify(
+          `비상복구 패키지 저장·검증 완료: ${payload.archive.folderPath}/${payload.archive.fileName}`,
+        );
+        return;
+      }
       const response = await fetch(`/api/backup?kind=${kind}`, {
         cache: "no-store",
       });
@@ -202,20 +231,9 @@ export default function DataBackupPage({
       const blob = await downloadableBlob(response);
       saveBlob(
         blob,
-        responseFilename(
-          response,
-          kind === "emergency"
-            ? "WHIZZUP_emergency_recovery.zip"
-            : "WHIZZUP_offline_edition.zip",
-        ),
+        responseFilename(response, "WHIZZUP_offline_edition.zip"),
       );
-      notify(
-        kind === "emergency"
-          ? "비상복구 패키지를 내려받았습니다."
-          : kind === "offline"
-            ? "오프라인 독립판을 내려받았습니다."
-            : "파일을 내려받았습니다.",
-      );
+      notify("오프라인 독립판을 내려받았습니다.");
     } catch (error) {
       notify(
         error instanceof Error ? error.message : "파일을 내려받지 못했습니다.",
@@ -540,13 +558,12 @@ export default function DataBackupPage({
               </div>
             </div>
             <p>
-              전체 사이트 소스, 최신 DB 백업, 파일 목록과 이전 안내서를 ZIP
-              하나로 저장합니다. 다른 호스팅이나 새 Codex 작업에서 이어갈 때
-              사용합니다.
+              현재 배포의 전체 사이트 소스, 최신 DB 백업, 파일 목록과 이전
+              안내서를 ZIP 하나로 묶어 Google Drive에 시간별 저장합니다.
             </p>
             <ul className="backup-inclusion-list">
               <li>화면·기능·DB 구조·테스트가 포함된 사이트 원본</li>
-              <li>다운로드 시점의 전체 업무 데이터</li>
+              <li>저장 시점의 전체 업무 데이터</li>
               <li>다른 호스팅 및 Codex 복구 시작 안내서</li>
               <li>로그인 토큰·API 키 등 비밀값은 자동 제외</li>
             </ul>
@@ -557,11 +574,12 @@ export default function DataBackupPage({
               onClick={() => void download("emergency")}
             >
               {busy === "download-emergency"
-                ? "비상복구 패키지 만드는 중…"
-                : "비상복구 패키지 내려받기"}
+                ? "Drive 저장·검증 중…"
+                : "Google Drive에 비상복구 저장"}
             </button>
             <p className="backup-security-note">
-              새 서버에서는 인증과 데이터베이스 연결값을 다시 설정해야 합니다.
+              저장 후 Drive 파일을 다시 읽어 해시를 확인합니다. 새 서버에서는
+              인증과 데이터베이스 연결값을 다시 설정해야 합니다.
             </p>
           </section>
 

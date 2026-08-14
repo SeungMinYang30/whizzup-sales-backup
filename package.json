@@ -6,6 +6,7 @@
     "node": "24.x"
   },
   "scripts": {
+    "prebuild": "node scripts/generate-recovery-source.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
