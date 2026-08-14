@@ -1489,34 +1489,6 @@ function activityBudgetNames(row: BackupRow) {
   );
 }
 
-function accountingEntryHasBusinessValue(row: BackupRow) {
-  const moneyFields = [
-    "commission_sales_amount",
-    "commission_collected_amount",
-    "direct_cost",
-    "consortium_paid_amount",
-    "receivable_balance",
-    "consortium_payable",
-    "contribution_margin",
-  ];
-  if (
-    moneyFields.some((field) => {
-      const value = row[field];
-      return value !== null && value !== "" && Number(value) !== 0;
-    })
-  ) {
-    return true;
-  }
-  return Boolean(
-    String(row.revenue_recognition_date ?? "").trim() ||
-      String(row.invoice_date ?? "").trim() ||
-      String(row.collection_date ?? "").trim() ||
-      String(row.consortium_paid_date ?? "").trim() ||
-      String(row.voucher_note ?? "").trim() ||
-      Number(row.confirmed ?? 0) !== 0,
-  );
-}
-
 function repairBrokenActivityReferences(
   data: Record<BackupTableName, BackupRow[]>,
 ) {
@@ -1644,33 +1616,14 @@ function repairBrokenActivityReferences(
     return { ...normalizedMember, activity_id: null };
   });
 
-  const historyEntryIds = new Set(
-    data.accounting_commission_entry_history.map((row) =>
-      String(row.entry_id),
-    ),
-  );
-  const receiptEntryIds = new Set(
-    data.accounting_collection_receipts.map((row) => String(row.entry_id)),
-  );
-  const discardedAccountingEntries: Array<string | number> = [];
-  data.accounting_commission_entries =
-    data.accounting_commission_entries.filter((entry) => {
-      if (activityIds.has(String(entry.activity_id))) return true;
-      const entryId = String(entry.id);
-      if (
-        accountingEntryHasBusinessValue(entry) ||
-        historyEntryIds.has(entryId) ||
-        receiptEntryIds.has(entryId)
-      ) {
-        throw new BackupValidationError(
-          `삭제된 활동과 연결된 회계 전표 ${entryId}에 금액 또는 수금 이력이 있어 자동 복원할 수 없습니다.`,
-        );
-      }
-      discardedAccountingEntries.push(entry.id as string | number);
-      return false;
-    });
-
   const notices: string[] = [];
+  const preservedOrphanAccountingRows = [
+    ...data.accounting_settlements,
+    ...data.accounting_settlement_history,
+    ...data.accounting_commission_entries,
+    ...data.accounting_commission_entry_history,
+    ...data.accounting_collection_receipts,
+  ].filter((row) => !activityIds.has(String(row.activity_id))).length;
   if (reconnectedProjects) {
     notices.push(
       `삭제된 활동을 가리키던 사업 ${reconnectedProjects}건을 같은 기관·사업 차수의 현재 기록으로 다시 연결했습니다.`,
@@ -1681,9 +1634,9 @@ function repairBrokenActivityReferences(
       `연결할 현재 기록이 없는 사업 ${detachedProjects}건은 사업 정보는 보존하고 활동 연결만 해제했습니다.`,
     );
   }
-  if (discardedAccountingEntries.length) {
+  if (preservedOrphanAccountingRows) {
     notices.push(
-      `삭제된 활동을 가리키던 빈 회계 전표 ${discardedAccountingEntries.length}건은 금액·수금·변경 이력이 없어 제외했습니다.`,
+      `삭제된 활동 ID를 가리키는 회계·수금 이력 ${preservedOrphanAccountingRows}건은 현재 DB 상태 그대로 보존합니다. 회계 테이블에는 활동 외래키 제약이 없어 동일하게 복원됩니다.`,
     );
   }
   return notices;
@@ -2699,11 +2652,7 @@ function validateRows(
     assertReference(row.changed_by, memberIds, "complex_project_events.changed_by", true);
   });
   data.accounting_settlements.forEach((row) =>
-    assertReference(
-      row.activity_id,
-      activityIds,
-      "accounting_settlements.activity_id",
-    ),
+    asInteger(row.activity_id, "accounting_settlements.activity_id"),
   );
   data.accounting_settlement_history.forEach((row) => {
     assertReference(
@@ -2711,18 +2660,10 @@ function validateRows(
       settlementIds,
       "accounting_settlement_history.settlement_id",
     );
-    assertReference(
-      row.activity_id,
-      activityIds,
-      "accounting_settlement_history.activity_id",
-    );
+    asInteger(row.activity_id, "accounting_settlement_history.activity_id");
   });
   data.accounting_commission_entries.forEach((row) =>
-    assertReference(
-      row.activity_id,
-      activityIds,
-      "accounting_commission_entries.activity_id",
-    ),
+    asInteger(row.activity_id, "accounting_commission_entries.activity_id"),
   );
   data.accounting_commission_entry_history.forEach((row) => {
     assertReference(
@@ -2730,9 +2671,8 @@ function validateRows(
       commissionEntryIds,
       "accounting_commission_entry_history.entry_id",
     );
-    assertReference(
+    asInteger(
       row.activity_id,
-      activityIds,
       "accounting_commission_entry_history.activity_id",
     );
   });
@@ -2742,11 +2682,7 @@ function validateRows(
       commissionEntryIds,
       "accounting_collection_receipts.entry_id",
     );
-    assertReference(
-      row.activity_id,
-      activityIds,
-      "accounting_collection_receipts.activity_id",
-    );
+    asInteger(row.activity_id, "accounting_collection_receipts.activity_id");
   });
 
   if (currentAdmin) {

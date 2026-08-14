@@ -74,6 +74,15 @@ test("backup clearly distinguishes document metadata from stored file originals"
   );
 });
 
+test("full backup preserves accounting history whose source activity is already in trash", () => {
+  assert.match(backup, /preservedOrphanAccountingRows/);
+  assert.match(backup, /현재 DB 상태 그대로 보존합니다/);
+  assert.doesNotMatch(
+    backup,
+    /금액 또는 수금 이력이 있어 자동 복원할 수 없습니다/,
+  );
+});
+
 test("activity CSV preserves and re-resolves every budget allocation", () => {
   assert.match(activityCsv, /"예산 목록 JSON"/);
   assert.match(activityCsv, /row\.budgets_json/);
