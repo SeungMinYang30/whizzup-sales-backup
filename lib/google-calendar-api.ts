@@ -274,7 +274,7 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
     start,
     end,
     colorId: colorId[category] || colorId.other,
-    reminders: { useDefault: false },
+    reminders: { useDefault: false, overrides: [] },
     extendedProperties: {
       private: {
         whizzupSource: "site",
