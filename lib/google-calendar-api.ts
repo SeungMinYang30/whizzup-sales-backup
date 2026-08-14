@@ -217,7 +217,9 @@ function defaultTimedEnd(dateValue: string, timeValue: string) {
 }
 
 function eventBody(schedule: GoogleCalendarWriteSchedule) {
-  const startTime = normalizeGoogleCalendarTime(schedule.startTime);
+  const storedStartTime = normalizeGoogleCalendarTime(schedule.startTime);
+  const usesConstructionDisplayTime = schedule.category === "construction" && !storedStartTime;
+  const startTime = usesConstructionDisplayTime ? "08:00" : storedStartTime;
   const endTime = startTime ? normalizeGoogleCalendarTime(schedule.endTime) : "";
   const allDay = !startTime;
   const endDate = schedule.endDate && schedule.endDate >= schedule.scheduledDate
@@ -226,7 +228,9 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
   const start = allDay
     ? { date: schedule.scheduledDate }
     : { dateTime: `${schedule.scheduledDate}T${startTime}:00+09:00`, timeZone: "Asia/Seoul" };
-  const fallbackEnd = endTime
+  const fallbackEnd = usesConstructionDisplayTime
+    ? { date: schedule.scheduledDate, time: "08:30" }
+    : endTime
     ? { date: endDate, time: endTime }
     : defaultTimedEnd(endDate, startTime);
   const end = allDay
@@ -237,9 +241,7 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
   const colorId: Record<string, string> = {
     sales: "9",
     meeting: "3",
-    // Google Calendar does not support arbitrary per-event RGB colors.
-    // Flamingo (4) is the closest muted red-brown option in its event palette.
-    construction: "4",
+    construction: "6",
     showroom: "4",
     other: "8",
   };

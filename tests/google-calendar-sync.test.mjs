@@ -60,8 +60,11 @@ test("기존 시공 Google 일정은 안전하게 다시 연결하고 신뢰 가
   assert.doesNotMatch(api, /공사·품목: \$\{/);
   assert.doesNotMatch(api, /일정 내용: \$\{/);
   assert.match(api, /\[입력\\s\*필요\\\]/);
-  assert.match(api, /construction: "4"/);
+  assert.match(api, /construction: "6"/);
   assert.match(sync, /google:construction_color:muted_red_brown:v1/);
+  assert.match(sync, /google:construction_display:orange_timed_default:v1/);
+  assert.match(api, /usesConstructionDisplayTime \? "08:00" : storedStartTime/);
+  assert.match(api, /\? \{ date: schedule\.scheduledDate, time: "08:30" \}/);
   assert.match(sync, /missingManagedDescription/);
   assert.match(api, /colorId: colorId\[category\]/);
   assert.match(contentRefreshMigration, /기존 사이트 연결 일정/);
@@ -202,7 +205,7 @@ test("공유 업무만 Google로 보내고 입력 제목과 개인 일정 정책
   assert.match(title, /scheduleTitleForGoogle\(input\.label\)/);
   assert.match(title, /: scheduleTitle \|\| input\.organization/);
   assert.match(title, /const constructionStage = cleanLabel \|\| scheduleTitle \|\| "시공"/);
-  assert.match(title, /`\[\$\{constructionStage\}\] \$\{input\.organization\}/);
+  assert.match(title, /`\[\$\{input\.organization\}\] \$\{constructionStage\}/);
   assert.match(api, /optional\(cleanMemo\(schedule\.details\)\)/);
   assert.doesNotMatch(sync, /`원본 Google 제목: \$\{/);
   assert.match(sync, /event\.summary\.trim\(\) !== expectedSummary/);

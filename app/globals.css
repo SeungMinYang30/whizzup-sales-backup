@@ -11660,14 +11660,14 @@ tr:hover .row-actions { opacity: 1; }
 .home-calendar-day-items em { font-size: 10px; }
 .home-calendar-filter-sales { border-color: #bfdbfe !important; background: #eff6ff !important; color: #2563eb !important; }
 .home-calendar-filter-meeting { border-color: #ddd6fe !important; background: #f5f3ff !important; color: #7c3aed !important; }
-.home-calendar-filter-construction { border-color: #d8a59b !important; background: #fbf1ee !important; color: #b85c4a !important; }
+.home-calendar-filter-construction { border-color: #fed7aa !important; background: #fff7e6 !important; color: #d97706 !important; }
 .home-calendar-filter-showroom { border-color: #fbcfe8 !important; background: #fdf2f8 !important; color: #db2777 !important; }
 .home-calendar-filter-other { border-color: #cbd5e1 !important; background: #f1f5f9 !important; color: #64748b !important; }
 .home-calendar-filter-personal { border-color: #a7f3d0 !important; background: #ecfdf5 !important; color: #059669 !important; }
 .home-calendar-filter-google { border-color: #a5f3fc !important; background: #ecfeff !important; color: #0891b2 !important; }
 .home-calendar-filter-sales.active { border-color: #2563eb !important; background: #2563eb !important; color: #fff !important; }
 .home-calendar-filter-meeting.active { border-color: #7c3aed !important; background: #7c3aed !important; color: #fff !important; }
-.home-calendar-filter-construction.active { border-color: #b85c4a !important; background: #b85c4a !important; color: #fff !important; }
+.home-calendar-filter-construction.active { border-color: #d97706 !important; background: #d97706 !important; color: #fff !important; }
 .home-calendar-filter-showroom.active { border-color: #db2777 !important; background: #db2777 !important; color: #fff !important; }
 .home-calendar-filter-other.active { border-color: #64748b !important; background: #64748b !important; color: #fff !important; }
 .home-calendar-filter-personal.active { border-color: #059669 !important; background: #059669 !important; color: #fff !important; }
@@ -11675,21 +11675,21 @@ tr:hover .row-actions { opacity: 1; }
 .home-calendar-filter-all.active { border-color: #4f46e5 !important; background: #4f46e5 !important; color: #fff !important; }
 .home-calendar-day-items > span.sales { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; }
 .home-calendar-day-items > span.meeting { border-color: #7c3aed; background: #f5f3ff; color: #6d28d9; }
-.home-calendar-day-items > span.construction { border-color: #b85c4a; background: #fbf1ee; color: #8f3f32; }
+.home-calendar-day-items > span.construction { border-color: #d97706; background: #fff7e6; color: #a65b05; }
 .home-calendar-day-items > span.showroom { border-color: #db2777; background: #fdf2f8; color: #be185d; }
 .home-calendar-day-items > span.other { border-color: #64748b; background: #f1f5f9; color: #475569; }
 .home-calendar-day-items > span.personal { border-color: #059669; background: #ecfdf5; color: #047857; }
 .home-calendar-day-items > span.google { border-color: #0891b2; background: #ecfeff; color: #0e7490; }
 .home-calendar-agenda-list i.sales { background: #2563eb; }
 .home-calendar-agenda-list i.meeting { background: #7c3aed; }
-.home-calendar-agenda-list i.construction { background: #b85c4a; }
+.home-calendar-agenda-list i.construction { background: #d97706; }
 .home-calendar-agenda-list i.showroom { background: #db2777; }
 .home-calendar-agenda-list i.other { background: #64748b; }
 .home-calendar-agenda-list i.personal { background: #059669; }
 .home-calendar-agenda-list i.google { background: #0891b2; }
 .home-calendar-agenda-list em.sales { background: #eff6ff; color: #2563eb; }
 .home-calendar-agenda-list em.meeting { background: #f5f3ff; color: #7c3aed; }
-.home-calendar-agenda-list em.construction { background: #fbf1ee; color: #b85c4a; }
+.home-calendar-agenda-list em.construction { background: #fff7e6; color: #d97706; }
 .home-calendar-agenda-list em.showroom { background: #fdf2f8; color: #db2777; }
 .home-calendar-agenda-list em.other { background: #f1f5f9; color: #64748b; }
 .home-calendar-agenda-list em.personal { background: #ecfdf5; color: #059669; }

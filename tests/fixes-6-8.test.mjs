@@ -58,8 +58,8 @@ test("물품 수의계약 2,200만원은 수의계약과 학교장터만 합산�
 test("일반 Google 일정은 입력한 일정 제목을 그대로 사용하고 시공 제목 규칙은 유지한다", () => {
   assert.equal(googleCalendarTitle({ organization: "선영어린이집", label: "영업 · 인제 선영어린이집 협상", category: "general" }).summary, "인제 선영어린이집 협상");
   assert.equal(googleCalendarTitle({ organization: "A학교", label: "회의 · 예산 협의", category: "meeting" }).summary, "예산 협의");
-  assert.equal(googleCalendarTitle({ organization: "A학교", label: "착공", category: "construction", productSummary: "VR실 구축" }).summary, "[착공] A학교");
-  assert.equal(googleCalendarTitle({ organization: "A학교", label: "검수", category: "construction", productSummary: "VR실 구축" }).summary, "[검수] A학교");
+  assert.equal(googleCalendarTitle({ organization: "A학교", label: "착공", category: "construction", productSummary: "VR실 구축" }).summary, "[A학교] 착공");
+  assert.equal(googleCalendarTitle({ organization: "A학교", label: "검수", category: "construction", productSummary: "VR실 구축" }).summary, "[A학교] 검수");
   assert.equal(googleCalendarTitle({ organization: "A학교", label: "쇼룸 · 제품 시연", category: "showroom" }).summary, "제품 시연");
   assert.equal(googleCalendarTitle({ organization: "A학교", label: "기타 · 설명회", category: "other" }).summary, "설명회");
 });

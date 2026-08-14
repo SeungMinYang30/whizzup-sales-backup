@@ -33,7 +33,7 @@ export function googleCalendarTitle(input: CalendarTitleInput) {
     .trim();
   const constructionStage = cleanLabel || scheduleTitle || "시공";
   const summary = category === "construction"
-    ? `[${constructionStage}] ${input.organization}`
+    ? `[${input.organization}] ${constructionStage}`
     : scheduleTitle || input.organization;
   return { category, cleanLabel, summary };
 }

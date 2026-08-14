@@ -335,6 +335,26 @@ export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?
       ).bind(constructionColorMigrationKey),
     ]);
   }
+  const constructionDisplayMigrationKey = "google:construction_display:orange_timed_default:v1";
+  const constructionDisplayMigration = await d1.prepare(
+    "SELECT value FROM app_settings WHERE key = ?",
+  ).bind(constructionDisplayMigrationKey).first<{ value: string }>();
+  if (!constructionDisplayMigration && googleConstructionCalendarApiConfigured()) {
+    await d1.batch([
+      d1.prepare(
+        `UPDATE organization_schedules
+         SET sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
+         WHERE category = 'construction'
+           AND sync_status = 'synced'
+           AND TRIM(COALESCE(deleted_at, '')) = ''`,
+      ),
+      d1.prepare(
+        `INSERT INTO app_settings (key, value, updated_at)
+         VALUES (?, 'prepared', CURRENT_TIMESTAMP)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+      ).bind(constructionDisplayMigrationKey),
+    ]);
+  }
   const rows = await pendingRows(options?.ids, options?.limit ?? 20);
   if (!rows.length) return;
   for (const row of rows) {
