@@ -1733,7 +1733,13 @@ function validateRows(
         );
       }
       Object.entries(row).forEach(([column, value]) => {
+        const isMemberPermissions =
+          table.name === "members" &&
+          column === "permissions" &&
+          Array.isArray(value) &&
+          value.every((permission) => typeof permission === "string");
         if (
+          !isMemberPermissions &&
           value !== null &&
           typeof value !== "string" &&
           typeof value !== "number"
@@ -3230,7 +3236,9 @@ const RESTORE_INSERT_CHUNK_SIZE = 100;
 
 function parseMemberPermissions(row: BackupRow) {
   try {
-    const parsed = JSON.parse(String(row.permissions ?? "[]")) as unknown;
+    const parsed = Array.isArray(row.permissions)
+      ? row.permissions
+      : (JSON.parse(String(row.permissions ?? "[]")) as unknown);
     if (
       !Array.isArray(parsed) ||
       parsed.some((permission) => typeof permission !== "string")

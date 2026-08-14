@@ -111,6 +111,17 @@ test("backup selects only approved columns and excludes local password material"
   assert.doesNotMatch(memberTable, /"password_hash"|"password_salt"/);
 });
 
+test("member permissions accept native JSON arrays and restore without string coercion", () => {
+  assert.match(
+    backup,
+    /table\.name === "members"[\s\S]*column === "permissions"[\s\S]*Array\.isArray\(value\)[\s\S]*value\.every/,
+  );
+  assert.match(
+    backup,
+    /const parsed = Array\.isArray\(row\.permissions\)[\s\S]*\? row\.permissions[\s\S]*JSON\.parse/,
+  );
+});
+
 test("activity CSV preserves and re-resolves every budget allocation", () => {
   assert.match(activityCsv, /"예산 목록 JSON"/);
   assert.match(activityCsv, /row\.budgets_json/);
