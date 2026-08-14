@@ -25,38 +25,6 @@ type CsvInspection = {
 
 type DownloadKind = "full" | "activities-csv" | "emergency" | "offline";
 
-type CutoverReadiness = {
-  mode: "replica" | "primary";
-  ready: boolean;
-  blockers: string[];
-  sync: {
-    status?: string;
-    last_success_at?: string | null;
-    source_checksum?: string;
-    cutover_at?: string | null;
-  } | null;
-  schedule: { configured: boolean; schedule: string };
-  credentials: { total: number; local: number; missing: number; ready: boolean };
-  drive: { ready: boolean; rootFolderId: boolean };
-  currentOrigin: string;
-  confirmation: string;
-};
-
-type BusinessRoundRepairCandidate = {
-  id: number;
-  organization: string;
-  activityDate: string;
-  topic: string;
-  originalBusinessRound: number;
-  targetBusinessRound: number;
-};
-
-type BusinessRoundRepairPreview = {
-  repairKey: string;
-  candidates: BusinessRoundRepairCandidate[];
-  applied?: number;
-};
-
 const tableLabels: Record<string, string> = {
   members: "구성원·권한",
   activities: "기관 활동 기록",
@@ -188,103 +156,6 @@ export default function DataBackupPage({
   const [csvInspection, setCsvInspection] =
     useState<CsvInspection | null>(null);
   const [csvError, setCsvError] = useState("");
-  const [cutover, setCutover] = useState<CutoverReadiness | null>(null);
-  const [cutoverError, setCutoverError] = useState("");
-  const [cutoverConfirmation, setCutoverConfirmation] = useState("");
-  const [roundRepair, setRoundRepair] =
-    useState<BusinessRoundRepairPreview | null>(null);
-  const [roundRepairBusy, setRoundRepairBusy] = useState<"preview" | "apply" | "">("");
-  const [roundRepairError, setRoundRepairError] = useState("");
-
-  async function previewRoundRepair() {
-    try {
-      setRoundRepairBusy("preview");
-      setRoundRepairError("");
-      const response = await fetch("/api/data-control/business-round-rollover", {
-        cache: "no-store",
-      });
-      const payload = (await response.json()) as BusinessRoundRepairPreview & {
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(payload.error || "사업 차수 정리 대상을 확인하지 못했습니다.");
-      }
-      setRoundRepair(payload);
-    } catch (error) {
-      setRoundRepairError(
-        error instanceof Error
-          ? error.message
-          : "사업 차수 정리 대상을 확인하지 못했습니다.",
-      );
-    } finally {
-      setRoundRepairBusy("");
-    }
-  }
-
-  async function applyRoundRepair() {
-    if (!roundRepair?.candidates.length) return;
-    if (
-      !window.confirm(
-        `${roundRepair.candidates.length}건을 백업한 뒤 다음 사업 차수로 정리할까요?`,
-      )
-    ) {
-      return;
-    }
-    try {
-      setRoundRepairBusy("apply");
-      setRoundRepairError("");
-      const response = await fetch("/api/data-control/business-round-rollover", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirm: "APPLY_BUSINESS_ROUND_ROLLOVER" }),
-      });
-      const payload = (await response.json()) as BusinessRoundRepairPreview & {
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(payload.error || "사업 차수 정리를 적용하지 못했습니다.");
-      }
-      setRoundRepair(payload);
-      notify(`사업 차수 ${payload.applied ?? 0}건을 백업 후 정리했습니다.`);
-      await onDataChanged();
-      await previewRoundRepair();
-    } catch (error) {
-      setRoundRepairError(
-        error instanceof Error
-          ? error.message
-          : "사업 차수 정리를 적용하지 못했습니다.",
-      );
-    } finally {
-      setRoundRepairBusy("");
-    }
-  }
-
-  useEffect(() => {
-    if (!isPrimaryOwner || !canManageBackup) return;
-    let cancelled = false;
-    void fetch("/api/standby-cutover", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = (await response.json()) as {
-          readiness?: CutoverReadiness;
-          error?: string;
-        };
-        if (!response.ok || !payload.readiness) {
-          throw new Error(payload.error || "이전 준비 상태를 확인하지 못했습니다.");
-        }
-        if (!cancelled) setCutover(payload.readiness);
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setCutoverError(
-            error instanceof Error ? error.message : "이전 준비 상태를 확인하지 못했습니다.",
-          );
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [canManageBackup, isPrimaryOwner]);
-
   const backupReminder = useMemo(() => {
     if (!lastBackupAt) return "첫 전체 백업을 내려받아 안전한 폴더에 보관해 주세요.";
     const elapsed = pageOpenedAt - new Date(lastBackupAt).getTime();
@@ -507,45 +378,6 @@ export default function DataBackupPage({
     }
   }
 
-  async function finalizeVercelCutover() {
-    if (!cutover) return;
-    if (
-      !window.confirm(
-        "Sites의 마지막 데이터를 동기화한 뒤 10분 자동 동기화를 종료하고 Vercel을 운영 원본으로 전환합니다. 계속할까요?",
-      )
-    ) {
-      return;
-    }
-    try {
-      setBusy("vercel-cutover");
-      setCutoverError("");
-      const response = await fetch("/api/standby-cutover", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirmation: cutoverConfirmation }),
-      });
-      const payload = (await response.json()) as {
-        readiness?: CutoverReadiness;
-        blockers?: string[];
-        error?: string;
-      };
-      if (!response.ok || !payload.readiness) {
-        throw new Error(
-          payload.blockers?.join(" ") || payload.error || "Vercel 운영 전환을 완료하지 못했습니다.",
-        );
-      }
-      setCutover(payload.readiness);
-      setCutoverConfirmation("");
-      notify("최종 DB 검증과 자동 동기화 종료가 완료되었습니다. Vercel이 운영 원본입니다.");
-    } catch (error) {
-      setCutoverError(
-        error instanceof Error ? error.message : "Vercel 운영 전환을 완료하지 못했습니다.",
-      );
-    } finally {
-      setBusy("");
-    }
-  }
-
   const sectionTabs = (
     <div className="backup-section-tabs" role="tablist" aria-label="데이터 복구 메뉴">
       {canManageTrash && (
@@ -590,50 +422,6 @@ export default function DataBackupPage({
     <section className="backup-workspace">
       {sectionTabs}
     <section className="backup-layout">
-      {isPrimaryOwner && canManageBackup && (
-        <article className="panel backup-cutover-card">
-          <div className="backup-restore-heading">
-            <div>
-              <span className="section-kicker">BUSINESS ROUND SAFETY REPAIR</span>
-              <h3>완료 사업 이후 기록 차수 정리</h3>
-              <p>
-                납품 완료 뒤 새 문의·방문·예산·견적 기록이 같은 차수에 남은 경우만
-                찾아 백업 후 다음 진행 차수로 옮깁니다.
-              </p>
-            </div>
-            <span className="backup-owner-badge">운영자 본인 전용</span>
-          </div>
-          <div className="backup-cutover-actions">
-            <button
-              type="button"
-              className="ghost-button"
-              disabled={Boolean(roundRepairBusy)}
-              onClick={() => void previewRoundRepair()}
-            >
-              {roundRepairBusy === "preview" ? "대상 확인 중…" : "정리 대상 미리보기"}
-            </button>
-            <button
-              type="button"
-              className="setup-primary"
-              disabled={Boolean(roundRepairBusy) || !roundRepair?.candidates.length}
-              onClick={() => void applyRoundRepair()}
-            >
-              {roundRepairBusy === "apply"
-                ? "백업·적용 중…"
-                : `${roundRepair?.candidates.length ?? 0}건 백업 후 적용`}
-            </button>
-          </div>
-          {roundRepair && (
-            <p className="backup-security-note">
-              현재 정리 대상 {roundRepair.candidates.length}건
-              {roundRepair.candidates.length > 0
-                ? ` · ${Array.from(new Set(roundRepair.candidates.map((item) => item.organization))).slice(0, 5).join(", ")}`
-                : " · 추가로 정리할 기록이 없습니다."}
-            </p>
-          )}
-          {roundRepairError && <p className="form-error">{roundRepairError}</p>}
-        </article>
-      )}
       <article className="panel backup-hero">
         <div>
           <span className="section-kicker">DATA SAFETY</span>
@@ -648,90 +436,6 @@ export default function DataBackupPage({
           <strong>{backupReminder}</strong>
         </div>
       </article>
-
-      {isPrimaryOwner && canManageBackup && (
-        <article className="panel backup-cutover-card">
-          <div className="backup-restore-heading">
-            <div>
-              <span className="section-kicker">VERCEL CUTOVER</span>
-              <h3>Vercel 운영 이전 준비</h3>
-              <p>
-                마지막 DB 동기화와 검증, 10분 자동 동기화 종료를 한 번에 처리합니다.
-                전환 뒤에는 Sites 데이터가 Vercel을 다시 덮어쓰지 못합니다.
-              </p>
-            </div>
-            <span className={`backup-owner-badge ${cutover?.mode === "primary" ? "success" : ""}`}>
-              {cutover?.mode === "primary" ? "Vercel 운영 중" : "Sites 복제 중"}
-            </span>
-          </div>
-
-          {!cutover && !cutoverError ? (
-            <p className="backup-security-note">이전 준비 상태를 확인하고 있습니다…</p>
-          ) : (
-            <>
-              <div className="backup-cutover-grid">
-                <div>
-                  <span>DB 동기화</span>
-                  <strong>{cutover?.sync?.status === "succeeded" ? "정상" : "확인 필요"}</strong>
-                  <small>{formatDateTime(cutover?.sync?.last_success_at || "")}</small>
-                </div>
-                <div>
-                  <span>Google Drive</span>
-                  <strong>{cutover?.drive.ready ? "동일 폴더 연결" : "연결 필요"}</strong>
-                  <small>{cutover?.drive.rootFolderId ? "자료실 폴더 지정됨" : "자료실 폴더 ID 없음"}</small>
-                </div>
-                <div>
-                  <span>이메일 로그인</span>
-                  <strong>
-                    {cutover ? `${cutover.credentials.local}/${cutover.credentials.total}명 준비` : "확인 중"}
-                  </strong>
-                  <small>{cutover?.credentials.missing ? `${cutover.credentials.missing}명 미완료` : "모든 승인 계정 준비"}</small>
-                </div>
-                <div>
-                  <span>10분 동기화</span>
-                  <strong>{cutover?.schedule.configured ? "실행 중" : "종료됨"}</strong>
-                  <small>{cutover?.mode === "primary" ? "재실행 차단됨" : cutover?.schedule.schedule}</small>
-                </div>
-              </div>
-
-              {cutover?.blockers?.length ? (
-                <ul className="backup-error-list">
-                  {cutover.blockers.map((blocker) => (
-                    <li key={blocker}>{blocker}</li>
-                  ))}
-                </ul>
-              ) : null}
-              {cutoverError && <div className="backup-error">{cutoverError}</div>}
-
-              {cutover?.mode !== "primary" && (
-                <div className="backup-cutover-actions">
-                  <label>
-                    전환 준비가 모두 끝나면 <strong>{cutover?.confirmation}</strong> 입력
-                    <input
-                      type="text"
-                      value={cutoverConfirmation}
-                      placeholder={cutover?.confirmation}
-                      onChange={(event) => setCutoverConfirmation(event.target.value)}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="primary-button"
-                    disabled={
-                      Boolean(busy) ||
-                      !cutover?.ready ||
-                      cutoverConfirmation.trim() !== cutover?.confirmation
-                    }
-                    onClick={() => void finalizeVercelCutover()}
-                  >
-                    {busy === "vercel-cutover" ? "최종 동기화·검증 중…" : "최종 동기화 후 Vercel 운영 전환"}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </article>
-      )}
 
       <div className="backup-card-grid backup-card-grid-single">
         <article className="panel backup-card">
