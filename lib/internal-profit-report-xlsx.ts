@@ -15,6 +15,13 @@ export type InternalProfitReportWorkbookInput = {
   internalCost: number;
   margin: number;
   marginRate: number;
+  costDetails: Array<{
+    label: string;
+    itemName: string;
+    amount: number;
+    note: string;
+    category: "internal-cost" | "support" | "bypass";
+  }>;
   rows: Array<{
     number: number;
     name: string;
@@ -51,7 +58,10 @@ const itemCell = (ref: string, name: string, specification: string, style = 9) =
 function sheetXml(input: InternalProfitReportWorkbookInput, hasDrawing: boolean) {
   const firstRow = 13;
   const lastRow = firstRow + Math.max(1, input.rows.length) - 1;
-  const summaryRow = lastRow + 2;
+  const costHeaderRow = lastRow + 2;
+  const costFirstRow = costHeaderRow + 1;
+  const costLastRow = costFirstRow + Math.max(1, input.costDetails.length) - 1;
+  const summaryRow = costLastRow + 2;
   const noteRow = summaryRow + 2;
   const endRow = noteRow;
   const itemRows = input.rows.length ? input.rows.map((item, index) => {
@@ -61,10 +71,17 @@ function sheetXml(input: InternalProfitReportWorkbookInput, hasDrawing: boolean)
     const effectiveRate = item.amount > 0 ? item.earning / item.amount : 0;
     return `<row r="${row}" ht="${height}" customHeight="1">${numberCell(`A${row}`, item.number, 8)}${itemCell(`B${row}`,item.name,item.specification,9)}${blanks(row,["C","D","E","F"],9)}${item.complimentary ? numberCell(`G${row}`,0,10) : formulaCell(`G${row}`,`M${row}*N${row}`,item.amount,10)}${textCell(`H${row}`,"",10)}${formulaCell(`I${row}`,`FLOOR(G${row}*O${row},10)`,item.earning,10)}${textCell(`J${row}`,"",10)}${formulaCell(`K${row}`,`I${row}-Q${row}-R${row}`,item.netProfit,13)}${textCell(`L${row}`,"",13)}${numberCell(`M${row}`,item.quantity,0)}${numberCell(`N${row}`,item.unitPrice,0)}${rateCell(`O${row}`,effectiveRate,0)}${numberCell(`Q${row}`,item.consortium,0)}${numberCell(`R${row}`,item.internalCost,0)}</row>`;
   }).join("") : `<row r="${firstRow}" ht="36" customHeight="1">${textCell(`A${firstRow}`,"",8)}${textCell(`B${firstRow}`,"품목이 없습니다.",9)}${blanks(firstRow,["C","D","E","F"],9)}${blanks(firstRow,["G","H","I","J"],10)}${blanks(firstRow,["K","L"],13)}</row>`;
+  const costRows = input.costDetails.length ? input.costDetails.map((detail, index) => {
+    const row = costFirstRow + index;
+    const displayLabel = detail.itemName ? `${detail.label} · ${detail.itemName}` : detail.label;
+    const value = -Math.abs(detail.amount);
+    return `<row r="${row}" ht="24" customHeight="1">${textCell(`A${row}`,displayLabel,9)}${blanks(row,["B","C","D"],9)}${textCell(`E${row}`,detail.note,9)}${blanks(row,["F","G","H","I"],9)}${numberCell(`J${row}`,value,12)}${blanks(row,["K","L"],12)}</row>`;
+  }).join("") : `<row r="${costFirstRow}" ht="24" customHeight="1">${textCell(`A${costFirstRow}`,"별도 내부 비용이 없습니다.",9)}${blanks(costFirstRow,["B","C","D","E","F","G","H","I"],9)}${numberCell(`J${costFirstRow}`,0,10)}${blanks(costFirstRow,["K","L"],10)}</row>`;
   const pageCount = Math.max(1,Math.ceil(Math.max(1,input.rows.length)/10));
   const mergePairs = ["A9:B9","A10:B10","C9:D9","C10:D10","E9:F9","E10:F10","G9:H9","G10:H10","I9:J9","I10:J10","K9:L9","K10:L10"];
   const itemMerges = Array.from({length:Math.max(1,input.rows.length)},(_,index)=>firstRow+index).flatMap((row)=>[`B${row}:F${row}`,`G${row}:H${row}`,`I${row}:J${row}`,`K${row}:L${row}`]);
-  const merges = ["C2:J3","A5:B5","C5:F5","G5:H5","I5:L5","A6:B6","C6:F6","G6:H6","I6:L6","A7:B7","C7:F7","G7:H7","I7:L7",...mergePairs,"A12:L12",...itemMerges,`A${summaryRow}:H${summaryRow}`,`I${summaryRow}:L${summaryRow}`,`A${noteRow}:L${noteRow}`];
+  const costMerges = Array.from({length:Math.max(1,input.costDetails.length)},(_,index)=>costFirstRow+index).flatMap((row)=>[`A${row}:D${row}`,`E${row}:I${row}`,`J${row}:L${row}`]);
+  const merges = ["C2:J3","A5:B5","C5:F5","G5:H5","I5:L5","A6:B6","C6:F6","G6:H6","I6:L6","A7:B7","C7:F7","G7:H7","I7:L7",...mergePairs,"A12:L12",...itemMerges,`A${costHeaderRow}:L${costHeaderRow}`,...costMerges,`A${summaryRow}:H${summaryRow}`,`I${summaryRow}:L${summaryRow}`,`A${noteRow}:L${noteRow}`];
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:R${endRow}"/><sheetViews><sheetView view="pageLayout" showGridLines="0" showRowColHeaders="0" zoomScale="95" workbookViewId="0"><selection activeCell="A1" sqref="A1"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="20"/><cols><col min="1" max="1" width="5.5" customWidth="1"/><col min="2" max="2" width="11.5" customWidth="1"/><col min="3" max="12" width="8.5" customWidth="1"/><col min="13" max="16384" width="2" hidden="1" customWidth="1"/></cols><sheetData>
 <row r="1" ht="4" customHeight="1">${textCell("A1","",14)}${blanks(1,["B","C","D","E","F","G","H","I","J","K","L"],14)}</row>
 <row r="2" ht="27" customHeight="1">${textCell("C2","내 부  수 익 표",1)}${textCell("L2",`1 / ${pageCount}`,3)}</row><row r="3" ht="27" customHeight="1"/>
@@ -75,6 +92,7 @@ function sheetXml(input: InternalProfitReportWorkbookInput, hasDrawing: boolean)
 <row r="9" ht="20" customHeight="1">${textCell("A9","견적금액",5)}${textCell("B9","",5)}${textCell("C9","예상 수익",5)}${textCell("D9","",5)}${textCell("E9","컨소 지급",5)}${textCell("F9","",5)}${textCell("G9","내부 원가",5)}${textCell("H9","",5)}${textCell("I9","최종 총이익",5)}${textCell("J9","",5)}${textCell("K9","마진율",5)}${textCell("L9","",5)}</row>
 <row r="10" ht="32" customHeight="1">${formulaCell("A10","M5",input.total,15)}${textCell("B10","",15)}${formulaCell("C10","M6",input.earning,15)}${textCell("D10","",15)}${formulaCell("E10","-M7",-input.consortium,16)}${textCell("F10","",16)}${formulaCell("G10","-M8",-input.internalCost,16)}${textCell("H10","",16)}${formulaCell("I10","C10+E10+G10",input.margin,17)}${textCell("J10","",17)}${formulaRateCell("K10",`IFERROR(I10/SUM(G${firstRow}:G${lastRow}),0)`,input.marginRate,18)}${textCell("L10","",18)}</row>
 <row r="12" ht="24" customHeight="1">${textCell("A12","품목별 수익 내역",2)}${blanks(12,["B","C","D","E","F","G","H","I","J","K","L"],2)}</row>${itemRows}
+<row r="${costHeaderRow}" ht="24" customHeight="1">${textCell(`A${costHeaderRow}`,"내부 비용·지원·바이패스 상세",2)}${blanks(costHeaderRow,["B","C","D","E","F","G","H","I","J","K","L"],2)}</row>${costRows}
 <row r="${summaryRow}" ht="31" customHeight="1">${textCell(`A${summaryRow}`,"컨소·내부 비용을 반영한 최종 예상 수익",6)}${blanks(summaryRow,["B","C","D","E","F","G","H"],6)}${formulaCell(`I${summaryRow}`,"I10",input.margin,19)}${blanks(summaryRow,["J","K","L"],19)}</row>
 <row r="${noteRow}" ht="22" customHeight="1">${textCell(`A${noteRow}`,"본 자료는 내부 수익 검토용이며 외부 견적서에는 포함되지 않습니다.",6)}${blanks(noteRow,["B","C","D","E","F","G","H","I","J","K","L"],6)}</row>
 </sheetData><mergeCells count="${merges.length}">${merges.map((ref)=>`<mergeCell ref="${ref}"/>`).join("")}</mergeCells><printOptions horizontalCentered="1"/><pageMargins left="0.25" right="0.25" top="0.3" bottom="0.3" header="0.15" footer="0.15"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="1" horizontalDpi="300" verticalDpi="300"/>${hasDrawing?'<drawing r:id="rId1"/>':""}</worksheet>`;

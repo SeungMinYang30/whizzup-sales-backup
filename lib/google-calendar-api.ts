@@ -240,24 +240,12 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
     showroom: "4",
     other: "8",
   };
-  const cleanLabel = title.cleanLabel;
-  const required = (value: string | undefined) => value?.trim() || "[입력 필요]";
+  const required = (value: string | undefined) => value?.trim() || "-";
   const summary = title.summary;
-  const description = category === "construction"
-    ? [
-        `담당자: ${required(schedule.assigneeName)}`,
-        `시공 단계: ${required(schedule.constructionStage || cleanLabel)}`,
-        `시공업체: ${required(schedule.vendorName)}`,
-        `공사·품목: ${required(schedule.productSummary)}`,
-        `원본 제목: ${required(schedule.label)}`,
-        `메모: ${schedule.details.trim()}`,
-      ].join("\n")
-    : [
-        `담당자: ${required(schedule.assigneeName)}`,
-        `일정 내용: ${required(cleanLabel)}`,
-        `원본 제목: ${required(schedule.label)}`,
-        `메모: ${schedule.details.trim()}`,
-      ].join("\n");
+  const description = [
+    `담당자: ${required(schedule.assigneeName)}`,
+    `메모: ${required(schedule.details)}`,
+  ].join("\n");
   return {
     summary,
     location: schedule.organization,

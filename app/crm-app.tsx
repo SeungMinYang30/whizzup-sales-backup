@@ -58,6 +58,7 @@ import {
   jointProjectGroupMemberIds,
 } from "../lib/joint-project-display";
 import { normalizeAiSuggestedStatus } from "../lib/ai-status";
+import type { AiCalendarSchedule } from "../lib/ai-calendar-schedules";
 import { resolveRegisteredSalesName } from "../lib/sales-names";
 import {
   institutionAliasKey,
@@ -1142,6 +1143,7 @@ type AiOrganizePayload = {
   assistantMessage?: string;
   draft?: Partial<AiPreview>;
   drafts?: Partial<AiPreview>[];
+  calendarSchedules?: AiCalendarSchedule[];
   schoolConfirmations?: OfficialSchoolConfirmation[];
   scheduleCancellation?: {
     intent: "confirmed" | "review";
@@ -6383,6 +6385,9 @@ export default function CrmApp({
   const [aiDraft, setAiDraft] = useState("");
   const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
   const [aiPreviews, setAiPreviews] = useState<AiPreview[]>([]);
+  const [aiCalendarSchedules, setAiCalendarSchedules] = useState<
+    AiCalendarSchedule[]
+  >([]);
   const [pendingScheduleCancellation, setPendingScheduleCancellation] = useState<
     AiOrganizePayload["scheduleCancellation"] | null
   >(null);
@@ -12767,6 +12772,7 @@ export default function CrmApp({
     ]);
     setAiDraft("");
     setAiPreviews([]);
+    setAiCalendarSchedules([]);
     setPendingScheduleCancellation(null);
     setAiError("");
     setAiOrganizing(true);
@@ -12796,6 +12802,9 @@ export default function CrmApp({
         { role: "assistant", text: assistantMessage },
       ]);
       setPendingScheduleCancellation(payload.scheduleCancellation ?? null);
+      setAiCalendarSchedules(
+        payload.needsClarification ? [] : payload.calendarSchedules ?? [],
+      );
       const organizedDrafts =
         payload.drafts?.length
           ? payload.drafts
@@ -12880,7 +12889,7 @@ export default function CrmApp({
   }
 
   async function saveAiPreviewBatch() {
-    if (!aiPreviews.length || aiBatchSaving) return;
+    if ((!aiPreviews.length && !aiCalendarSchedules.length) || aiBatchSaving) return;
     const ambiguousBudgetPreview = aiPreviews.find(
       (preview) => preview.budgetMatchStatus === "review",
     );
@@ -12910,7 +12919,9 @@ export default function CrmApp({
     }
 
     let remaining = [...aiPreviews];
+    let remainingSchedules = [...aiCalendarSchedules];
     let savedCount = 0;
+    let savedScheduleCount = 0;
     const institutionDecisions = new Map();
     setAiBatchSaving(true);
     try {
@@ -12950,6 +12961,75 @@ export default function CrmApp({
           (item) => item.organization !== preview.organization,
         );
         setAiPreviews(remaining);
+      }
+
+      for (const schedule of aiCalendarSchedules) {
+        const assigneeKey = schedule.assigneeName
+          .replace(/\s+/g, "")
+          .replace(/님$/u, "");
+        const explicitAssignee = assigneeKey
+          ? activityReviewAssignees.find((member) =>
+              [member.displayName, memberLabel(member)].some(
+                (value) =>
+                  value.replace(/\s+/g, "").replace(/님$/u, "") ===
+                  assigneeKey,
+              ),
+            )
+          : null;
+        const organizationKey = institutionAliasKey(schedule.organization);
+        const businessRound = Math.max(
+          1,
+          ...records
+            .filter(
+              (record) =>
+                institutionAliasKey(record.organization) === organizationKey,
+            )
+            .map((record) => Math.max(1, Number(record.businessRound) || 1)),
+        );
+        const response = await fetch("/api/schedules", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "add-general-schedule",
+            organization: schedule.organization,
+            businessRound,
+            label: schedule.label,
+            scheduledDate: schedule.scheduledDate,
+            startTime: schedule.startTime,
+            endTime: schedule.endTime,
+            category: "sales",
+            linked: true,
+            assigneeMemberId:
+              explicitAssignee?.id ?? session?.member.id ?? undefined,
+            assigneeName:
+              explicitAssignee?.displayName ||
+              schedule.assigneeName ||
+              session?.member.displayName ||
+              identity.displayName,
+            details: schedule.details,
+          }),
+        });
+        const payload = (await response.json()) as { error?: string };
+        if (!response.ok) {
+          throw new Error(
+            payload.error ||
+              `${schedule.organization} 일정을 저장하지 못했습니다.`,
+          );
+        }
+        savedScheduleCount += 1;
+        remainingSchedules = remainingSchedules.filter(
+          (item) =>
+            !(
+              item.organization === schedule.organization &&
+              item.scheduledDate === schedule.scheduledDate &&
+              item.startTime === schedule.startTime &&
+              item.label === schedule.label
+            ),
+        );
+        setAiCalendarSchedules(remainingSchedules);
+      }
+      if (savedScheduleCount) {
+        setScheduleReminderRefreshVersion((current) => current + 1);
       }
 
       let cancelledScheduleCount = 0;
@@ -13013,21 +13093,28 @@ export default function CrmApp({
       setAiMessages([]);
       setAiDraft("");
       setAiError("");
+      setAiCalendarSchedules([]);
       setAiDetailLevelPreference("auto");
       setPendingScheduleCancellation(null);
+      const savedSummary = [
+        savedCount ? `기관 기록 ${savedCount}건` : "",
+        savedScheduleCount ? `일정 ${savedScheduleCount}건` : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
       setToast(
         pendingScheduleCancellation?.intent === "review"
-          ? `${savedCount}개 기관 기록을 저장했습니다. 취소·연기 여부가 불명확해 기존 일정은 유지했습니다.`
+          ? `${savedSummary}을 저장했습니다. 취소·연기 여부가 불명확해 기존 일정은 유지했습니다.`
           : cancelledScheduleCount
-            ? `${savedCount}개 기관 기록을 저장하고 일정 ${cancelledScheduleCount}건을 취소했습니다.`
-            : `${savedCount}개 기관 기록을 저장했습니다.`,
+            ? `${savedSummary}을 저장하고 일정 ${cancelledScheduleCount}건을 취소했습니다.`
+            : `${savedSummary}을 저장했습니다.`,
       );
       void refreshRecordsInBackground();
     } catch (caught) {
       void refreshRecordsInBackground();
       setToast(
-        savedCount
-          ? `${savedCount}개 기관은 저장했고 ${remaining.length}개 기관이 남았습니다.`
+        savedCount || savedScheduleCount
+          ? `기관 기록 ${savedCount}건과 일정 ${savedScheduleCount}건을 저장했습니다. 기관 기록 ${remaining.length}건, 일정 ${remainingSchedules.length}건이 남았습니다.`
           : caught instanceof Error
             ? caught.message
             : "기관별 기록을 저장하지 못했습니다.",
@@ -16129,30 +16216,38 @@ export default function CrmApp({
                     )}
                   </div>
                 )}
-                {aiPreviews.length > 0 && (
+                {(aiPreviews.length > 0 || aiCalendarSchedules.length > 0) && (
                   <section className="ai-preview-batch">
                     <div className="ai-preview-batch-header">
                       <div>
-                        <span>기관별 분석 완료</span>
-                        <strong>{aiPreviews.length}개 기관으로 나눴습니다</strong>
+                        <span>AI 분석 완료</span>
+                        <strong>
+                          {[
+                            aiPreviews.length
+                              ? `기관 기록 ${aiPreviews.length}건`
+                              : "",
+                            aiCalendarSchedules.length
+                              ? `일정 ${aiCalendarSchedules.length}건`
+                              : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </strong>
                       </div>
                       <div>
-                        {aiPreviews.length > 1 && (
-                          <button
-                            type="button"
-                            className="ai-preview-batch-save"
-                            onClick={() => void saveAiPreviewBatch()}
-                            disabled={aiBatchSaving}
-                          >
-                            {aiBatchSaving
-                              ? "기관별 저장 중…"
-                              : `${aiPreviews.length}개 기관 한 번에 저장`}
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className="ai-preview-batch-save"
+                          onClick={() => void saveAiPreviewBatch()}
+                          disabled={aiBatchSaving}
+                        >
+                          {aiBatchSaving ? "저장 중…" : "확인한 내용 저장"}
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
                             setAiPreviews([]);
+                            setAiCalendarSchedules([]);
                             setAiMessages([]);
                             setAiError("");
                           }}
@@ -16163,6 +16258,52 @@ export default function CrmApp({
                       </div>
                     </div>
                     <div className="ai-preview-list">
+                      {aiCalendarSchedules.map((schedule, index) => (
+                        <article
+                          className="ai-preview-card"
+                          key={`${schedule.organization}-${schedule.scheduledDate}-${schedule.startTime}-${schedule.label}-${index}`}
+                        >
+                          <div className="ai-preview-header">
+                            <div>
+                              <span>일정 저장 전 확인</span>
+                              <h3>{schedule.organization}</h3>
+                            </div>
+                          </div>
+                          <div className="ai-preview-grid">
+                            <div>
+                              <span>날짜</span>
+                              <strong>{formatDate(schedule.scheduledDate)}</strong>
+                            </div>
+                            <div>
+                              <span>시간</span>
+                              <strong>
+                                {schedule.startTime
+                                  ? `${schedule.startTime}${
+                                      schedule.endTime
+                                        ? ` ~ ${schedule.endTime}`
+                                        : ""
+                                    }`
+                                  : "종일"}
+                              </strong>
+                            </div>
+                            <div>
+                              <span>일정 제목</span>
+                              <strong>{schedule.label}</strong>
+                            </div>
+                            <div>
+                              <span>담당자</span>
+                              <strong>
+                                {schedule.assigneeName ||
+                                  session?.member.displayName ||
+                                  identity.displayName}
+                              </strong>
+                            </div>
+                          </div>
+                          <p className="ai-preview-summary">
+                            {schedule.details || "메모 없음"}
+                          </p>
+                        </article>
+                      ))}
                       {aiPreviews.map((aiPreview, index) => (
                         <article
                           className="ai-preview-card"
@@ -18214,24 +18355,24 @@ export default function CrmApp({
                       }`}
                     </button>
                   )}
-                  {<button
-                      type="button"
-                      className="institution-merge-button"
-                      disabled={
-                        selectedInstitutionNames.length < 2 ||
-                        institutionMergeBusy
-                      }
-                      onClick={() => void openInstitutionMerge()}
-                      title="같은 기관이 여러 이름으로 등록됐을 때 선택한 기관을 하나로 합칩니다."
-                    >
-                      {institutionMergeBusy
-                        ? "기관 확인 중…"
-                        : `선택 기관 합치기${
-                            selectedInstitutionIds.length > 0
-                              ? ` ${selectedInstitutionIds.length}`
-                              : ""
-                          }`}
-                    </button>}
+                  <button
+                    type="button"
+                    className="institution-merge-button"
+                    disabled={
+                      selectedInstitutionNames.length < 2 ||
+                      institutionMergeBusy
+                    }
+                    onClick={() => void openInstitutionMerge()}
+                    title="같은 기관이 여러 이름으로 등록됐을 때 선택한 기관을 하나로 합칩니다."
+                  >
+                    {institutionMergeBusy
+                      ? "기관 확인 중…"
+                      : `선택 기관 합치기${
+                          selectedInstitutionIds.length > 0
+                            ? ` ${selectedInstitutionIds.length}`
+                            : ""
+                        }`}
+                  </button>
                   {canDeleteRecords && (
                     <button
                       type="button"
@@ -18314,17 +18455,17 @@ export default function CrmApp({
                         공동사업 연결
                       </button>
                     )}
-                    {<button
-                        type="button"
-                        className="merge"
-                        disabled={
-                          selectedInstitutionNames.length < 2 ||
-                          institutionMergeBusy
-                        }
-                        onClick={() => void openInstitutionMerge()}
-                      >
-                        {institutionMergeBusy ? "확인 중…" : "선택 기관 합치기"}
-                      </button>}
+                    <button
+                      type="button"
+                      className="merge"
+                      disabled={
+                        selectedInstitutionNames.length < 2 ||
+                        institutionMergeBusy
+                      }
+                      onClick={() => void openInstitutionMerge()}
+                    >
+                      {institutionMergeBusy ? "확인 중…" : "선택 기관 합치기"}
+                    </button>
                     {canDeleteRecords && (
                       <button
                         type="button"
@@ -19187,7 +19328,8 @@ export default function CrmApp({
                       }`}
                     </button>
                   )}
-                  {view === "awards" && (<button
+                  {view === "awards" && (
+                    <button
                       type="button"
                       className="institution-merge-button"
                       disabled={
@@ -19204,7 +19346,8 @@ export default function CrmApp({
                               ? ` ${selectedAwardOrganizations.length}`
                               : ""
                           }`}
-                    </button>)}
+                    </button>
+                  )}
                   {view === "awards" && isOwner && selectedAwardIds.length > 0 && (
                     <button
                       type="button"

@@ -50,11 +50,11 @@ test("기존 시공 Google 일정은 안전하게 다시 연결하고 신뢰 가
   assert.match(sync, /unlinked\.length === 1/);
   assert.match(sync, /forcedRefreshIds/);
   assert.match(api, /담당자: \$\{required\(schedule\.assigneeName\)\}/);
-  assert.match(api, /시공 단계: \$\{required\(schedule\.constructionStage \|\| cleanLabel\)\}/);
-  assert.match(api, /시공업체: \$\{required\(schedule\.vendorName\)\}/);
-  assert.match(api, /공사·품목: \$\{required\(schedule\.productSummary\)\}/);
-  assert.match(api, /일정 내용: \$\{required\(cleanLabel\)\}/);
-  assert.match(api, /"\[입력 필요\]"/);
+  assert.match(api, /메모: \$\{required\(schedule\.details\)\}/);
+  assert.doesNotMatch(api, /시공 단계: \$\{/);
+  assert.doesNotMatch(api, /시공업체: \$\{/);
+  assert.doesNotMatch(api, /공사·품목: \$\{/);
+  assert.doesNotMatch(api, /일정 내용: \$\{/);
   assert.match(sync, /missingManagedDescription/);
   assert.match(api, /colorId: colorId\[category\]/);
   assert.match(contentRefreshMigration, /기존 사이트 연결 일정/);
@@ -70,7 +70,7 @@ test("새 메모만 저장·양방향 동기화하고 과거 메모는 임의 �
   assert.match(calendar, /details: draft\.details\.trim\(\)/);
   assert.match(route, /details: payload\.details/);
   assert.match(store, /const details = clean\(input\.details\)\.slice\(0, 500\)/);
-  assert.match(api, /메모: \$\{schedule\.details\.trim\(\)\}/);
+  assert.match(api, /메모: \$\{required\(schedule\.details\)\}/);
   assert.match(sync, /memoFromGoogleDescription\(event\.description \|\| ""\)/);
   assert.match(sync, /googleStructuredDescription/);
   assert.match(sync, /\["\[입력 필요\]", "미정", "미입력"\]/);

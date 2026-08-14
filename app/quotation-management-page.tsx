@@ -15,7 +15,7 @@ import { createQuotationWorkbook } from "../lib/quotation-xlsx";
 import { AIRPASS_COMPANY, AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "../lib/airpass-company";
 import { calculateConsortiumSettlement } from "../lib/consortium-settlement";
 import { createConsortiumSettlementWorkbook, type ConsortiumSettlementWorkbookInput } from "../lib/consortium-settlement-xlsx";
-import { createInternalProfitReportWorkbook } from "../lib/internal-profit-report-xlsx";
+import { createInternalProfitReportWorkbook, type InternalProfitReportWorkbookInput } from "../lib/internal-profit-report-xlsx";
 import { createConsortiumSettlementPdf, createInternalProfitReportPdf } from "./consortium-settlement-pdf";
 import { hasProcurementSignal, procurementNumbersFromText } from "../lib/procurement-product";
 import { createAuthoredQuotationPdf, quotationFileStem } from "./authored-quotation-pdf";
@@ -929,6 +929,58 @@ export default function QuotationManagementPage({
     };
   }), [draft]);
 
+  const internalCostDetails = useMemo<InternalProfitReportWorkbookInput["costDetails"]>(() => {
+    const details: InternalProfitReportWorkbookInput["costDetails"] = [];
+    for (const item of draft?.items ?? []) {
+      const costKind = quotationInternalCostKind(item.name, item.specification);
+      const contentSubstitution = isContentSubstitutionItem(item);
+      const itemCost = item.internalCostEnabled ? Math.max(0, item.internalCostAmount) : 0;
+      if (contentSubstitution && itemCost > 0) {
+        const baseRate = contentSubstitutionBaseEarningRate(item);
+        details.push({
+          label: "콘텐츠 대체(바이패스)",
+          itemName: item.name,
+          amount: itemCost,
+          note: `대체 비용 반영 · 남은 금액에 ${(baseRate * 100).toFixed(1)}% 수수료 적용`,
+          category: "bypass",
+        });
+      } else if (itemCost > 0 && (draft?.executionType !== "컨소" || item.internalCostBearer === "whizzup")) {
+        details.push({
+          label: costKind === "projector-installation"
+            ? "빔·비디오프로젝터 설치비"
+            : costKind === "aifit-yoga-mat"
+              ? "요가매트 제공 비용"
+              : "품목 내부 원가",
+          itemName: item.name,
+          amount: itemCost,
+          note: "최종 총이익 차감",
+          category: "internal-cost",
+        });
+      }
+      const teachingAidSupport = Math.max(0, item.teachingAidSupportAmount ?? 0);
+      if (teachingAidSupport > 0) {
+        details.push({
+          label: "교구 할인·지원 차감",
+          itemName: item.name,
+          amount: teachingAidSupport,
+          note: "내부 마진 차감",
+          category: "support",
+        });
+      }
+    }
+    const constructionCost = Math.max(0, draft?.additionalInternalConstructionCost ?? 0);
+    if (constructionCost > 0) {
+      details.push({
+        label: "추가 공사 원가",
+        itemName: draft?.projectTitle || "견적 공통",
+        amount: constructionCost,
+        note: "최종 총이익 차감",
+        category: "internal-cost",
+      });
+    }
+    return details;
+  }, [draft]);
+
   function internalProfitReportText() {
     if (!draft) return "";
     return [
@@ -977,6 +1029,7 @@ export default function QuotationManagementPage({
       internalCost: numbers.internalCost,
       margin: numbers.margin,
       marginRate: numbers.marginRate,
+      costDetails: internalCostDetails,
       rows: internalReportRows.map((row) => ({ ...row, specification: row.specification ?? "" })),
     };
   }
@@ -2759,7 +2812,10 @@ export default function QuotationManagementPage({
               <summary><span className="number">{row.number}</span><span className="title"><b>{row.name}</b><small>{row.specification || `${row.quantity}${row.unit}`}</small></span>{row.complimentary && <em>무상 제공</em>}<span className="profit"><small>품목 순이익</small><b>{won.format(row.netProfit)}원</b></span></summary>
               <div><dl><dt>견적금액</dt><dd>{row.complimentary ? "무상" : `${won.format(row.amount)}원`}</dd><dt>예상 수익</dt><dd>{won.format(row.earning)}원</dd><dt>컨소 지급</dt><dd>{row.consortium ? `-${won.format(row.consortium)}원` : "0원"}</dd><dt>내부 원가</dt><dd>{row.internalCost ? `-${won.format(row.internalCost)}원` : "0원"}</dd></dl><p>{row.complimentary ? `기준 단가 ${won.format(row.unitPrice)}원은 보존되며 견적 합계와 수익 계산에서 제외됩니다.` : `${row.quantity}${row.unit} × ${won.format(row.unitPrice)}원 · 수익률 ${(row.earningRate * 100).toFixed(1)}%${draft.executionType === "컨소" ? ` · 컨소 지급률 ${(row.consortiumRate * 100).toFixed(1)}%` : ""}`}</p></div>
             </details>)}</div>
-            {numbers.additionalConstructionCost > 0 && <p className="quote-internal-report-deduction">별도 추가 공사 원가 -{won.format(numbers.additionalConstructionCost)}원은 최종 총이익에 반영되었습니다.</p>}
+            {internalCostDetails.length > 0 && <section className="quote-internal-report-cost-details" aria-label="내부 비용 상세">
+              <h4>내부 비용·지원·바이패스 상세</h4>
+              <ul>{internalCostDetails.map((detail, index) => <li key={`${detail.label}-${detail.itemName}-${index}`}><span><strong>{detail.label}</strong><small>{detail.itemName}{detail.note ? ` · ${detail.note}` : ""}</small></span><b>-{won.format(detail.amount)}원</b></li>)}</ul>
+            </section>}
             <footer><button type="button" onClick={downloadInternalProfitExcel}>Excel 다운로드</button><button type="button" onClick={() => void openInternalProfitPdf()}>PDF 보기·인쇄</button><button className="primary" type="button" onClick={() => setInternalReportOpen(false)}>닫기</button></footer>
           </section>
         </div>}
@@ -2789,7 +2845,10 @@ export default function QuotationManagementPage({
               <header><span className="number">{row.number}</span><span className="title"><b>{row.name}</b><small>{row.specification || `${row.quantity}${row.unit} · ${won.format(row.unitPrice)}원`}</small></span>{row.complimentary && <em>무상 제공</em>}<strong>{won.format(row.netProfit)}원</strong></header>
               <dl><div><dt>견적금액</dt><dd>{row.complimentary ? "무상" : `${won.format(row.amount)}원`}</dd></div><div><dt>예상 수익</dt><dd>{won.format(row.earning)}원</dd></div><div className="deduction"><dt>컨소·내부 비용</dt><dd>{row.consortium + row.internalCost ? `-${won.format(row.consortium + row.internalCost)}원` : "0원"}</dd></div><div><dt>상태</dt><dd>{row.status}</dd></div></dl>
             </article>)}</div>
-            {numbers.additionalConstructionCost > 0 && <p className="internal-profit-print-deduction">별도 추가 공사 원가 -{won.format(numbers.additionalConstructionCost)}원이 최종 총이익에 반영되었습니다.</p>}
+            {internalCostDetails.length > 0 && <section className="internal-profit-print-cost-details">
+              <h2>내부 비용·지원·바이패스 상세</h2>
+              <table><thead><tr><th>구분</th><th>적용 품목</th><th>처리 기준</th><th>차감 금액</th></tr></thead><tbody>{internalCostDetails.map((detail, index) => <tr key={`internal-profit-cost-${detail.label}-${index}`}><td>{detail.label}</td><td>{detail.itemName}</td><td>{detail.note || "최종 총이익 차감"}</td><td>-{won.format(detail.amount)}원</td></tr>)}</tbody></table>
+            </section>}
             <footer className="internal-profit-print-total"><span>컨소·내부 비용을 반영한 최종 예상 수익<small>마진율 {(numbers.marginRate * 100).toFixed(1)}%</small></span><strong>{won.format(numbers.margin)}원</strong></footer>
             <p className="internal-profit-print-note"><span>본 자료는 내부 수익 검토용이며 외부 견적서에는 포함되지 않습니다.</span><b>주식회사 위즈업</b></p>
           </article>

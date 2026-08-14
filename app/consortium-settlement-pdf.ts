@@ -321,19 +321,64 @@ function drawProfitItems(context: CanvasRenderingContext2D, input: InternalProfi
   return y;
 }
 
+function drawProfitCostDetails(
+  context: CanvasRenderingContext2D,
+  rows: InternalProfitReportWorkbookInput["costDetails"],
+  startY: number,
+) {
+  let y = sectionRow(context, startY, "내부 비용·지원·바이패스 상세");
+  rows.forEach((detail) => {
+    cell(context, 72, y, 220, 50, detail.category, {
+      fill: "#fff5e8",
+      color: "#9b5a28",
+      bold: true,
+      size: 13,
+    });
+    cell(context, 292, y, 310, 50, detail.itemName || "공통", {
+      bold: true,
+      size: 13,
+    });
+    cell(context, 602, y, 350, 50, detail.note || "-", {
+      color: "#52617d",
+      size: 12,
+    });
+    cell(context, 952, y, 216, 50, `-${won.format(Math.abs(detail.amount))}원`, {
+      fill: "#fff5e8",
+      color: "#c24b3f",
+      align: "right",
+      bold: true,
+      size: 15,
+    });
+    y += 50;
+  });
+  return y;
+}
+
 export async function createInternalProfitReportPdf(input: InternalProfitReportWorkbookInput) {
   const logo = await loadImage("/whizzup-logo.png");
-  const chunks: InternalProfitReportWorkbookInput["rows"][] = [];
-  for (let index = 0; index < input.rows.length; index += 10) chunks.push(input.rows.slice(index,index+10));
-  if (!chunks.length) chunks.push([]);
+  const itemChunks: InternalProfitReportWorkbookInput["rows"][] = [];
+  for (let index = 0; index < input.rows.length; index += 10) itemChunks.push(input.rows.slice(index,index+10));
+  if (!itemChunks.length) itemChunks.push([]);
+  const detailChunks: InternalProfitReportWorkbookInput["costDetails"][] = [];
+  for (let index = 0; index < input.costDetails.length; index += 18) detailChunks.push(input.costDetails.slice(index,index+18));
+  const pagePlan: Array<
+    | { type: "items"; rows: InternalProfitReportWorkbookInput["rows"] }
+    | { type: "costs"; rows: InternalProfitReportWorkbookInput["costDetails"] }
+  > = [
+    ...itemChunks.map((rows) => ({ type: "items" as const, rows })),
+    ...detailChunks.map((rows) => ({ type: "costs" as const, rows })),
+  ];
   const pages: Array<{ blob: Blob; width: number; height: number }> = [];
-  for (let pageIndex = 0; pageIndex < chunks.length; pageIndex += 1) {
+  for (let pageIndex = 0; pageIndex < pagePlan.length; pageIndex += 1) {
+    const page = pagePlan[pageIndex];
     const canvas = document.createElement("canvas"); canvas.width = PAGE_WIDTH * RENDER_SCALE; canvas.height = PAGE_HEIGHT * RENDER_SCALE;
     const context = canvas.getContext("2d",{alpha:false}); if (!context) throw new Error("내부 수익표 PDF 화면을 준비하지 못했습니다."); context.scale(RENDER_SCALE,RENDER_SCALE);
-    let y = drawProfitHeader(context,input,logo,pageIndex+1,chunks.length);
+    let y = drawProfitHeader(context,input,logo,pageIndex+1,pagePlan.length);
     if (pageIndex === 0) y = drawProfitSummary(context,input,y);
-    y = drawProfitItems(context,input,chunks[pageIndex],y);
-    if (pageIndex === chunks.length-1) {
+    y = page.type === "items"
+      ? drawProfitItems(context,input,page.rows,y)
+      : drawProfitCostDetails(context,page.rows,y);
+    if (pageIndex === pagePlan.length-1) {
       cell(context,72,y+18,700,50,"컨소·내부 비용을 반영한 최종 예상 수익",{fill:"#eaf1ff",color:"#182842",bold:true,size:17});
       cell(context,772,y+18,396,50,`${won.format(input.margin)}원`,{fill:"#eaf1ff",color:"#2254d1",align:"right",bold:true,size:24});
     }

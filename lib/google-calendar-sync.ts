@@ -713,10 +713,17 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
           ).bind(existingStructured.products, row.organization, row.business_round).run();
         }
       }
-      const requiredDescriptionFields = row?.category === "construction"
-        ? ["담당자:", "시공 단계:", "시공업체:", "공사·품목:", "메모:"]
-        : ["담당자:", "일정 내용:", "메모:"];
-      const missingManagedDescription = requiredDescriptionFields.some((field) => !description.includes(field));
+      const requiredDescriptionFields = ["담당자:", "메모:"];
+      const legacyManagedDescriptionFields = [
+        "시공 단계:",
+        "시공업체:",
+        "공사·품목:",
+        "일정 내용:",
+        "원본 제목:",
+      ];
+      const missingManagedDescription =
+        requiredDescriptionFields.some((field) => !description.includes(field)) ||
+        legacyManagedDescriptionFields.some((field) => description.includes(field));
       if (row && event.status !== "cancelled" && missingManagedDescription) {
         await d1.prepare(
           `UPDATE organization_schedules

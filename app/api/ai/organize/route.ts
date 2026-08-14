@@ -31,6 +31,7 @@ import {
   ensureBudgetNamesReady,
   resolveBudgetRecordMetadata,
 } from "../../../../lib/budget-names";
+import { normalizeAiCalendarSchedules } from "../../../../lib/ai-calendar-schedules";
 
 export const dynamic = "force-dynamic";
 
@@ -296,8 +297,43 @@ const responseSchema = {
       maxItems: 50,
       items: recordDraftSchema,
     },
+    calendarSchedules: {
+      type: "array",
+      description:
+        "날짜와 기관이 명확한 일정 전용 입력. 기관 영업 기록과 분리하여 통합 일정에만 저장",
+      maxItems: 50,
+      items: {
+        type: "object",
+        properties: {
+          organization: { type: "string" },
+          region: { type: "string" },
+          label: { type: "string" },
+          scheduledDate: { type: "string" },
+          startTime: { type: "string" },
+          endTime: { type: "string" },
+          details: { type: "string" },
+          assigneeName: { type: "string" },
+        },
+        required: [
+          "organization",
+          "region",
+          "label",
+          "scheduledDate",
+          "startTime",
+          "endTime",
+          "details",
+          "assigneeName",
+        ],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ["needsClarification", "assistantMessage", "drafts"],
+  required: [
+    "needsClarification",
+    "assistantMessage",
+    "drafts",
+    "calendarSchedules",
+  ],
   additionalProperties: false,
 };
 
@@ -722,6 +758,16 @@ detailed이면 detailSections를 예산, 구축 방향, 공간별 검토, 경쟁
 후속 질문은 공간, 대상 연령, 예산 구분, 일정, 수량처럼 다음 영업에 실제 도움이 되는 질문으로 작성하세요.
 추천 행동은 담당자가 바로 실행할 수 있는 구체적이고 짧은 문장으로 작성하세요.
 
+[일정 전용 입력 분리 규칙]
+- 현재 메시지가 기관명·날짜·시간과 방문·미팅·영업·시공·교육·검수·설치 등 명확한 일정만 전달한 경우, 그 일정만을 이유로 drafts를 만들지 말고 calendarSchedules에만 넣으세요.
+- 상담·결과 기록과 미래 일정이 함께 있으면 상담 사실은 drafts에, 미래 일정은 calendarSchedules에 분리하세요.
+- calendarSchedules 각 항목에는 organization, region, label, scheduledDate, startTime, endTime, details, assigneeName을 채우세요.
+- 담당자가 명시되면 assigneeName에 넣고, 없으면 빈 문자열로 두세요.
+- 같은 기관·날짜·시간·제목의 일정은 하나만 만드세요.
+- 기관이 불명확하면 needsClarification을 true로 두고 확인 질문을 하세요.
+- calendarSchedules에 넣은 일정을 draft의 progressSchedule에 중복해서 넣지 마세요.
+- 일정 전용 입력은 기관 활동·영업 히스토리 초안을 만들지 않습니다.
+
 [위즈업 내부 제품 자료]
 ${productRecommendationContext()}
 
@@ -769,7 +815,11 @@ budgetType은 위 목록의 표준명 또는 별칭과 입력 내용이 정확�
       needsClarification: boolean;
       assistantMessage: string;
       drafts: Record<string, unknown>[];
+      calendarSchedules?: unknown[];
     };
+    const calendarSchedules = normalizeAiCalendarSchedules(
+      parsed.calendarSchedules,
+    );
     const postedDate = todayInSeoul();
     const userProjectText = [
       ...history
@@ -947,6 +997,7 @@ budgetType은 위 목록의 표준명 또는 별칭과 입력 내용이 정확�
             : parsed.assistantMessage,
       drafts,
       draft: drafts[0],
+      calendarSchedules,
       schoolConfirmations,
       scheduleCancellation: cancellationIntent === "none"
         ? undefined

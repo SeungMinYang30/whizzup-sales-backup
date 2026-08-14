@@ -911,7 +911,11 @@ export async function addOrganizationSchedule(input: {
   if (startTime && endTime && endTime < startTime) throw new Error("종료 시간은 시작 시간 이후여야 합니다.");
   const semanticLabel = normalizeScheduleSemanticLabel(organization, label);
   const d1 = await ensureOrganizationSchedulesReady();
-  const assignee = await resolveScheduleAssignee(d1, input.assigneeMemberId, input.memberName);
+  const assignee = await resolveScheduleAssignee(
+    d1,
+    input.assigneeMemberId,
+    clean(input.assigneeName) || input.memberName,
+  );
   const candidates = await d1.prepare(
     `SELECT * FROM organization_schedules
      WHERE LOWER(TRIM(organization)) = LOWER(TRIM(?))
