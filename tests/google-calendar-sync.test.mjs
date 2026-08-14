@@ -62,7 +62,8 @@ test("기존 시공 Google 일정은 안전하게 다시 연결하고 신뢰 가
   assert.match(api, /\[입력\\s\*필요\\\]/);
   assert.match(api, /construction: "6"/);
   assert.match(sync, /google:construction_color:muted_red_brown:v1/);
-  assert.match(sync, /google:construction_display:orange_timed_default:v1/);
+  assert.match(sync, /google:construction_display:orange_timed_default:v2/);
+  assert.match(sync, /WHERE category = 'construction'\s+AND TRIM\(COALESCE\(deleted_at, ''\)\) = ''/);
   assert.match(api, /usesConstructionDisplayTime \? "08:00" : storedStartTime/);
   assert.match(api, /\? \{ date: schedule\.scheduledDate, time: "08:30" \}/);
   assert.match(sync, /missingManagedDescription/);

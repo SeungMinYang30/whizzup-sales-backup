@@ -335,7 +335,7 @@ export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?
       ).bind(constructionColorMigrationKey),
     ]);
   }
-  const constructionDisplayMigrationKey = "google:construction_display:orange_timed_default:v1";
+  const constructionDisplayMigrationKey = "google:construction_display:orange_timed_default:v2";
   const constructionDisplayMigration = await d1.prepare(
     "SELECT value FROM app_settings WHERE key = ?",
   ).bind(constructionDisplayMigrationKey).first<{ value: string }>();
@@ -345,7 +345,6 @@ export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?
         `UPDATE organization_schedules
          SET sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
          WHERE category = 'construction'
-           AND sync_status = 'synced'
            AND TRIM(COALESCE(deleted_at, '')) = ''`,
       ),
       d1.prepare(
