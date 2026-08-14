@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useState } from "react";
 import TrashPage from "./trash-page";
 
 type BackupInspection = {
@@ -15,15 +15,7 @@ type BackupInspection = {
   compatibilityNotices: string[];
 };
 
-type CsvInspection = {
-  totalRows: number;
-  importableRows: number;
-  duplicateRows: number;
-  errorRows: number;
-  errors: { row: number; message: string }[];
-};
-
-type DownloadKind = "full" | "activities-csv" | "emergency" | "offline";
+type DownloadKind = "full" | "emergency" | "offline";
 
 const tableLabels: Record<string, string> = {
   members: "구성원·권한",
@@ -131,12 +123,6 @@ export default function DataBackupPage({
     canManageTrash ? "trash" : "backup",
   );
   const [busy, setBusy] = useState("");
-  const [lastBackupAt, setLastBackupAt] = useState(() =>
-    typeof window === "undefined"
-      ? ""
-      : (window.localStorage.getItem("whizzup-last-full-backup-at") ?? ""),
-  );
-  const [pageOpenedAt] = useState(() => Date.now());
   const [backupFileName, setBackupFileName] = useState("");
   const [backupPayload, setBackupPayload] = useState<unknown>(null);
   const [backupInspection, setBackupInspection] =
@@ -151,19 +137,6 @@ export default function DataBackupPage({
     }
   }, []);
   const [restoreConfirmation, setRestoreConfirmation] = useState("");
-  const [csvFileName, setCsvFileName] = useState("");
-  const [csvText, setCsvText] = useState("");
-  const [csvInspection, setCsvInspection] =
-    useState<CsvInspection | null>(null);
-  const [csvError, setCsvError] = useState("");
-  const backupReminder = useMemo(() => {
-    if (!lastBackupAt) return "첫 전체 백업을 내려받아 안전한 폴더에 보관해 주세요.";
-    const elapsed = pageOpenedAt - new Date(lastBackupAt).getTime();
-    const days = Math.max(0, Math.floor(elapsed / 86_400_000));
-    return days >= 7
-      ? `마지막 전체 백업 후 ${days}일이 지났습니다. 새 백업을 권장합니다.`
-      : `마지막 전체 백업: ${formatDateTime(lastBackupAt)}`;
-  }, [lastBackupAt, pageOpenedAt]);
 
   async function download(kind: DownloadKind, safety = false) {
     try {
@@ -183,30 +156,23 @@ export default function DataBackupPage({
           response,
           kind === "full"
             ? "WHIZZUP_full_backup.json"
-            : kind === "activities-csv"
-              ? "WHIZZUP_activities.csv"
-              : kind === "emergency"
-                ? "WHIZZUP_emergency_recovery.zip"
-                : "WHIZZUP_offline_edition.zip",
+            : kind === "emergency"
+              ? "WHIZZUP_emergency_recovery.zip"
+              : "WHIZZUP_offline_edition.zip",
         ),
       );
-      if (kind === "full" || kind === "emergency" || kind === "offline") {
-        const now = new Date().toISOString();
-        setLastBackupAt(now);
-        window.localStorage.setItem("whizzup-last-full-backup-at", now);
-        if (kind === "full" && safety) setSafetyBackupDownloaded(true);
-        notify(
-          kind === "emergency"
-            ? "비상복구 패키지를 내려받았습니다."
-            : kind === "offline"
-              ? "오프라인 독립판을 내려받았습니다."
-              : safety
-            ? "복원 직전 안전 백업을 내려받았습니다."
-            : "전체 DB 백업 파일을 내려받았습니다.",
-        );
-      } else {
-        notify("전체 활동 CSV를 내려받았습니다.");
-      }
+      const now = new Date().toISOString();
+      window.localStorage.setItem("whizzup-last-full-backup-at", now);
+      if (kind === "full" && safety) setSafetyBackupDownloaded(true);
+      notify(
+        kind === "emergency"
+          ? "비상복구 패키지를 내려받았습니다."
+          : kind === "offline"
+            ? "오프라인 독립판을 내려받았습니다."
+            : safety
+              ? "복원 직전 안전 백업을 내려받았습니다."
+              : "전체 DB 백업 파일을 내려받았습니다.",
+      );
     } catch (error) {
       notify(
         error instanceof Error ? error.message : "파일을 내려받지 못했습니다.",
@@ -307,77 +273,6 @@ export default function DataBackupPage({
     }
   }
 
-  async function inspectCsvFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    setCsvFileName(file.name);
-    setCsvText("");
-    setCsvInspection(null);
-    setCsvError("");
-    if (file.size > 12 * 1024 * 1024) {
-      setCsvError("12MB 이하의 활동 CSV 파일을 선택해 주세요.");
-      return;
-    }
-    try {
-      setBusy("inspect-csv");
-      const csv = await file.text();
-      const response = await fetch("/api/backup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "inspect-csv", csv }),
-      });
-      const payload = (await response.json()) as {
-        inspection?: CsvInspection;
-        error?: string;
-      };
-      if (!response.ok || !payload.inspection) {
-        throw new Error(payload.error || "CSV를 검사하지 못했습니다.");
-      }
-      setCsvText(csv);
-      setCsvInspection(payload.inspection);
-    } catch (error) {
-      setCsvError(
-        error instanceof Error ? error.message : "CSV를 검사하지 못했습니다.",
-      );
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function importCsv() {
-    if (!csvText || !csvInspection || csvInspection.errorRows > 0) return;
-    try {
-      setBusy("import-csv");
-      const response = await fetch("/api/backup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "import-csv", csv: csvText }),
-      });
-      const payload = (await response.json()) as {
-        ok?: boolean;
-        result?: { importedRows?: number };
-        error?: string;
-      };
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "활동 CSV를 불러오지 못했습니다.");
-      }
-      await onDataChanged();
-      notify(
-        `${payload.result?.importedRows ?? 0}건의 활동 기록을 불러왔습니다.`,
-      );
-      setCsvFileName("");
-      setCsvText("");
-      setCsvInspection(null);
-    } catch (error) {
-      setCsvError(
-        error instanceof Error ? error.message : "활동 CSV를 불러오지 못했습니다.",
-      );
-    } finally {
-      setBusy("");
-    }
-  }
-
   const sectionTabs = (
     <div className="backup-section-tabs" role="tablist" aria-label="데이터 복구 메뉴">
       {canManageTrash && (
@@ -422,185 +317,6 @@ export default function DataBackupPage({
     <section className="backup-workspace">
       {sectionTabs}
     <section className="backup-layout">
-      <article className="panel backup-hero">
-        <div>
-          <span className="section-kicker">DATA SAFETY</span>
-          <h2>업무 데이터 전체를 한 파일로 안전하게 보관</h2>
-          <p>
-            기관 기록뿐 아니라 지도 주소·좌표, 영업 묶음, 수주 사업과 품목,
-            구성원 권한까지 함께 저장합니다.
-          </p>
-        </div>
-        <div className="backup-reminder">
-          <span>주 1회 권장</span>
-          <strong>{backupReminder}</strong>
-        </div>
-      </article>
-
-      <div className="backup-card-grid backup-card-grid-single">
-        <article className="panel backup-card">
-          <div className="backup-card-number">01</div>
-          <span className="section-kicker">ACTIVITY CSV</span>
-          <h3>활동 CSV 불러오기</h3>
-          <p>
-            엑셀에서 정리한 기관 활동을 추가합니다. 기존 기록과 같은 ID나
-            내용은 자동으로 건너뜁니다.
-          </p>
-          <div className="backup-inline-actions">
-            <button
-              type="button"
-              className="ghost-button"
-              disabled={Boolean(busy)}
-              onClick={() => void download("activities-csv")}
-            >
-              전체 활동 CSV 받기
-            </button>
-            <label className="backup-file-button">
-              CSV 파일 선택
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                onChange={(event) => void inspectCsvFile(event)}
-              />
-            </label>
-          </div>
-          {csvFileName && (
-            <p className="backup-selected-file">선택 파일 · {csvFileName}</p>
-          )}
-          {csvError && <div className="backup-error">{csvError}</div>}
-          {csvInspection && (
-            <div className="backup-inspection">
-              <div className="backup-stat-row">
-                <span>
-                  전체 <strong>{csvInspection.totalRows}</strong>
-                </span>
-                <span className="success">
-                  추가 <strong>{csvInspection.importableRows}</strong>
-                </span>
-                <span>
-                  중복 <strong>{csvInspection.duplicateRows}</strong>
-                </span>
-                <span className={csvInspection.errorRows ? "danger" : ""}>
-                  오류 <strong>{csvInspection.errorRows}</strong>
-                </span>
-              </div>
-              {csvInspection.errors.length > 0 && (
-                <ul className="backup-error-list">
-                  {csvInspection.errors.map((item) => (
-                    <li key={`${item.row}-${item.message}`}>
-                      {item.row}행 · {item.message}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <button
-                type="button"
-                className="setup-primary"
-                disabled={
-                  Boolean(busy) ||
-                  csvInspection.importableRows === 0 ||
-                  csvInspection.errorRows > 0
-                }
-                onClick={() => void importCsv()}
-              >
-                {busy === "import-csv"
-                  ? "기록 불러오는 중…"
-                  : `${csvInspection.importableRows}건 불러오기`}
-              </button>
-            </div>
-          )}
-          <p className="backup-security-note">
-            CSV는 활동 기록용입니다. 지도·품목·권한까지 복구하려면 전체 DB
-            백업을 사용해 주세요.
-          </p>
-        </article>
-      </div>
-
-      <article className="panel backup-portability-card">
-        <div className="backup-restore-heading">
-          <div>
-            <span className="section-kicker">PORTABILITY &amp; OFFLINE</span>
-            <h3>서비스 이전·오프라인 대비</h3>
-            <p>
-              Sites를 사용할 수 없는 상황에도 다른 호스팅에서 작업을 이어가거나,
-              인터넷 없이 최신 업무 자료를 열 수 있는 관리자 전용 패키지입니다.
-            </p>
-          </div>
-          <span className="backup-owner-badge">운영자 전용</span>
-        </div>
-
-        <div className="backup-portability-grid">
-          <section className="backup-package-card">
-            <div className="backup-package-heading">
-              <span className="backup-card-number">02</span>
-              <div>
-                <span className="section-kicker">EMERGENCY RECOVERY</span>
-                <h4>비상복구 패키지</h4>
-              </div>
-            </div>
-            <p>
-              전체 사이트 소스, 최신 DB 백업, 파일 목록과 이전 안내서를 ZIP
-              하나로 저장합니다. 다른 호스팅이나 새 Codex 작업에서 이어갈 때
-              사용합니다.
-            </p>
-            <ul className="backup-inclusion-list">
-              <li>화면·기능·DB 구조·테스트가 포함된 사이트 원본</li>
-              <li>다운로드 시점의 전체 업무 데이터</li>
-              <li>다른 호스팅 및 Codex 복구 시작 안내서</li>
-              <li>로그인 토큰·API 키 등 비밀값은 자동 제외</li>
-            </ul>
-            <button
-              type="button"
-              className="primary-button backup-main-action"
-              disabled={Boolean(busy)}
-              onClick={() => void download("emergency")}
-            >
-              {busy === "download-emergency"
-                ? "비상복구 패키지 만드는 중…"
-                : "비상복구 패키지 내려받기"}
-            </button>
-            <p className="backup-security-note">
-              새 서버에서는 인증과 데이터베이스 연결값을 다시 설정해야 합니다.
-            </p>
-          </section>
-
-          <section className="backup-package-card backup-package-offline">
-            <div className="backup-package-heading">
-              <span className="backup-card-number">03</span>
-              <div>
-                <span className="section-kicker">OFFLINE EDITION</span>
-                <h4>오프라인 독립판</h4>
-              </div>
-            </div>
-            <p>
-              최신 데이터를 내장한 독립 HTML과 원본 JSON을 ZIP으로 저장합니다.
-              압축을 푼 뒤 Chrome 또는 Edge에서 파일을 열면 인터넷 없이
-              사용할 수 있습니다.
-            </p>
-            <ul className="backup-inclusion-list">
-              <li>전체 자료의 표별 열람과 통합 검색</li>
-              <li>행 추가·수정·삭제와 로컬 작업본 저장</li>
-              <li>온라인 복원용 전체 JSON 다시 내보내기</li>
-              <li>설치와 서버 실행 없이 파일을 직접 열어 사용</li>
-            </ul>
-            <button
-              type="button"
-              className="primary-button backup-main-action"
-              disabled={Boolean(busy)}
-              onClick={() => void download("offline")}
-            >
-              {busy === "download-offline"
-                ? "오프라인 독립판 만드는 중…"
-                : "오프라인 독립판 내려받기"}
-            </button>
-            <p className="backup-security-note">
-              ChatGPT 로그인·GPT Actions·지도 외부검색·실시간 공동작업은
-              인터넷 연결형 사이트에서만 작동합니다.
-            </p>
-          </section>
-        </div>
-      </article>
-
       <article className="panel backup-restore-card">
         <div className="backup-restore-heading">
           <div>
@@ -745,6 +461,91 @@ export default function DataBackupPage({
             </button>
           </div>
         )}
+      </article>
+
+      <article className="panel backup-portability-card">
+        <div className="backup-restore-heading">
+          <div>
+            <span className="section-kicker">PORTABILITY &amp; OFFLINE</span>
+            <h3>서비스 이전·오프라인 대비</h3>
+            <p>
+              Vercel을 사용할 수 없는 상황에도 다른 호스팅에서 작업을 이어가거나,
+              인터넷 없이 최신 업무 자료를 열 수 있는 관리자 전용 패키지입니다.
+            </p>
+          </div>
+          <span className="backup-owner-badge">운영자 전용</span>
+        </div>
+
+        <div className="backup-portability-grid">
+          <section className="backup-package-card">
+            <div className="backup-package-heading">
+              <span className="backup-card-number">02</span>
+              <div>
+                <span className="section-kicker">EMERGENCY RECOVERY</span>
+                <h4>비상복구 패키지</h4>
+              </div>
+            </div>
+            <p>
+              전체 사이트 소스, 최신 DB 백업, 파일 목록과 이전 안내서를 ZIP
+              하나로 저장합니다. 다른 호스팅이나 새 Codex 작업에서 이어갈 때
+              사용합니다.
+            </p>
+            <ul className="backup-inclusion-list">
+              <li>화면·기능·DB 구조·테스트가 포함된 사이트 원본</li>
+              <li>다운로드 시점의 전체 업무 데이터</li>
+              <li>다른 호스팅 및 Codex 복구 시작 안내서</li>
+              <li>로그인 토큰·API 키 등 비밀값은 자동 제외</li>
+            </ul>
+            <button
+              type="button"
+              className="primary-button backup-main-action"
+              disabled={Boolean(busy)}
+              onClick={() => void download("emergency")}
+            >
+              {busy === "download-emergency"
+                ? "비상복구 패키지 만드는 중…"
+                : "비상복구 패키지 내려받기"}
+            </button>
+            <p className="backup-security-note">
+              새 서버에서는 인증과 데이터베이스 연결값을 다시 설정해야 합니다.
+            </p>
+          </section>
+
+          <section className="backup-package-card backup-package-offline">
+            <div className="backup-package-heading">
+              <span className="backup-card-number">03</span>
+              <div>
+                <span className="section-kicker">OFFLINE EDITION</span>
+                <h4>오프라인 독립판</h4>
+              </div>
+            </div>
+            <p>
+              최신 데이터를 내장한 독립 HTML과 원본 JSON을 ZIP으로 저장합니다.
+              압축을 푼 뒤 Chrome 또는 Edge에서 파일을 열면 인터넷 없이
+              사용할 수 있습니다.
+            </p>
+            <ul className="backup-inclusion-list">
+              <li>전체 자료의 표별 열람과 통합 검색</li>
+              <li>행 추가·수정·삭제와 로컬 작업본 저장</li>
+              <li>온라인 복원용 전체 JSON 다시 내보내기</li>
+              <li>설치와 서버 실행 없이 파일을 직접 열어 사용</li>
+            </ul>
+            <button
+              type="button"
+              className="primary-button backup-main-action"
+              disabled={Boolean(busy)}
+              onClick={() => void download("offline")}
+            >
+              {busy === "download-offline"
+                ? "오프라인 독립판 만드는 중…"
+                : "오프라인 독립판 내려받기"}
+            </button>
+            <p className="backup-security-note">
+              ChatGPT 로그인·GPT Actions·지도 외부검색·실시간 공동작업은
+              인터넷 연결형 사이트에서만 작동합니다.
+            </p>
+          </section>
+        </div>
       </article>
     </section>
     </section>
