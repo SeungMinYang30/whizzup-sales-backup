@@ -85,6 +85,30 @@ test("emergency package verifies its source, release, database, and required fil
   assert.match(recoveryPackages, /embeddedBackup\.checksum !== expectedBackup\.checksum/);
 });
 
+test("offline standalone is archived to dated Drive folders and never downloaded by the page", () => {
+  assert.match(route, /action === "archive-offline-standalone"/);
+  assert.match(
+    route,
+    /"WHIZZUP 비상복구",\s*"오프라인 독립판",\s*timestamp\.year,\s*timestamp\.month/,
+  );
+  assert.match(route, /contextType: "offline-standalone"/);
+  assert.match(route, /verifyOfflineStandalonePackage\(storedBytes, backup\)/);
+  assert.match(page, /Google Drive에 오프라인 독립판 저장/);
+  assert.match(page, /action: "archive-offline-standalone"/);
+  assert.doesNotMatch(page, /saveBlob/);
+  assert.doesNotMatch(page, /WHIZZUP_offline_edition\.zip/);
+});
+
+test("offline package verifies its HTML, manifest, database, and local-only execution", () => {
+  assert.match(recoveryPackages, /verifyOfflineStandalonePackage/);
+  assert.match(recoveryPackages, /files\["WHIZZUP_offline\.html"\]/);
+  assert.match(recoveryPackages, /files\["MANIFEST\.json"\]/);
+  assert.match(recoveryPackages, /files\["오프라인_사용안내\.txt"\]/);
+  assert.match(recoveryPackages, /manifest\.offlineHtmlSha256 !== offlineHtmlSha256/);
+  assert.match(recoveryPackages, /embeddedBackup\.checksum !== expectedBackup\.checksum/);
+  assert.match(recoveryPackages, /<script\\s\+src=/i);
+});
+
 test("Drive folder creation is serialized and existing duplicates resolve consistently", () => {
   assert.match(driveStorage, /getD1\(\)\.transaction/);
   assert.match(driveStorage, /pg_advisory_xact_lock/);

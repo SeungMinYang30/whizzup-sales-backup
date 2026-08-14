@@ -257,14 +257,76 @@ function offlineGuide(backup: FullBackup) {
 
 export function createOfflineStandalonePackage(backup: FullBackup) {
   const stamp = dateStamp(backup.createdAt);
+  const offlineHtml = strToU8(createOfflineHtml(backup));
+  const manifest = {
+    format: "whizzup-offline-standalone",
+    formatVersion: 1,
+    createdAt: backup.createdAt,
+    offlineHtmlSha256: createHash("sha256").update(offlineHtml).digest("hex"),
+    backupChecksum: backup.checksum,
+    counts: backup.counts,
+    excludes: backup.security.excludes,
+    internetRequired: [
+      "ChatGPT 로그인과 GPT Actions",
+      "지도 외부검색",
+      "Google Drive와 Google Calendar 동기화",
+      "여러 사람의 실시간 공동작업",
+    ],
+  };
   return zipSync(
     {
-      "WHIZZUP_offline.html": strToU8(createOfflineHtml(backup)),
+      "WHIZZUP_offline.html": offlineHtml,
       [`WHIZZUP_full_backup_${stamp}.json`]: strToU8(
         JSON.stringify(backup, null, 2),
       ),
       "오프라인_사용안내.txt": strToU8(offlineGuide(backup)),
+      "MANIFEST.json": strToU8(JSON.stringify(manifest, null, 2)),
     },
     { level: 9 },
   );
+}
+
+export function verifyOfflineStandalonePackage(
+  bytes: Uint8Array,
+  expectedBackup: FullBackup,
+) {
+  const files = unzipSync(bytes);
+  const offlineHtml = files["WHIZZUP_offline.html"];
+  const manifestBytes = files["MANIFEST.json"];
+  const guide = files["오프라인_사용안내.txt"];
+  const backupName = Object.keys(files).find(
+    (name) => name.startsWith("WHIZZUP_full_backup_") && name.endsWith(".json"),
+  );
+  if (!offlineHtml || !manifestBytes || !guide || !backupName) {
+    throw new Error("오프라인 독립판의 필수 파일이 누락되었습니다.");
+  }
+  const offlineHtmlSha256 = createHash("sha256")
+    .update(offlineHtml)
+    .digest("hex");
+  const manifest = JSON.parse(strFromU8(manifestBytes)) as {
+    format?: string;
+    formatVersion?: number;
+    backupChecksum?: string;
+    offlineHtmlSha256?: string;
+  };
+  const embeddedBackup = JSON.parse(strFromU8(files[backupName])) as FullBackup;
+  if (
+    manifest.format !== "whizzup-offline-standalone" ||
+    manifest.formatVersion !== 1 ||
+    manifest.backupChecksum !== expectedBackup.checksum ||
+    manifest.offlineHtmlSha256 !== offlineHtmlSha256 ||
+    embeddedBackup.checksum !== expectedBackup.checksum
+  ) {
+    throw new Error("오프라인 독립판의 생성 정보가 현재 DB와 일치하지 않습니다.");
+  }
+  const html = strFromU8(offlineHtml);
+  if (!html.includes("인터넷 없이 실행 중") || /<script\s+src=/i.test(html)) {
+    throw new Error("오프라인 독립판 HTML에 외부 연결 또는 필수 표시 오류가 있습니다.");
+  }
+  return {
+    backupChecksum: expectedBackup.checksum,
+    offlineHtmlSha256,
+    format: manifest.format,
+    formatVersion: manifest.formatVersion,
+  };
 }

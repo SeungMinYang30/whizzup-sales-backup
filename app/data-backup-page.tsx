@@ -44,23 +44,6 @@ const tableLabels: Record<string, string> = {
   holdem_weekly_scores: "홀덤 주간 순위",
 };
 
-function responseFilename(response: Response, fallback: string) {
-  const disposition = response.headers.get("content-disposition") ?? "";
-  const matched = disposition.match(/filename="([^"]+)"/i);
-  return matched?.[1] || fallback;
-}
-
-function saveBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-}
-
 function formatDateTime(value: string) {
   if (!value) return "기록 없음";
   const date = new Date(value);
@@ -70,31 +53,6 @@ function formatDateTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
-}
-
-async function readError(response: Response, fallback: string) {
-  try {
-    const payload = (await response.json()) as { error?: string };
-    return payload.error || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-async function downloadableBlob(response: Response) {
-  if (response.headers.get("x-whizzup-content-encoding") !== "gzip") {
-    return response.blob();
-  }
-  if (typeof DecompressionStream === "undefined") {
-    throw new Error(
-      "이 브라우저는 대용량 백업 압축 해제를 지원하지 않습니다. 최신 Chrome 또는 Edge를 사용해 주세요.",
-    );
-  }
-  const compressed = new Blob([await response.arrayBuffer()]).stream();
-  const decompressed = compressed.pipeThrough(new DecompressionStream("gzip"));
-  return new Response(decompressed, {
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-  }).blob();
 }
 
 export default function DataBackupPage({
@@ -220,23 +178,31 @@ export default function DataBackupPage({
         );
         return;
       }
-      const response = await fetch(`/api/backup?kind=${kind}`, {
-        cache: "no-store",
+      const response = await fetch("/api/backup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "archive-offline-standalone" }),
       });
-      if (!response.ok) {
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        archive?: {
+          fileName?: string;
+          folderPath?: string;
+          verified?: boolean;
+        };
+        error?: string;
+      };
+      if (!response.ok || !payload.ok || !payload.archive?.verified) {
         throw new Error(
-          await readError(response, "백업 파일을 만들지 못했습니다."),
+          payload.error || "Google Drive 오프라인 독립판을 만들지 못했습니다.",
         );
       }
-      const blob = await downloadableBlob(response);
-      saveBlob(
-        blob,
-        responseFilename(response, "WHIZZUP_offline_edition.zip"),
+      notify(
+        `오프라인 독립판 저장·검증 완료: ${payload.archive.folderPath}/${payload.archive.fileName}`,
       );
-      notify("오프라인 독립판을 내려받았습니다.");
     } catch (error) {
       notify(
-        error instanceof Error ? error.message : "파일을 내려받지 못했습니다.",
+        error instanceof Error ? error.message : "백업 작업을 완료하지 못했습니다.",
       );
     } finally {
       setBusy("");
@@ -592,9 +558,9 @@ export default function DataBackupPage({
               </div>
             </div>
             <p>
-              최신 데이터를 내장한 독립 HTML과 원본 JSON을 ZIP으로 저장합니다.
-              압축을 푼 뒤 Chrome 또는 Edge에서 파일을 열면 인터넷 없이
-              사용할 수 있습니다.
+              최신 데이터를 내장한 독립 HTML과 원본 JSON을 ZIP으로 묶어
+              Google Drive에 시간별 저장합니다. 필요할 때 내려받아 압축을 푼
+              뒤 Chrome 또는 Edge에서 열면 인터넷 없이 사용할 수 있습니다.
             </p>
             <ul className="backup-inclusion-list">
               <li>전체 자료의 표별 열람과 통합 검색</li>
@@ -609,11 +575,12 @@ export default function DataBackupPage({
               onClick={() => void download("offline")}
             >
               {busy === "download-offline"
-                ? "오프라인 독립판 만드는 중…"
-                : "오프라인 독립판 내려받기"}
+                ? "Drive 저장·검증 중…"
+                : "Google Drive에 오프라인 독립판 저장"}
             </button>
             <p className="backup-security-note">
-              ChatGPT 로그인·GPT Actions·지도 외부검색·실시간 공동작업은
+              저장 후 Drive 파일을 다시 읽어 크기와 해시를 검증합니다.
+              ChatGPT 로그인·Google 동기화·지도 외부검색·실시간 공동작업은
               인터넷 연결형 사이트에서만 작동합니다.
             </p>
           </section>

@@ -18,6 +18,7 @@ import {
   createEmergencyRecoveryPackage,
   createOfflineStandalonePackage,
   verifyEmergencyRecoveryPackage,
+  verifyOfflineStandalonePackage,
 } from "../../../lib/recovery-packages";
 import {
   createDriveResumableUpload,
@@ -154,6 +155,62 @@ async function archiveEmergencyRecoveryToDrive(createdBy: number) {
     fileId: uploaded.file.id,
     fileName,
     folderPath: `WHIZZUP 비상복구/안전본/${timestamp.year}/${timestamp.month}`,
+    createdAt: backup.createdAt,
+    sizeBytes: storedBytes.byteLength,
+    packageSha256,
+    verified: true,
+    ...verification,
+  };
+}
+
+async function archiveOfflineStandaloneToDrive(createdBy: number) {
+  const backup = await createFullBackup();
+  const timestamp = backupTimestampValue(backup.createdAt);
+  const fileName = `WHIZZUP_offline_edition_${timestamp.fileStamp}.zip`;
+  const bytes = createOfflineStandalonePackage(backup);
+  const verification = verifyOfflineStandalonePackage(bytes, backup);
+  const packageSha256 = await sha256Bytes(bytes);
+  const session = await createDriveResumableUpload({
+    fileName,
+    mimeType: "application/zip",
+    sizeBytes: bytes.byteLength,
+    folderSegments: [
+      "WHIZZUP 비상복구",
+      "오프라인 독립판",
+      timestamp.year,
+      timestamp.month,
+    ],
+    contextType: "offline-standalone",
+    contextId: backup.checksum,
+    contextCategory: `${verification.format}-v${verification.formatVersion}`,
+    createdBy,
+  });
+  const uploaded = await uploadDriveResumableChunk({
+    uploadUrl: session.uploadUrl,
+    body: bytesArrayBuffer(bytes),
+    contentRange: `bytes 0-${bytes.byteLength - 1}/${bytes.byteLength}`,
+    mimeType: "application/zip",
+  });
+  if (!uploaded.complete) {
+    throw new Error("Google Drive 오프라인 독립판 업로드가 완료되지 않았습니다.");
+  }
+  const storedResponse = await downloadDriveFile(uploaded.file.id);
+  if (!storedResponse.ok) {
+    throw new Error("Google Drive에 저장한 오프라인 독립판을 다시 확인하지 못했습니다.");
+  }
+  const storedBytes = new Uint8Array(await storedResponse.arrayBuffer());
+  const storedSha256 = await sha256Bytes(storedBytes);
+  if (
+    storedBytes.byteLength !== bytes.byteLength ||
+    storedSha256 !== packageSha256
+  ) {
+    throw new Error("Google Drive에 저장된 오프라인 독립판의 무결성이 일치하지 않습니다.");
+  }
+  verifyOfflineStandalonePackage(storedBytes, backup);
+  return {
+    fileId: uploaded.file.id,
+    fileName,
+    folderPath: `WHIZZUP 비상복구/오프라인 독립판/${timestamp.year}/${timestamp.month}`,
     createdAt: backup.createdAt,
     sizeBytes: storedBytes.byteLength,
     packageSha256,
@@ -354,6 +411,10 @@ export async function POST(request: Request) {
     }
     if (payload.action === "archive-emergency-recovery") {
       const archive = await archiveEmergencyRecoveryToDrive(member.id);
+      return Response.json({ ok: true, archive });
+    }
+    if (payload.action === "archive-offline-standalone") {
+      const archive = await archiveOfflineStandaloneToDrive(member.id);
       return Response.json({ ok: true, archive });
     }
     if (payload.action === "list-drive-backups") {
