@@ -226,16 +226,16 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
     ? schedule.endDate
     : schedule.scheduledDate;
   const start = allDay
-    ? { date: schedule.scheduledDate }
-    : { dateTime: `${schedule.scheduledDate}T${startTime}:00+09:00`, timeZone: "Asia/Seoul" };
+    ? { date: schedule.scheduledDate, dateTime: null, timeZone: null }
+    : { date: null, dateTime: `${schedule.scheduledDate}T${startTime}:00+09:00`, timeZone: "Asia/Seoul" };
   const fallbackEnd = usesConstructionDisplayTime
     ? { date: schedule.scheduledDate, time: "08:30" }
     : endTime
     ? { date: endDate, time: endTime }
     : defaultTimedEnd(endDate, startTime);
   const end = allDay
-    ? { date: addDays(endDate, 1) }
-    : { dateTime: `${fallbackEnd.date}T${fallbackEnd.time}:00+09:00`, timeZone: "Asia/Seoul" };
+    ? { date: addDays(endDate, 1), dateTime: null, timeZone: null }
+    : { date: null, dateTime: `${fallbackEnd.date}T${fallbackEnd.time}:00+09:00`, timeZone: "Asia/Seoul" };
   const title = googleCalendarTitle(schedule);
   const category = title.category;
   const colorId: Record<string, string> = {
