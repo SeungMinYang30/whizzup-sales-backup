@@ -1,7 +1,7 @@
 export const VERCEL_SCHEMA_VERSION =
-  "202608140001_joint_project_identity_repair";
+  "202608140002_organization_schedule_content";
 export const VERCEL_PREVIOUS_SCHEMA_VERSION =
-  "202608120002_vercel_cutover_guard";
+  "202608140001_joint_project_identity_repair";
 export const VERCEL_BASE_SCHEMA_VERSION = "202608060007_full_backup_columns";
 
 const COMPLEX_PROJECT_BACKFILL_SQL = `
@@ -306,6 +306,8 @@ REVOKE ALL ON public.youtube_channel_videos FROM anon, authenticated;
 `;
 
 export const VERCEL_LOCAL_AUTH_SCHEMA_SQL = `
+ALTER TABLE public.organization_schedules
+  ADD COLUMN IF NOT EXISTS content text NOT NULL DEFAULT '';
 ALTER TABLE public.members ADD COLUMN IF NOT EXISTS username text;
 ALTER TABLE public.members ADD COLUMN IF NOT EXISTS password_hash text;
 ALTER TABLE public.members ADD COLUMN IF NOT EXISTS password_salt text;
@@ -1278,6 +1280,8 @@ ON CONFLICT (version) DO NOTHING;
 // VERCEL_BASE_SCHEMA_VERSION. Applying only the additions below avoids running
 // the complete bootstrap script on every serverless request during a release.
 export const VERCEL_INCREMENTAL_SCHEMA_SQL = `
+ALTER TABLE public.organization_schedules
+  ADD COLUMN IF NOT EXISTS content text NOT NULL DEFAULT '';
 ALTER TABLE public.members ADD COLUMN IF NOT EXISTS username text;
 ALTER TABLE public.members ADD COLUMN IF NOT EXISTS password_hash text;
 ALTER TABLE public.members ADD COLUMN IF NOT EXISTS password_salt text;

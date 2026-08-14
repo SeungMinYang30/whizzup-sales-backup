@@ -23,6 +23,7 @@ const title = await readFile(new URL("../lib/google-calendar-title.ts", import.m
 const backup = await readFile(new URL("../lib/backup-store.ts", import.meta.url), "utf8");
 const aiOrganizer = await readFile(new URL("../app/api/ai/organize/route.ts", import.meta.url), "utf8");
 const constructionPage = await readFile(new URL("../app/construction-schedule-page.tsx", import.meta.url), "utf8");
+const vercelSchema = await readFile(new URL("../db/vercel-schema.ts", import.meta.url), "utf8");
 
 test("사이트 일정은 Google 이벤트 식별자와 재시도 가능한 동기화 상태를 보존한다", () => {
   for (const column of [
@@ -89,6 +90,8 @@ test("일정 내용과 선택 메모를 분리 저장하고 Google 설명 순서
   assert.match(sync, /\["\[입력 필요\]", "미정", "미입력"\]/);
   assert.match(scheduleContentMigration, /ADD COLUMN content TEXT NOT NULL DEFAULT ''/);
   assert.match(schema, /content: text\("content"\)/);
+  assert.match(vercelSchema, /202608140002_organization_schedule_content/);
+  assert.match(vercelSchema, /VERCEL_LOCAL_AUTH_SCHEMA_SQL = `[\s\S]*ADD COLUMN IF NOT EXISTS content text NOT NULL DEFAULT ''/);
   assert.match(backup, /"vendor_name",\s*"content",\s*"details"/);
   assert.match(backup, /content: "content" in row \? row\.content : ""/);
   assert.doesNotMatch(descriptionRefreshMigration, /메모:/);
