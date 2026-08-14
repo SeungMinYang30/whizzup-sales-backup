@@ -37,6 +37,10 @@ const replicationStore = await readFile(
   new URL("../lib/replication-store.ts", import.meta.url),
   "utf8",
 );
+const scheduleRoute = await readFile(
+  new URL("../app/api/standby-schedule/route.ts", import.meta.url),
+  "utf8",
+);
 
 test("standby sync is one-way, authenticated, bounded, and uncached", () => {
   assert.match(syncRoute, /STANDBY_SYNC_SECRET/);
@@ -121,6 +125,16 @@ test("Supabase sync can only be scheduled after an explicit server-side opt in",
   assert.match(syncRoute, /export async function DELETE/);
   assert.match(scheduler, /removeStandbySchedule/);
   assert.match(scheduler, /cron\.unschedule/);
+});
+
+test("primary owner can schedule the current Sites standby every ten minutes", () => {
+  assert.match(scheduleRoute, /requirePrimaryOwner/);
+  assert.match(scheduleRoute, /STANDBY_SITE_ORIGIN/);
+  assert.match(scheduleRoute, /whizzup-sales-hub\.jackallan\.chatgpt\.site/);
+  assert.match(scheduleRoute, /configureStandbySchedule/);
+  assert.match(scheduleRoute, /STANDBY_EXPORT_SECRET/);
+  assert.match(syncRoute, /STANDBY_SYNC_SECRET[\s\S]*STANDBY_EXPORT_SECRET/);
+  assert.match(syncRoute, /PRIMARY_EXPORT_SECRET[\s\S]*STANDBY_EXPORT_SECRET/);
 });
 
 test("Vercel cutover performs a final verified sync and permanently blocks replica overwrite", () => {

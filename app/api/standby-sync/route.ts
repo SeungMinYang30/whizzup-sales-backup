@@ -48,7 +48,8 @@ function secureEqual(left: string, right: string) {
 }
 
 function authorized(request: Request) {
-  const secret = serverValue("STANDBY_SYNC_SECRET");
+  const secret =
+    serverValue("STANDBY_SYNC_SECRET") || serverValue("STANDBY_EXPORT_SECRET");
   const authorization = request.headers.get("authorization") ?? "";
   return Boolean(secret) && secureEqual(authorization, `Bearer ${secret}`);
 }
@@ -70,7 +71,8 @@ function automaticSyncEnabled() {
 }
 
 async function fetchPrimaryBackup(origin: string) {
-  const exportSecret = serverValue("PRIMARY_EXPORT_SECRET");
+  const exportSecret =
+    serverValue("PRIMARY_EXPORT_SECRET") || serverValue("STANDBY_EXPORT_SECRET");
   if (!exportSecret) {
     throw new Error("PRIMARY_EXPORT_SECRET is not configured");
   }
