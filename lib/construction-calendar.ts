@@ -170,14 +170,6 @@ export function getConstructionTimelineDays(start: string, length: number, today
   );
 }
 
-export function constructionScheduleIntersectsRange(
-  schedule: { scheduledDate: string; endDate?: string },
-  start: string,
-  end: string,
-) {
-  return schedule.scheduledDate <= end && (schedule.endDate || schedule.scheduledDate) >= start;
-}
-
 const STAGE_ORDER = [
   "철거",
   "전기",

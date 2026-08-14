@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   addConstructionDays,
-  constructionScheduleIntersectsRange,
   constructionStageTone,
   getConstructionTimelineDays,
   type ConstructionDayMeta,
@@ -129,7 +128,6 @@ export default function ConstructionSchedulePage({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [hideCompleted, setHideCompleted] = useState(true);
-  const [showPastSchedules, setShowPastSchedules] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -143,7 +141,6 @@ export default function ConstructionSchedulePage({
     [start, today],
   );
   const days = useMemo(() => dayMetas.map((day) => day.date), [dayMetas]);
-  const rangeEnd = days.at(-1) ?? start;
   const dayMetaByDate = useMemo(
     () => new Map(dayMetas.map((day) => [day.date, day])),
     [dayMetas],
@@ -241,10 +238,6 @@ export default function ConstructionSchedulePage({
         };
       })
       .filter(({ project }) => !hideCompleted || !project.completed)
-      .filter(({ items }) =>
-        !showPastSchedules
-        || items.some((item) => constructionScheduleIntersectsRange(item, start, rangeEnd)),
-      )
       .filter(({ project, record, items }) => {
         if (mobileStatusFilter === "active") return !project.completed;
         if (mobileStatusFilter === "missingSchedule") return !items.length;
@@ -271,7 +264,7 @@ export default function ConstructionSchedulePage({
         const right = firstRelevantDate(b.items);
         return left.localeCompare(right) || a.project.organization.localeCompare(b.project.organization, "ko-KR");
       });
-  }, [hideCompleted, latestByScope, mobileStatusFilter, projects, query, rangeEnd, schedulesByScope, showPastSchedules, start]);
+  }, [hideCompleted, latestByScope, mobileStatusFilter, projects, query, schedulesByScope, start]);
 
   const mobileSummary = useMemo(() => {
     const visibleProjects = projects.filter((project) => !project.hidden);
@@ -569,32 +562,18 @@ export default function ConstructionSchedulePage({
   }
 
   const updateRangeStart = (nextStart: string) => {
+    const wasPastRange = start < today;
     const isPastRange = nextStart < today;
     setStart(nextStart);
-    setShowPastSchedules(isPastRange);
     if (isPastRange) {
       setHideCompleted(false);
       setMobileStatusFilter("all");
-    } else if (showPastSchedules) {
+    } else if (wasPastRange) {
       setHideCompleted(true);
     }
   };
 
   const shift = (amount: number) => updateRangeStart(addConstructionDays(start, amount));
-
-  const togglePastSchedules = () => {
-    if (showPastSchedules) {
-      setStart(today);
-      setShowPastSchedules(false);
-      setHideCompleted(true);
-      setMobileStatusFilter("all");
-      return;
-    }
-    setStart(addConstructionDays(today, -30));
-    setShowPastSchedules(true);
-    setHideCompleted(false);
-    setMobileStatusFilter("all");
-  };
 
   const dayClassName = (day: ConstructionDayMeta) => [
     day.isSaturday ? "saturday" : "",
@@ -664,12 +643,9 @@ export default function ConstructionSchedulePage({
 
       <div className="construction-schedule-toolbar">
         <div className="construction-schedule-controls">
-          <button type="button" onClick={() => shift(-31)}>이전</button>
-          <button type="button" onClick={togglePastSchedules} aria-pressed={showPastSchedules}>
-            {showPastSchedules ? "오늘 이후 보기" : "지난 일정 보기"}
-          </button>
+          <button type="button" onClick={() => shift(-7)}>이전</button>
           <button type="button" onClick={() => updateRangeStart(today)}>오늘부터</button>
-          <button type="button" onClick={() => shift(31)}>다음</button>
+          <button type="button" onClick={() => shift(7)}>다음</button>
           <label>시작일<input type="date" value={start} onChange={(event) => updateRangeStart(event.target.value)} /></label>
         </div>
         <div className="construction-schedule-search">
@@ -738,7 +714,7 @@ export default function ConstructionSchedulePage({
             </div>
           </article>
         ))}
-        {!loading && !rows.length ? <div className="empty-state">{showPastSchedules ? "선택한 기간에 등록된 지난 일정이 없습니다." : "표시할 기관이 없습니다. ‘기관 추가’에서 먼저 등록해 주세요."}</div> : null}
+        {!loading && !rows.length ? <div className="empty-state">표시할 기관이 없습니다. ‘기관 추가’에서 먼저 등록해 주세요.</div> : null}
       </div>
 
       <div className="construction-mobile-list">
@@ -746,10 +722,7 @@ export default function ConstructionSchedulePage({
           <article key={scopeKey(project.organization, project.businessRound)}>
             <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{formatManagerName(record?.progressManager || "")}</span>{isPrimaryOwner ? <button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표 목록에서 삭제`} title="일정표 목록에서 삭제" disabled={saving} onClick={() => void removeProjectFromBoard(project)}>−</button> : null}</header>
             <p>{record?.region || "지역 미등록"} · {displayWorkSummary(project) || "공사·품목 미등록"}</p>
-            <div>{items.filter((item) =>
-              !showPastSchedules
-              || constructionScheduleIntersectsRange(item, start, rangeEnd),
-            ).map((item) => {
+            <div>{items.map((item) => {
               const day = dayMetaByDate.get(item.scheduledDate);
               return <button type="button" className={day ? dayClassName(day) : ""} key={item.id} onClick={() => openEditor(project, item.scheduledDate)}><b>{item.scheduledDate.slice(5).replace("-", "/")}</b>{item.stage || item.label}{item.startTime ? <small>{item.startTime}{item.endTime ? `~${item.endTime}` : ""}</small> : null}{day?.holidayName ? <small>{day.holidayName}</small> : null}</button>;
             })}</div>
