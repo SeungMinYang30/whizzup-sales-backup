@@ -23,6 +23,19 @@ export function removeOriginalGoogleTitleNote(value: string) {
     .trim();
 }
 
+export function compactGoogleCalendarOrganization(value: string) {
+  const organization = value.trim();
+  const school = organization.match(/(?:^|\s)([^\s]+?)(초등학교|중학교|고등학교)$/u);
+  if (school) {
+    const suffix = school[2] === "초등학교" ? "초" : school[2] === "중학교" ? "중" : "고";
+    return `${school[1]}${suffix}`;
+  }
+  return organization
+    .replace(/^(서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|경기도|강원특별자치도|충청북도|충청남도|전북특별자치도|전라남도|경상북도|경상남도|제주특별자치도)\s+/u, "")
+    .replace(/^[가-힣]+(?:시|군|구)\s+/u, "")
+    .trim();
+}
+
 export function googleCalendarTitle(input: CalendarTitleInput) {
   const category = input.category === "general" && /^영업\s*[·•-]\s*/u.test(input.label)
     ? "sales"
@@ -33,7 +46,7 @@ export function googleCalendarTitle(input: CalendarTitleInput) {
     .trim();
   const constructionStage = cleanLabel || scheduleTitle || "시공";
   const summary = category === "construction"
-    ? `[${input.organization}] ${constructionStage}`
+    ? `[${compactGoogleCalendarOrganization(input.organization) || input.organization}] ${constructionStage}`
     : scheduleTitle || input.organization;
   return { category, cleanLabel, summary };
 }

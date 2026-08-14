@@ -60,6 +60,8 @@ test("일반 Google 일정은 입력한 일정 제목을 그대로 사용하고 
   assert.equal(googleCalendarTitle({ organization: "A학교", label: "회의 · 예산 협의", category: "meeting" }).summary, "예산 협의");
   assert.equal(googleCalendarTitle({ organization: "A학교", label: "착공", category: "construction", productSummary: "VR실 구축" }).summary, "[A학교] 착공");
   assert.equal(googleCalendarTitle({ organization: "A학교", label: "검수", category: "construction", productSummary: "VR실 구축" }).summary, "[A학교] 검수");
+  assert.equal(googleCalendarTitle({ organization: "경기도 광주 도수초등학교", label: "도장", category: "construction" }).summary, "[도수초] 도장");
+  assert.equal(googleCalendarTitle({ organization: "충청북도 청주시 덕벌초등학교", label: "청소", category: "construction" }).summary, "[덕벌초] 청소");
   assert.equal(googleCalendarTitle({ organization: "A학교", label: "쇼룸 · 제품 시연", category: "showroom" }).summary, "제품 시연");
   assert.equal(googleCalendarTitle({ organization: "A학교", label: "기타 · 설명회", category: "other" }).summary, "설명회");
 });

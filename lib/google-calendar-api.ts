@@ -219,7 +219,7 @@ function defaultTimedEnd(dateValue: string, timeValue: string) {
 function eventBody(schedule: GoogleCalendarWriteSchedule) {
   const storedStartTime = normalizeGoogleCalendarTime(schedule.startTime);
   const usesConstructionDisplayTime = schedule.category === "construction" && !storedStartTime;
-  const startTime = usesConstructionDisplayTime ? "08:00" : storedStartTime;
+  const startTime = usesConstructionDisplayTime ? "18:00" : storedStartTime;
   const endTime = startTime ? normalizeGoogleCalendarTime(schedule.endTime) : "";
   const allDay = !startTime;
   const endDate = schedule.endDate && schedule.endDate >= schedule.scheduledDate
@@ -229,7 +229,7 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
     ? { date: schedule.scheduledDate, dateTime: null, timeZone: null }
     : { date: null, dateTime: `${schedule.scheduledDate}T${startTime}:00+09:00`, timeZone: "Asia/Seoul" };
   const fallbackEnd = usesConstructionDisplayTime
-    ? { date: schedule.scheduledDate, time: "08:30" }
+    ? { date: schedule.scheduledDate, time: "18:30" }
     : endTime
     ? { date: endDate, time: endTime }
     : defaultTimedEnd(endDate, startTime);

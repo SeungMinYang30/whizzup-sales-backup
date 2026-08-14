@@ -335,7 +335,7 @@ export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?
       ).bind(constructionColorMigrationKey),
     ]);
   }
-  const constructionDisplayMigrationKey = "google:construction_display:orange_timed_default:v5";
+  const constructionDisplayMigrationKey = "google:construction_display:compact_name_evening:v1";
   const constructionDisplayMigration = await d1.prepare(
     "SELECT value FROM app_settings WHERE key = ?",
   ).bind(constructionDisplayMigrationKey).first<{ value: string }>();
