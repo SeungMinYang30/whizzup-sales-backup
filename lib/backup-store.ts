@@ -32,8 +32,9 @@ import { ensureProductComparisonDocumentsReady } from "./product-comparison-docu
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-08-11-youtube-resource-links";
+export const BACKUP_SCHEMA_VERSION = "2026-08-14-drive-complete-business";
 const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
+  "2026-08-11-youtube-resource-links",
   "2026-08-09-product-resource-import",
   "2026-08-09-google-drive-library",
   "2026-08-07-complex-project-controls",
@@ -126,6 +127,35 @@ const DRIVE_LIBRARY_BACKUP_TABLES = new Set([
   "youtube_resource_links",
   "product_comparison_documents",
 ]);
+const DURABLE_AUTH_HISTORY_BACKUP_TABLES = new Set([
+  "member_rejections",
+  "member_account_archives",
+]);
+
+export const EXCLUDED_DATABASE_TABLES = new Set([
+  "api_credentials",
+  "award_vendor_migrations",
+  "business_round_rollover_repair_backups",
+  "legacy_source_merge_backups",
+  "local_auth_sessions",
+  "member_credentials",
+  "member_identity_migrations",
+  "member_password_reset_requests",
+  "member_sessions",
+  "oauth_clients",
+  "oauth_codes",
+  "oauth_tokens",
+  "object_storage_files",
+  "official_school_cache",
+  "official_school_directory",
+  "official_school_sync_state",
+  "organization_schedule_import_state",
+  "progress_manager_campaign_repair_backups",
+  "progress_manager_repair_backups",
+  "school_directory_credentials",
+  "vercel_schema_migrations",
+  "youtube_channel_videos",
+]);
 
 function legacyBackupMayOmitTable(
   schemaVersion: string,
@@ -140,7 +170,8 @@ function legacyBackupMayOmitTable(
         INVENTORY_BACKUP_TABLES.has(tableName) ||
         ORGANIZATION_SCHEDULE_BACKUP_TABLES.has(tableName) ||
         COMPLEX_PROJECT_BACKUP_TABLES.has(tableName) ||
-        DRIVE_LIBRARY_BACKUP_TABLES.has(tableName)))
+        DRIVE_LIBRARY_BACKUP_TABLES.has(tableName) ||
+        DURABLE_AUTH_HISTORY_BACKUP_TABLES.has(tableName)))
   );
 }
 
@@ -1162,6 +1193,22 @@ export const BACKUP_TABLES = [
       "created_by_name",
       "created_at",
       "updated_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "member_rejections",
+    columns: ["email", "rejected_by", "rejected_at"],
+    orderBy: "rejected_at, email",
+  },
+  {
+    name: "member_account_archives",
+    columns: [
+      "id",
+      "original_member_id",
+      "member_json",
+      "archived_by",
+      "archived_at",
     ],
     orderBy: "id",
   },
@@ -2746,12 +2793,15 @@ export async function createFullBackup(): Promise<FullBackup> {
       includesBusinessData: true,
       excludes: [
         "로그인 세션",
-        "OAuth 인증코드·토큰·비밀키",
+        "비밀번호·인증키·비밀번호 재설정 요청",
+        "OAuth 클라이언트·인증코드·토큰·비밀키",
         "OPENAI_API_KEY 등 서버 환경 비밀값",
         "화면에서 등록한 OpenAI API 키",
         "나이스 학교정보 API 인증키",
         "다시 조회할 수 있는 공식 학교정보 임시 캐시",
         "견적서·자료실·협력사 증빙 첨부파일 원본(R2 또는 Google Drive 연결정보만 포함)",
+        "재생성 가능한 YouTube·학교 디렉터리 캐시",
+        "DB 마이그레이션·일회성 데이터 수리 작업 로그",
       ],
     },
     counts,
@@ -3337,6 +3387,7 @@ type RestorePresence = {
   restoresInventory: boolean;
   restoresComplexProjects: boolean;
   restoresDriveLibrary: boolean;
+  restoresDurableAuthHistory: boolean;
 };
 
 function restorePresenceFromInput(input: unknown): RestorePresence {
@@ -3376,6 +3427,9 @@ function restorePresenceFromInput(input: unknown): RestorePresence {
     restoresDriveLibrary: [...DRIVE_LIBRARY_BACKUP_TABLES].every((tableName) =>
       Array.isArray(rawData?.[tableName]),
     ),
+    restoresDurableAuthHistory: [...DURABLE_AUTH_HISTORY_BACKUP_TABLES].every(
+      (tableName) => Array.isArray(rawData?.[tableName]),
+    ),
   };
 }
 
@@ -3397,6 +3451,7 @@ async function replaceDatabaseFromBackup(
     restoresInventory: true,
     restoresComplexProjects: true,
     restoresDriveLibrary: true,
+    restoresDurableAuthHistory: true,
   },
 ) {
   const {
@@ -3415,6 +3470,7 @@ async function replaceDatabaseFromBackup(
     restoresInventory,
     restoresComplexProjects,
     restoresDriveLibrary,
+    restoresDurableAuthHistory,
   } = presence;
   const d1 = await ensureBackupReady();
   const statements = [
@@ -3505,11 +3561,19 @@ async function replaceDatabaseFromBackup(
     d1.prepare("DELETE FROM construction_schedule_projects"),
     d1.prepare("DELETE FROM organization_schedules"),
     d1.prepare("DELETE FROM activities"),
+    ...(restoresDurableAuthHistory
+      ? [
+          d1.prepare("DELETE FROM member_rejections"),
+          d1.prepare("DELETE FROM member_account_archives"),
+        ]
+      : []),
     d1.prepare("DELETE FROM members"),
   ];
 
   const insertOrder: BackupTableName[] = [
     "members",
+    "member_rejections",
+    "member_account_archives",
     "resource_posts",
     "resource_attachments",
     "youtube_resource_links",
@@ -3569,6 +3633,12 @@ async function replaceDatabaseFromBackup(
   ];
 
   insertOrder.forEach((tableName) => {
+    if (
+      DURABLE_AUTH_HISTORY_BACKUP_TABLES.has(tableName) &&
+      !restoresDurableAuthHistory
+    ) {
+      return;
+    }
     if (
       DRIVE_LIBRARY_BACKUP_TABLES.has(tableName) &&
       !restoresDriveLibrary
@@ -3714,6 +3784,7 @@ async function replaceDatabaseFromBackup(
     "accounting_commission_entries",
     "accounting_commission_entry_history",
     "accounting_collection_receipts",
+    "member_account_archives",
   ].forEach((tableName) => {
     statements.push(
       d1.prepare(
@@ -3759,6 +3830,9 @@ export async function restoreFullBackup(
   );
   const restoresDeletionBatches = Array.isArray(rawData?.deletion_batches);
   const restoresHoldemScores = Array.isArray(rawData?.holdem_weekly_scores);
+  const restoresDurableAuthHistory = [
+    ...DURABLE_AUTH_HISTORY_BACKUP_TABLES,
+  ].every((tableName) => Array.isArray(rawData?.[tableName]));
   const restoresProductVendorLinks = Array.isArray(
     rawData?.product_vendor_links,
   );
@@ -3876,11 +3950,19 @@ export async function restoreFullBackup(
     d1.prepare("DELETE FROM construction_schedule_projects"),
     d1.prepare("DELETE FROM organization_schedules"),
     d1.prepare("DELETE FROM activities"),
+    ...(restoresDurableAuthHistory
+      ? [
+          d1.prepare("DELETE FROM member_rejections"),
+          d1.prepare("DELETE FROM member_account_archives"),
+        ]
+      : []),
     d1.prepare("DELETE FROM members"),
   ];
 
   const insertOrder: BackupTableName[] = [
     "members",
+    "member_rejections",
+    "member_account_archives",
     "resource_posts",
     "resource_attachments",
     "youtube_resource_links",
@@ -3935,6 +4017,12 @@ export async function restoreFullBackup(
   ];
 
   insertOrder.forEach((tableName) => {
+    if (
+      DURABLE_AUTH_HISTORY_BACKUP_TABLES.has(tableName) &&
+      !restoresDurableAuthHistory
+    ) {
+      return;
+    }
     if (
       (tableName === "resource_posts" || tableName === "resource_attachments") &&
       !restoresResourceLibrary

@@ -19,6 +19,8 @@ type DownloadKind = "full" | "emergency" | "offline";
 
 const tableLabels: Record<string, string> = {
   members: "구성원·권한",
+  member_rejections: "가입 거절 이력",
+  member_account_archives: "삭제 계정 보관 기록",
   activities: "기관 활동 기록",
   activity_authors: "기록 입력자",
   app_settings: "사이트 설정",
@@ -141,6 +143,30 @@ export default function DataBackupPage({
   async function download(kind: DownloadKind, safety = false) {
     try {
       setBusy(safety ? "safety-download" : `download-${kind}`);
+      if (kind === "full") {
+        const response = await fetch("/api/backup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "archive-full-backup" }),
+        });
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          archive?: { fileName?: string; folderPath?: string };
+          error?: string;
+        };
+        if (!response.ok || !payload.ok || !payload.archive) {
+          throw new Error(payload.error || "Google Drive 백업을 만들지 못했습니다.");
+        }
+        const now = new Date().toISOString();
+        window.localStorage.setItem("whizzup-last-full-backup-at", now);
+        if (safety) setSafetyBackupDownloaded(true);
+        notify(
+          safety
+            ? `복원 직전 안전 백업을 Google Drive에 저장했습니다. (${payload.archive.folderPath})`
+            : `Google Drive 백업 완료: ${payload.archive.folderPath}/${payload.archive.fileName}`,
+        );
+        return;
+      }
       const response = await fetch(`/api/backup?kind=${kind}`, {
         cache: "no-store",
       });
@@ -154,24 +180,17 @@ export default function DataBackupPage({
         blob,
         responseFilename(
           response,
-          kind === "full"
-            ? "WHIZZUP_full_backup.json"
-            : kind === "emergency"
-              ? "WHIZZUP_emergency_recovery.zip"
-              : "WHIZZUP_offline_edition.zip",
+          kind === "emergency"
+            ? "WHIZZUP_emergency_recovery.zip"
+            : "WHIZZUP_offline_edition.zip",
         ),
       );
-      const now = new Date().toISOString();
-      window.localStorage.setItem("whizzup-last-full-backup-at", now);
-      if (kind === "full" && safety) setSafetyBackupDownloaded(true);
       notify(
         kind === "emergency"
           ? "비상복구 패키지를 내려받았습니다."
           : kind === "offline"
             ? "오프라인 독립판을 내려받았습니다."
-            : safety
-              ? "복원 직전 안전 백업을 내려받았습니다."
-              : "전체 DB 백업 파일을 내려받았습니다.",
+            : "파일을 내려받았습니다.",
       );
     } catch (error) {
       notify(
@@ -335,7 +354,7 @@ export default function DataBackupPage({
               <strong>현재 전체 DB 백업</strong>
               <p>
                 기관 기록, 지도, 수주·품목, 담당자와 권한을 복원 가능한 원본
-                파일로 저장합니다.
+                파일로 Google Drive에 날짜·시간별 저장합니다.
               </p>
             </div>
             <button
@@ -345,8 +364,8 @@ export default function DataBackupPage({
               onClick={() => void download("full")}
             >
               {busy === "download-full"
-                ? "전체 백업 만드는 중…"
-                : "전체 DB 백업 받기"}
+                ? "Google Drive 백업 중…"
+                : "Google Drive에 전체 DB 백업"}
             </button>
           </section>
           <section className="backup-recovery-action backup-recovery-action-restore">
@@ -409,7 +428,7 @@ export default function DataBackupPage({
                 <span>{safetyBackupDownloaded ? "✓" : "1"}</span>
                 <div>
                   <strong>현재 DB를 먼저 안전 백업</strong>
-                  <p>문제가 생기면 복원 전 상태로 되돌릴 수 있습니다.</p>
+                  <p>Google Drive에 저장한 뒤 복원을 진행합니다.</p>
                 </div>
                 <button
                   type="button"
@@ -417,7 +436,9 @@ export default function DataBackupPage({
                   disabled={Boolean(busy)}
                   onClick={() => void download("full", true)}
                 >
-                  {safetyBackupDownloaded ? "안전 백업 완료" : "복원 직전 백업 받기"}
+                  {safetyBackupDownloaded
+                    ? "Drive 안전 백업 완료"
+                    : "Drive에 복원 직전 백업"}
                 </button>
               </div>
               <div

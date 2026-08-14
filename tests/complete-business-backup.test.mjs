@@ -19,11 +19,28 @@ test("full backup includes every durable business table added after the original
     "organization_school_links",
     "deletion_batches",
     "holdem_weekly_scores",
+    "member_rejections",
+    "member_account_archives",
   ]) {
     assert.match(backup, new RegExp(`name: "${table}"`));
     assert.match(backup, new RegExp(`DELETE FROM ${table}`));
   }
   assert.match(backup, /"holdem_weekly_scores",\s*\n\s*\];/);
+});
+
+test("full backup explicitly classifies security, cache, file, and repair tables", () => {
+  assert.match(backup, /EXCLUDED_DATABASE_TABLES/);
+  for (const table of [
+    "member_credentials",
+    "member_sessions",
+    "oauth_tokens",
+    "object_storage_files",
+    "official_school_cache",
+    "youtube_channel_videos",
+    "business_round_rollover_repair_backups",
+  ]) {
+    assert.match(backup, new RegExp(`"${table}"`));
+  }
 });
 
 test("older backups preserve current post-July business data instead of clearing it", () => {

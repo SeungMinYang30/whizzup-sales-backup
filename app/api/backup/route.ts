@@ -18,6 +18,7 @@ import {
   createEmergencyRecoveryPackage,
   createOfflineStandalonePackage,
 } from "../../../lib/recovery-packages";
+import { uploadDriveFile } from "../../../lib/google-drive-storage";
 import { gunzipSync, gzipSync } from "node:zlib";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,48 @@ function todayValue() {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+}
+
+function backupTimestampValue(createdAt: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(createdAt));
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    year: value.year,
+    month: value.month,
+    fileStamp: `${value.year}-${value.month}-${value.day}_${value.hour}${value.minute}${value.second}`,
+  };
+}
+
+async function archiveFullBackupToDrive() {
+  const backup = await createFullBackup();
+  const timestamp = backupTimestampValue(backup.createdAt);
+  const fileName = `WHIZZUP_full_backup_${timestamp.fileStamp}.json`;
+  const file = new File([JSON.stringify(backup, null, 2)], fileName, {
+    type: "application/json; charset=utf-8",
+  });
+  const stored = await uploadDriveFile({
+    file,
+    folderSegments: ["WHIZZUP DB 백업", timestamp.year, timestamp.month],
+    contextType: "full-db-backup",
+    contextId: backup.checksum,
+  });
+  return {
+    fileName,
+    folderPath: `WHIZZUP DB 백업/${timestamp.year}/${timestamp.month}`,
+    createdAt: backup.createdAt,
+    checksum: backup.checksum,
+    totalRows: Object.values(backup.counts).reduce((sum, count) => sum + count, 0),
+    ...stored,
+  };
 }
 
 function downloadHeaders(filename: string, contentType: string) {
@@ -142,6 +185,11 @@ export async function POST(request: Request) {
       confirmation?: string;
       safetyBackupDownloaded?: boolean;
     };
+
+    if (payload.action === "archive-full-backup") {
+      const archive = await archiveFullBackupToDrive();
+      return Response.json({ ok: true, archive });
+    }
 
     if (payload.action === "inspect-backup") {
       const { inspection } = await validateFullBackup(payload.backup, member);
