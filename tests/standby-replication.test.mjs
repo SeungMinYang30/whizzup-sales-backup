@@ -133,6 +133,8 @@ test("primary owner can schedule the current Sites standby every ten minutes", (
   assert.match(scheduleRoute, /whizzup-sales-hub\.jackallan\.chatgpt\.site/);
   assert.match(scheduleRoute, /configureStandbySchedule/);
   assert.match(scheduleRoute, /STANDBY_EXPORT_SECRET/);
+  assert.match(scheduleRoute, /fetch\(`\$\{origin\}\/api\/standby-sync`/);
+  assert.match(scheduleRoute, /AbortSignal\.timeout\(90_000\)/);
   assert.match(syncRoute, /STANDBY_SYNC_SECRET[\s\S]*STANDBY_EXPORT_SECRET/);
   assert.match(syncRoute, /PRIMARY_EXPORT_SECRET[\s\S]*STANDBY_EXPORT_SECRET/);
 });

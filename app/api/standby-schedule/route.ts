@@ -50,11 +50,39 @@ export async function POST() {
   try {
     await requirePrimaryOwner();
     const origin = standbyOrigin();
+    const secret = syncSecret();
     const schedule = await configureStandbySchedule({
       syncUrl: `${origin}/api/standby-sync`,
-      syncSecret: syncSecret(),
+      syncSecret: secret,
     });
-    return Response.json({ ok: true, origin, schedule });
+    const syncResponse = await fetch(`${origin}/api/standby-sync`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+      cache: "no-store",
+      signal: AbortSignal.timeout(90_000),
+    });
+    const sync = (await syncResponse.json().catch(() => null)) as
+      | { error?: string; [key: string]: unknown }
+      | null;
+    if (!syncResponse.ok) {
+      return Response.json(
+        {
+          ok: false,
+          origin,
+          schedule,
+          sync,
+          error:
+            sync?.error ||
+            `대기판 즉시 동기화가 HTTP ${syncResponse.status}로 실패했습니다.`,
+        },
+        { status: 502 },
+      );
+    }
+    return Response.json({ ok: true, origin, schedule, sync });
   } catch (error) {
     if (error instanceof Error && /not configured/i.test(error.message)) {
       return Response.json({ ok: false, error: error.message }, { status: 503 });

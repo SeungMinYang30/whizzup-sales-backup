@@ -180,7 +180,7 @@ export default function DataBackupPage({
         configured: true,
         schedule: payload.schedule?.schedule || "*/10 * * * *",
       });
-      notify("Sites 대기판 10분 자동 복제를 시작했습니다.");
+      notify("Sites 대기판 예약과 즉시 동기화를 완료했습니다.");
     } catch (error) {
       setStandbyScheduleError(
         error instanceof Error
@@ -493,13 +493,13 @@ export default function DataBackupPage({
             <button
               type="button"
               className={standbySchedule.configured ? "ghost-button" : "primary-button"}
-              disabled={Boolean(busy) || standbySchedule.configured}
+              disabled={Boolean(busy)}
               onClick={() => void configureStandbyReplication()}
             >
               {busy === "configure-standby"
-                ? "설정 중…"
+                ? "동기화 중…"
                 : standbySchedule.configured
-                  ? "10분 자동 복제 중"
+                  ? "지금 동기화"
                   : "10분 자동 복제 시작"}
             </button>
           </div>
