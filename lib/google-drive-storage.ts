@@ -1,4 +1,4 @@
-import { isPostgresDatabase } from "../db";
+import { getD1, isPostgresDatabase } from "../db";
 import { getPostgresObjectStorage } from "./postgres-object-storage";
 import { RESOURCE_UPLOAD_CHUNK_BYTES } from "./resource-upload-config";
 
@@ -38,6 +38,7 @@ export type DriveFile = {
   name?: string;
   mimeType?: string;
   size?: string;
+  createdTime?: string;
   parents?: string[];
   appProperties?: Record<string, string>;
 };
@@ -272,8 +273,9 @@ async function findFolder(parentId: string, name: string) {
   ].join(" and ");
   const url = new URL(`${DRIVE_API}/files`);
   url.searchParams.set("q", query);
-  url.searchParams.set("fields", "files(id,name)");
-  url.searchParams.set("pageSize", "10");
+  url.searchParams.set("fields", "files(id,name,createdTime)");
+  url.searchParams.set("pageSize", "100");
+  url.searchParams.set("orderBy", "createdTime");
   const response = await driveFetch(url.toString());
   const payload = (await response.json().catch(() => ({}))) as {
     files?: DriveFile[];
@@ -282,7 +284,13 @@ async function findFolder(parentId: string, name: string) {
   if (!response.ok) {
     throw new Error(payload.error?.message || "Google Drive 폴더를 찾지 못했습니다.");
   }
-  return payload.files?.[0]?.id || "";
+  return (payload.files ?? [])
+    .sort(
+      (left, right) =>
+        String(left.createdTime || "").localeCompare(
+          String(right.createdTime || ""),
+        ) || left.id.localeCompare(right.id),
+    )[0]?.id || "";
 }
 
 async function createFolder(parentId: string, name: string) {
@@ -319,12 +327,25 @@ async function ensureFolder(parentId: string, rawName: string) {
 
 export async function ensureDrivePath(segments: string[]) {
   const value = requireConfig();
-  let parentId = value.rootFolderId;
-  if (!parentId) parentId = await ensureFolder("", ROOT_FOLDER_NAME);
-  for (const segment of segments) {
-    parentId = await ensureFolder(parentId, segment);
-  }
-  return parentId;
+  return getD1().transaction(async (transaction) => {
+    async function lockedFolder(parentId: string, rawName: string) {
+      const name = safeDriveFolderName(rawName);
+      await transaction
+        .prepare(
+          "SELECT pg_advisory_xact_lock(hashtextextended(?::text, 0)) AS locked",
+        )
+        .bind(`whizzup-drive-folder:${parentId || "root"}/${name}`)
+        .run();
+      return ensureFolder(parentId, name);
+    }
+
+    let parentId = value.rootFolderId;
+    if (!parentId) parentId = await lockedFolder("", ROOT_FOLDER_NAME);
+    for (const segment of segments) {
+      parentId = await lockedFolder(parentId, segment);
+    }
+    return parentId;
+  });
 }
 
 export async function uploadDriveFile(input: {

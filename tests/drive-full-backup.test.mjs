@@ -18,6 +18,10 @@ const recoveryGenerator = await readFile(
   new URL("../scripts/generate-recovery-source.mjs", import.meta.url),
   "utf8",
 );
+const driveStorage = await readFile(
+  new URL("../lib/google-drive-storage.ts", import.meta.url),
+  "utf8",
+);
 const packageJson = JSON.parse(
   await readFile(new URL("../package.json", import.meta.url), "utf8"),
 );
@@ -79,4 +83,12 @@ test("emergency package verifies its source, release, database, and required fil
   assert.match(recoveryPackages, /files\["READ_THIS_FIRST\.txt"\]/);
   assert.match(recoveryPackages, /manifest\.sourceRelease !== RECOVERY_SOURCE_RELEASE/);
   assert.match(recoveryPackages, /embeddedBackup\.checksum !== expectedBackup\.checksum/);
+});
+
+test("Drive folder creation is serialized and existing duplicates resolve consistently", () => {
+  assert.match(driveStorage, /getD1\(\)\.transaction/);
+  assert.match(driveStorage, /pg_advisory_xact_lock/);
+  assert.match(driveStorage, /hashtextextended\(\?::text, 0\)/);
+  assert.match(driveStorage, /orderBy", "createdTime"/);
+  assert.match(driveStorage, /left\.id\.localeCompare\(right\.id\)/);
 });
