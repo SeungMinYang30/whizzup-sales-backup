@@ -32,8 +32,9 @@ import { ensureProductComparisonDocumentsReady } from "./product-comparison-docu
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-08-14-drive-complete-business";
+export const BACKUP_SCHEMA_VERSION = "2026-08-14-safe-drive-backup";
 const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
+  "2026-08-14-drive-complete-business",
   "2026-08-11-youtube-resource-links",
   "2026-08-09-product-resource-import",
   "2026-08-09-google-drive-library",
@@ -190,6 +191,7 @@ export const BACKUP_TABLES = [
       "id",
       "sync_id",
       "auth_user_id",
+      "username",
       "email",
       "display_name",
       "job_title",
@@ -2718,7 +2720,9 @@ export async function createFullBackup(): Promise<FullBackup> {
 
   for (const table of BACKUP_TABLES) {
     const result = await d1
-      .prepare(`SELECT * FROM ${table.name} ORDER BY ${table.orderBy}`)
+      .prepare(
+        `SELECT ${table.columns.join(", ")} FROM ${table.name} ORDER BY ${table.orderBy}`,
+      )
       .all<BackupRow>();
     data[table.name] = result.results;
     counts[table.name] = result.results.length;

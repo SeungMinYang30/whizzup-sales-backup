@@ -13,7 +13,7 @@ const page = await readFile(
 
 test("full backup button archives one restorable JSON file to dated Google Drive folders", () => {
   assert.match(route, /action === "archive-full-backup"/);
-  assert.match(route, /folderSegments: \["WHIZZUP DB 백업", timestamp\.year, timestamp\.month\]/);
+  assert.match(route, /"WHIZZUP DB 백업",\s*"안전본",\s*timestamp\.year,\s*timestamp\.month/);
   assert.match(route, /WHIZZUP_full_backup_\$\{timestamp\.fileStamp\}\.json/);
   assert.match(route, /contextId: backup\.checksum/);
   assert.match(page, /Google Drive에 전체 DB 백업/);

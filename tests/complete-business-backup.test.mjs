@@ -84,7 +84,10 @@ test("full backup preserves accounting history whose source activity is already 
 });
 
 test("Vercel identity and sync columns are preserved for every migrated core table", () => {
-  assert.match(backup, /"sync_id",\s*\n\s*"auth_user_id",\s*\n\s*"email"/);
+  assert.match(
+    backup,
+    /"sync_id",\s*\n\s*"auth_user_id",\s*\n\s*"username",\s*\n\s*"email"/,
+  );
   for (const table of [
     "activities",
     "organization_locations",
@@ -97,6 +100,15 @@ test("Vercel identity and sync columns are preserved for every migrated core tab
     assert.notEqual(tableStart, -1);
     assert.match(backup.slice(tableStart, tableStart + 240), /"sync_id"/);
   }
+});
+
+test("backup selects only approved columns and excludes local password material", () => {
+  assert.match(backup, /SELECT \$\{table\.columns\.join\(", "\)\} FROM/);
+  const memberTable = backup.slice(
+    backup.indexOf('name: "members"'),
+    backup.indexOf('name: "activities"'),
+  );
+  assert.doesNotMatch(memberTable, /"password_hash"|"password_salt"/);
 });
 
 test("activity CSV preserves and re-resolves every budget allocation", () => {

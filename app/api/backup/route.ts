@@ -71,13 +71,18 @@ async function archiveFullBackupToDrive() {
   });
   const stored = await uploadDriveFile({
     file,
-    folderSegments: ["WHIZZUP DB 백업", timestamp.year, timestamp.month],
+    folderSegments: [
+      "WHIZZUP DB 백업",
+      "안전본",
+      timestamp.year,
+      timestamp.month,
+    ],
     contextType: "full-db-backup",
     contextId: backup.checksum,
   });
   return {
     fileName,
-    folderPath: `WHIZZUP DB 백업/${timestamp.year}/${timestamp.month}`,
+    folderPath: `WHIZZUP DB 백업/안전본/${timestamp.year}/${timestamp.month}`,
     createdAt: backup.createdAt,
     checksum: backup.checksum,
     totalRows: Object.values(backup.counts).reduce((sum, count) => sum + count, 0),
@@ -87,7 +92,11 @@ async function archiveFullBackupToDrive() {
 
 async function listFullBackupsFromDrive() {
   const rootId = await ensureDrivePath(["WHIZZUP DB 백업"]);
-  const years = (await listDriveChildren(rootId)).filter(isDriveFolder);
+  const safeFolder = (await listDriveChildren(rootId)).find(
+    (file) => isDriveFolder(file) && file.name === "안전본",
+  );
+  if (!safeFolder) return [];
+  const years = (await listDriveChildren(safeFolder.id)).filter(isDriveFolder);
   const backups: Array<{
     fileId: string;
     fileName: string;
@@ -110,7 +119,7 @@ async function listFullBackupsFromDrive() {
           fileId: file.id,
           fileName: file.name,
           sizeBytes: Number(file.size) || 0,
-          folderPath: `WHIZZUP DB 백업/${year.name || ""}/${month.name || ""}`,
+          folderPath: `WHIZZUP DB 백업/안전본/${year.name || ""}/${month.name || ""}`,
         });
       }
     }
