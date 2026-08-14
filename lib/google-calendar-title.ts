@@ -18,7 +18,7 @@ export function scheduleTitleForGoogle(label: string) {
 export function removeOriginalGoogleTitleNote(value: string) {
   return value
     .split(/\r?\n/)
-    .filter((line) => !/^\s*원본\s+Google\s+제목\s*:/iu.test(line))
+    .filter((line) => !/^\s*원본(?:\s+Google)?\s+제목\s*:/iu.test(line))
     .join("\n")
     .trim();
 }
@@ -32,9 +32,8 @@ export function googleCalendarTitle(input: CalendarTitleInput) {
     .replace(new RegExp(`^${escapeRegExp(input.organization)}\\s*[·•-]?\\s*`, "u"), "")
     .trim();
   const constructionStage = cleanLabel || scheduleTitle || "시공";
-  const constructionProducts = input.productSummary?.trim();
   const summary = category === "construction"
-    ? `[${constructionStage}] ${input.organization}${constructionProducts ? ` · ${constructionProducts}` : ""}`
+    ? `[${constructionStage}] ${input.organization}`
     : scheduleTitle || input.organization;
   return { category, cleanLabel, summary };
 }

@@ -51,13 +51,16 @@ test("기존 시공 Google 일정은 안전하게 다시 연결하고 신뢰 가
   assert.match(sync, /exact\.length === 1/);
   assert.match(sync, /unlinked\.length === 1/);
   assert.match(sync, /forcedRefreshIds/);
-  assert.match(api, /담당자: \$\{required\(schedule\.assigneeName\)\}/);
-  assert.match(api, /내용: \$\{required\(schedule\.content\)\}/);
+  assert.match(api, /if \(assignee\) descriptionLines\.push\(`담당자: \$\{assignee\}`\)/);
+  assert.match(api, /if \(content\) descriptionLines\.push\(`내용: \$\{content\}`\)/);
   assert.match(api, /if \(memo\) descriptionLines\.push\(`메모: \$\{memo\}`\)/);
   assert.doesNotMatch(api, /시공 단계: \$\{/);
   assert.doesNotMatch(api, /시공업체: \$\{/);
   assert.doesNotMatch(api, /공사·품목: \$\{/);
   assert.doesNotMatch(api, /일정 내용: \$\{/);
+  assert.match(api, /\[입력\\s\*필요\\\]/);
+  assert.match(api, /construction: "4"/);
+  assert.match(sync, /google:construction_color:muted_red_brown:v1/);
   assert.match(sync, /missingManagedDescription/);
   assert.match(api, /colorId: colorId\[category\]/);
   assert.match(contentRefreshMigration, /기존 사이트 연결 일정/);
@@ -77,8 +80,8 @@ test("일정 내용과 선택 메모를 분리 저장하고 Google 설명 순서
   assert.match(route, /details: payload\.details/);
   assert.match(store, /const content = clean\(input\.content\)\.slice\(0, 500\)/);
   assert.match(store, /const details = clean\(input\.details\)\.slice\(0, 500\)/);
-  assert.ok(api.indexOf("`담당자:") < api.indexOf("`내용:"));
-  assert.ok(api.indexOf("`내용:") < api.indexOf("descriptionLines.push(`메모:"));
+  assert.ok(api.indexOf("descriptionLines.push(`담당자:") < api.indexOf("descriptionLines.push(`내용:"));
+  assert.ok(api.indexOf("descriptionLines.push(`내용:") < api.indexOf("descriptionLines.push(`메모:"));
   assert.doesNotMatch(api, /required\(removeOriginalGoogleTitleNote\(schedule\.details/);
   assert.match(sync, /memoFromGoogleDescription\(event\.description \|\| ""\)/);
   assert.match(sync, /googleStructuredDescription/);
@@ -197,7 +200,7 @@ test("공유 업무만 Google로 보내고 입력 제목과 개인 일정 정책
   assert.match(title, /: scheduleTitle \|\| input\.organization/);
   assert.match(title, /const constructionStage = cleanLabel \|\| scheduleTitle \|\| "시공"/);
   assert.match(title, /`\[\$\{constructionStage\}\] \$\{input\.organization\}/);
-  assert.match(api, /removeOriginalGoogleTitleNote\(schedule\.details \|\| ""\)/);
+  assert.match(api, /optional\(cleanMemo\(schedule\.details\)\)/);
   assert.doesNotMatch(sync, /`원본 Google 제목: \$\{/);
   assert.match(sync, /event\.summary\.trim\(\) !== expectedSummary/);
   assert.match(api, /colorId: colorId\[category\]/);

@@ -237,17 +237,32 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
   const colorId: Record<string, string> = {
     sales: "9",
     meeting: "3",
-    construction: "6",
+    // Google Calendar does not support arbitrary per-event RGB colors.
+    // Flamingo (4) is the closest muted red-brown option in its event palette.
+    construction: "4",
     showroom: "4",
     other: "8",
   };
-  const required = (value: string | undefined) => value?.trim() || "-";
+  const optional = (value: string | undefined) => {
+    const cleaned = value?.trim() || "";
+    return /^(?:-|\[입력\s*필요\]|미정|미입력)$/u.test(cleaned) ? "" : cleaned;
+  };
+  const cleanMemo = (value: string | undefined) => removeOriginalGoogleTitleNote(value || "")
+    .split(/\r?\n/)
+    .flatMap((line) => {
+      const matched = line.match(/^\s*(담당자|내용|일정 내용|시공 단계|시공업체|공사·품목|메모)\s*:\s*(.*)$/u);
+      if (!matched) return [line];
+      return matched[1] === "메모" ? [matched[2]] : [];
+    })
+    .join("\n")
+    .trim();
   const summary = title.summary;
-  const descriptionLines = [
-    `담당자: ${required(schedule.assigneeName)}`,
-    `내용: ${required(schedule.content)}`,
-  ];
-  const memo = removeOriginalGoogleTitleNote(schedule.details || "").trim();
+  const descriptionLines: string[] = [];
+  const assignee = optional(schedule.assigneeName);
+  const content = optional(schedule.content);
+  if (assignee) descriptionLines.push(`담당자: ${assignee}`);
+  if (content) descriptionLines.push(`내용: ${content}`);
+  const memo = optional(cleanMemo(schedule.details));
   if (memo) descriptionLines.push(`메모: ${memo}`);
   const description = descriptionLines.join("\n");
   return {

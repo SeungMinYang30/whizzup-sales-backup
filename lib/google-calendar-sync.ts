@@ -315,6 +315,26 @@ export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?
       ).bind(constructionMigrationKey),
     ]);
   }
+  const constructionColorMigrationKey = "google:construction_color:muted_red_brown:v1";
+  const constructionColorMigration = await d1.prepare(
+    "SELECT value FROM app_settings WHERE key = ?",
+  ).bind(constructionColorMigrationKey).first<{ value: string }>();
+  if (!constructionColorMigration && googleConstructionCalendarApiConfigured()) {
+    await d1.batch([
+      d1.prepare(
+        `UPDATE organization_schedules
+         SET sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
+         WHERE category = 'construction'
+           AND sync_status = 'synced'
+           AND TRIM(COALESCE(deleted_at, '')) = ''`,
+      ),
+      d1.prepare(
+        `INSERT INTO app_settings (key, value, updated_at)
+         VALUES (?, 'prepared', CURRENT_TIMESTAMP)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+      ).bind(constructionColorMigrationKey),
+    ]);
+  }
   const rows = await pendingRows(options?.ids, options?.limit ?? 20);
   if (!rows.length) return;
   for (const row of rows) {
@@ -723,7 +743,6 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
           ).bind(existingStructured.products, row.organization, row.business_round).run();
         }
       }
-      const requiredDescriptionFields = ["담당자:", "내용:"];
       const legacyManagedDescriptionFields = [
         "시공 단계:",
         "시공업체:",
@@ -733,8 +752,8 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
         "원본 Google 제목:",
       ];
       const missingManagedDescription =
-        requiredDescriptionFields.some((field) => !description.includes(field)) ||
-        legacyManagedDescriptionFields.some((field) => description.includes(field));
+        legacyManagedDescriptionFields.some((field) => description.includes(field)) ||
+        /^(?:담당자|내용|일정 내용|시공 단계|시공업체|공사·품목|메모):\s*(?:-|\[입력\s*필요\]|미정|미입력)\s*$/mu.test(description);
       const expectedSummary = row && row.category !== "construction"
         ? googleCalendarTitle({
             organization: row.organization,
