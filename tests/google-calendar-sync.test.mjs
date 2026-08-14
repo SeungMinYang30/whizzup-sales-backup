@@ -77,7 +77,7 @@ test("기존 시공 Google 일정은 안전하게 다시 연결하고 신뢰 가
   assert.match(api, /deleteGoogleCalendarEventsByScheduleId/);
   assert.match(store, /schedule\.scheduledDate <= currentEndDate/);
   assert.match(sync, /sync_status = 'syncing'/);
-  assert.match(sync, /last_synced_at < datetime\('now', '-10 minutes'\)/);
+  assert.match(sync, /datetime\(last_synced_at\) < datetime\('now', '-10 minutes'\)/);
   assert.match(sync, /if \(!claimed\.meta\.changes\) continue/);
   assert.match(contentRefreshMigration, /기존 사이트 연결 일정/);
   assert.match(contentRefreshMigration, /sync_status = 'pending'/);

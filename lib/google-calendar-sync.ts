@@ -435,7 +435,8 @@ export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?
     `UPDATE organization_schedules
      SET sync_status = 'pending'
      WHERE sync_status = 'syncing'
-       AND last_synced_at < datetime('now', '-10 minutes')`,
+       AND TRIM(COALESCE(last_synced_at, '')) <> ''
+       AND datetime(last_synced_at) < datetime('now', '-10 minutes')`,
   ).run();
   const rows = await pendingRows(options?.ids, options?.limit ?? 20);
   if (!rows.length) return;
