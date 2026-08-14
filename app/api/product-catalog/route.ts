@@ -16,6 +16,7 @@ import {
   setProductVendorLinks,
 } from "../../../lib/product-vendor-links";
 import { hasProcurementSignal, procurementNumbersFromText, resolveProcurementFeeRate } from "../../../lib/procurement-product";
+import { normalizeProductSupplyType } from "../../../lib/product-supply-classification";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,11 @@ function normalizeProduct(
     ? resolveProcurementFeeRate(source.procurementFeeRate, note, specification)
     : null;
   const unitPrice = cleanNumber(source.unitPrice, 0, 100_000_000_000);
-  const supplyType = source.supplyType === "direct" ? "direct" : "partner";
+  const supplyType = normalizeProductSupplyType({
+    catalogItemId: source.id,
+    productName: name,
+    supplyType: source.supplyType,
+  });
   const requestedCommissionRate = cleanNumber(source.commissionRate, 0, 1);
   const requestedMarginRate = cleanNumber(source.marginRate, 0, 1);
   const commissionRate =
@@ -229,9 +234,11 @@ async function catalogResponse(
     (product) => {
       const link = linkMap.get(product.id);
       const supply = supplyMap.get(product.id);
-      const supplyType =
-        supply?.supplyType ??
-        (product.supplyType === "direct" ? "direct" : "partner");
+      const supplyType = normalizeProductSupplyType({
+        catalogItemId: product.id,
+        productName: product.name,
+        supplyType: supply?.supplyType ?? product.supplyType,
+      });
       const marginRate =
         supplyType === "direct"
           ? supply?.marginRate ?? product.marginRate ?? product.commissionRate
