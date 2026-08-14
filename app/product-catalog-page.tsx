@@ -456,9 +456,1750 @@ export default function ProductCatalogPage({
     const update = () => setCanReorder(media.matches);
     update();
     media.addEventListener("change", update);
-    return×İyêÚ$z{-®éÜj×Æ'WGFöâG—SÒ&'WGFöâ"&–ÖÆ&VÃÒ.Ëi^ÈhÂ"öä6Æ–6³×²‚’Óâ6WD6ö×&—6öå&Wf–Wu¦ööÒ‚‡fÇVR’ÓâÖF‚æÖ‚ƒSÂfÇVRÒ#R’—Óî(‰#Âö'WGFöãàĞ¢Æ#ç¶6ö×&—6öå&Wf–Wu¦öö×ÒSÂö#àĞ¢Æ'WGFöâG—SÒ&'WGFöâ"&–ÖÆ&VÃÒ.Ù™^¸È"öä6Æ–6³×²‚’Óâ6WD6ö×&—6öå&Wf–Wu¦ööÒ‚‡fÇVR’ÓâÖF‚æÖ–âƒ#ÂfÇVR²#R’—ÓîûÈ³Âö'WGFöãàĞ¢Æ‡&Vc×¶ö’÷&öGV7BÖ6ö×&—6öâÖFö7VÖVçG3ö–CÒG¶6ö×&—6öå&Wf–Wræ–GÒfF÷væÆöCÓÓî¸ºNÉ«NºÎ¹9ÃÂöàĞ¢Æ'WGFöâG—SÒ&'WGFöâ"&–ÖÆ&VÃÒ.¸º¾«‹"öä6Æ–6³×²‚’Óâ6WD6ö×&—6öå&Wf–Wr†çVÆÂ—Óì9sÂö'WGFöãàĞ¢ÂöF—càĞ¢Âö†VFW#àĞ¢ÆF—b6Æ74æÖSÒ&6ö×&—6öâ×&Wf–WrÖ6öçFVçB#àĞ¢¶6ö×&—6öå&Wf–Wt'W7’òÆF—b6Æ74æÖSÒ&V×G’×7FFR#îºûºjÎ»;N«‹º[ÂÊH»˜NÙY«:ÉèÈ«^¸¸¸ºBãÂöF—câ¢çVÆÇĞĞ¢¶6ö×&—6öå&Wf–WtW'&÷"òÆF—b6Æ74æÖSÒ&6ö×&—6öâ×&Wf–WrÖæ÷F–6R#ãÇ7G&öæsîºûºjÎ»;N«‹ÉX¸+CÂ÷7G&öæsãÇç¶6ö×&—6öå&Wf–WtW'&÷'ÓÂ÷ãÆ‡&Vc×¶ö’÷&öGV7BÖ6ö×&—6öâÖFö7VÖVçG3ö–CÒG¶6ö×&—6öå&Wf–Wræ–GÒfF÷væÆöCÓÓîÉ¹»;‚¸ºNÉ«NºÎ¹9ÃÂöãÂöF—câ¢çVÆÇĞĞ¢²6ö×&—6öå&Wf–Wt'W7’bb6ö×&—6öå&Wf–WtW'&÷"bb†6ö×&—6öå&Wf–Wræ÷&–v–æÅöæÖRçFôÆö6ÆTÆ÷vW$66R‚’æVæG5v—F‚‚"çFb"’ÇÂ6ö×&—6öå&Wf–WræÖ–ÖU÷G—RÓÓÒ&Æ–6F–öâ÷Fb"’ò€Ğ¢Æ–g&ÖR¶W“×¶6ö×&—6öå&Wf–Wu¦öö×Ò7&3×¶ö’÷&öGV7BÖ6ö×&—6öâÖFö7VÖVçG3ö–CÒG¶6ö×&—6öå&Wf–Wræ–GÒg&Wf–WsÓ7¦ööÓÒG¶6ö×&—6öå&Wf–Wu¦öö×ÖÒF—FÆS×¶G¶6ö×&—6öå&Wf–Wræ÷&–v–æÅöæÖWÒDbØéÉÛNÊxÒóàĞ¢’¢çVÆÇĞĞ¢²6ö×&—6öå&Wf–Wt'W7’bb6ö×&—6öå&Wf–Wuv÷&¶&öö²ò€Ğ¢ÆF—b6Æ74æÖSÒ&6ö×&—6öâ×†Ç7‚×&Wf–Wr"7G–ÆS×·²föçE6—¦S¢G¶6ö×&—6öå&Wf–Wu¦öö×ÒV×ÓàĞ¢¶6ö×&—6öå&Wf–Wuv÷&¶&öö²çG'Væ6FVBòÇ6Æ74æÖSÒ&6ö×&—6öâ×&Wf–Wr×G'Væ6FVB#îØØÈÎÉÛÎÉØÙ™Nº›BÈK¸ª^ÉØBÉÈNÙ[BÉÛÎ»hÈ¹ÎØ«Œ+~Ùhœ+~É{NºxÂÙÎÈ¹ÎÙZ¸¸¸ºBâÊNË+B¸+NÉªÉØ¸ºNÉ«NºÎ¹9ÎÙ[NÈIÂÙ™^ÉÛÙ[BÊ;ÎÈKÉ©BãÂ÷â¢çVÆÇĞĞ¢¶6ö×&—6öå&Wf–Wuv÷&¶&öö²ç6†VWG2æÖ‚‡6†VWB’Óâ€Ğ¢Ç6V7F–öâ¶W“×·6†VWBææÖWÓãÆƒCç·6†VWBææÖWÓÂöƒCãÆF—cãÇF&ÆSãÇF&öG“ç·6†VWBç&÷w2æÖ‚‡&÷rÂ&÷t–æFW‚’ÓâÇG"¶W“×¶G·6†VWBææÖWÒÒG·&÷t–æFW‡ÖÓç·&÷ræÖ‚†6VÆÂÂ6VÆÄ–æFW‚’ÓâÇFB¶W“×¶G·&÷t–æFW‡ÒÒG¶6VÆÄ–æFW‡ÖÓç¶6VÆÇÓÂ÷FCâ—ÓÂ÷G#â—ÓÂ÷F&öG“ãÂ÷F&ÆSãÂöF—cãÂ÷6V7F–öãàĞ¢’—ĞĞ¢¶6ö×&—6öå&Wf–Wuv÷&¶&öö²æ–ÖvW2æÆVæwF‚òÇ6V7F–öâ6Æ74æÖSÒ&6ö×&—6öâ×†Ç7‚Ö–ÖvW2#ãÆƒCîØúÎÙZ¹	ÂÉÛNºûÊxÂöƒCãÆF—cç¶6ö×&—6öå&Wf–Wuv÷&¶&öö²æ–ÖvW2æÖ‚†–ÖvR’ÓâÆf–wW&R¶W“×¶–ÖvRææÖWÓãÆ–Ör7&3×¶–ÖvRçW&ÇÒÇC×¶–ÖvRææÖWÒóãÆf–v6F–öãç¶–ÖvRææÖWÓÂöf–v6F–öããÂöf–wW&Sâ—ÓÂöF—cãÂ÷6V7F–öãâ¢çVÆÇĞĞ¢ÂöF—càĞ¢’¢çVÆÇĞĞ¢ÂöF—càĞ¢Â÷6V7F–öãàĞ¢ÂöF—càĞ¢—ĞĞ Ğ¢·V÷FF–öâbb€Ğ¢ÆF—`Ğ¢6Æ74æÖSÒ'&öGV7BÖ6FÆörÖÖöFÂ×6†VÆÂ Ğ¢&öÆSÒ'&W6VçFF–öâ Ğ¢öäÖ÷W6TF÷vã×²†WfVçB’Óâ°Ğ¢–b†WfVçBæ7W'&VçEF&vWBÓÓÒWfVçBçF&vWB’6WEV÷FF–öâ†çVÆÂ“°Ğ¢×ĞĞ¢àĞ¢Æf÷&ĞĞ¢6Æ74æÖSÒ'&öGV7BÖ6FÆörÖF–ÆörV÷FF–öâÖF–Æör Ğ¢&öÆSÒ&F–Æör Ğ¢&–ÖÖöFÃÒ'G'VR Ğ¢&–ÖÆ&VÆÆVF'“Ò'V÷FF–öâ×F—FÆR Ğ¢öå7V&Ö—C×¶†æFÆUV÷FF–öäF÷væÆöGĞĞ¢àĞ¢ÆF—b6Æ74æÖSÒ'&öGV7BÖ6FÆörÖF–ÆörÖ†VFW"#àĞ¢ÆF—càĞ¢Ç7â6Æ74æÖSÒ'6V7F–öâÖ¶–6¶W"#åTõDD”ôãÂ÷7ãàĞ¢Æƒ2–CÒ'V÷FF–öâ×F—FÆR#î«*ÎÊÈIÂºxÎ¹:N«‹Âöƒ3àĞ¢ÇîÊ	ÎÙ(ÉØBÈJØ9ŞÙY«:È‰¹øÉØBÊÊ	^ÙYº›B«:«	ŞÉª’ÉyÈXºÂ¸+Nº
-N»	¾È«^¸¸¸ºBãÂ÷àĞ¢ÂöF—càĞ¢Æ'WGFöàĞ¢G—SÒ&'WGFöâ Ğ¢&–ÖÆ&VÃÒ.¸º¾«‹ Ğ¢öä6Æ–6³×²‚’Óâ6WEV÷FF–öâ†çVÆÂ—ĞĞ¢àĞ¢9pĞ¢Âö'WGFöãàĞ¢ÂöF—càĞ Ğ¢ÆF—b6Æ74æÖSÒ'V÷FF–öâÖÖWFÖw&–B#àĞ¢ÆÆ&VÃàĞ¢Ç7ãî«‹«Hº¨SÂ÷7ãàĞ¢Æ–çW@Ğ¢fÇVS×·V÷FF–öâæ7W7FöÖW$æÖWĞĞ¢öä6†ævS×²†WfVçB’ÓàĞ¢6WEV÷FF–öâ‡°Ğ¢ââçV÷FF–öâÀĞ¢7W7FöÖW$æÖS¢WfVçBçF&vWBçfÇVRÀĞ¢ÒĞ¢ĞĞ¢Æ6V†öÆFW#Ò.Éˆƒ¢È¹ÎÙÚRºzNÙ™NËH¹;ÙY«Y Ğ¢&WV—&V@Ğ¢óàĞ¢ÂöÆ&VÃàĞ¢ÆÆ&VÃàĞ¢Ç7ãî«*ÎÊÉÛÃÂ÷7ãàĞ¢Æ–çW@Ğ¢G—SÒ&FFR Ğ¢fÇVS×·V÷FF–öâçV÷FTFFWĞĞ¢öä6†ævS×²†WfVçB’ÓàĞ¢6WEV÷FF–öâ‡²ââçV÷FF–öâÂV÷FTFFS¢WfVçBçF&vWBçfÇVRÒĞ¢ĞĞ¢&WV—&V@Ğ¢óàĞ¢ÂöÆ&VÃàĞ¢ÆÆ&VÂ6Æ74æÖSÒ'V÷FF–öâ×&ö¦V7BÖf–VÆB#àĞ¢Ç7ãîÈ*ÎÉx^º¨SÂ÷7ãàĞ¢Æ–çW@Ğ¢fÇVS×·V÷FF–öâç&ö¦V7EF—FÆWĞĞ¢öä6†ævS×²†WfVçB’ÓàĞ¢6WEV÷FF–öâ‡°Ğ¢ââçV÷FF–öâÀĞ¢&ö¦V7EF—FÆS¢WfVçBçF&vWBçfÇVRÀĞ¢ÒĞ¢ĞĞ¢Æ6V†öÆFW#Ò.Éˆƒ¢ÈªNºxØ«‚Ë+NÙy«YÈºB«ZÎËiR Ğ¢óàĞ¢ÂöÆ&VÃàĞ¢ÂöF—càĞ Ğ¢Ç6V7F–öâ6Æ74æÖSÒ'V÷FF–öâ×–6¶W"#àĞ¢ÆF—b6Æ74æÖSÒ'V÷FF–öâ×6V7F–öâ×F—FÆR#àĞ¢ÆF—càĞ¢Ç7G&öæsîÊ	ÎÙ(‚ÈJØ9ÓÂ÷7G&öæsàĞ¢Ç7ãîÊ	ÎÙ(º¨^ÉÛN¸)‚«yÎ«*ÉØB«(È8Ù[BËiN«ÙYÈKÉ©BãÂ÷7ãàĞ¢ÂöF—càĞ¢Æ–çW@Ğ¢fÇVS×·V÷FF–öâç6V&6‡ĞĞ¢öä6†ævS×²†WfVçB’ÓàĞ¢6WEV÷FF–öâ‡²ââçV÷FF–öâÂ6V&6ƒ¢WfVçBçF&vWBçfÇVRÒĞ¢ĞĞ¢Æ6V†öÆFW#Ò.Ê	ÎÙ(º¨\+~«yÎ«*’«(È8’ Ğ¢óàĞ¢ÂöF—càĞ¢ÆF—b6Æ74æÖSÒ'V÷FF–öâ×&öGV7B×&W7VÇG2#àĞ¢·V÷FF–öå&öGV7G2æÖ‚‡&öGV7B’Óâ€Ğ¢Æ'WGFöàĞ¢¶W“×·&öGV7Bæ–GĞĞ¢G—SÒ&'WGFöâ Ğ¢öä6Æ–6³×²‚’ÓâFEV÷FF–öå&öGV7B‡&öGV7B—ĞĞ¢àĞ¢Ç7ãàĞ¢Ç7G&öæsç·&öGV7BææÖWÓÂ÷7G&öæsàĞ¢Ç6ÖÆÃç·&öGV7Bç7V6–f–6F–öâÇÂ.«yÎ«*’ºû¹;ºÒ'ÓÂ÷6ÖÆÃàĞ¢Â÷7ãàĞ¢Æ#ç¶f÷&ÖE&–6R‡&öGV7BçVæ—E&–6R—ÓÂö#àĞ¢ÆVÓîËiN«ÂöVÓàĞ¢Âö'WGFöãàĞ¢’—ĞĞ¢²V÷FF–öå&öGV7G2æÆVæwF‚bb€Ğ¢ÆF—b6Æ74æÖSÒ'V÷FF–öâÖæò×&W7VÇB#î«(È8’«+«;Î«ÉxnÈ«^¸¸¸ºBãÂöF—càĞ¢—ĞĞ¢·V÷FF–öå&öGV7DÖF6„6÷VçBâV÷FF–öå&öGV7G2æÆVæwF‚bb€Ğ¢ÆF—b6Æ74æÖSÒ'V÷FF–öâÖæò×&W7VÇB#àĞ¢ÊNË+B·V÷FF–öå&öGV7DÖF6„6÷VçBçFôÆö6ÆU7G&–ær‚—Ş«	ÂÊI²"'ĞĞ¢·V÷FF–öå&öGV7G2æÆVæwF‡Ş«	Îº[ÂÙÎÈ¹ÎÙZ¸¸¸ºBâÊ	ÎÙ(º¨^ÉØB«(È8ÙYº›B¸Ù@Ğ¢»šº[N«(ÂËîÉØBÈ‰‚ÉèÈ«^¸¸¸ºBàĞ¢ÂöF—càĞ¢—ĞĞ¢ÂöF—càĞ¢Â÷6V7F–öãàĞ Ğ¢Ç6V7F–öâ6Æ74æÖSÒ'V÷FF–öâÖÆ–æW2×6V7F–öâ#àĞ¢ÆF—b6Æ74æÖSÒ'V÷FF–öâ×6V7F–öâ×F—FÆR#àĞ¢ÆF—càĞ¢Ç7G&öæsîÈJØ9ŞÙYÂÊ	ÎÙ(ƒÂ÷7G&öæsàĞ¢Ç7ãç·V÷FF–öâæÆ–æW2æÆVæwF‡Ş«	ÂÙ(ºª“Â÷7ãàĞ¢ÂöF—càĞ¢Æ#îÙZ«8B·&–6Tf÷&ÖGFW"æf÷&ÖB‡V÷FF–öåF÷FÂ—ŞÉ¹Âö#àĞ¢ÂöF—càĞ¢·V÷FF–öâæÆ–æW2æÆVæwF‚ò€Ğ¢ÆF—b6Æ74æÖSÒ'V÷FF–öâÖÆ–æW2#àĞ¢·V÷FF–öâæÆ–æW2æÖ‚†Æ–æR’Óâ°Ğ¢6öç7BVçF—G’ÒçVÖ&W"†Æ–æRçVçF—G’ç&WÆ6R‚òÂörÂ""’“°Ğ¢6öç7BVæ—E&–6RÒçVÖ&W"†Æ–æRçVæ—E&–6Rç&WÆ6R‚òÂörÂ""’“°Ğ¢6öç7BÖ÷VçBĞĞ¢„çVÖ&W"æ—4f–æ—FR‡VçF—G’’òVçF—G’¢’ Ğ¢„çVÖ&W"æ—4f–æ—FR‡Væ—E&–6R’òVæ—E&–6R¢“°Ğ¢&WGW&â€Ğ¢ÆF—b6Æ74æÖSÒ'V÷FF–öâÖÆ–æR"¶W“×¶Æ–æRæ–GÓàĞ¢ÆF—b6Æ74æÖSÒ'V÷FF–öâÖÆ–æR×&öGV7B#àĞ¢Ç7G&öæsç¶Æ–æRææÖWÓÂ÷7G&öæsàĞ¢Ç6ÖÆÃç¶Æ–æRç7V6–f–6F–öâÇÂ.«yÎ«*’ºû¹;ºÒ'ÓÂ÷6ÖÆÃàĞ¢ÂöF—càĞ¢ÆÆ&VÃàĞ¢Ç7ãîÈ‰¹ø“Â÷7ãàĞ¢Æ–çW@Ğ¢–çWDÖöFSÒ&FV6–ÖÂ Ğ¢fÇVS×¶Æ–æRçVçF—G—ĞĞ¢öä6†ævS×²†WfVçB’ÓàĞ¢WFFUV÷FF–öäÆ–æR†Æ–æRæ–BÂ°Ğ¢VçF—G“¢WfVçBçF&vWBçfÇVRÀĞ¢ÒĞ¢ĞĞ¢óàĞ¢ÂöÆ&VÃàĞ¢ÆÆ&VÃàĞ¢Ç7ãî¸ºÉÈCÂ÷7ãàĞ¢Æ–çW@Ğ¢fÇVS×¶Æ–æRçVæ—GĞĞ¢öä6†ævS×²†WfVçB’ÓàĞ¢WFFUV÷FF–öäÆ–æR†Æ–æRæ–BÂ°Ğ¢Væ—C¢WfVçBçF&vWBçfÇVRÀĞ¢ÒĞ¢ĞĞ¢óàĞ¢ÂöÆ&VÃàĞ¢ÆÆ&VÂ6Æ74æÖSÒ'V÷FF–öâ×&–6RÖ–çWB#àĞ¢Ç7ãî¸º«Â÷7ãàĞ¢Æ–çW@Ğ¢–çWDÖöFSÒ&çVÖW&–2 Ğ¢fÇVS×¶Æ–æRçVæ—E&–6WĞĞ¢öä6†ævS×²†WfVçB’ÓàĞ¢WFFUV÷FF–öäÆ–æR†Æ–æRæ–BÂ°Ğ¢Væ—E&–6S¢WfVçBçF&vWBçfÇVRÀĞ¢ÒĞ¢ĞĞ¢óàĞ¢ÂöÆ&VÃàĞ¢ÆF—b6Æ74æÖSÒ'V÷FF–öâÖÆ–æRÖÖ÷VçB#àĞ¢Ç7ãî«ˆÉZÂ÷7ãàĞ¢Ç7G&öæsç·&–6Tf÷&ÖGFW"æf÷&ÖB†Ö÷VçB—ŞÉ¹Â÷7G&öæsàĞ¢ÂöF—càĞ¢ÆÆ&VÂ6Æ74æÖSÒ'V÷FF–öâÖæ÷FRÖ–çWB#àĞ¢Ç7ãî»˜N«:Â÷7ãàĞ¢Æ–çW@Ğ¢fÇVS×¶Æ–æRææ÷FWĞĞ¢öä6†ævS×²†WfVçB’ÓàĞ¢WFFUV÷FF–öäÆ–æR†Æ–æRæ–BÂ°Ğ¢æ÷FS¢WfVçBçF&vWBçfÇVRÀĞ¢ÒĞ¢ĞĞ¢Æ6V†öÆFW#Ò.ÈJØ9ÒÉè^º
-R Ğ¢óàĞ¢ÂöÆ&VÃàĞ¢Æ'WGFöàĞ¢G—SÒ&'WGFöâ Ğ¢6Æ74æÖSÒ'V÷FF–öâ×&VÖ÷fR Ğ¢öä6Æ–6³×²‚’Óâ&VÖ÷fUV÷FF–öäÆ–æR†Æ–æRæ–B—ĞĞ¢&–ÖÆ&VÃ×¶G¶Æ–æRææÖWÒÈ*ŞÊ	ÆĞĞ¢àĞ¢È*ŞÊ	ÀĞ¢Âö'WGFöãàĞ¢ÂöF—càĞ¢“°Ğ¢Ò—ĞĞ¢ÂöF—càĞ¢’¢€Ğ¢ÆF—b6Æ74æÖSÒ'V÷FF–öâÖV×G’#àĞ¢ÉÈB«(È8’«+«;ÎÉyÈIÂ«*ÎÊÙZÊ	ÎÙ(ÉØBÈJØ9ŞÙ[BÊ;ÎÈKÉ©BàĞ¢ÂöF—càĞ¢—ĞĞ¢Â÷6V7F–öãàĞ Ğ¢ÆF—b6Æ74æÖSÒ'V÷FF–öâÖæ÷F–6R#àĞ¢È‰È‰º8ÎÉÊŒ+~ºxÊxNÉÊŒ+~¸+N»hË«:È*ÎÙZŞÉØ«*ÎÊÈIÎÉyØúÎÙZ¹	ÊxÉX®ÉËÎº›ÂÙÎÈ¹Â«ˆÉZÉØ Ğ¢»h«ÈK‚ØúÎÙZ‚«‹ÊHÉè^¸¸¸ºBàĞ¢ÂöF—càĞ¢ÆF—b6Æ74æÖSÒ'&öGV7BÖ6FÆörÖF–ÆörÖ7F–öç2#àĞ¢Æ'WGFöàĞ¢G—SÒ&'WGFöâ Ğ¢6Æ74æÖSÒ'6V6öæF'’Ö'WGFöâ Ğ¢öä6Æ–6³×²‚’Óâ6WEV÷FF–öâ†çVÆÂ—ĞĞ¢àĞ¢ËzÈhÀĞ¢Âö'WGFöãàĞ¢Æ'WGFöâG—SÒ'7V&Ö—B"6Æ74æÖSÒ'&–Ö'’Ö'WGFöâ#àĞ¢ÉyÈX«*ÎÊÈIÂ¸+Nº
-N»	¾«‹ Ğ¢Âö'WGFöãàĞ¢ÂöF—càĞ¢Âöf÷&ÓàĞ¢ÂöF—càĞ¢—ĞĞ Ğ¢¶–×÷'E&Wf–Wrbb€Ğ¢ÆF—b6Æ74æÖSÒ'&öGV7BÖ6FÆörÖÖöFÂ×6†VÆÂ"&öÆSÒ'&W6VçFF–öâ#àĞ¢Ç6V7F–öàĞ¢6Æ74æÖSÒ'&öGV7BÖ6FÆörÖF–Æör&öGV7BÖ–×÷'BÖF–Æör Ğ¢&öÆSÒ&F–Æör Ğ¢&–ÖÖöFÃÒ'G'VR Ğ¢&–ÖÆ&VÆÆVF'“Ò'&öGV7BÖ–×÷'B×F—FÆR Ğ¢àĞ¢ÆF—b6Æ74æÖSÒ'&öGV7BÖ6FÆörÖF–ÆörÖ†VFW"#àĞ¢ÆF—càĞ¢Ç7â6Æ74æÖSÒ'6V7F–öâÖ¶–6¶W"#äU„4TÂ$Ud”UsÂ÷7ãàĞ¢Æƒ2–CÒ'&öGV7BÖ–×÷'B×F—FÆR#îÉyÈX¸+NÉª’«(ØjÂöƒ3àĞ¢Çç¶–×÷'E&Wf–Wræf–ÆTæÖWÓÂ÷àĞ¢ÂöF—càĞ¢Æ'WGFöàĞ¢G—SÒ&'WGFöâ Ğ¢&–ÖÆ&VÃÒ.¸º¾«‹ Ğ¢öä6Æ–6³×²‚’Óâ6WD–×÷'E&Wf–Wr†çVÆÂ—ĞĞ¢F—6&ÆVC×·6f–æwĞĞ¢àĞ¢9pĞ¢Âö'WGFöãàĞ¢ÂöF—càĞ¢ÆF—b6Æ74æÖSÒ'&öGV7BÖ–×÷'B×7VÖÖ'’#àĞ¢Ç7ãàĞ¢Èº«yÂÇ7G&öæsç¶–×÷'E&Wf–WræFFVGŞ«	ÃÂ÷7G&öæsàĞ¢Â÷7ãàĞ¢Ç7ãàĞ¢È‰Ê	RÇ7G&öæsç¶–×÷'E&Wf–WrçWFFVGŞ«	ÃÂ÷7G&öæsàĞ¢Â÷7ãàĞ¢Ç7ãàĞ¢»8«+ÒÉxnÉØÂÇ7G&öæsç¶–×÷'E&Wf–Wrç6¶—VGŞ«	ÃÂ÷7G&öæsàĞ¢Â÷7ãàĞ¢Ç7â6Æ74æÖS×¶–×÷'E&Wf–WræW'&÷'2ò&†2ÖW'&÷""¢"'ÓàĞ¢ÉŠNºY‚Ç7G&öæsç¶–×÷'E&Wf–WræW'&÷'7Ş«	ÃÂ÷7G&öæsàĞ¢Â÷7ãàĞ¢ÂöF—càĞ¢Ç6Æ74æÖSÒ'&öGV7BÖ–×÷'BÖwV–FR#àĞ¢»˜‚ÈXÉØ«‹ÊBÊ	^»;Nº[ÂÊxÉ«ÊxÉX®È«^¸¸¸ºBâÉŠNºY«Éè¸©BÙhÉØÊ	ÎÉ›ÙY«: Ğ¢ÊÉª¹
-¸¸¸ºBàĞ¢Â÷àĞ¢¶–×÷'E&Wf–WræW'&÷'2âbb€Ğ¢ÆF—b6Æ74æÖSÒ'&öGV7BÖ–×÷'BÖW'&÷'2#àĞ¢¶–×÷'E&Wf–Wrç&÷w0Ğ¢æf–ÇFW"‚‡&÷r’Óâ&÷ræW'&÷'2æÆVæwF‚Ğ¢ç6Æ–6RƒÂ‚Ğ¢æÖ‚‡&÷r’Óâ€Ğ¢Ç¶W“×·&÷rç&÷tçVÖ&W'ÓàĞ¢·&÷rç&÷tçVÖ&W'ŞÙh’+r·&÷ræW'&÷'2æ¦ö–â‚""—ĞĞ¢Â÷àĞ¢’—ĞĞ¢ÂöF—càĞ¢—ĞĞ¢ÆF—b6Æ74æÖSÒ'&öGV7BÖ6FÆörÖF–ÆörÖ7F–öç2#àĞ¢Æ'WGFöàĞ¢G—SÒ&'WGFöâ Ğ¢6Æ74æÖSÒ'6V6öæF'’Ö'WGFöâ Ğ¢öä6Æ–6³×²‚’Óâ6WD–×÷'E&Wf–Wr†çVÆÂ—ĞĞ¢F—6&ÆVC×·6f–æwĞĞ¢àĞ¢ËzÈhÀĞ¢Âö'WGFöãàĞ¢Æ'WGFöàĞ¢G—SÒ&'WGFöâ Ğ¢6Æ74æÖSÒ'&–Ö'’Ö'WGFöâ Ğ¢öä6Æ–6³×¶Ç”–×÷'GĞĞ¢F—6&ÆVC×°Ğ¢6f–ærÇÀĞ¢‚–×÷'E&Wf–WræFFVBbb–×÷'E&Wf–WrçWFFVBĞ¢ĞĞ¢àĞ¢·6f–ærò.ÊÉª’ÊI(
-b"¢.«(Øj¸+NÉª’ÊÉª’'ĞĞ¢Âö'WGFöãàĞ¢ÂöF—càĞ¢Â÷6V7F–öãàĞ¢ÂöF—càĞ¢—ĞĞ¢ÂóàĞ¢“°Ğ§ĞĞ 
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/product-catalog", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("ì œí’ˆ ì •ë³´ë¥¼ ë¶ˆëŸ¬ì˜¤ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+        return (await response.json()) as {
+          products?: ProductCatalogItem[];
+          favoriteProductIds?: string[];
+          vendors?: ProductVendorOption[];
+        };
+      })
+      .then((data) => {
+        if (active && Array.isArray(data.products) && data.products.length) {
+          setProducts(data.products);
+        }
+        if (active && Array.isArray(data.favoriteProductIds)) {
+          setFavoriteProductIds(data.favoriteProductIds);
+        }
+        if (active && Array.isArray(data.vendors)) {
+          setVendorOptions(data.vendors);
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setMessage(
+            error instanceof Error
+              ? error.message
+              : "ì œí’ˆ ì •ë³´ë¥¼ ë¶ˆëŸ¬ì˜¤ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.",
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const deferredSearch = useDeferredValue(searchDraft);
+  const normalizedSearch = normalizeSearchValue(deferredSearch.trim());
+  const quotationOpen = quotation !== null;
+  const quotationLines = quotation?.lines ?? null;
+  const deferredQuotationSearch = useDeferredValue(quotation?.search ?? "");
+  const favoriteProductIdSet = useMemo(
+    () => new Set(favoriteProductIds),
+    [favoriteProductIds],
+  );
+  const groupedProducts = useMemo(() => {
+    const favorites = products.filter((product) =>
+      favoriteProductIdSet.has(product.id),
+    );
+    const regular = products.filter(
+      (product) => !favoriteProductIdSet.has(product.id),
+    );
+    return [...favorites, ...regular];
+  }, [favoriteProductIdSet, products]);
+  const visibleProducts = useMemo(() => {
+    return groupedProducts.filter((product) => {
+      if (catalogView === "favorites" && !favoriteProductIdSet.has(product.id)) {
+        return false;
+      }
+      if (!normalizedSearch) return true;
+      return normalizeSearchValue(
+        [
+          product.name,
+          product.specification,
+          product.note,
+          product.reference,
+          product.supplierVendorName ?? "",
+          product.supplyType === "direct"
+            ? "ìœ„ì¦ˆì—… ì§ì ‘ ê³µê¸‰ ë§ˆì§„"
+            : "í˜‘ë ¥ì‚¬ ê³µê¸‰ ìˆ˜ìˆ˜ë£Œ",
+          product.unitPrice === null ? "" : String(product.unitPrice),
+          (product.supplyType === "direct"
+            ? product.marginRate
+            : product.commissionRate) === null
+            ? ""
+            : String(
+                (product.supplyType === "direct"
+                  ? product.marginRate
+                  : product.commissionRate)! * 100,
+              ),
+        ].join(" "),
+      ).includes(normalizedSearch);
+    });
+  }, [catalogView, favoriteProductIdSet, groupedProducts, normalizedSearch]);
+  const productPageCount = Math.max(
+    1,
+    Math.ceil(visibleProducts.length / PRODUCT_PAGE_SIZE),
+  );
+  const productPageItems = useMemo(() => {
+    const offset = (productPage - 1) * PRODUCT_PAGE_SIZE;
+    return visibleProducts.slice(offset, offset + PRODUCT_PAGE_SIZE);
+  }, [productPage, visibleProducts]);
+  const selectedProductIdSet = useMemo(
+    () => new Set(selectedProductIds),
+    [selectedProductIds],
+  );
+  const currentPageSelected =
+    productPageItems.length > 0 &&
+    productPageItems.every((product) => selectedProductIdSet.has(product.id));
+  useEffect(() => {
+    setProductPage(1);
+  }, [catalogView, normalizedSearch]);
+
+  useEffect(() => {
+    setProductPage((current) => Math.min(current, productPageCount));
+  }, [productPageCount]);
+
+  const { quotationProducts, quotationProductMatchCount } = useMemo(() => {
+    if (!quotationOpen) {
+      return { quotationProducts: [], quotationProductMatchCount: 0 };
+    }
+    const query = normalizeSearchValue(deferredQuotationSearch.trim());
+    const matches = query
+      ? groupedProducts.filter((product) =>
+          normalizeSearchValue(
+            [product.name, product.specification, product.note].join(" "),
+          ).includes(query),
+        )
+      : groupedProducts;
+    return {
+      quotationProducts: matches.slice(0, QUOTATION_PRODUCT_RESULT_LIMIT),
+      quotationProductMatchCount: matches.length,
+    };
+  }, [deferredQuotationSearch, groupedProducts, quotationOpen]);
+
+  const quotationTotal = useMemo(() => {
+    if (!quotationLines) return 0;
+    return quotationLines.reduce((sum, line) => {
+      const quantity = Number(line.quantity.replace(/,/g, ""));
+      const unitPrice = Number(line.unitPrice.replace(/,/g, ""));
+      return sum + (Number.isFinite(quantity) ? quantity : 0) *
+        (Number.isFinite(unitPrice) ? unitPrice : 0);
+    }, 0);
+  }, [quotationLines]);
+
+  async function persistProducts(nextProducts: ProductCatalogItem[]) {
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/product-catalog", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ products: nextProducts }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        products?: ProductCatalogItem[];
+        vendors?: ProductVendorOption[];
+        error?: string;
+      };
+      if (!response.ok || !Array.isArray(data.products)) {
+        throw new Error(data.error || "ì œí’ˆ ì •ë³´ë¥¼ ì €ì¥í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      }
+      setProducts(data.products);
+      if (Array.isArray(data.vendors)) setVendorOptions(data.vendors);
+      return data.products;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function persistBulkProductVendor() {
+    if (!selectedProductIds.length || bulkVendorId === "__choose__" || saving) {
+      return;
+    }
+    const selectedSupplyType =
+      bulkVendorId === "__direct__" ? "direct" : "partner";
+    const selectedVendorId =
+      selectedSupplyType === "partner" && bulkVendorId
+        ? Number(bulkVendorId)
+        : null;
+    const selectedSupplyName =
+      selectedSupplyType === "direct"
+        ? "ìœ„ì¦ˆì—… ì§ì ‘ ê³µê¸‰"
+        : selectedVendorId === null
+          ? "í˜‘ë ¥ì‚¬ ë¯¸ì—°ê²°"
+          : vendorOptions.find((vendor) => vendor.id === selectedVendorId)
+              ?.companyName || "ì„ íƒí•œ í˜‘ë ¥ì‚¬";
+    const selectedProducts = products.filter((product) =>
+      selectedProductIdSet.has(product.id),
+    );
+    const overwriteCount = selectedProducts.filter((product) => {
+      const currentId = product.supplierVendorId ?? null;
+      return (
+        product.supplyType !== selectedSupplyType ||
+        (selectedSupplyType === "partner" &&
+          currentId !== null &&
+          currentId !== selectedVendorId)
+      );
+    }).length;
+    if (
+      overwriteCount > 0 &&
+      !window.confirm(
+        `ì„ íƒí•œ ì œí’ˆ ì¤‘ ${overwriteCount.toLocaleString()}ê°œëŠ” ê¸°ì¡´ ê³µê¸‰ êµ¬ë¶„ì´ ì„¤ì •ë˜ì–´ ìˆìŠµë‹ˆë‹¤. '${selectedSupplyName}'(ìœ¼)ë¡œ ì¼ê´„ ë³€ê²½í• ê¹Œìš”?`,
+      )
+    ) {
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+    try {
+      const nextProducts = products.map((product) => {
+        if (!selectedProductIdSet.has(product.id)) return product;
+        const activeRate =
+          product.supplyType === "direct"
+            ? product.marginRate
+            : product.commissionRate;
+        return {
+          ...product,
+          supplyType: selectedSupplyType,
+          commissionRate:
+            selectedSupplyType === "partner" ? activeRate : null,
+          marginRate:
+            selectedSupplyType === "direct" ? activeRate : null,
+          supplierVendorId:
+            selectedSupplyType === "partner" ? selectedVendorId : null,
+          supplierVendorName:
+            selectedSupplyType === "partner"
+              ? selectedSupplyName === "í˜‘ë ¥ì‚¬ ë¯¸ì—°ê²°"
+                ? ""
+                : selectedSupplyName
+              : "",
+        } satisfies ProductCatalogItem;
+      });
+      await persistProducts(nextProducts);
+      setSelectedProductIds([]);
+      setBulkVendorId("__choose__");
+      setMessage(
+        `${selectedProducts.length.toLocaleString()}ê°œ ì œí’ˆì˜ ê³µê¸‰ êµ¬ë¶„ì„ '${selectedSupplyName}'(ìœ¼)ë¡œ ë³€ê²½í–ˆìŠµë‹ˆë‹¤.`,
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "ì œí’ˆ ê³µê¸‰ êµ¬ë¶„ì„ ì¼ê´„ ì €ì¥í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function toggleCurrentProductPage() {
+    const pageIds = productPageItems.map((product) => product.id);
+    setSelectedProductIds((current) => {
+      const next = new Set(current);
+      if (currentPageSelected) {
+        pageIds.forEach((id) => next.delete(id));
+      } else {
+        pageIds.forEach((id) => next.add(id));
+      }
+      return [...next];
+    });
+  }
+
+  async function persistProductOrder(nextProducts: ProductCatalogItem[]) {
+    const previousProducts = products;
+    setProducts(nextProducts);
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/product-catalog", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productOrder: nextProducts.map((product) => product.id),
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        products?: ProductCatalogItem[];
+        error?: string;
+      };
+      if (!response.ok || !Array.isArray(data.products)) {
+        throw new Error(data.error || "ì œí’ˆ ìˆœì„œë¥¼ ì €ì¥í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      }
+      setProducts(data.products);
+      setMessage("ë‚´ ì œí’ˆ ìˆœì„œë¥¼ ì €ì¥í–ˆìŠµë‹ˆë‹¤.");
+    } catch (error) {
+      setProducts(previousProducts);
+      setMessage(
+        error instanceof Error ? error.message : "ì œí’ˆ ìˆœì„œë¥¼ ì €ì¥í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleFavoriteProduct(productId: string) {
+    if (saving) return;
+    const viewport = { x: window.scrollX, y: window.scrollY };
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    const restoreViewport = () => {
+      window.requestAnimationFrame(() => {
+        window.scrollTo(viewport.x, viewport.y);
+        window.requestAnimationFrame(() => {
+          window.scrollTo(viewport.x, viewport.y);
+        });
+      });
+    };
+    const previousFavoriteProductIds = favoriteProductIds;
+    const nextFavoriteProductIds = favoriteProductIdSet.has(productId)
+      ? favoriteProductIds.filter((id) => id !== productId)
+      : [...favoriteProductIds, productId];
+    setFavoriteProductIds(nextFavoriteProductIds);
+    restoreViewport();
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/product-catalog", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ favoriteProductIds: nextFavoriteProductIds }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        favoriteProductIds?: string[];
+        error?: string;
+      };
+      if (!response.ok || !Array.isArray(data.favoriteProductIds)) {
+        throw new Error(data.error || "ì¦ê²¨ì°¾ê¸°ë¥¼ ì €ì¥í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      }
+      setFavoriteProductIds(data.favoriteProductIds);
+      restoreViewport();
+    } catch (error) {
+      setFavoriteProductIds(previousFavoriteProductIds);
+      restoreViewport();
+      setMessage(
+        error instanceof Error ? error.message : "ì¦ê²¨ì°¾ê¸°ë¥¼ ì €ì¥í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function reorderProductGroup(productId: string, targetProductId: string) {
+    const isFavorite = favoriteProductIdSet.has(productId);
+    if (isFavorite !== favoriteProductIdSet.has(targetProductId)) return null;
+    const group = products.filter(
+      (product) => favoriteProductIdSet.has(product.id) === isFavorite,
+    );
+    const fromIndex = group.findIndex((product) => product.id === productId);
+    const targetIndex = group.findIndex((product) => product.id === targetProductId);
+    if (fromIndex < 0 || targetIndex < 0 || fromIndex === targetIndex) return null;
+    const reorderedGroup = [...group];
+    const [moved] = reorderedGroup.splice(fromIndex, 1);
+    reorderedGroup.splice(targetIndex, 0, moved);
+    let groupIndex = 0;
+    return products.map((product) =>
+      favoriteProductIdSet.has(product.id) === isFavorite
+        ? reorderedGroup[groupIndex++]
+        : product,
+    );
+  }
+
+  function isProductGroupEdge(productId: string, direction: -1 | 1) {
+    const isFavorite = favoriteProductIdSet.has(productId);
+    const group = products.filter(
+      (product) => favoriteProductIdSet.has(product.id) === isFavorite,
+    );
+    return direction === -1
+      ? group[0]?.id === productId
+      : group.at(-1)?.id === productId;
+  }
+
+  function moveProduct(productId: string, direction: -1 | 1) {
+    if (!canReorder || normalizedSearch || catalogView !== "all" || saving) return;
+    const isFavorite = favoriteProductIdSet.has(productId);
+    const group = products.filter(
+      (product) => favoriteProductIdSet.has(product.id) === isFavorite,
+    );
+    const index = group.findIndex((product) => product.id === productId);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= group.length) return;
+    const nextProducts = reorderProductGroup(productId, group[nextIndex].id);
+    if (nextProducts) void persistProductOrder(nextProducts);
+  }
+
+  function dropProduct(targetProductId: string) {
+    if (
+      !canReorder ||
+      !draggedProductId ||
+      draggedProductId === targetProductId ||
+      normalizedSearch ||
+      catalogView !== "all" ||
+      saving
+    ) {
+      setDraggedProductId(null);
+      return;
+    }
+    const nextProducts = reorderProductGroup(draggedProductId, targetProductId);
+    setDraggedProductId(null);
+    if (nextProducts) void persistProductOrder(nextProducts);
+  }
+
+  async function resetProductOrder() {
+    if (saving) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/product-catalog", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productOrder: [] }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        products?: ProductCatalogItem[];
+        error?: string;
+      };
+      if (!response.ok || !Array.isArray(data.products)) {
+        throw new Error(data.error || "ê¸°ë³¸ ìˆœì„œë¡œ ë˜ëŒë¦¬ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      }
+      setProducts(data.products);
+      setMessage("ì œí’ˆ ìˆœì„œë¥¼ ê¸°ë³¸ê°’ìœ¼ë¡œ ë˜ëŒë ¸ìŠµë‹ˆë‹¤.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "ê¸°ë³¸ ìˆœì„œë¡œ ë˜ëŒë¦¬ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openEditor(product: ProductCatalogItem) {
+    setCreating(false);
+    setEditing(product);
+    setForm(toForm(product));
+    setMessage("");
+  }
+
+  function openCreateEditor() {
+    setEditing(null);
+    setCreating(true);
+    setForm(createEmptyProductForm());
+    setMessage("");
+  }
+
+  function closeEditor() {
+    setEditing(null);
+    setCreating(false);
+    setForm(null);
+  }
+
+  async function handleSaveProduct(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!form || (!editing && !creating)) return;
+    try {
+      if (!form.name.trim()) {
+        throw new Error("í’ˆëª…ì„ ì…ë ¥í•´ ì£¼ì„¸ìš”.");
+      }
+      const previousActiveRate =
+        editing?.supplyType === "direct"
+          ? editing.marginRate
+          : editing?.commissionRate ?? null;
+      const activeRate =
+        editing && !form.rateEdited
+          ? previousActiveRate
+          : parseOptionalNumber(form.commissionRate, "rate");
+      const nextProduct: ProductCatalogItem = {
+        ...(editing ?? {
+          id:
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID()
+              : `product-${Date.now()}`,
+          sourceRow: products.length
+            ? Math.max(...products.map((product) => product.sourceRow)) + 1
+            : 1,
+          needsReview: false,
+        }),
+        name: form.name.trim(),
+        specification: form.specification.trim(),
+        unitPrice: parseOptionalNumber(form.unitPrice, "price"),
+        note: form.note.trim(),
+        supplyType: form.supplyType,
+        commissionRate:
+          form.supplyType === "partner" ? activeRate : null,
+        marginRate:
+          form.supplyType === "direct" ? activeRate : null,
+        reference: form.reference.trim(),
+        supplierVendorId:
+          form.supplyType === "partner" && form.supplierVendorId
+            ? Number(form.supplierVendorId)
+            : null,
+        supplierVendorName:
+          form.supplyType === "partner"
+            ? vendorOptions.find(
+                (vendor) => String(vendor.id) === form.supplierVendorId,
+              )?.companyName ?? ""
+            : "",
+        procurement: form.procurement,
+        procurementChannel: form.procurement ? form.procurementChannel : "",
+        procurementNumber: form.procurement ? form.procurementNumber.trim() : "",
+        procurementFeeRate: form.procurement ? (parseOptionalNumber(form.procurementFeeRate, "rate") ?? 0.0054) : null,
+      };
+      nextProduct.needsReview = calculateNeedsReview(nextProduct);
+      const nextProducts = editing
+        ? products.map((product) =>
+            product.id === editing.id ? nextProduct : product,
+          )
+        : [...products, nextProduct];
+      await persistProducts(nextProducts);
+      closeEditor();
+      setMessage(editing ? "ì œí’ˆ ì •ë³´ë¥¼ ì €ì¥í–ˆìŠµë‹ˆë‹¤." : "ì œí’ˆì„ ì¶”ê°€í–ˆìŠµë‹ˆë‹¤.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "ì œí’ˆ ì •ë³´ë¥¼ ì €ì¥í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.",
+      );
+    }
+  }
+
+  async function handleDeleteProduct(product: ProductCatalogItem) {
+    if (!window.confirm(`'${product.name}' ì œí’ˆì„ ì‚­ì œí• ê¹Œìš”?`)) return;
+    try {
+      const nextProducts = products.filter((item) => item.id !== product.id);
+      await persistProducts(nextProducts);
+      setQuotation((current) =>
+        current
+          ? {
+              ...current,
+              lines: current.lines.filter(
+                (line) => line.productId !== product.id,
+              ),
+            }
+          : current,
+      );
+      setMessage("ì œí’ˆì„ ì‚­ì œí–ˆìŠµë‹ˆë‹¤.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "ì œí’ˆì„ ì‚­ì œí•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.",
+      );
+    }
+  }
+
+  async function handleWorkbook(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setMessage("");
+    try {
+      const rows = parseProductCatalogWorkbook(await file.arrayBuffer());
+      setImportPreview(buildImportPreview(rows, products, file.name));
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "ì—‘ì…€ íŒŒì¼ì„ ì½ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.",
+      );
+    }
+  }
+
+  async function applyImport() {
+    if (!importPreview) return;
+    try {
+      await persistProducts(importPreview.products);
+      setImportPreview(null);
+      setMessage(
+        `ì—‘ì…€ ë‚´ìš©ì„ ì ìš©í–ˆìŠµë‹ˆë‹¤. ì‹ ê·œ ${importPreview.added}ê°œ, ìˆ˜ì • ${importPreview.updated}ê°œ`,
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "ì—‘ì…€ ë‚´ìš©ì„ ì ìš©í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.",
+      );
+    }
+  }
+
+  function openQuotation() {
+    setQuotation({
+      customerName: "",
+      quoteDate: localDateString(),
+      projectTitle: "",
+      search: "",
+      lines: [],
+    });
+    setMessage("");
+  }
+
+  async function openProductComparison(product: ProductCatalogItem) {
+    setComparisonProduct(product);
+    setComparisonBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch(
+        `/api/product-comparison-documents?catalogProductId=${encodeURIComponent(product.id)}`,
+        { cache: "no-store" },
+      );
+      const body = await response.json() as { documents?: ProductComparisonDocument[]; error?: string };
+      if (!response.ok) throw new Error(body.error || "ë¬¼í’ˆ ë¹„êµí‘œë¥¼ ë¶ˆëŸ¬ì˜¤ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      const documents = body.documents ?? [];
+      setComparisonDocuments(documents);
+      return documents;
+    } catch (error) {
+      setComparisonDocuments([]);
+      setMessage(error instanceof Error ? error.message : "ë¬¼í’ˆ ë¹„êµí‘œë¥¼ ë¶ˆëŸ¬ì˜¤ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      return [] as ProductComparisonDocument[];
+    } finally {
+      setComparisonBusy(false);
+    }
+  }
+
+  async function openComparisonPreview(document: ProductComparisonDocument) {
+    setComparisonPreview(document);
+    setComparisonPreviewWorkbook(null);
+    setComparisonPreviewError("");
+    setComparisonPreviewZoom(100);
+    const lowerName = document.original_name.toLocaleLowerCase();
+    if (lowerName.endsWith(".pdf") || document.mime_type === "application/pdf") return;
+    if (!lowerName.endsWith(".xlsx")) {
+      setComparisonPreviewError("ì´ íŒŒì¼ í˜•ì‹ì€ í™”ë©´ ë¯¸ë¦¬ë³´ê¸°ë¥¼ ì§€ì›í•˜ì§€ ì•ŠìŠµë‹ˆë‹¤. ì›ë³¸ì„ ë‹¤ìš´ë¡œë“œí•´ í™•ì¸í•´ ì£¼ì„¸ìš”.");
+      return;
+    }
+    setComparisonPreviewBusy(true);
+    try {
+      const response = await fetch(`/api/product-comparison-documents?id=${document.id}&download=1`, { cache: "no-store" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(payload.error || "Excel ë¯¸ë¦¬ë³´ê¸° íŒŒì¼ì„ ë¶ˆëŸ¬ì˜¤ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      }
+      setComparisonPreviewWorkbook(parseXlsxPreview(await response.arrayBuffer()));
+    } catch (error) {
+      setComparisonPreviewError(error instanceof Error ? error.message : "Excel ë¯¸ë¦¬ë³´ê¸°ë¥¼ ë§Œë“¤ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+    } finally {
+      setComparisonPreviewBusy(false);
+    }
+  }
+
+  async function uploadProductComparison(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!comparisonProduct || comparisonBusy) return;
+    const formElement = event.currentTarget;
+    const body = new FormData(formElement);
+    body.set("catalogProductId", comparisonProduct.id);
+    body.set("productName", comparisonProduct.name);
+    setComparisonBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/product-comparison-documents", { method: "POST", body });
+      const result = await response.json() as { error?: string; replaced?: boolean };
+      if (!response.ok) throw new Error(result.error || "ë¬¼í’ˆ ë¹„êµí‘œë¥¼ ì €ì¥í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      formElement.reset();
+      const documents = await openProductComparison(comparisonProduct);
+      setMessage(result.replaced ? "ë¬¼í’ˆ ë¹„êµí‘œë¥¼ êµì²´í–ˆìŠµë‹ˆë‹¤." : "ë¬¼í’ˆ ë¹„êµí‘œë¥¼ ë“±ë¡í–ˆìŠµë‹ˆë‹¤.");
+      if (documents[0]) await openComparisonPreview(documents[0]);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "ë¬¼í’ˆ ë¹„êµí‘œë¥¼ ì €ì¥í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      setComparisonBusy(false);
+    }
+  }
+
+  async function deleteProductComparison(id: number) {
+    if (!comparisonProduct || comparisonBusy || !window.confirm("ì´ ì œí’ˆì˜ ë¬¼í’ˆ ë¹„êµí‘œë¥¼ ì‚­ì œí• ê¹Œìš”?")) return;
+    setComparisonBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/product-comparison-documents?id=${id}`, { method: "DELETE" });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "ë¬¼í’ˆ ë¹„êµí‘œë¥¼ ì‚­ì œí•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      await openProductComparison(comparisonProduct);
+      setMessage("ë¬¼í’ˆ ë¹„êµí‘œë¥¼ ì‚­ì œí–ˆìŠµë‹ˆë‹¤.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "ë¬¼í’ˆ ë¹„êµí‘œë¥¼ ì‚­ì œí•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
+      setComparisonBusy(false);
+    }
+  }
+
+  function addQuotationProduct(product: ProductCatalogItem) {
+    setQuotation((current) => {
+      if (!current) return current;
+      const existing = current.lines.find(
+        (line) => line.productId === product.id,
+      );
+      if (existing) {
+        return {
+          ...current,
+          lines: current.lines.map((line) =>
+            line.id === existing.id
+              ? {
+                  ...line,
+                  quantity: String(
+                    Math.max(1, Number(line.quantity.replace(/,/g, "")) || 0) +
+                      1,
+                  ),
+                }
+              : line,
+          ),
+        };
+      }
+      return {
+        ...current,
+        lines: [
+          ...current.lines,
+          {
+            id: `quote-${Date.now()}-${product.id}`,
+            productId: product.id,
+            name: product.name,
+            specification: product.specification,
+            quantity: "1",
+            unit: "ì‹",
+            unitPrice:
+              product.unitPrice === null ? "" : String(product.unitPrice),
+            note: "",
+          },
+        ],
+      };
+    });
+  }
+
+  function updateQuotationLine(
+    id: string,
+    patch: Partial<QuotationDraftLine>,
+  ) {
+    setQuotation((current) =>
+      current
+        ? {
+            ...current,
+            lines: current.lines.map((line) =>
+              line.id === id ? { ...line, ...patch } : line,
+            ),
+          }
+        : current,
+    );
+  }
+
+  function removeQuotationLine(id: string) {
+    setQuotation((current) =>
+      current
+        ? { ...current, lines: current.lines.filter((line) => line.id !== id) }
+        : current,
+    );
+  }
+
+  function handleQuotationDownload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!quotation) return;
+    try {
+      if (!quotation.customerName.trim()) {
+        throw new Error("ê²¬ì ì„œë¥¼ ë°›ì„ ê¸°ê´€ëª…ì„ ì…ë ¥í•´ ì£¼ì„¸ìš”.");
+      }
+      if (!quotation.lines.length) {
+        throw new Error("ê²¬ì ì„œì— ë„£ì„ ì œí’ˆì„ í•˜ë‚˜ ì´ìƒ ì„ íƒí•´ ì£¼ì„¸ìš”.");
+      }
+      const lines: QuotationLine[] = quotation.lines.map((line) => {
+        const quantity = Number(line.quantity.replace(/,/g, ""));
+        const unitPrice = Number(line.unitPrice.replace(/,/g, ""));
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          throw new Error(`${line.name}ì˜ ìˆ˜ëŸ‰ì„ í™•ì¸í•´ ì£¼ì„¸ìš”.`);
+        }
+        if (!line.unitPrice.trim() || !Number.isFinite(unitPrice) || unitPrice < 0) {
+          throw new Error(`${line.name}ì˜ ë‹¨ê°€ë¥¼ í™•ì¸í•´ ì£¼ì„¸ìš”.`);
+        }
+        return {
+          name: line.name,
+          specification: line.specification,
+          quantity,
+          unit: line.unit.trim() || "ì‹",
+          unitPrice,
+          note: line.note.trim(),
+        };
+      });
+      const bytes = createQuotationWorkbook({
+        customerName: quotation.customerName.trim(),
+        quoteDate: quotation.quoteDate || localDateString(),
+        projectTitle: quotation.projectTitle.trim(),
+        lines,
+      });
+      downloadBytes(
+        bytes,
+        `ê²¬ì ì„œ_${safeFileName(quotation.customerName)}_${quotation.quoteDate || localDateString()}.xlsx`,
+      );
+      setQuotation(null);
+      setMessage("ê³ ê°ìš© ê²¬ì ì„œ ì—‘ì…€ì„ ë‚´ë ¤ë°›ì•˜ìŠµë‹ˆë‹¤.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "ê²¬ì ì„œë¥¼ ë§Œë“¤ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.",
+      );
+    }
+  }
+
+  return (
+    <>
+      <nav className="product-workspace-tabs" aria-label="ì œí’ˆÂ·ê²¬ì Â·í˜‘ë ¥ì‚¬ ê´€ë¦¬ í™”ë©´">
+        <button type="button" className={workspaceTab === "quotations" ? "active" : ""} onClick={() => setWorkspaceTab("quotations")}>
+          <span>ê²¬ì ì„œ ê´€ë¦¬</span><b>{quotationCount.toLocaleString()}</b>
+        </button>
+        <button type="button" className={workspaceTab === "products" ? "active" : ""} onClick={() => setWorkspaceTab("products")}>
+          <span>ì œí’ˆ ê¸°ì¤€ì •ë³´</span><b>{products.length.toLocaleString()}</b>
+        </button>
+        <button type="button" className={workspaceTab === "vendors" ? "active" : ""} onClick={() => setWorkspaceTab("vendors")}>
+          <span>í˜‘ë ¥ì‚¬ ê´€ë¦¬</span><b>{vendorCount.toLocaleString()}</b>
+        </button>
+      </nav>
+
+      {workspaceTab === "quotations" && <QuotationManagementPage
+        institutions={institutions}
+        onOpenOrganization={onOpenOrganization}
+        onCountChange={updateQuotationCount}
+      />}
+
+      {workspaceTab === "products" && <section className="panel product-catalog-panel">
+        <div className="product-catalog-sticky-controls">
+        <div className="panel-header product-catalog-header">
+          <div>
+            <span className="section-kicker">PRODUCT CATALOG</span>
+            <h2>ì œí’ˆ ê¸°ì¤€ ì •ë³´</h2>
+            <p>í’ˆëª…Â·ê·œê²©Â·ë‹¨ê°€Â·ê³µê¸‰ êµ¬ë¶„Â·ìˆ˜ìˆ˜ë£Œìœ¨Â·ë§ˆì§„ìœ¨ì„ ì •ë¦¬í–ˆìŠµë‹ˆë‹¤.</p>
+          </div>
+          <div className="product-catalog-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => void resetProductOrder()}
+              disabled={saving}
+            >
+              ê¸°ë³¸ ìˆœì„œë¡œ
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={openCreateEditor}
+            >
+              ì œí’ˆ ì¶”ê°€
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => downloadWorkbook([])}
+            >
+              ì—‘ì…€ ì–‘ì‹ ë‚´ë ¤ë°›ê¸°
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              ì—‘ì…€ ë¶ˆëŸ¬ì˜¤ê¸°
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              onChange={handleWorkbook}
+              hidden
+            />
+          </div>
+        </div>
+
+        {message && (
+          <div className="product-catalog-message" role="status">
+            {message}
+          </div>
+        )}
+
+        <div className="product-catalog-search-row">
+          <label>
+            <span className="sr-only">ì œí’ˆÂ·ê²¬ì  ê²€ìƒ‰</span>
+            <input
+              type="search"
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.target.value)}
+              placeholder="ì œí’ˆëª…Â·ì—…ì²´ëª…Â·ëª¨ë¸ëª…Â·ê·œê²©Â·ì œí’ˆ ì½”ë“œ ê²€ìƒ‰"
+            />
+          </label>
+          {searchDraft && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchDraft("");
+                onSearchChange("");
+              }}
+            >
+              ê²€ìƒ‰ ì§€ìš°ê¸°
+            </button>
+          )}
+        </div>
+
+        <div className="product-catalog-result">
+          <div className="product-catalog-result-summary">
+            <span>
+              {loading
+                ? "ì œí’ˆ ì •ë³´ë¥¼ ë¶ˆëŸ¬ì˜¤ëŠ” ì¤‘ì…ë‹ˆë‹¤."
+                : normalizedSearch
+                  ? `ê²€ìƒ‰ ê²°ê³¼ ${visibleProducts.length}ê°œ`
+                  : catalogView === "favorites"
+                    ? `ì¦ê²¨ì°¾ê¸° ${visibleProducts.length}ê°œ`
+                    : `ì „ì²´ ${visibleProducts.length}ê°œ ì œí’ˆì„ í‘œì‹œ ì¤‘ì…ë‹ˆë‹¤.`}
+            </span>
+            <div className="product-catalog-view-toggle" role="group" aria-label="ì œí’ˆ í‘œì‹œ ë²”ìœ„">
+              <button
+                type="button"
+                className={catalogView === "all" ? "active" : ""}
+                onClick={() => setCatalogView("all")}
+              >
+                ì „ì²´
+              </button>
+              <button
+                type="button"
+                className={catalogView === "favorites" ? "active" : ""}
+                onClick={() => setCatalogView("favorites")}
+              >
+                â˜… ì¦ê²¨ì°¾ê¸° {products.filter((product) => favoriteProductIdSet.has(product.id)).length}
+              </button>
+            </div>
+          </div>
+          <div className="product-catalog-result-notes">
+            <small>ë³„í‘œì™€ ì œí’ˆ ìˆœì„œëŠ” ê°œì¸ë³„ë¡œ ì €ì¥ë©ë‹ˆë‹¤.</small>
+            <small>
+              {normalizedSearch || catalogView === "favorites"
+                ? "ê²€ìƒ‰ ë˜ëŠ” ì¦ê²¨ì°¾ê¸° ë³´ê¸° ì¤‘ì—ëŠ” ìˆœì„œë¥¼ ë³€ê²½í•  ìˆ˜ ì—†ìŠµë‹ˆë‹¤."
+                : canReorder
+                  ? "PCì—ì„œëŠ” ëŒì–´ì„œ ë†“ê±°ë‚˜ í™”ì‚´í‘œë¡œ ë‚´ ìˆœì„œë¥¼ ì €ì¥í•  ìˆ˜ ìˆìŠµë‹ˆë‹¤."
+                  : "PCì—ì„œ ì €ì¥í•œ ë‚´ ìˆœì„œëŒ€ë¡œ í‘œì‹œë©ë‹ˆë‹¤."}
+            </small>
+          </div>
+        </div>
+
+        <div className="product-catalog-bulk-vendor">
+          <label className="product-catalog-bulk-select-all">
+            <input
+              type="checkbox"
+              checked={currentPageSelected}
+              disabled={!productPageItems.length || saving}
+              onChange={toggleCurrentProductPage}
+            />
+            <span>í˜„ì¬ í˜ì´ì§€ ì „ì²´ ì„ íƒ</span>
+          </label>
+          <strong>{selectedProductIds.length.toLocaleString()}ê°œ ì„ íƒ</strong>
+          <select
+            value={bulkVendorId}
+            disabled={!selectedProductIds.length || saving}
+            onChange={(event) => setBulkVendorId(event.target.value)}
+            aria-label="ì¼ê´„ ì ìš©í•  ê³µê¸‰ êµ¬ë¶„"
+          >
+            <option value="__choose__">ê³µê¸‰ êµ¬ë¶„ ì„ íƒ</option>
+            <option value="__direct__">ìœ„ì¦ˆì—… ì§ì ‘ ê³µê¸‰</option>
+            <option value="">í˜‘ë ¥ì‚¬ ë¯¸ì—°ê²°</option>
+            {vendorOptions.map((vendor) => (
+              <option key={vendor.id} value={vendor.id}>
+                {vendor.companyName}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={
+              !selectedProductIds.length ||
+              bulkVendorId === "__choose__" ||
+              saving
+            }
+            onClick={() => void persistBulkProductVendor()}
+          >
+            {saving ? "ì €ì¥ ì¤‘â€¦" : "ì„ íƒ ì œí’ˆ ì¼ê´„ ì ìš©"}
+          </button>
+          {selectedProductIds.length > 0 && (
+            <button
+              type="button"
+              className="product-catalog-bulk-clear"
+              disabled={saving}
+              onClick={() => setSelectedProductIds([])}
+            >
+              ì„ íƒ í•´ì œ
+            </button>
+          )}
+        </div>
+
+        <div className="product-catalog-column-head-scroll" ref={stickyColumnHeaderRef} aria-hidden="true">
+          <div className="product-catalog-column-head">
+            <span>ì„ íƒ Â· í’ˆëª…</span>
+            <span>ê·œê²©</span>
+            <span>ë‹¨ê°€</span>
+            <span>ë¹„ê³ </span>
+            <span>ìˆ˜ìˆ˜ë£Œìœ¨ / ë§ˆì§„ìœ¨</span>
+            <span>ê³µê¸‰ êµ¬ë¶„</span>
+            <span>ì°¸ê³ ì‚¬í•­</span>
+            <span>ê´€ë¦¬</span>
+          </div>
+        </div>
+        </div>
+
+        <div
+          className="product-catalog-table-wrap"
+          onScroll={(event) => {
+            if (stickyColumnHeaderRef.current) {
+              stickyColumnHeaderRef.current.scrollLeft = event.currentTarget.scrollLeft;
+            }
+          }}
+        >
+          <table className="product-catalog-table" aria-label="ì œí’ˆ ê¸°ì¤€ì •ë³´ ëª©ë¡">
+            <tbody>
+              {productPageItems.map((product) => (
+                <tr
+                  key={product.id}
+                  className={`${product.needsReview ? "needs-review" : ""} ${favoriteProductIdSet.has(product.id) ? "favorite" : ""} ${draggedProductId === product.id ? "dragging" : ""}`.trim()}
+                  onDragOver={(event) => {
+                    if (
+                      canReorder &&
+                      catalogView === "all" &&
+                      !normalizedSearch &&
+                      !saving &&
+                      draggedProductId &&
+                      favoriteProductIdSet.has(draggedProductId) ===
+                        favoriteProductIdSet.has(product.id)
+                    ) {
+                      event.preventDefault();
+                    }
+                  }}
+                  onDrop={() => dropProduct(product.id)}
+                >
+                  <td data-label="í’ˆëª…" className="product-name-cell">
+                    <div className="product-order-cell">
+                      <input
+                        type="checkbox"
+                        className="product-catalog-row-select"
+                        checked={selectedProductIdSet.has(product.id)}
+                        disabled={saving}
+                        onChange={(event) =>
+                          setSelectedProductIds((current) =>
+                            event.target.checked
+                              ? [...new Set([...current, product.id])]
+                              : current.filter((id) => id !== product.id),
+                          )
+                        }
+                        aria-label={`${product.name} ì„ íƒ`}
+                      />
+                      <button
+                        type="button"
+                        className={`product-favorite-button ${favoriteProductIdSet.has(product.id) ? "active" : ""}`.trim()}
+                        onClick={() => void toggleFavoriteProduct(product.id)}
+                        disabled={saving}
+                        aria-pressed={favoriteProductIdSet.has(product.id)}
+                        aria-label={`${product.name} ${favoriteProductIdSet.has(product.id) ? "ì¦ê²¨ì°¾ê¸° í•´ì œ" : "ì¦ê²¨ì°¾ê¸° ì¶”ê°€"}`}
+                        title={favoriteProductIdSet.has(product.id) ? "ì¦ê²¨ì°¾ê¸° í•´ì œ" : "ì¦ê²¨ì°¾ê¸° ì¶”ê°€"}
+                      >
+                        {favoriteProductIdSet.has(product.id) ? "â˜…" : "â˜†"}
+                      </button>
+                      <span
+                        className="product-drag-handle"
+                        draggable={canReorder && catalogView === "all" && !normalizedSearch && !saving}
+                        onDragStart={(event) => {
+                          event.stopPropagation();
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", product.id);
+                          setDraggedProductId(product.id);
+                        }}
+                        onDragEnd={() => setDraggedProductId(null)}
+                        aria-hidden="true"
+                      >
+                        â‹®â‹®
+                      </span>
+                      <div className="product-order-buttons">
+                        <button
+                          type="button"
+                          onClick={() => moveProduct(product.id, -1)}
+                          disabled={!canReorder || Boolean(normalizedSearch) || catalogView !== "all" || saving || isProductGroupEdge(product.id, -1)}
+                          aria-label={`${product.name} ìœ„ë¡œ ì´ë™`}
+                        >
+                          â†‘
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveProduct(product.id, 1)}
+                          disabled={!canReorder || Boolean(normalizedSearch) || catalogView !== "all" || saving || isProductGroupEdge(product.id, 1)}
+                          aria-label={`${product.name} ì•„ë˜ë¡œ ì´ë™`}
+                        >
+                          â†“
+                        </button>
+                      </div>
+                      <strong>{product.name}</strong>
+                    </div>
+                  </td>
+                  <td data-label="ê·œê²©" className="product-specification-cell">
+                    {product.specification || "â€”"}
+                  </td>
+                  <td data-label="ë‹¨ê°€" className="numeric product-price-cell">
+                    {formatPrice(product.unitPrice)}
+                  </td>
+                  <td data-label="ë¹„ê³ " className="product-note-cell">
+                    {product.note || "â€”"}
+                  </td>
+                  <td
+                    data-label="ìˆ˜ìˆ˜ë£Œìœ¨ / ë§ˆì§„ìœ¨"
+                    className="numeric product-commission-cell"
+                  >
+                    {product.supplyType === "direct" ? "ë§ˆì§„ " : "ìˆ˜ìˆ˜ë£Œ "}
+                    {formatRate(
+                      product.supplyType === "direct"
+                        ? product.marginRate
+                        : product.commissionRate,
+                    )}
+                  </td>
+                  <td data-label="ê³µê¸‰ êµ¬ë¶„" className="product-vendor-cell">
+                    {product.supplyType === "direct"
+                      ? "ìœ„ì¦ˆì—… ì§ì ‘ ê³µê¸‰"
+                      : product.supplierVendorName || "í˜‘ë ¥ì‚¬ ë¯¸ì—°ê²°"}
+                  </td>
+                  <td data-label="ì°¸ê³ ì‚¬í•­" className="product-reference-cell">
+                    {product.reference || "â€”"}
+                  </td>
+                  <td data-label="ê´€ë¦¬" className="product-action-cell">
+                    <div className="product-management-actions">
+                      <button
+                        type="button"
+                        className="product-comparison-button"
+                        onClick={() => void openProductComparison(product)}
+                      >
+                        ë¹„êµí‘œ
+                      </button>
+                      <button
+                        type="button"
+                        className="product-edit-button"
+                        onClick={() => openEditor(product)}
+                      >
+                        ìˆ˜ì •
+                      </button>
+                      <button
+                        type="button"
+                        className="product-delete-button"
+                        onClick={() => handleDeleteProduct(product)}
+                      >
+                        ì‚­ì œ
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!visibleProducts.length && !loading && (
+            <div className="empty-state product-catalog-empty">
+              ê²€ìƒ‰ ì¡°ê±´ì— ë§ëŠ” ì œí’ˆì´ ì—†ìŠµë‹ˆë‹¤.
+            </div>
+          )}
+        </div>
+        {visibleProducts.length > 0 && (
+          <nav className="award-list-pagination data-list-pagination" aria-label="ì œí’ˆ ëª©ë¡ í˜ì´ì§€">
+            <button
+              type="button"
+              disabled={productPage === 1}
+              onClick={() => setProductPage((current) => Math.max(1, current - 1))}
+            >
+              ì´ì „
+            </button>
+            <span>
+              {productPage.toLocaleString()} / {productPageCount.toLocaleString()} í˜ì´ì§€
+              <small>ì´ {visibleProducts.length.toLocaleString()}ê°œ Â· í˜ì´ì§€ë‹¹ {PRODUCT_PAGE_SIZE}ê°œ</small>
+            </span>
+            <button
+              type="button"
+              disabled={productPage === productPageCount}
+              onClick={() =>
+                setProductPage((current) => Math.min(productPageCount, current + 1))
+              }
+            >
+              ë‹¤ìŒ
+            </button>
+          </nav>
+        )}
+      </section>}
+
+      {workspaceTab === "vendors" && <AwardVendorPage onCountChange={setVendorCount} />}
+
+      {(editing || creating) && form && (
+        <div
+          className="product-catalog-modal-shell"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target && !saving) {
+              closeEditor();
+            }
+          }}
+        >
+          <form
+            className="product-catalog-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="product-editor-title"
+            onSubmit={handleSaveProduct}
+          >
+            <div className="product-catalog-dialog-header">
+              <div>
+                <span className="section-kicker">
+                  {creating ? "PRODUCT ADD" : "PRODUCT EDIT"}
+                </span>
+                <h3 id="product-editor-title">
+                  {creating ? "ì œí’ˆ ì¶”ê°€" : "ì œí’ˆ ì •ë³´ ìˆ˜ì •"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                aria-label="ë‹«ê¸°"
+                onClick={closeEditor}
+                disabled={saving}
+              >
+                Ã—
+              </button>
+            </div>
+            <div className="product-catalog-form-grid">
+              <label>
+                <span>í’ˆëª…</span>
+                <input
+                  value={form.name}
+                  onChange={(event) =>
+                    setForm({ ...form, name: event.target.value })
+                  }
+                  required
+                />
+              </label>
+              <label>
+                <span>ê·œê²©</span>
+                <textarea
+                  value={form.specification}
+                  onChange={(event) =>
+                    setForm({ ...form, specification: event.target.value })
+                  }
+                  rows={3}
+                />
+              </label>
+              <label>
+                <span>ë‹¨ê°€</span>
+                <div className="product-field-with-unit">
+                  <input
+                    inputMode="numeric"
+                    value={form.unitPrice}
+                    onChange={(event) =>
+                      setForm({ ...form, unitPrice: event.target.value })
+                    }
+                    placeholder="ì˜ˆ: 27,000,000"
+                  />
+                  <span>ì›</span>
+                </div>
+              </label>
+              <label>
+                <span>ë¹„ê³ </span>
+                <textarea
+                  value={form.note}
+                  onChange={(event) =>
+                    setForm({ ...form, note: event.target.value })
+                  }
+                  rows={3}
+                  placeholder="ì—…ì²´ëª…, ì¡°ë‹¬ë²ˆí˜¸, ê³„ì•½ ë°©ì‹"
+                />
+              </label>
+              <label>
+                <span>
+                  {form.supplyType === "direct" ? "ë§ˆì§„ìœ¨" : "ìˆ˜ìˆ˜ë£Œìœ¨"}
+                </span>
+                <div className="product-field-with-unit">
+                  <input
+                    inputMode="decimal"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={form.commissionRate}
+                    onChange={(event) => {
+                      const next = event.target.value.replace(",", ".");
+                      if (!/^\d{0,3}(?:\.\d{0,2})?$/.test(next)) return;
+                      setForm({
+                        ...form,
+                        commissionRate: next,
+                        rateEdited: true,
+                      });
+                    }}
+                    placeholder={
+                      form.supplyType === "direct" ? "ì˜ˆ: 55.45" : "ì˜ˆ: 25"
+                    }
+                  />
+                  <span>%</span>
+                </div>
+                {!form.rateEdited && editing && (
+                  <small>
+                    ê¸°ì¡´ ì •ë°€ ë¹„ìœ¨ì€ ê°’ì„ ìˆ˜ì •í•˜ì§€ ì•Šìœ¼ë©´ ê·¸ëŒ€ë¡œ ë³´ì¡´ë©ë‹ˆë‹¤.
+                  </small>
+                )}
+              </label>
+              <label>
+                <span>ê³µê¸‰ êµ¬ë¶„</span>
+                <select
+                  value={
+                    form.supplyType === "direct"
+                      ? "__direct__"
+                      : form.supplierVendorId
+                  }
+                  onChange={(event) => {
+                    const direct = event.target.value === "__direct__";
+                    setForm({
+                      ...form,
+                      supplyType: direct ? "direct" : "partner",
+                      supplierVendorId: direct ? "" : event.target.value,
+                    });
+                  }}
+                >
+                  <option value="__direct__">ìœ„ì¦ˆì—… ì§ì ‘ ê³µê¸‰</option>
+                  <option value="">í˜‘ë ¥ì‚¬ ë¯¸ì—°ê²°</option>
+                  {vendorOptions.map((vendor) => (
+                    <option key={vendor.id} value={vendor.id}>
+                      {vendor.companyName}
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  ê¸°ê´€ í’ˆëª©ì— ì¶”ê°€í•  ë•Œ ê³µê¸‰ êµ¬ë¶„ê³¼ ìˆ˜ìˆ˜ë£Œìœ¨ ë˜ëŠ” ë§ˆì§„ìœ¨ì´
+                  í•¨ê»˜ ì €ì¥ë©ë‹ˆë‹¤.
+                </small>
+              </label>
+              <label>
+                <span>ì°¸ê³ ì‚¬í•­</span>
+                <textarea
+                  value={form.reference}
+                  onChange={(event) =>
+                    setForm({ ...form, reference: event.target.value })
+                  }
+                  rows={3}
+                  placeholder="ì˜µì…˜, ì˜ˆì™¸, ì˜ì—…ë³´í˜¸, ë‚´ë¶€ ë©”ëª¨"
+                />
+              </label>
+              <div className="product-procurement-toggle">
+                <span>ì¡°ë‹¬ ì œí’ˆ</span>
+                <label>
+                  <input type="checkbox" checked={form.procurement} onChange={(event) => setForm({ ...form, procurement: event.target.checked })} />
+                  <span>ë‚˜ë¼ì¥í„°Â·í•™êµì¥í„° ë“± ì¡°ë‹¬ ì œí’ˆìœ¼ë¡œ ê´€ë¦¬</span>
+                </label>
+              </div>
+              {form.procurement && <>
+                <label><span>ì¡°ë‹¬ ì±„ë„</span><select value={form.procurementChannel} onChange={(event) => setForm({ ...form, procurementChannel: event.target.value })}><option>G2B</option><option>S2B</option><option>ë””ì§€í„¸ì„œë¹„ìŠ¤ëª°</option><option>í˜ì‹ ì¥í„°</option><option>ê¸°íƒ€</option></select></label>
+                <label><span>ë¬¼í’ˆì‹ë³„ë²ˆí˜¸</span><input value={form.procurementNumber} onChange={(event) => setForm({ ...form, procurementNumber: event.target.value.replace(/[^0-9-]/g, "") })} placeholder="ì¡°ë‹¬ ì‹ë³„ë²ˆí˜¸" /></label>
+                <label><span>ì¡°ë‹¬ ìˆ˜ìˆ˜ë£Œìœ¨ (ë‚´ë¶€ìš©)</span><div className="product-field-with-unit"><input inputMode="decimal" value={form.procurementFeeRate} onChange={(event) => setForm({ ...form, procurementFeeRate: event.target.value.replace(",", ".") })} /><span>%</span></div><small>ê³ ê°ìš© ê²¬ì ì„œì—ëŠ” ë¹„ìœ¨ì€ ìˆ¨ê¸°ê³  ìˆ˜ìˆ˜ë£Œ ê¸ˆì•¡ë§Œ í‘œì‹œí•©ë‹ˆë‹¤.</small></label>
+              </>}
+            </div>
+            <div className="product-catalog-dialog-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={closeEditor}
+                disabled={saving}
+              >
+                ì·¨ì†Œ
+              </button>
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={saving}
+              >
+                {saving ? "ì €ì¥ ì¤‘â€¦" : creating ? "ì œí’ˆ ì¶”ê°€" : "ì €ì¥"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {comparisonProduct && (
+        <div
+          className="product-catalog-modal-shell"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target && !comparisonBusy) setComparisonProduct(null);
+          }}
+        >
+          <section className="product-catalog-dialog product-comparison-dialog" role="dialog" aria-modal="true" aria-labelledby="product-comparison-title">
+            <div className="product-catalog-dialog-header">
+              <div>
+                <span className="section-kicker">PRODUCT COMPARISON</span>
+                <h3 id="product-comparison-title">ë¬¼í’ˆ ë¹„êµí‘œ ê´€ë¦¬</h3>
+                <p><strong>{comparisonProduct.name}</strong>ì— ì—°ê²°í•  ë¹„êµí‘œë¥¼ ë“±ë¡í•˜ê±°ë‚˜ êµì²´í•©ë‹ˆë‹¤.</p>
+              </div>
+              <button type="button" aria-label="ë‹«ê¸°" disabled={comparisonBusy} onClick={() => setComparisonProduct(null)}>Ã—</button>
+            </div>
+            <form className="product-comparison-form" onSubmit={uploadProductComparison}>
+              <div className="product-comparison-body">
+                <div className="product-comparison-current">
+                  {comparisonDocuments.map((document) => (
+                    <article key={document.id}>
+                      <div>
+                        <strong>{document.original_name}</strong>
+                        <small>{Math.max(1, Math.round(document.size_bytes / 1024)).toLocaleString("ko-KR")}KB Â· {document.created_at.slice(0, 10)}</small>
+                      </div>
+                      <div>
+                        <button type="button" className="secondary-button" disabled={comparisonBusy} onClick={() => void openComparisonPreview(document)}>ë¯¸ë¦¬ë³´ê¸°</button>
+                        <a className="secondary-button" href={`/api/product-comparison-documents?id=${document.id}&download=1`}>ë‹¤ìš´ë¡œë“œ</a>
+                        <button type="button" className="product-delete-button" disabled={comparisonBusy} onClick={() => void deleteProductComparison(document.id)}>ì‚­ì œ</button>
+                      </div>
+                    </article>
+                  ))}
+                  {!comparisonBusy && comparisonDocuments.length === 0 && (
+                    <div className="product-comparison-empty">
+                      <strong>ë“±ë¡ëœ ë¹„êµí‘œê°€ ì—†ìŠµë‹ˆë‹¤.</strong>
+                      <span>ì•„ë˜ì—ì„œ íŒŒì¼ì„ ì„ íƒí•˜ë©´ ì´ ì œí’ˆì— ë°”ë¡œ ì—°ê²°ë©ë‹ˆë‹¤.</span>
+                    </div>
+                  )}
+                </div>
+                <div className="product-comparison-upload">
+                  <label><span>{comparisonDocuments.length ? "ìƒˆ íŒŒì¼ë¡œ êµì²´" : "ë¹„êµí‘œ íŒŒì¼ ë“±ë¡"}</span><input name="file" type="file" accept=".pdf,.xlsx,.hwp,.hwpx,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required disabled={comparisonBusy} /></label>
+                  <small>ì—‘ì…€, PDF, í•œê¸€ ë“± ë¹„êµí‘œ ì›ë³¸ íŒŒì¼ì„ ë“±ë¡í•  ìˆ˜ ìˆìŠµë‹ˆë‹¤.</small>
+                </div>
+              </div>
+              <div className="product-catalog-dialog-actions">
+                <button type="button" className="secondary-button" disabled={comparisonBusy} onClick={() => setComparisonProduct(null)}>ë‹«ê¸°</button>
+                <button type="submit" className="primary-button" disabled={comparisonBusy}>{comparisonBusy ? "ì €ì¥ ì¤‘â€¦" : comparisonDocuments.length ? "ë¹„êµí‘œ êµì²´" : "ë¹„êµí‘œ ë“±ë¡"}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {comparisonPreview && (
+        <div className="comparison-preview-layer" role="dialog" aria-modal="true" aria-label={`${comparisonPreview.original_name} ë¯¸ë¦¬ë³´ê¸°`}>
+          <button className="comparison-preview-backdrop" type="button" aria-label="ë¯¸ë¦¬ë³´ê¸° ë‹«ê¸°" onClick={() => setComparisonPreview(null)} />
+          <section className="comparison-preview-panel">
+            <header>
+              <div><span className="section-kicker">READ ONLY PREVIEW</span><h3>{comparisonPreview.original_name}</h3><p>ì›ë³¸ íŒŒì¼ì€ ë³€ê²½í•˜ì§€ ì•Šê³  ì½ê¸° ì „ìš©ìœ¼ë¡œ í‘œì‹œí•©ë‹ˆë‹¤.</p></div>
+              <div className="comparison-preview-actions">
+                <button type="button" aria-label="ì¶•ì†Œ" onClick={() => setComparisonPreviewZoom((value) => Math.max(50, value - 25))}>âˆ’</button>
+                <b>{comparisonPreviewZoom}%</b>
+                <button type="button" aria-label="í™•ëŒ€" onClick={() => setComparisonPreviewZoom((value) => Math.min(200, value + 25))}>ï¼‹</button>
+                <a href={`/api/product-comparison-documents?id=${comparisonPreview.id}&download=1`}>ë‹¤ìš´ë¡œë“œ</a>
+                <button type="button" aria-label="ë‹«ê¸°" onClick={() => setComparisonPreview(null)}>Ã—</button>
+              </div>
+            </header>
+            <div className="comparison-preview-content">
+              {comparisonPreviewBusy ? <div className="empty-state">ë¯¸ë¦¬ë³´ê¸°ë¥¼ ì¤€ë¹„í•˜ê³  ìˆìŠµë‹ˆë‹¤.</div> : null}
+              {comparisonPreviewError ? <div className="comparison-preview-notice"><strong>ë¯¸ë¦¬ë³´ê¸° ì•ˆë‚´</strong><p>{comparisonPreviewError}</p><a href={`/api/product-comparison-documents?id=${comparisonPreview.id}&download=1`}>ì›ë³¸ ë‹¤ìš´ë¡œë“œ</a></div> : null}
+              {!comparisonPreviewBusy && !comparisonPreviewError && (comparisonPreview.original_name.toLocaleLowerCase().endsWith(".pdf") || comparisonPreview.mime_type === "application/pdf") ? (
+                <iframe key={comparisonPreviewZoom} src={`/api/product-comparison-documents?id=${comparisonPreview.id}&preview=1#zoom=${comparisonPreviewZoom}`} title={`${comparisonPreview.original_name} PDF í˜ì´ì§€`} />
+              ) : null}
+              {!comparisonPreviewBusy && comparisonPreviewWorkbook ? (
+                <div className="comparison-xlsx-preview" style={{ fontSize: `${comparisonPreviewZoom}%` }}>
+                  {comparisonPreviewWorkbook.truncated ? <p className="comparison-preview-truncated">í° íŒŒì¼ì€ í™”ë©´ ì„±ëŠ¥ì„ ìœ„í•´ ì¼ë¶€ ì‹œíŠ¸Â·í–‰Â·ì—´ë§Œ í‘œì‹œí•©ë‹ˆë‹¤. ì „ì²´ ë‚´ìš©ì€ ë‹¤ìš´ë¡œë“œí•´ì„œ í™•ì¸í•´ ì£¼ì„¸ìš”.</p> : null}
+                  {comparisonPreviewWorkbook.sheets.map((sheet) => (
+                    <section key={sheet.name}><h4>{sheet.name}</h4><div><table><tbody>{sheet.rows.map((row, rowIndex) => <tr key={`${sheet.name}-${rowIndex}`}>{row.map((cell, cellIndex) => <td key={`${rowIndex}-${cellIndex}`}>{cell}</td>)}</tr>)}</tbody></table></div></section>
+                  ))}
+                  {comparisonPreviewWorkbook.images.length ? <section className="comparison-xlsx-images"><h4>í¬í•¨ëœ ì´ë¯¸ì§€</h4><div>{comparisonPreviewWorkbook.images.map((image) => <figure key={image.name}><img src={image.url} alt={image.name} /><figcaption>{image.name}</figcaption></figure>)}</div></section> : null}
+                </div>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {quotation && (
+        <div
+          className="product-catalog-modal-shell"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setQuotation(null);
+          }}
+        >
+          <form
+            className="product-catalog-dialog quotation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="quotation-title"
+            onSubmit={handleQuotationDownload}
+          >
+            <div className="product-catalog-dialog-header">
+              <div>
+                <span className="section-kicker">QUOTATION</span>
+                <h3 id="quotation-title">ê²¬ì ì„œ ë§Œë“¤ê¸°</h3>
+                <p>ì œí’ˆì„ ì„ íƒí•˜ê³  ìˆ˜ëŸ‰ì„ ì¡°ì •í•˜ë©´ ê³ ê°ìš© ì—‘ì…€ë¡œ ë‚´ë ¤ë°›ìŠµë‹ˆë‹¤.</p>
+              </div>
+              <button
+                type="button"
+                aria-label="ë‹«ê¸°"
+                onClick={() => setQuotation(null)}
+              >
+                Ã—
+              </button>
+            </div>
+
+            <div className="quotation-meta-grid">
+              <label>
+                <span>ê¸°ê´€ëª…</span>
+                <input
+                  value={quotation.customerName}
+                  onChange={(event) =>
+                    setQuotation({
+                      ...quotation,
+                      customerName: event.target.value,
+                    })
+                  }
+                  placeholder="ì˜ˆ: ì‹œí¥ ë§¤í™”ì´ˆë“±í•™êµ"
+                  required
+                />
+              </label>
+              <label>
+                <span>ê²¬ì ì¼</span>
+                <input
+                  type="date"
+                  value={quotation.quoteDate}
+                  onChange={(event) =>
+                    setQuotation({ ...quotation, quoteDate: event.target.value })
+                  }
+                  required
+                />
+              </label>
+              <label className="quotation-project-field">
+                <span>ì‚¬ì—…ëª…</span>
+                <input
+                  value={quotation.projectTitle}
+                  onChange={(event) =>
+                    setQuotation({
+                      ...quotation,
+                      projectTitle: event.target.value,
+                    })
+                  }
+                  placeholder="ì˜ˆ: ìŠ¤ë§ˆíŠ¸ ì²´í—˜êµì‹¤ êµ¬ì¶•"
+                />
+              </label>
+            </div>
+
+            <section className="quotation-picker">
+              <div className="quotation-section-title">
+                <div>
+                  <strong>ì œí’ˆ ì„ íƒ</strong>
+                  <span>ì œí’ˆëª…ì´ë‚˜ ê·œê²©ì„ ê²€ìƒ‰í•´ ì¶”ê°€í•˜ì„¸ìš”.</span>
+                </div>
+                <input
+                  value={quotation.search}
+                  onChange={(event) =>
+                    setQuotation({ ...quotation, search: event.target.value })
+                  }
+                  placeholder="ì œí’ˆëª…Â·ê·œê²© ê²€ìƒ‰"
+                />
+              </div>
+              <div className="quotation-product-results">
+                {quotationProducts.map((product) => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onClick={() => addQuotationProduct(product)}
+                  >
+                    <span>
+                      <strong>{product.name}</strong>
+                      <small>{product.specification || "ê·œê²© ë¯¸ë“±ë¡"}</small>
+                    </span>
+                    <b>{formatPrice(product.unitPrice)}</b>
+                    <em>ì¶”ê°€</em>
+                  </button>
+                ))}
+                {!quotationProducts.length && (
+                  <div className="quotation-no-result">ê²€ìƒ‰ ê²°ê³¼ê°€ ì—†ìŠµë‹ˆë‹¤.</div>
+                )}
+                {quotationProductMatchCount > quotationProducts.length && (
+                  <div className="quotation-no-result">
+                    ì „ì²´ {quotationProductMatchCount.toLocaleString()}ê°œ ì¤‘{" "}
+                    {quotationProducts.length}ê°œë¥¼ í‘œì‹œí•©ë‹ˆë‹¤. ì œí’ˆëª…ì„ ê²€ìƒ‰í•˜ë©´ ë”
+                    ë¹ ë¥´ê²Œ ì°¾ì„ ìˆ˜ ìˆìŠµë‹ˆë‹¤.
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="quotation-lines-section">
+              <div className="quotation-section-title">
+                <div>
+                  <strong>ì„ íƒí•œ ì œí’ˆ</strong>
+                  <span>{quotation.lines.length}ê°œ í’ˆëª©</span>
+                </div>
+                <b>í•©ê³„ {priceFormatter.format(quotationTotal)}ì›</b>
+              </div>
+              {quotation.lines.length ? (
+                <div className="quotation-lines">
+                  {quotation.lines.map((line) => {
+                    const quantity = Number(line.quantity.replace(/,/g, ""));
+                    const unitPrice = Number(line.unitPrice.replace(/,/g, ""));
+                    const amount =
+                      (Number.isFinite(quantity) ? quantity : 0) *
+                      (Number.isFinite(unitPrice) ? unitPrice : 0);
+                    return (
+                      <div className="quotation-line" key={line.id}>
+                        <div className="quotation-line-product">
+                          <strong>{line.name}</strong>
+                          <small>{line.specification || "ê·œê²© ë¯¸ë“±ë¡"}</small>
+                        </div>
+                        <label>
+                          <span>ìˆ˜ëŸ‰</span>
+                          <input
+                            inputMode="decimal"
+                            value={line.quantity}
+                            onChange={(event) =>
+                              updateQuotationLine(line.id, {
+                                quantity: event.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          <span>ë‹¨ìœ„</span>
+                          <input
+                            value={line.unit}
+                            onChange={(event) =>
+                              updateQuotationLine(line.id, {
+                                unit: event.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="quotation-price-input">
+                          <span>ë‹¨ê°€</span>
+                          <input
+                            inputMode="numeric"
+                            value={line.unitPrice}
+                            onChange={(event) =>
+                              updateQuotationLine(line.id, {
+                                unitPrice: event.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                        <div className="quotation-line-amount">
+                          <span>ê¸ˆì•¡</span>
+                          <strong>{priceFormatter.format(amount)}ì›</strong>
+                        </div>
+                        <label className="quotation-note-input">
+                          <span>ë¹„ê³ </span>
+                          <input
+                            value={line.note}
+                            onChange={(event) =>
+                              updateQuotationLine(line.id, {
+                                note: event.target.value,
+                              })
+                            }
+                            placeholder="ì„ íƒ ì…ë ¥"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="quotation-remove"
+                          onClick={() => removeQuotationLine(line.id)}
+                          aria-label={`${line.name} ì‚­ì œ`}
+                        >
+                          ì‚­ì œ
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="quotation-empty">
+                  ìœ„ ê²€ìƒ‰ ê²°ê³¼ì—ì„œ ê²¬ì í•  ì œí’ˆì„ ì„ íƒí•´ ì£¼ì„¸ìš”.
+                </div>
+              )}
+            </section>
+
+            <div className="quotation-notice">
+              ìˆ˜ìˆ˜ë£Œìœ¨Â·ë§ˆì§„ìœ¨Â·ë‚´ë¶€ ì°¸ê³ ì‚¬í•­ì€ ê²¬ì ì„œì— í¬í•¨ë˜ì§€ ì•Šìœ¼ë©°, í‘œì‹œ ê¸ˆì•¡ì€
+              ë¶€ê°€ì„¸ í¬í•¨ ê¸°ì¤€ì…ë‹ˆë‹¤.
+            </div>
+            <div className="product-catalog-dialog-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setQuotation(null)}
+              >
+                ì·¨ì†Œ
+              </button>
+              <button type="submit" className="primary-button">
+                ì—‘ì…€ ê²¬ì ì„œ ë‚´ë ¤ë°›ê¸°
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {importPreview && (
+        <div className="product-catalog-modal-shell" role="presentation">
+          <section
+            className="product-catalog-dialog product-import-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="product-import-title"
+          >
+            <div className="product-catalog-dialog-header">
+              <div>
+                <span className="section-kicker">EXCEL PREVIEW</span>
+                <h3 id="product-import-title">ì—‘ì…€ ë‚´ìš© ê²€í† </h3>
+                <p>{importPreview.fileName}</p>
+              </div>
+              <button
+                type="button"
+                aria-label="ë‹«ê¸°"
+                onClick={() => setImportPreview(null)}
+                disabled={saving}
+              >
+                Ã—
+              </button>
+            </div>
+            <div className="product-import-summary">
+              <span>
+                ì‹ ê·œ <strong>{importPreview.added}ê°œ</strong>
+              </span>
+              <span>
+                ìˆ˜ì • <strong>{importPreview.updated}ê°œ</strong>
+              </span>
+              <span>
+                ë³€ê²½ ì—†ìŒ <strong>{importPreview.skipped}ê°œ</strong>
+              </span>
+              <span className={importPreview.errors ? "has-error" : ""}>
+                ì˜¤ë¥˜ <strong>{importPreview.errors}ê°œ</strong>
+              </span>
+            </div>
+            <p className="product-import-guide">
+              ë¹ˆ ì…€ì€ ê¸°ì¡´ ì •ë³´ë¥¼ ì§€ìš°ì§€ ì•ŠìŠµë‹ˆë‹¤. ì˜¤ë¥˜ê°€ ìˆëŠ” í–‰ì€ ì œì™¸í•˜ê³ 
+              ì ìš©ë©ë‹ˆë‹¤.
+            </p>
+            {importPreview.errors > 0 && (
+              <div className="product-import-errors">
+                {importPreview.rows
+                  .filter((row) => row.errors.length)
+                  .slice(0, 8)
+                  .map((row) => (
+                    <p key={row.rowNumber}>
+                      {row.rowNumber}í–‰ Â· {row.errors.join(" ")}
+                    </p>
+                  ))}
+              </div>
+            )}
+            <div className="product-catalog-dialog-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setImportPreview(null)}
+                disabled={saving}
+              >
+                ì·¨ì†Œ
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={applyImport}
+                disabled={
+                  saving ||
+                  (!importPreview.added && !importPreview.updated)
+                }
+              >
+                {saving ? "ì ìš© ì¤‘â€¦" : "ê²€í†  ë‚´ìš© ì ìš©"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </>
+  );
+}

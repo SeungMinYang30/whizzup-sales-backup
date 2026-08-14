@@ -402,6 +402,779 @@ async function buildAnalyticsPayload() {
         a.budget_type
       FROM accounting_collection_receipts r
       JOIN accounting_commission_entries e ON e.id = r.entry_id
-      JOIN activities entry_activity ON entry_activity.id =„ø}∂âûÀk∫wµÁqïÕΩ±±ïç—•Ω∏∞4(ÄÄÄÄÄÅïÕ—•µÖ—ïë•…ïç—5Ö…ù•∏ËÅë•…ïç—5Ö…ù•∏∞4(ÄÄÄÄÄÅïÕ—•µÖ—ïëIïŸïπ’îËÅçΩµµ•ÕÕ•Ω∏Ä¨Åë•…ïç—5Ö…ù•∏∞4(ÄÄÄÄÄÅïÕ—•µÖ—ïëΩπÕΩ…—•’µAÖÂµïπ–ËÅçΩπÕΩ…—•’µAÖÂµïπ–∞4(ÄÄÄÄÄÅÕ’¡¡±•ï…YïπëΩ…%êËÅ…Ω‹πÕ’¡¡±•ï…}ŸïπëΩ…}•êÄÙÙÙÅπ’±∞ÅÒ4(ÄÄÄÄÄÄÄÅ…Ω‹πÕ’¡¡±•ï…}ŸïπëΩ…}•êÄÙÙÙÅ’πëïô•πïê4(ÄÄÄÄÄÄÄÄ¸Åπ’±∞4(ÄÄÄÄÄÄÄÄËÅ9’µâï»°…Ω‹πÕ’¡¡±•ï…}ŸïπëΩ…}•ê§∞4(ÄÄÄÄÄÅÕ’¡¡±•ï…YïπëΩ…9ÖµîËÅM—…•πú°…Ω‹πÕ’¡¡±•ï…}ŸïπëΩ…}πÖµîÄ¸¸Äàà§∞4(ÄÄÄÄÄÅ¡…Ωù…ïÕÕ5ÖπÖùï»ËÅM—…•πú°…Ω‹π¡…Ωù…ïÕÕ}µÖπÖùï»Ä¸¸Äàà§∞4(ÄÄÄÄÄÅç…ïÖ—ïë	Â9ÖµîËÅM—…•πú°…Ω‹π•—ïµ}ç…ïÖ—ïë}âÂ}πÖµîÄ¸¸Äàà§∞4(ÄÄÄÄÄÅ’¡ëÖ—ïë	Â9ÖµîËÅM—…•πú°…Ω‹π•—ïµ}’¡ëÖ—ïë}âÂ}πÖµîÄ¸¸Äàà§∞4(ÄÄÄÄÄÅ’¡ëÖ—ïë–ËÅM—…•πú°…Ω‹π•—ïµ}’¡ëÖ—ïë}Ö–Ä¸¸Äàà§∞4(ÄÄÄÄÄÅçΩµµ•ÕÕ•Ωπ5•ÕÕ•πúË4(ÄÄÄÄÄÄÄÅÕ’¡¡±ÂQÂ¡îÄÙÙÙÄâë•…ïç–à4(ÄÄÄÄÄÄÄÄÄÄ¸Å…Ω‹πµÖ…ù•π}…Ö—îÄÙÙÙÅπ’±∞ÅÒÅ…Ω‹πµÖ…ù•π}…Ö—îÄÙÙÙÅ’πëïô•πïê4(ÄÄÄÄÄÄÄÄÄÄËÅ…Ω‹πçΩµµ•ÕÕ•Ωπ}…Ö—îÄÙÙÙÅπ’±∞ÅÒ4(ÄÄÄÄÄÄÄÄÄÄÄÅ…Ω‹πçΩµµ•ÕÕ•Ωπ}…Ö—îÄÙÙÙÅ’πëïô•πïê∞4(ÄÄÄÅıtÏ4(ÄÅÙ§Ï4(ÄÅçΩπÕ–ÅÖ›Ö…ë	Â	’Õ•πïÕÕ-ï‰ÄÙÅπï‹Å5Ö¿†4(ÄÄÄÅÖ›Ö…ëÕ	ÖÕîπµÖ¿†°Ö›Ö…ê§ÄÙ¯ÅmÖ›Ö…êπâ’Õ•πïÕÕ-ï‰∞ÅÖ›Ö…ët§∞4(ÄÄ§Ï4(ÄÅçΩπÕ–Å…ïçï•¡—ÃÄÙÅ…ïçï•¡—IïÕ’±–π…ïÕ’±—Ãπô±Ö—5Ö¿†4(ÄÄÄÄ°…Ω‹ËÅIïçΩ…êÒÕ—…•πú∞Å’π≠πΩ›∏¯§ÄÙ¯ÅÏ4(ÄÄÄÄÄÅçΩπÕ–Åâ’Õ•πïÕÕ-ï‰ÄÙÅÖπÖ±Â—•çÕ	’Õ•πïÕÕIΩ’πë-ï‰†4(ÄÄÄÄÄÄÄÅ…Ω‹πΩ…ùÖπ•ÈÖ—•Ω∏∞4(ÄÄÄÄÄÄÄÅ…Ω‹πâ’Õ•πïÕÕ}…Ω’πê∞4(ÄÄÄÄÄÄ§Ï4(ÄÄÄÄÄÅçΩπÕ–ÅÖ›Ö…êÄÙÅÖ›Ö…ë	Â	’Õ•πïÕÕ-ï‰πùï–°â’Õ•πïÕÕ-ï‰§Ï4(ÄÄÄÄÄÅ•òÄ†4(ÄÄÄÄÄÄÄÄÖÖ›Ö…êÅÒ4(ÄÄÄÄÄÄÄÄÖï±•ù•â±ïç—•Ÿ•—Â%ëÃπ°ÖÃ°9’µâï»°…Ω‹πÖç—•Ÿ•—Â}•ê§§ÅÒ4(ÄÄÄÄÄÄÄÄÖï±•ù•â±ïç—•Ÿ•—Â%ëÃπ°ÖÃ°9’µâï»°…Ω‹πïπ—…Â}Öç—•Ÿ•—Â}•ê§§4(ÄÄÄÄÄÄ§ÅÏ4(ÄÄÄÄÄÄÄÅ…ï—’…∏ÅmtÏ4(ÄÄÄÄÄÅÙ4(ÄÄÄÄÄÅ…ï—’…∏ÅmÏ4(ÄÄÄÄÄÄÄÅ•êËÅ9’µâï»°…Ω‹π…ïçï•¡—}•ê§∞4(ÄÄÄÄÄÄÄÅÖç—•Ÿ•—Â%êËÅÖ›Ö…ê¸πÖç—•Ÿ•—Â%êÄ¸¸Å9’µâï»°…Ω‹πÖç—•Ÿ•—Â}•ê§∞4(ÄÄÄÄÄÄÄÅâ’Õ•πïÕÕ-ï‰∞4(ÄÄÄÄÄÄÄÅâ’Õ•πïÕÕIΩ’πêËÅ9’µâï»°…Ω‹πâ’Õ•πïÕÕ}…Ω’πêÄ¸¸Äƒ§∞4(ÄÄÄÄÄÄÄÅΩ…ùÖπ•ÈÖ—•Ω∏ËÅÖ›Ö…ê¸πΩ…ùÖπ•ÈÖ—•Ω∏ÅÒÅM—…•πú°…Ω‹πΩ…ùÖπ•ÈÖ—•Ω∏Ä¸¸Äàà§∞4(ÄÄÄÄÄÄÄÅ…ïù•Ω∏ËÅÖ›Ö…ê¸π…ïù•Ω∏ÅÒÅM—…•πú°…Ω‹π…ïù•Ω∏Ä¸¸Äàà§∞4(ÄÄÄÄÄÄÄÅâ’ëùï—QÂ¡îË4(ÄÄÄÄÄÄÄÄÄÅÖ›Ö…ê¸πâ’ëùï—QÂ¡îÅÒ4(ÄÄÄÄÄÄÄÄÄÅçÖπΩπ•çÖ±	’ëùï—9Öµî°…Ω‹πâ’ëùï—}—Â¡î§ÅÒ4(ÄÄÄÄÄÄÄÄÄÄãÆæ„Æ⁄Æñ`à∞4(ÄÄÄÄÄÄÄÅçΩ±±ïç—•ΩπÖ—îËÅM—…•πú°…Ω‹πçΩ±±ïç—•Ωπ}ëÖ—îÄ¸¸Äàà§πÕ±•çî†¿∞Äƒ¿§∞4(ÄÄÄÄÄÄÄÅÖµΩ’π–ËÅ5Ö—†πµÖ‡†¿∞Å9’µâï»°…Ω‹πÖµΩ’π–Ä¸¸Ä¿§§∞4(ÄÄÄÄÄÄÄÅπΩ—îËÅM—…•πú°…Ω‹ππΩ—îÄ¸¸Äàà§∞4(ÄÄÄÄÄÅıtÏ4(ÄÄÄÅÙ∞4(ÄÄ§Ï4(ÄÅçΩπÕ–ÅçΩ±±ïç—ïë	Â	’Õ•πïÕÃÄÙÅπï‹Å5Ö¿ÒÕ—…•πú∞Åπ’µâï»¯†§Ï4(ÄÅ…ïçï•¡—ÃπôΩ…Öç††°…ïçï•¡–§ÄÙ¯ÅÏ4(ÄÄÄÅçΩ±±ïç—ïë	Â	’Õ•πïÕÃπÕï–†4(ÄÄÄÄÄÅ…ïçï•¡–πâ’Õ•πïÕÕ-ï‰∞4(ÄÄÄÄÄÄ°çΩ±±ïç—ïë	Â	’Õ•πïÕÃπùï–°…ïçï•¡–πâ’Õ•πïÕÕ-ï‰§Ä¸¸Ä¿§Ä¨Å…ïçï•¡–πÖµΩ’π–∞4(ÄÄÄÄ§Ï4(ÄÅÙ§Ï4(ÄÅçΩπÕ–Å¡…Ωë’ç—QΩ—Ö±Õ	Â	’Õ•πïÕÃÄÙÅπï‹Å5Ö¿4(ÄÄÄÅÕ—…•πú∞4(ÄÄÄÅÏ4(ÄÄÄÄÄÅ¡Ö…—πï…Ωµµ•ÕÕ•Ω∏ËÅπ’µâï»Ï4(ÄÄÄÄÄÅë•…ïç—MÖ±ïÕΩ±±ïç—•Ω∏ËÅπ’µâï»Ï4(ÄÄÄÄÄÅë•…ïç—5Ö…ù•∏ËÅπ’µâï»Ï4(ÄÄÄÄÄÅçΩπÕΩ…—•’¥ËÅπ’µâï»Ï4(ÄÄÄÄÄÅµÖ…ù•∏ËÅπ’µâï»Ï4(ÄÄÄÅÙ4(ÄÄ¯†§Ï4(ÄÅ¡…Ωë’ç—ÃπôΩ…Öç††4(ÄÄÄÄ°¡…Ωë’ç–ËÅÏ4(ÄÄÄÄÄÅâ’Õ•πïÕÕ-ï‰ËÅÕ—…•πúÏ4(ÄÄÄÄÄÅïÕ—•µÖ—ïëAÖ…—πï…Ωµµ•ÕÕ•Ω∏ËÅπ’µâï»Ï4(ÄÄÄÄÄÅïÕ—•µÖ—ïë•…ïç—MÖ±ïÕΩ±±ïç—•Ω∏ËÅπ’µâï»Ï4(ÄÄÄÄÄÅïÕ—•µÖ—ïë•…ïç—5Ö…ù•∏ËÅπ’µâï»Ï4(ÄÄÄÄÄÅïÕ—•µÖ—ïëΩπÕΩ…—•’µAÖÂµïπ–ËÅπ’µâï»Ï4(ÄÄÄÄÄÅïÕ—•µÖ—ïë5Ö…ù•∏ËÅπ’µâï»Ï4(ÄÄÄÅÙ§ÄÙ¯ÅÏ4(ÄÄÄÅçΩπÕ–Åç’……ïπ–ÄÙÅ¡…Ωë’ç—QΩ—Ö±Õ	Â	’Õ•πïÕÃπùï–°¡…Ωë’ç–πâ’Õ•πïÕÕ-ï‰§Ä¸¸ÅÏ4(ÄÄÄÄÄÅ¡Ö…—πï…Ωµµ•ÕÕ•Ω∏ËÄ¿∞4(ÄÄÄÄÄÅë•…ïç—MÖ±ïÕΩ±±ïç—•Ω∏ËÄ¿∞4(ÄÄÄÄÄÅë•…ïç—5Ö…ù•∏ËÄ¿∞4(ÄÄÄÄÄÅçΩπÕΩ…—•’¥ËÄ¿∞4(ÄÄÄÄÄÅµÖ…ù•∏ËÄ¿∞4(ÄÄÄÅÙÏ4(ÄÄÄÅç’……ïπ–π¡Ö…—πï…Ωµµ•ÕÕ•Ω∏Ä¨ÙÅ¡…Ωë’ç–πïÕ—•µÖ—ïëAÖ…—πï…Ωµµ•ÕÕ•Ω∏Ï4(ÄÄÄÅç’……ïπ–πë•…ïç—MÖ±ïÕΩ±±ïç—•Ω∏Ä¨ÙÅ¡…Ωë’ç–πïÕ—•µÖ—ïë•…ïç—MÖ±ïÕΩ±±ïç—•Ω∏Ï4(ÄÄÄÅç’……ïπ–πë•…ïç—5Ö…ù•∏Ä¨ÙÅ¡…Ωë’ç–πïÕ—•µÖ—ïë•…ïç—5Ö…ù•∏Ï4(ÄÄÄÅç’……ïπ–πçΩπÕΩ…—•’¥Ä¨ÙÅ¡…Ωë’ç–πïÕ—•µÖ—ïëΩπÕΩ…—•’µAÖÂµïπ–Ï4(ÄÄÄÅç’……ïπ–πµÖ…ù•∏Ä¨ÙÅ¡…Ωë’ç–πïÕ—•µÖ—ïë5Ö…ù•∏Ï4(ÄÄÄÅ¡…Ωë’ç—QΩ—Ö±Õ	Â	’Õ•πïÕÃπÕï–°¡…Ωë’ç–πâ’Õ•πïÕÕ-ï‰∞Åç’……ïπ–§Ï4(ÄÄÄÅÙ∞4(ÄÄ§Ï4(ÄÅçΩπÕ–ÅçΩπÕ—…’ç—•Ωπ5Ö…ù•π	Â	’Õ•πïÕÃÄÙÅπï‹Å5Ö¿ÒÕ—…•πú∞Åπ’µâï»¯†§Ï4(ÄÅçΩπÕ–ÅçΩπÕ—…’ç—•ΩπE’Ω—ïÕ	Â	’Õ•πïÕÃÄÙÅπï‹Å5Ö¿4(ÄÄÄÅÕ—…•πú∞4(ÄÄÄÅ……Ö‰ÒÏÅ≈’Ω—Ö—•ΩπµΩ’π–ËÅπ’µâï»ÏÅÖµΩ’π—Iïù•Õ—ï…ïêËÅâΩΩ±ïÖ∏ÅÙ¯4(ÄÄ¯†§Ï4(ÄÅçΩπÕ—…’ç—•ΩπIïÕ’±–π…ïÕ’±—ÃπôΩ…Öç††°…Ω‹ËÅIïçΩ…êÒÕ—…•πú∞Å’π≠πΩ›∏¯§ÄÙ¯ÅÏ4(ÄÄÄÅçΩπÕ–Åâ’Õ•πïÕÕ-ï‰ÄÙÅÖπÖ±Â—•çÕ	’Õ•πïÕÕIΩ’πë-ï‰†4(ÄÄÄÄÄÅ…Ω‹πΩ…ùÖπ•ÈÖ—•Ω∏∞4(ÄÄÄÄÄÅ…Ω‹πâ’Õ•πïÕÕ}…Ω’πê∞4(ÄÄÄÄ§Ï4(ÄÄÄÅ•òÄ†4(ÄÄÄÄÄÄÖï±•ù•â±ï	’Õ•πïÕÕ-ïÂÃπ°ÖÃ°â’Õ•πïÕÕ-ï‰§ÅÒ4(ÄÄÄÄÄÄÖï±•ù•â±ïç—•Ÿ•—Â%ëÃπ°ÖÃ°9’µâï»°…Ω‹πÖç—•Ÿ•—Â}•ê§§4(ÄÄÄÄ§ÅÏ4(ÄÄÄÄÄÅ…ï—’…∏Ï4(ÄÄÄÅÙ4(ÄÄÄÅçΩπÕ–Åô•πÖπçîÄÙÅçÖ±ç’±Ö—ïΩπÕ—…’ç—•Ωπ•πÖπçî°Ï4(ÄÄÄÄÄÅçΩπÕ—…’ç—•ΩπµΩ’π–Ë4(ÄÄÄÄÄÄÄÅ…Ω‹πçΩπÕ—…’ç—•Ωπ}ÖµΩ’π–ÄÙÙÙÅπ’±∞ÅÒ4(ÄÄÄÄÄÄÄÅ…Ω‹πçΩπÕ—…’ç—•Ωπ}ÖµΩ’π–ÄÙÙÙÅ’πëïô•πïê4(ÄÄÄÄÄÄÄÄÄÄ¸Åπ’±∞4(ÄÄÄÄÄÄÄÄÄÄËÅ9’µâï»°…Ω‹πçΩπÕ—…’ç—•Ωπ}ÖµΩ’π–§∞4(ÄÄÄÄÄÅÖç—’Ö±ΩπÕ—…’ç—•ΩπΩÕ–Ë4(ÄÄÄÄÄÄÄÅ…Ω‹πÖç—’Ö±}çΩπÕ—…’ç—•Ωπ}çΩÕ–ÄÙÙÙÅπ’±∞ÅÒ4(ÄÄÄÄÄÄÄÅ…Ω‹πÖç—’Ö±}çΩπÕ—…’ç—•Ωπ}çΩÕ–ÄÙÙÙÅ’πëïô•πïê4(ÄÄÄÄÄÄÄÄÄÄ¸Åπ’±∞4(ÄÄÄÄÄÄÄÄÄÄËÅ9’µâï»°…Ω‹πÖç—’Ö±}çΩπÕ—…’ç—•Ωπ}çΩÕ–§∞4(ÄÄÄÅÙ§Ï4(ÄÄÄÅçΩπÕ—…’ç—•Ωπ5Ö…ù•π	Â	’Õ•πïÕÃπÕï–†4(ÄÄÄÄÄÅâ’Õ•πïÕÕ-ï‰∞4(ÄÄÄÄÄÄ°çΩπÕ—…’ç—•Ωπ5Ö…ù•π	Â	’Õ•πïÕÃπùï–°â’Õ•πïÕÕ-ï‰§Ä¸¸Ä¿§Ä¨4(ÄÄÄÄÄÄÄÅô•πÖπçîπçΩπÕ—…’ç—•Ωπ5Ö…ù•∏∞4(ÄÄÄÄ§Ï4(ÄÄÄÅçΩπÕ–ÅçΩπÕ—…’ç—•ΩπE’Ω—ïÃÄÙ4(ÄÄÄÄÄÅçΩπÕ—…’ç—•ΩπE’Ω—ïÕ	Â	’Õ•πïÕÃπùï–°â’Õ•πïÕÕ-ï‰§Ä¸¸ÅmtÏ4(ÄÄÄÅçΩπÕ—…’ç—•ΩπE’Ω—ïÃπ¡’Õ†°Ï4(ÄÄÄÄÄÅ≈’Ω—Ö—•ΩπµΩ’π–ËÅô•πÖπçîπçΩπÕ—…’ç—•ΩπµΩ’π–∞4(ÄÄÄÄÄÅÖµΩ’π—Iïù•Õ—ï…ïêË4(ÄÄÄÄÄÄÄÅ…Ω‹πçΩπÕ—…’ç—•Ωπ}ÖµΩ’π–ÄÑÙÙÅπ’±∞Äòò4(ÄÄÄÄÄÄÄÅ…Ω‹πçΩπÕ—…’ç—•Ωπ}ÖµΩ’π–ÄÑÙÙÅ’πëïô•πïê∞4(ÄÄÄÅÙ§Ï4(ÄÄÄÅçΩπÕ—…’ç—•ΩπE’Ω—ïÕ	Â	’Õ•πïÕÃπÕï–°â’Õ•πïÕÕ-ï‰∞ÅçΩπÕ—…’ç—•ΩπE’Ω—ïÃ§Ï4(ÄÅÙ§Ï4(ÄÅçΩπÕ–Å•—ïµE’Ω—ïÕ	Â	’Õ•πïÕÃÄÙÅπï‹Å5Ö¿4(ÄÄÄÅÕ—…•πú∞4(ÄÄÄÅ……Ö‰ÒÏÅ≈’Ω—Ö—•ΩπµΩ’π–ËÅπ’µâï»ÏÅÖµΩ’π—Iïù•Õ—ï…ïêËÅâΩΩ±ïÖ∏ÅÙ¯4(ÄÄ¯†§Ï4(ÄÅ¡…Ωë’ç—ÃπôΩ…Öç††4(ÄÄÄÄ°¡…Ωë’ç–ËÅÏ4(ÄÄÄÄÄÅâ’Õ•πïÕÕ-ï‰ËÅÕ—…•πúÏ4(ÄÄÄÄÄÅ≈’Ω—Ö—•ΩπµΩ’π–ËÅπ’µâï»Ï4(ÄÄÄÄÄÅ≈’Ω—ïµΩ’π—Iïù•Õ—ï…ïêËÅâΩΩ±ïÖ∏Ï4(ÄÄÄÅÙ§ÄÙ¯ÅÏ4(ÄÄÄÄÄÅçΩπÕ–Å•—ïµE’Ω—ïÃÄÙÅ•—ïµE’Ω—ïÕ	Â	’Õ•πïÕÃπùï–°¡…Ωë’ç–πâ’Õ•πïÕÕ-ï‰§Ä¸¸ÅmtÏ4(ÄÄÄÄÄÅ•—ïµE’Ω—ïÃπ¡’Õ†°Ï4(ÄÄÄÄÄÄÄÅ≈’Ω—Ö—•ΩπµΩ’π–ËÅ¡…Ωë’ç–π≈’Ω—Ö—•ΩπµΩ’π–∞4(ÄÄÄÄÄÄÄÅÖµΩ’π—Iïù•Õ—ï…ïêËÅ¡…Ωë’ç–π≈’Ω—ïµΩ’π—Iïù•Õ—ï…ïê∞4(ÄÄÄÄÄÅÙ§Ï4(ÄÄÄÄÄÅ•—ïµE’Ω—ïÕ	Â	’Õ•πïÕÃπÕï–°¡…Ωë’ç–πâ’Õ•πïÕÕ-ï‰∞Å•—ïµE’Ω—ïÃ§Ï4(ÄÄÄÅÙ∞4(ÄÄ§Ï4(ÄÅçΩπÕ–ÅÖ›Ö…ëÃÄÙÅÖ›Ö…ëÕ	ÖÕîπµÖ¿†°Ö›Ö…ê§ÄÙ¯ÅÏ4(ÄÄÄÅçΩπÕ–Åô•πÖ±E’Ω—Ö—•Ω∏ÄÙÅ±Ö—ïÕ—•πÖ±E’Ω—Ö—•Ωπ	Â	’Õ•πïÕÃπùï–†4(ÄÄÄÄÄÅÖ›Ö…êπâ’Õ•πïÕÕ-ï‰∞4(ÄÄÄÄ§Ï4(ÄÄÄÅçΩπÕ–Åï·ïç’—•ΩπQÂ¡îÄÙ4(ÄÄÄÄÄÅô•πÖ±E’Ω—Ö—•Ω∏¸πï·ïç’—•ΩπQÂ¡îÄÙÙÙÄã≤Ó£≤0àÅÒÅÖ›Ö…êπï·ïç’—•ΩπQÂ¡îÄÙÙÙÄã≤Ó£≤0à4(ÄÄÄÄÄÄÄÄ¸Äã≤Ó£≤0àÅÖÃÅçΩπÕ–4(ÄÄÄÄÄÄÄÄËÄã≤û≤bàÅÖÃÅçΩπÕ–Ï4(ÄÄÄÅçΩπÕ–Å…ïù•Õ—ï…ïëE’Ω—îÄÙÅçÖ±ç’±Ö—ïIïù•Õ—ï…ïëE’Ω—î°Ï4(ÄÄÄÄÄÅ•—ïµÃËÅ•—ïµE’Ω—ïÕ	Â	’Õ•πïÕÃπùï–°Ö›Ö…êπâ’Õ•πïÕÕ-ï‰§Ä¸¸Åmt∞4(ÄÄÄÄÄÅçΩπÕ—…’ç—•ΩπÃË4(ÄÄÄÄÄÄÄÅçΩπÕ—…’ç—•ΩπE’Ω—ïÕ	Â	’Õ•πïÕÃπùï–°Ö›Ö…êπâ’Õ•πïÕÕ-ï‰§Ä¸¸Åmt∞4(ÄÄÄÅÙ§Ï4(ÄÄÄÅ•òÄ†ÖÖ›Ö…êπçΩπô•…µïê§ÅÏ4(ÄÄÄÄÄÅ…ï—’…∏ÅÏ4(ÄÄÄÄÄÄÄÄ∏∏πÖ›Ö…ê∞4(ÄÄÄÄÄÄÄÅï·ïç’—•ΩπQÂ¡î∞4(ÄÄÄÄÄÄÄÅçΩπô•…µïëµΩ’π–ËÄ¿∞4(ÄÄÄÄÄÄÄÅ≈’Ω—ïM—Ö—’ÃËÅô•πÖ±E’Ω—Ö—•Ω∏Ä¸ÄâçΩµ¡±ï—îàÅÖÃÅçΩπÕ–ÄËÅ…ïù•Õ—ï…ïëE’Ω—îπ≈’Ω—ïM—Ö—’Ã∞4(ÄÄÄÄÄÄÄÅ≈’Ω—ï%—ïµΩ’π–ËÅô•πÖ±E’Ω—Ö—•Ω∏¸π•—ïµÃπ±ïπù—†Ä¸¸Å…ïù•Õ—ï…ïëE’Ω—îπ≈’Ω—ï%—ïµΩ’π–∞4(ÄÄÄÄÄÄÄÅ≈’Ω—ï5•ÕÕ•πùµΩ’π—%—ïµΩ’π–Ë4(ÄÄÄÄÄÄÄÄÄÅô•πÖ±E’Ω—Ö—•Ω∏Ä¸Ä¿ÄËÅ…ïù•Õ—ï…ïëE’Ω—îπ≈’Ω—ï5•ÕÕ•πùµΩ’π—%—ïµΩ’π–∞4(ÄÄÄÄÄÅÙÏ4(ÄÄÄÅÙ4(ÄÄÄÅçΩπÕ–ÅÕΩ’…çîÄÙÅ¡…Ωë’ç—QΩ—Ö±Õ	Â	’Õ•πïÕÃπùï–°Ö›Ö…êπâ’Õ•πïÕÕ-ï‰§Ä¸¸ÅÏ4(ÄÄÄÄÄÅ¡Ö…—πï…Ωµµ•ÕÕ•Ω∏ËÄ¿∞4(ÄÄÄÄÄÅë•…ïç—MÖ±ïÕΩ±±ïç—•Ω∏ËÄ¿∞4(ÄÄÄÄÄÅë•…ïç—5Ö…ù•∏ËÄ¿∞4(ÄÄÄÄÄÅçΩπÕΩ…—•’¥ËÄ¿∞4(ÄÄÄÄÄÅµÖ…ù•∏ËÄ¿∞4(ÄÄÄÅÙÏ4(ÄÄÄÅçΩπÕ–Åï·¡ïç—ïëΩπÕ—…’ç—•Ωπ5Ö…ù•∏ÄÙ4(ÄÄÄÄÄÅçΩπÕ—…’ç—•Ωπ5Ö…ù•π	Â	’Õ•πïÕÃπùï–°Ö›Ö…êπâ’Õ•πïÕÕ-ï‰§Ä¸¸Ä¿Ï4(ÄÄÄÅçΩπÕ–Åô•πÖ±E’Ω—Ö—•ΩπAÖ…—πï…Ö…π•πúÄÙÅô•πÖ±E’Ω—Ö—•Ω∏¸π•—ïµÃ4(ÄÄÄÄÄÄπô•±—ï»†°•—ï¥§ÄÙ¯Å•—ï¥πÕ’¡¡±ÂQÂ¡îÄÑÙÙÄâë•…ïç–à§4(ÄÄÄÄÄÄπ…ïë’çî†°Õ’¥∞Å•—ï¥§ÄÙ¯ÅÕ’¥Ä¨Å•—ï¥πï·¡ïç—ïëÖ…π•πú∞Ä¿§Ï4(ÄÄÄÅçΩπÕ–Åô•πÖ±E’Ω—Ö—•Ωπ•…ïç—Ö…π•πúÄÙÅô•πÖ±E’Ω—Ö—•Ω∏¸π•—ïµÃ4(ÄÄÄÄÄÄπô•±—ï»†°•—ï¥§ÄÙ¯Å•—ï¥πÕ’¡¡±ÂQÂ¡îÄÙÙÙÄâë•…ïç–à§4(ÄÄÄÄÄÄπ…ïë’çî†°Õ’¥∞Å•—ï¥§ÄÙ¯ÅÕ’¥Ä¨Å•—ï¥πï·¡ïç—ïëÖ…π•πú∞Ä¿§Ï4(ÄÄÄÅçΩπÕ–Åô•πÖ±E’Ω—Ö—•Ωπ•…ïç—MÖ±ïÃÄÙÅô•πÖ±E’Ω—Ö—•Ω∏¸π•—ïµÃ4(ÄÄÄÄÄÄπô•±—ï»†°•—ï¥§ÄÙ¯Å•—ï¥πÕ’¡¡±ÂQÂ¡îÄÙÙÙÄâë•…ïç–àÄòòÄÖ•—ï¥πçΩµ¡±•µïπ—Ö…‰§4(ÄÄÄÄÄÄπ…ïë’çî†°Õ’¥∞Å•—ï¥§ÄÙ¯ÅÕ’¥Ä¨Å•—ï¥πÖµΩ’π–∞Ä¿§Ï4(ÄÄÄÅçΩπÕ–Å¡…Ω©ïç—•Ω∏ÄÙÅçÖ±ç’±Ö—ï›Ö…ëMï——±ïµïπ—A…Ω©ïç—•Ω∏°Ï4(ÄÄÄÄÄÅï·¡ïç—ïëAÖ…—πï…Ωµµ•ÕÕ•Ω∏ËÅÕΩ’…çîπ¡Ö…—πï…Ωµµ•ÕÕ•Ω∏∞4(ÄÄÄÄÄÅï·¡ïç—ïë•…ïç—MÖ±ïÕΩ±±ïç—•Ω∏ËÅÕΩ’…çîπë•…ïç—MÖ±ïÕΩ±±ïç—•Ω∏∞4(ÄÄÄÄÄÅï·¡ïç—ïë•…ïç—5Ö…ù•∏ËÅÕΩ’…çîπë•…ïç—5Ö…ù•∏∞4(ÄÄÄÄÄÅï·¡ïç—ïëΩπÕ—…’ç—•Ωπ5Ö…ù•∏∞4(ÄÄÄÄÄÅï·¡ïç—ïëΩπÕΩ…—•’µMï——±ïµïπ–ËÅÕΩ’…çîπçΩπÕΩ…—•’¥∞4(ÄÄÄÅÙ§Ï4(ÄÄÄÅçΩπÕ–ÅçΩ±±ïç—ïëµΩ’π–ÄÙ4(ÄÄÄÄÄÅçΩ±±ïç—ïë	Â	’Õ•πïÕÃπùï–°Ö›Ö…êπâ’Õ•πïÕÕ-ï‰§Ä¸¸Ä¿Ï4(ÄÄÄÅ…ï—’…∏ÅÏ4(ÄÄÄÄÄÄ∏∏πÖ›Ö…ê∞4(ÄÄÄÄÄÅï·ïç’—•ΩπQÂ¡î∞4(ÄÄÄÄÄÅçΩπô•…µïëµΩ’π–Ë4(ÄÄÄÄÄÄÄÅô•πÖ±E’Ω—Ö—•Ω∏4(ÄÄÄÄÄÄÄÄÄÄ¸Åô•πÖ±E’Ω—Ö—•Ω∏π—Ω—Ö±µΩ’π–4(ÄÄÄÄÄÄÄÄÄÄËÅ…ïù•Õ—ï…ïëE’Ω—îπ≈’Ω—ïM—Ö—’ÃÄÙÙÙÄâçΩµ¡±ï—îà4(ÄÄÄÄÄÄÄÄÄÄ¸Å…ïù•Õ—ï…ïëE’Ω—îπçΩπ—…Öç—µΩ’π–4(ÄÄÄÄÄÄÄÄÄÄËÄ¿∞4(ÄÄÄÄÄÅ≈’Ω—ïM—Ö—’ÃËÅô•πÖ±E’Ω—Ö—•Ω∏Ä¸ÄâçΩµ¡±ï—îàÅÖÃÅçΩπÕ–ÄËÅ…ïù•Õ—ï…ïëE’Ω—îπ≈’Ω—ïM—Ö—’Ã∞4(ÄÄÄÄÄÅ≈’Ω—ï%—ïµΩ’π–ËÅô•πÖ±E’Ω—Ö—•Ω∏¸π•—ïµÃπ±ïπù—†Ä¸¸Å…ïù•Õ—ï…ïëE’Ω—îπ≈’Ω—ï%—ïµΩ’π–∞4(ÄÄÄÄÄÅ≈’Ω—ï5•ÕÕ•πùµΩ’π—%—ïµΩ’π–Ë4(ÄÄÄÄÄÄÄÅô•πÖ±E’Ω—Ö—•Ω∏Ä¸Ä¿ÄËÅ…ïù•Õ—ï…ïëE’Ω—îπ≈’Ω—ï5•ÕÕ•πùµΩ’π—%—ïµΩ’π–∞4(ÄÄÄÄÄÅï·¡ïç—ïëΩµµ•ÕÕ•Ω∏Ë4(ÄÄÄÄÄÄÄÅô•πÖ±E’Ω—Ö—•ΩπAÖ…—πï…Ö…π•πúÄ¸¸ÅÕΩ’…çîπ¡Ö…—πï…Ωµµ•ÕÕ•Ω∏∞4(ÄÄÄÄÄÅï·¡ïç—ïëAÖ…—πï…Ωµµ•ÕÕ•Ω∏Ë4(ÄÄÄÄÄÄÄÅô•πÖ±E’Ω—Ö—•ΩπAÖ…—πï…Ö…π•πúÄ¸¸ÅÕΩ’…çîπ¡Ö…—πï…Ωµµ•ÕÕ•Ω∏∞4(ÄÄÄÄÄÅï·¡ïç—ïë•…ïç—MÖ±ïÕΩ±±ïç—•Ω∏Ë4(ÄÄÄÄÄÄÄÅô•πÖ±E’Ω—Ö—•Ωπ•…ïç—MÖ±ïÃÄ¸¸ÅÕΩ’…çîπë•…ïç—MÖ±ïÕΩ±±ïç—•Ω∏∞4(ÄÄÄÄÄÅï·¡ïç—ïë•…ïç—5Ö…ù•∏Ë4(ÄÄÄÄÄÄÄÅô•πÖ±E’Ω—Ö—•Ωπ•…ïç—Ö…π•πúÄ¸¸ÅÕΩ’…çîπë•…ïç—5Ö…ù•∏∞4(ÄÄÄÄÄÅï·¡ïç—ïëΩπÕ—…’ç—•Ωπ5Ö…ù•∏∞4(ÄÄÄÄÄÅ…Ö›·¡ïç—ïëΩ±±ïç—•ΩπQΩ—Ö∞ËÅ¡…Ω©ïç—•Ω∏π…Ö›·¡ïç—ïëΩ±±ïç—•ΩπQΩ—Ö∞∞4(ÄÄÄÄÄÅï·¡ïç—ïëΩ±±ïç—•ΩπQΩ—Ö∞ËÅ¡…Ω©ïç—•Ω∏πï·¡ïç—ïëΩ±±ïç—•ΩπQΩ—Ö∞∞4(ÄÄÄÄÄÅï·¡ïç—ïëMï——±ïµïπ—ïô•ç•–ËÅ¡…Ω©ïç—•Ω∏πï·¡ïç—ïëMï——±ïµïπ—ïô•ç•–∞4(ÄÄÄÄÄÅï·¡ïç—ïëA…Ωô•–ËÅ¡…Ω©ïç—•Ω∏πï·¡ïç—ïëA…Ωô•–∞4(ÄÄÄÄÄÅµÖπ’ôÖç—’…ï…Ωµµ•ÕÕ•ΩπIïçï•ŸïêËÅçΩ±±ïç—ïëµΩ’π–∞4(ÄÄÄÄÄÅçΩµµ•ÕÕ•ΩπIïçï•ŸÖâ±îËÅ5Ö—†πµÖ‡†4(ÄÄÄÄÄÄÄÄ¿∞4(ÄÄÄÄÄÄÄÅ¡…Ω©ïç—•Ω∏πï·¡ïç—ïëΩ±±ïç—•ΩπQΩ—Ö∞Ä¥ÅçΩ±±ïç—ïëµΩ’π–∞4(ÄÄÄÄÄÄ§∞4(ÄÄÄÄÄÅπï—IïŸïπ’îËÅô•πÖ±E’Ω—Ö—•Ω∏¸πµÖ…ù•πµΩ’π–Ä¸¸Å¡…Ω©ïç—•Ω∏πï·¡ïç—ïëA…Ωô•–∞4(ÄÄÄÅÙÏ4(ÄÅÙ§Ï4(ÄÅçΩπÕ–Å’π±•π≠ïëA…Ω©ïç—ÃÄÙÅ’π±•π≠ïëA…Ω©ïç—IïÕ’±–π…ïÕ’±—Ãπô•±—ï»†4(ÄÄÄÄ°…Ω‹ËÅIïçΩ…êÒÕ—…•πú∞Å’π≠πΩ›∏¯§ÄÙ¯4(ÄÄÄÄÄÅï±•ù•â±ï	’Õ•πïÕÕ-ïÂÃπ°ÖÃ†4(ÄÄÄÄÄÄÄÅÖπÖ±Â—•çÕ	’Õ•πïÕÕIΩ’πë-ï‰°…Ω‹πΩ…ùÖπ•ÈÖ—•Ω∏∞Å…Ω‹πâ’Õ•πïÕÕ}…Ω’πê§∞4(ÄÄÄÄÄÄ§∞4(ÄÄ§Ï4(ÄÅçΩπÕ–Å±•π≠ïê»¿»’A…Ω©ïç—ÃÄÙÅ±•π≠ïê»¿»’A…Ω©ïç—IïÕ’±–π…ïÕ’±—Ãπô•±—ï»†4(ÄÄÄÄ°…Ω‹ËÅIïçΩ…êÒÕ—…•πú∞Å’π≠πΩ›∏¯§ÄÙ¯4(ÄÄÄÄÄÅï±•ù•â±ï	’Õ•πïÕÕ-ïÂÃπ°ÖÃ†4(ÄÄÄÄÄÄÄÅÖπÖ±Â—•çÕ	’Õ•πïÕÕIΩ’πë-ï‰°…Ω‹πΩ…ùÖπ•ÈÖ—•Ω∏∞Å…Ω‹πâ’Õ•πïÕÕ}…Ω’πê§∞4(ÄÄÄÄÄÄ§∞4(ÄÄ§Ï4(ÄÅ…ï—’…∏ÅÏ4(ÄÄÄÅÖ›Ö…ëÃ∞4(ÄÄÄÅ…ïçï•¡—Ã∞4(ÄÄÄÅ¡…Ωë’ç—Ã∞4(ÄÄÄÅëÖ—ÖE’Ö±•—‰ËÅÏ4(ÄÄÄÄÄÅ’πçΩπô•…µïë›Ö…ëÃËÅÖ›Ö…ëÃπô•±—ï»†4(ÄÄÄÄÄÄÄÄ°Ö›Ö…ê§ÄÙ¯4(ÄÄÄÄÄÄÄÄÄÅÖ›Ö…êπçΩπô•…µïêÄòòÅÖ›Ö…êπµÖπ’ôÖç—’…ï…Ωµµ•ÕÕ•ΩπIïçï•ŸïêÄÙÄ¿∞4(ÄÄÄÄÄÄ§π±ïπù—†∞4(ÄÄÄÄÄÅ’π±•π≠ïëA…Ωë’ç—A…Ω©ïç—ÃËÅ’π±•π≠ïëA…Ω©ïç—Ãπ±ïπù—†∞4(ÄÄÄÄÄÅµ•ÕÕ•πùΩµµ•ÕÕ•Ωπ%—ïµÃËÅ¡…Ωë’ç—Ãπô•±—ï»†4(ÄÄÄÄÄÄÄÄ°¡…Ωë’ç–ËÅÏÅçΩµµ•ÕÕ•Ωπ5•ÕÕ•πúËÅâΩΩ±ïÖ∏ÅÙ§ÄÙ¯4(ÄÄÄÄÄÄÄÄÄÅ¡…Ωë’ç–πçΩµµ•ÕÕ•Ωπ5•ÕÕ•πú∞4(ÄÄÄÄÄÄ§π±ïπù—†∞4(ÄÄÄÄÄÅ±•π≠ïê»¿»’A…Ω©ïç—ÃËÅ±•π≠ïê»¿»’A…Ω©ïç—Ãπ±ïπù—†∞4(ÄÄÄÅÙ∞4(ÄÄÄÅ≈’Ö±•—Âï—Ö•±ÃËÅÏ4(ÄÄÄÄÄÅ’π±•π≠ïëA…Ω©ïç—ÃËÅ’π±•π≠ïëA…Ω©ïç—ÃπÕ±•çî†¿∞Ä»¿¿§πµÖ¿†4(ÄÄÄÄÄÄÄÄ°…Ω‹ËÅIïçΩ…êÒÕ—…•πú∞Å’π≠πΩ›∏¯§ÄÙ¯Ä°Ï4(ÄÄÄÄÄÄÄÅ¡…Ω©ïç—%êËÅ9’µâï»°…Ω‹π¡…Ω©ïç—}•ê§∞4(ÄÄÄÄÄÄÄÅΩ…ùÖπ•ÈÖ—•Ω∏ËÅM—…•πú°…Ω‹πΩ…ùÖπ•ÈÖ—•Ω∏Ä¸¸Äàà§∞4(ÄÄÄÄÄÄÄÅ¡…Ω©ïç—9ÖµîËÅM—…•πú°…Ω‹π¡…Ω©ïç—}πÖµîÄ¸¸Äàà§∞4(ÄÄÄÄÄÄÄÅÕ—Ö—’ÃËÅM—…•πú°…Ω‹πÕ—Ö—’ÃÄ¸¸Äàà§∞4(ÄÄÄÄÄÄÄÅÖç—•Ÿ•—ÂÖ—îËÄàà∞4(ÄÄÄÄÄÄÄÅÖ›Ö…ëïëE’Öπ—•—‰ËÅ9’µâï»°…Ω‹πÖ›Ö…ëïë}≈’Öπ—•—‰Ä¸¸Ä¿§∞4(ÄÄÄÄÄÄÄÅÙ§∞4(ÄÄÄÄÄÄ§∞4(ÄÄÄÄÄÅ±•π≠ïê»¿»’A…Ω©ïç—ÃËÅ±•π≠ïê»¿»’A…Ω©ïç—ÃπÕ±•çî†¿∞Ä»¿¿§πµÖ¿†4(ÄÄÄÄÄÄÄÄ°…Ω‹ËÅIïçΩ…êÒÕ—…•πú∞Å’π≠πΩ›∏¯§ÄÙ¯Ä°Ï4(ÄÄÄÄÄÄÄÅ¡…Ω©ïç—%êËÅ9’µâï»°…Ω‹π¡…Ω©ïç—}•ê§∞4(ÄÄÄÄÄÄÄÅΩ…ùÖπ•ÈÖ—•Ω∏ËÅM—…•πú°…Ω‹πΩ…ùÖπ•ÈÖ—•Ω∏Ä¸¸Äàà§∞4(ÄÄÄÄÄÄÄÅ¡…Ω©ïç—9ÖµîËÅM—…•πú°…Ω‹π¡…Ω©ïç—}πÖµîÄ¸¸Äàà§∞4(ÄÄÄÄÄÄÄÅÕ—Ö—’ÃËÅM—…•πú°…Ω‹πÕ—Ö—’ÃÄ¸¸Äàà§∞4(ÄÄÄÄÄÄÄÅÖç—•Ÿ•—ÂÖ—îËÅM—…•πú°…Ω‹πÖç—•Ÿ•—Â}ëÖ—îÄ¸¸Äàà§πÕ±•çî†¿∞Äƒ¿§∞4(ÄÄÄÄÄÄÄÅÖ›Ö…ëïëE’Öπ—•—‰ËÄ¿∞4(ÄÄÄÄÄÄÄÅÙ§∞4(ÄÄÄÄÄÄ§∞4(ÄÄÄÅÙ∞4(ÄÅÙÏ4)Ù4(4)ÖÕÂπåÅô’πç—•Ω∏ÅÖπÖ±Â—•çÕIïÕ¡ΩπÕî†§ÅÏ4(ÄÅÖ›Ö•–Å…ï≈’•…ï5ïµâï…Aï…µ•ÕÕ•Ω∏†âÖπÖ±Â—•çÃÈŸ•ï‹à§Ï4(ÄÅ…ï—’…∏ÅIïÕ¡ΩπÕîπ©ÕΩ∏°Ö›Ö•–Åâ’•±ëπÖ±Â—•çÕAÖÂ±ΩÖê†§§Ï4)Ù4(4)ÖÕÂπåÅô’πç—•Ω∏ÅΩ›πï…Aï…ôΩ…µÖπçïIïÕ¡ΩπÕî†§ÅÏ4(ÄÅÖ›Ö•–Å…ï≈’•…ïA…•µÖ…Â=›πï»†§Ï4(ÄÅ…ï—’…∏ÅIïÕ¡ΩπÕîπ©ÕΩ∏°Ö›Ö•–Åâ’•±ëπÖ±Â—•çÕAÖÂ±ΩÖê†§§Ï4)Ù4(4)ï·¡Ω…–ÅÖÕÂπåÅô’πç—•Ω∏ÅP°…ï≈’ïÕ–ËÅIï≈’ïÕ–§ÅÏ4(ÄÅ—…‰ÅÏ4(ÄÄÄÅçΩπÕ–Å¡Ö…ÖµÃÄÙÅπï‹ÅUI0°…ï≈’ïÕ–π’…∞§πÕïÖ…ç°AÖ…ÖµÃÏ4(ÄÄÄÅ•òÄ°¡Ö…ÖµÃπùï–†âµΩëîà§ÄÙÙÙÄâÖπÖ±Â—•çÃà§Å…ï—’…∏ÅÖπÖ±Â—•çÕIïÕ¡ΩπÕî†§Ï4(ÄÄÄÅ•òÄ°¡Ö…ÖµÃπùï–†âµΩëîà§ÄÙÙÙÄâΩ›πï»µ¡ï…ôΩ…µÖπçîà§ÅÏ4(ÄÄÄÄÄÅ…ï—’…∏ÅΩ›πï…Aï…ôΩ…µÖπçïIïÕ¡ΩπÕî†§Ï4(ÄÄÄÅÙ4(ÄÄÄÅçΩπÕ–Åµïµâï»ÄÙÅÖ›Ö•–Å…ï≈’•…ï¡¡…ΩŸïë5ïµâï»†§Ï4(ÄÄÄÅçΩπÕ–ÅêƒÄÙÅÖ›Ö•–ÅïπÕ’…ïççΩ’π—•πùIïÖë‰†§Ï4(ÄÄÄÅÖ›Ö•–ÅïπÕ’…ï’—°Ω…ïëE’Ω—Ö—•ΩπÕIïÖë‰†§Ï4(ÄÄÄÅçΩπÕ–Å°•Õ—Ω…Âç—•Ÿ•—Â%êÄÙÅ9’µâï»°¡Ö…ÖµÃπùï–†â°•Õ—Ω…Âç—•Ÿ•—Â%êà§§Ï4(ÄÄÄÅ•òÄ°9’µâï»π•Õ%π—ïùï»°°•Õ—Ω…Âç—•Ÿ•—Â%ê§ÄòòÅ°•Õ—Ω…Âç—•Ÿ•—Â%êÄ¯Ä¿§ÅÏ4(ÄÄÄÄÄÅÖ›Ö•–Å…ï≈’•…ï5ïµâï…Aï…µ•ÕÕ•Ω∏†âÖççΩ’π—•πúÈµÖπÖùîà§Ï4(ÄÄÄÄÄÅçΩπÕ–Å…ïÕ’±–ÄÙÅÖ›Ö•–Åêƒ4(ÄÄÄÄÄÄÄÄπ¡…ï¡Ö…î°Ä4(ÄÄÄÄÄÄÄÄÄÅM1PÅ•ê∞ÅÕπÖ¡Õ°Ω—}©ÕΩ∏∞Åç°Öπùïë}ô•ï±ëÕ}©ÕΩ∏∞Åç°Öπùïë}âÂ}πÖµî∞Åç…ïÖ—ïë}Ö–4(ÄÄÄÄÄÄÄÄÄÅI=4ÅÖççΩ’π—•πù}Õï——±ïµïπ—}°•Õ—Ω…‰4(ÄÄÄÄÄÄÄÄÄÅ]!IÅÖç—•Ÿ•—Â}•êÄÙÄ¸4(ÄÄÄÄÄÄÄÄÄÅ=IHÅ	dÅç…ïÖ—ïë}Ö–ÅM∞Å•êÅM4(ÄÄÄÄÄÄÄÄÄÅ1%5%PÄƒ¿¿4(ÄÄÄÄÄÄÄÅÄ§4(ÄÄÄÄÄÄÄÄπâ•πê°°•Õ—Ω…Âç—•Ÿ•—Â%ê§4(ÄÄÄÄÄÄÄÄπÖ±∞ÒIïçΩ…êÒÕ—…•πú∞Å’π≠πΩ›∏¯¯†§Ï4(ÄÄÄÄÄÅ…ï—’…∏ÅIïÕ¡ΩπÕîπ©ÕΩ∏°Ï4(ÄÄÄÄÄÄÄÅ°•Õ—Ω…‰ËÅ…ïÕ’±–π…ïÕ’±—ÃπµÖ¿†°…Ω‹ËÅIïçΩ…êÒÕ—…•πú∞Å’π≠πΩ›∏¯§ÄÙ¯Ä°Ï4(ÄÄÄÄÄÄÄÄÄÅ•êËÅ9’µâï»°…Ω‹π•ê§∞4(ÄÄÄÄÄÄÄÄÄÅÕπÖ¡Õ°Ω–ËÅ)M=8π¡Ö…Õî°M—…•πú°…Ω‹πÕπÖ¡Õ°Ω—}©ÕΩ∏Ä¸¸ÄâÌÙà§§∞4(ÄÄÄÄÄÄÄÄÄÅç°Öπùïë•ï±ëÃËÅ)M=8π¡Ö…Õî°M—…•πú°…Ω‹πç°Öπùïë}ô•ï±ëÕ}©ÕΩ∏Ä¸¸Äâmtà§§∞4(ÄÄÄÄÄÄÄÄÄÅç°Öπùïë	Â9ÖµîËÅM—…•πú°…Ω‹πç°Öπùïë}âÂ}πÖµîÄ¸¸Äàà§∞4(ÄÄÄÄÄÄÄÄÄÅç…ïÖ—ïë–ËÅM—…•πú°…Ω‹πç…ïÖ—ïë}Ö–Ä¸¸Äàà§∞4(ÄÄÄÄÄÄÄÅÙ§§∞4(ÄÄÄÄÄÅÙ§Ï4(ÄÄÄÅÙ4(4(ÄÄÄÅçΩπÕ–ÅçÖπMïï±∞ÄÙ4(ÄÄÄÄÄÅ°ÖÕ5ïµâï…Aï…µ•ÕÕ•Ω∏°µïµâï»∞ÄâÖççΩ’π—•πúÈµÖπÖùîà§ÅÒ4(ÄÄÄÄÄÅ°ÖÕ5ïµâï…Aï…µ•ÕÕ•Ω∏°µïµâï»∞ÄâÖπÖ±Â—•çÃÈŸ•ï‹à§Ï4(ÄÄÄÅ•òÄ°¡Ö…ÖµÃπùï–†âÕçΩ¡îà§ÄÑÙÙÄâŸ•Õ•â±îàÄòòÄÖ°ÖÕ5ïµâï…Aï…µ•ÕÕ•Ω∏°µïµâï»∞ÄâÖççΩ’π—•πúÈµÖπÖùîà§§ÅÏ4(ÄÄÄÄÄÅ…ï—’…∏ÅIïÕ¡ΩπÕîπ©ÕΩ∏°ÏÅï……Ω»ËÄã≤"c™‚#
-ﬂ≤∆™⁄0É™“Æö∞É™⁄3∂Vs≤v–É∂V≤jS∂VßÆ.#Æ.ê∏àÅÙ∞ÅÏÅÕ—Ö—’ÃËÄ–¿ÃÅÙ§Ï4(ÄÄÄÅÙ4(ÄÄÄÅçΩπÕ–Åm…ïÕ’±–∞Å≈’Ω—Ö—•ΩπIïÕ’±—tÄÙÅÖ›Ö•–ÅA…Ωµ•ÕîπÖ±∞°l4(ÄÄÄÄÄÅêƒπ¡…ï¡Ö…î†4(ÄÄÄÄÄÄÄÅÄëÌÖ›Ö…ëççΩ’π—•πùE’ï…ÂÙÅ=IHÅ	dÅÑπÖç—•Ÿ•—Â}ëÖ—îÅM∞ÅÑπ•êÅMÄ∞4(ÄÄÄÄÄÄ§πÖ±∞ÒIÖ›ççΩ’π—•πùIΩ‹¯†§∞4(ÄÄÄÄÄÅêƒπ¡…ï¡Ö…î°Ä4(ÄÄÄÄÄÄÄÅM1PÄ®ÅI=4ÅÖ’—°Ω…ïë}≈’Ω—Ö—•ΩπÃ4(ÄÄÄÄÄÄÄÅ]!IÅÕ—Ö—’ÃÄÙÄùô•πÖ∞úÅ9Åëï±ï—ïë}Ö–ÄÙÄúú4(ÄÄÄÄÄÄÄÅ=IHÅ	dÅ≈’Ω—ï}ëÖ—îÅM∞Å…ïŸ•Õ•Ωπ}π’µâï»ÅM∞Å•êÅM4(ÄÄÄÄÄÄÄÅ1%5%PÄƒ¿¿¿4(ÄÄÄÄÄÅÄ§πÖ±∞ÒIïçΩ…êÒÕ—…•πú∞Å’π≠πΩ›∏¯¯†§∞4(ÄÄÄÅt§Ï4(ÄÄÄÅçΩπÕ–Å±Ö—ïÕ—E’Ω—Ö—•Ωπ	Â	’Õ•πïÕÃÄÙÅπï‹Å5Ö¿ÒÕ—…•πú∞Å’—°Ω…ïëE’Ω—Ö—•Ω∏¯†§Ï4(ÄÄÄÅ≈’Ω—Ö—•ΩπIïÕ’±–π…ïÕ’±—ÃπôΩ…Öç††°…Ω‹§ÄÙ¯ÅÏ4(ÄÄÄÄÄÅçΩπÕ–Å≈’Ω—Ö—•Ω∏ÄÙÅÖ’—°Ω…ïëE’Ω—Ö—•Ωπ…ΩµIΩ‹°…Ω‹§Ï4(ÄÄÄÄÄÅçΩπÕ–Åâ’Õ•πïÕÕ-ï‰ÄÙÅÖπÖ±Â—•çÕ	’Õ•πïÕÕIΩ’πë-ï‰†4(ÄÄÄÄÄÄÄÅ≈’Ω—Ö—•Ω∏πΩ…ùÖπ•ÈÖ—•Ω∏∞4(ÄÄÄÄÄÄÄÅ≈’Ω—Ö—•Ω∏πâ’Õ•πïÕÕIΩ’πê∞4(ÄÄÄÄÄÄ§Ï4(ÄÄÄÄÄÅ•òÄ†Ö±Ö—ïÕ—E’Ω—Ö—•Ωπ	Â	’Õ•πïÕÃπ°ÖÃ°â’Õ•πïÕÕ-ï‰§§ÅÏ4(ÄÄÄÄÄÄÄÅ±Ö—ïÕ—E’Ω—Ö—•Ωπ	Â	’Õ•πïÕÃπÕï–°â’Õ•πïÕÕ-ï‰∞Å≈’Ω—Ö—•Ω∏§Ï4(ÄÄÄÄÄÅÙ4(ÄÄÄÅÙ§Ï4(ÄÄÄÅçΩπÕ–Å±Ö—ïÕ—IΩ›ÃÄÙÅçΩµ¡±ï—ïë]°•ÈÈ’¡›Ö…ëIΩ›Ã°…ïÕ’±–π…ïÕ’±—Ã§Ï4(ÄÄÄÅ…ï—’…∏ÅIïÕ¡ΩπÕîπ©ÕΩ∏°Ï4(ÄÄÄÄÄÅ…Ω›ÃËÅ±Ö—ïÕ—IΩ›Ã4(ÄÄÄÄÄÄÄÄπô•±—ï»†4(ÄÄÄÄÄÄÄÄÄÄ°…Ω‹§ÄÙ¯4(ÄÄÄÄÄÄÄÄÄÄÄÅçÖπMïï±∞ÅÒ4(ÄÄÄÄÄÄÄÄÄÄÄÅM—…•πú°…Ω‹π¡…Ωù…ïÕÕ}µÖπÖùï»Ä¸¸Äàà§ÄÙÙÙÅµïµâï»πë•Õ¡±ÖÂ9Öµî∞4(ÄÄÄÄÄÄÄÄ§4(ÄÄÄÄÄÄÄÄπµÖ¿†°…Ω‹§ÄÙ¯ÅµÖ¡ççΩ’π—•πùIΩ‹†4(ÄÄÄÄÄÄÄÄÄÅ…Ω‹∞4(ÄÄÄÄÄÄÄÄÄÅ±Ö—ïÕ—E’Ω—Ö—•Ωπ	Â	’Õ•πïÕÃπùï–†4(ÄÄÄÄÄÄÄÄÄÄÄÅÖπÖ±Â—•çÕ	’Õ•πïÕÕIΩ’πë-ï‰°…Ω‹πΩ…ùÖπ•ÈÖ—•Ω∏∞Å…Ω‹πâ’Õ•πïÕÕ}…Ω’πê§∞4(ÄÄÄÄÄÄÄÄÄÄ§∞4(ÄÄÄÄÄÄÄÄ§§∞4(ÄÄÄÅÙ§Ï4(ÄÅÙÅçÖ—ç†Ä°ï……Ω»§ÅÏ4(ÄÄÄÅ…ï—’…∏ÅÖççïÕÕ……Ω…IïÕ¡ΩπÕî°ï……Ω»§Ï4(ÄÅÙ4)Ù4(4)ï·¡Ω…–ÅÖÕÂπåÅô’πç—•Ω∏ÅAUP†§ÅÏ4(ÄÅ…ï—’…∏ÅIïÕ¡ΩπÕîπ©ÕΩ∏†4(ÄÄÄÅÏ4(ÄÄÄÄÄÅï……Ω»Ë4(ÄÄÄÄÄÄÄÄã™÷≥∂bTÉ∂j3™ŒÉ≤ÇW≤
-¿É≤Ç≤zîÉ™‚√Æ*ó≤v É≤äÆé3ÆBc≤^#≤*◊Æ.#Æ.ê∏É≤.ì≤ÇpÉ≤"c™‚#≤v É≤.É™ﬁpÉ≤"c™‚ É≤nC≤zó≤^C≤pÉÆN«ÆÜw∂V–É≤éÛ≤„≤jP∏à∞4(ÄÄÄÅÙ∞4(ÄÄÄÅÏ4(ÄÄÄÄÄÅÕ—Ö—’ÃËÄ–¿‘∞4(ÄÄÄÄÄÅ°ïÖëï…ÃËÅÏÅ±±Ω‹ËÄâPàÅÙ∞4(ÄÄÄÅÙ∞4(ÄÄ§Ï4)Ù4
+      JOIN activities entry_activity ON entry_activity.id = e.activity_id
+      JOIN activities a ON a.id = r.activity_id
+      WHERE e.manufacturer_key = 'award-total'
+        AND entry_activity.award_status = 'ÏúÑÏ¶àÏóÖ ÏàòÏ£º'
+        AND a.award_status = 'ÏúÑÏ¶àÏóÖ ÏàòÏ£º'
+        AND r.amount > 0
+      ORDER BY r.collection_date DESC, r.id DESC
+    `).all<Record<string, unknown>>(),
+    d1.prepare(`
+      SELECT
+        a.id AS activity_id,
+        a.activity_date,
+        ep.id AS project_id,
+        ei.id AS item_id,
+        ep.organization,
+        ep.business_round,
+        ep.name AS project_name,
+        ep.budget_group_id AS project_budget_group_id,
+        ep.budget_original_name AS project_budget_original_name,
+        ep.budget_match_status AS project_budget_match_status,
+        ep.created_by AS project_created_by,
+        a.progress_manager,
+        ei.product_name,
+        ei.catalog_item_id,
+        ei.proposed_qty AS quote_proposed_qty,
+        ei.awarded_qty AS quote_awarded_qty,
+        ei.installed_qty AS quote_installed_qty,
+        COALESCE(NULLIF(ei.proposed_qty, 0), NULLIF(ei.awarded_qty, 0), NULLIF(ei.installed_qty, 0), 1) AS awarded_qty,
+        ei.catalog_unit_price,
+        ei.price_status,
+        ei.commission_rate,
+        ei.supply_type,
+        ei.margin_rate,
+        ei.procurement_fee_rate,
+        ei.execution_type,
+        ei.commission_input_type,
+        ei.consortium_commission_rate,
+        ei.consortium_payment_amount,
+        ei.updated_at AS item_updated_at,
+        COALESCE(
+          NULLIF(ei.supplier_vendor_name, ''),
+          NULLIF(v.company_name, ''),
+          NULLIF(pvl.vendor_name_snapshot, ''),
+          ''
+        ) AS supplier_vendor_name,
+        COALESCE(ei.supplier_vendor_id, pvl.vendor_id) AS supplier_vendor_id,
+        COALESCE(NULLIF(item_member.display_name, ''), NULLIF(project_member.display_name, ''), '') AS item_created_by_name,
+        COALESCE(NULLIF(update_member.display_name, ''), NULLIF(item_member.display_name, ''), NULLIF(project_member.display_name, ''), '') AS item_updated_by_name
+      FROM equipment_items ei
+      JOIN equipment_projects ep ON ep.id = ei.project_id
+      JOIN activities a ON a.id = ep.activity_id
+      LEFT JOIN product_vendor_links pvl ON pvl.product_id = ei.catalog_item_id
+      LEFT JOIN award_vendors v
+        ON v.id = COALESCE(ei.supplier_vendor_id, pvl.vendor_id)
+       AND v.is_active = 1
+      LEFT JOIN members item_member ON item_member.id = ei.created_by
+      LEFT JOIN members update_member ON update_member.id = ei.updated_by
+      LEFT JOIN members project_member ON project_member.id = ep.created_by
+      WHERE a.award_status = 'ÏúÑÏ¶àÏóÖ ÏàòÏ£º'
+    `).all<Record<string, unknown>>(),
+    d1.prepare(`
+      SELECT
+        a.id AS activity_id,
+        a.activity_date,
+        ep.id AS project_id,
+        ep.organization,
+        ep.business_round,
+        ep.name AS project_name,
+        ep.construction_amount,
+        ep.actual_construction_cost
+      FROM equipment_projects ep
+      JOIN activities a ON a.id = ep.activity_id
+      WHERE a.award_status = 'ÏúÑÏ¶àÏóÖ ÏàòÏ£º'
+      ORDER BY ep.id
+    `).all<Record<string, unknown>>(),
+    d1.prepare(`
+      SELECT
+        ep.id AS project_id,
+        ep.organization,
+        ep.business_round,
+        ep.name AS project_name,
+        ep.status,
+        ep.updated_at,
+        COALESCE(SUM(
+          CASE
+            WHEN ei.proposed_qty > 0 THEN ei.proposed_qty
+            WHEN ei.awarded_qty > 0 THEN ei.awarded_qty
+            WHEN ei.installed_qty > 0 THEN ei.installed_qty
+            ELSE 1
+          END
+        ), 0)
+          AS awarded_quantity
+      FROM equipment_projects ep
+      JOIN equipment_items ei ON ei.project_id = ep.id
+      WHERE ep.activity_id IS NULL
+      GROUP BY
+        ep.id,
+        ep.organization,
+        ep.business_round,
+        ep.name,
+        ep.status,
+        ep.updated_at
+      ORDER BY ep.updated_at DESC, ep.id DESC
+    `).all<Record<string, unknown>>(),
+    d1.prepare(`
+      SELECT
+        ep.id AS project_id,
+        ep.organization,
+        ep.business_round,
+        ep.name AS project_name,
+        ep.status,
+        a.activity_date,
+        ep.updated_at
+      FROM equipment_projects ep
+      JOIN activities a ON a.id = ep.activity_id
+      WHERE a.activity_date LIKE '2025%'
+      ORDER BY a.activity_date DESC, ep.updated_at DESC, ep.id DESC
+    `).all<Record<string, unknown>>(),
+    d1.prepare(`
+      SELECT a.alias_key, g.canonical_name
+      FROM budget_name_aliases a
+      JOIN budget_name_groups g ON g.id = a.group_id
+      WHERE a.active = 1 AND g.active = 1
+    `).all<{ alias_key: string; canonical_name: string }>(),
+    d1
+      .prepare("SELECT value FROM app_settings WHERE key = 'product_catalog_v1'")
+      .first<{ value: string }>(),
+    d1.prepare(`
+      SELECT * FROM authored_quotations
+      WHERE status = 'final' AND deleted_at = ''
+      ORDER BY quote_date DESC, revision_number DESC, id DESC
+      LIMIT 2000
+    `).all<Record<string, unknown>>(),
+  ]);
+  const canonicalBudgetNames = new Map<string, string>(
+    budgetAliasResult.results.map(
+      (row: { alias_key: string; canonical_name: string }) => [
+      row.alias_key,
+      row.canonical_name,
+      ],
+    ),
+  );
+  const canonicalBudgetName = (value: unknown): string => {
+    const original = String(value ?? "").trim();
+    return canonicalBudgetNames.get(normalizeBudgetNameKey(original)) || original;
+  };
+  const groupedAwardRows = completedWhizzupAwardRows(awardResult.results);
+  const latestFinalQuotationByBusiness = new Map<string, AuthoredQuotation>();
+  finalQuotationResult.results.forEach((row) => {
+    const quotation = authoredQuotationFromRow(row);
+    const businessKey = analyticsBusinessRoundKey(
+      quotation.organization,
+      quotation.businessRound,
+    );
+    if (!latestFinalQuotationByBusiness.has(businessKey)) {
+      latestFinalQuotationByBusiness.set(businessKey, quotation);
+    }
+  });
+  const eligibleActivityIds = new Set(
+    groupedAwardRows.flatMap((row) =>
+      Array.isArray(row.grouped_activity_ids)
+        ? row.grouped_activity_ids.map(Number)
+        : [Number(row.activity_id)],
+    ),
+  );
+  const awardDateByBusinessKey = new Map(
+    groupedAwardRows.map((row) => [
+      String(row.business_key ?? ""),
+      String(row.activity_date ?? "").slice(0, 10),
+    ]),
+  );
+  const awardsBase = groupedAwardRows.map((row: RawAccountingRow) => {
+    const hasEntries = Number(row.entry_count ?? 0) > 0;
+    const confirmed = String(row.award_stage ?? "") === "ÎÇ©Ìíà ÏôÑÎ£å";
+    const consolidatedBudgets = new Map<
+      string,
+      { name: string; enteredAmount: number }
+    >();
+    activityBudgetsFromRecord(row).forEach((budget) => {
+      const name = canonicalBudgetName(budget.budgetType) || "ÎØ∏Î∂ÑÎ•ò";
+      const existing = consolidatedBudgets.get(name) ?? {
+        name,
+        enteredAmount: 0,
+      };
+      existing.enteredAmount += parseBudgetMoney(budget.budgetAmount);
+      consolidatedBudgets.set(name, existing);
+    });
+    const budgets = [...consolidatedBudgets.values()];
+    return {
+      activityId: Number(row.activity_id),
+      businessKey: String(row.business_key ?? ""),
+      businessRound: Number(row.business_round ?? 1),
+      activityDate: String(row.activity_date || "").slice(0, 10),
+      organization: String(row.organization ?? ""),
+      region: String(row.region ?? ""),
+      budgetType: canonicalBudgetName(row.budget_type) || "ÎØ∏Î∂ÑÎ•ò",
+      budgets: budgets.length
+        ? budgets
+        : [
+            {
+              name: canonicalBudgetName(row.budget_type) || "ÎØ∏Î∂ÑÎ•ò",
+              enteredAmount: 0,
+            },
+          ],
+      executionType:
+        String(row.execution_type ?? "") === "Ïª®ÏÜå" ? "Ïª®ÏÜå" : "ÏßÅÏòÅ",
+      awardStage: String(row.award_stage ?? "ÎØ∏Ï†ï"),
+      progressManager: String(row.progress_manager ?? ""),
+      summary: String(row.summary ?? ""),
+      nextAction: String(row.next_action ?? ""),
+      progressSchedule: String(row.progress_schedule ?? ""),
+      updatedAt: String(row.updated_at ?? ""),
+      confirmed,
+      confirmedAmount: 0,
+      quoteStatus: "missing" as const,
+      quoteItemCount: 0,
+      quoteMissingAmountItemCount: 0,
+      expectedCommission: 0,
+      manufacturerCommissionReceived: confirmed
+        ? Number(row.commission_collected_amount ?? 0)
+        : 0,
+      commissionReceivable: 0,
+      consortiumPaymentPaid: confirmed
+        ? Number(
+            hasEntries
+              ? row.consortium_paid_amount
+              : row.legacy_consortium_paid_amount,
+          )
+        : 0,
+      netRevenue: 0,
+    };
+  });
+  let activeCatalog = PRODUCT_CATALOG;
+  if (catalogSetting?.value) {
+    try {
+      const parsed = JSON.parse(catalogSetting.value) as unknown;
+      if (Array.isArray(parsed)) {
+        const valid = parsed.filter(
+          (item): item is (typeof PRODUCT_CATALOG)[number] =>
+            Boolean(
+              item &&
+                typeof item === "object" &&
+                "id" in item &&
+                "name" in item &&
+                String(item.id).trim() &&
+                String(item.name).trim(),
+            ),
+        );
+        if (valid.length) activeCatalog = valid;
+      }
+    } catch {
+      activeCatalog = PRODUCT_CATALOG;
+    }
+  }
+  const activeCatalogById = new Map(
+    activeCatalog.map((item) => [item.id, item]),
+  );
+  const eligibleBusinessKeys = new Set(
+    awardsBase.map((award) => award.businessKey),
+  );
+  const products = productResult.results.flatMap((row: Record<string, unknown>) => {
+    const businessKey = analyticsBusinessRoundKey(
+      row.organization,
+      row.business_round,
+    );
+    if (
+      !eligibleBusinessKeys.has(businessKey) ||
+      !eligibleActivityIds.has(Number(row.activity_id))
+    ) {
+      return [];
+    }
+    const quantity = Math.max(0, Number(row.awarded_qty ?? 0));
+    const parsedUnitPrice = Number(row.catalog_unit_price ?? 0);
+    const unitPrice = Number.isFinite(parsedUnitPrice) ? parsedUnitPrice : 0;
+    const amountValue = quantity * unitPrice;
+    const catalogItemId = String(row.catalog_item_id ?? "");
+    const catalogProduct = activeCatalogById.get(catalogItemId);
+    const partnerOnly = isPartnerOnlyProduct({
+      catalogItemId,
+      productName: row.product_name,
+    });
+    const supplyType = normalizeProductSupplyType({
+      catalogItemId,
+      productName: row.product_name,
+      supplyType: row.supply_type,
+    });
+    const finance = calculateEquipmentFinance({
+      unitPrice,
+      quantity,
+      supplyType,
+      commissionRate:
+        supplyType === "partner"
+          ? Number(
+              row.commission_rate ??
+                (partnerOnly ? row.margin_rate : null) ??
+                catalogProduct?.commissionRate ??
+                0,
+            )
+          : null,
+      marginRate:
+        supplyType === "direct" ? Number(row.margin_rate ?? 0) : null,
+      procurementFeeRate:
+        row.procurement_fee_rate === null ||
+        row.procurement_fee_rate === undefined
+          ? null
+          : Number(row.procurement_fee_rate),
+      executionType:
+        String(row.execution_type ?? "") === "Ïª®ÏÜå" ? "Ïª®ÏÜå" : "ÏßÅÏòÅ",
+      commissionInputType:
+        String(row.commission_input_type ?? "") === "amount"
+          ? "amount"
+          : "rate",
+      consortiumCommissionRate:
+        row.consortium_commission_rate === null ||
+        row.consortium_commission_rate === undefined
+          ? null
+          : Number(row.consortium_commission_rate),
+      consortiumPaymentAmount:
+        row.consortium_payment_amount === null ||
+        row.consortium_payment_amount === undefined
+          ? null
+          : Number(row.consortium_payment_amount),
+    });
+    const commission = finance.expectedPartnerCommission;
+    const directMargin = finance.expectedDirectMargin;
+    const directSalesCollection =
+      supplyType === "direct" ? finance.quotationAmount : 0;
+    const consortiumPayment = finance.consortiumPayment;
+    const unitPriceStatus = String(row.price_status ?? "");
+    const quoteAmountRegistered = isRegisteredQuoteItemAmount({
+      priceStatus: unitPriceStatus,
+      unitPrice:
+        row.catalog_unit_price === null ||
+        row.catalog_unit_price === undefined
+          ? null
+          : unitPrice,
+      proposedQty: Number(row.quote_proposed_qty ?? 0),
+      awardedQty: Number(row.quote_awarded_qty ?? 0),
+      installedQty: Number(row.quote_installed_qty ?? 0),
+    });
+    return [{
+      activityId: Number(row.activity_id),
+      businessKey,
+      businessRound: Number(row.business_round ?? 1),
+      activityDate:
+        awardDateByBusinessKey.get(businessKey) ||
+        String(row.activity_date ?? "").slice(0, 10),
+      projectId: Number(row.project_id),
+      itemId: Number(row.item_id),
+      organization: String(row.organization ?? ""),
+      projectName: String(row.project_name ?? ""),
+      budgetGroupId: String(row.project_budget_group_id ?? ""),
+      budgetName:
+        canonicalBudgetName(row.project_budget_original_name) ||
+        canonicalBudgetName(row.project_name) ||
+        "ÏòàÏÇ∞ ÎØ∏ÏßÄÏ†ï",
+      budgetOriginalName: String(row.project_budget_original_name ?? ""),
+      budgetMatchStatus: String(row.project_budget_match_status ?? ""),
+      productName: catalogProduct?.name ||
+        String(row.product_name ?? "ÎØ∏Îì±Î°ù Ï†úÌíà"),
+      sourceProductName: String(row.product_name ?? "ÎØ∏Îì±Î°ù Ï†úÌíà"),
+      catalogItemId,
+      isCatalogProduct: Boolean(catalogProduct),
+      quantity,
+      amount: amountValue,
+      quotationAmount: finance.quotationAmount,
+      quoteAmountRegistered,
+      unitPrice,
+      supplyType,
+      priceStatus:
+        unitPriceStatus ||
+        (unitPrice > 0 ? "ÏûÖÎ†• ÏôÑÎ£å" : "Í∏àÏï° ÎØ∏ÏûÖÎ†•"),
+      estimatedMargin: Math.max(
+        0,
+        commission + directMargin - consortiumPayment,
+      ),
+      estimatedCommission: commission,
+      estimatedPartnerCommission: commission,
+      estimatedDirectSalesCollection: directSalesCollection,
+      estimatedDirectMargin: directMargin,
+      estimatedRevenue: commission + directMargin,
+      estimatedConsortiumPayment: consortiumPayment,
+      supplierVendorId: row.supplier_vendor_id === null ||
+        row.supplier_vendor_id === undefined
+        ? null
+        : Number(row.supplier_vendor_id),
+      supplierVendorName: String(row.supplier_vendor_name ?? ""),
+      progressManager: String(row.progress_manager ?? ""),
+      createdByName: String(row.item_created_by_name ?? ""),
+      updatedByName: String(row.item_updated_by_name ?? ""),
+      updatedAt: String(row.item_updated_at ?? ""),
+      commissionMissing:
+        supplyType === "direct"
+          ? row.margin_rate === null || row.margin_rate === undefined
+          : row.commission_rate === null ||
+            row.commission_rate === undefined,
+    }];
+  });
+  const awardByBusinessKey = new Map(
+    awardsBase.map((award) => [award.businessKey, award]),
+  );
+  const receipts = receiptResult.results.flatMap(
+    (row: Record<string, unknown>) => {
+      const businessKey = analyticsBusinessRoundKey(
+        row.organization,
+        row.business_round,
+      );
+      const award = awardByBusinessKey.get(businessKey);
+      if (
+        !award ||
+        !eligibleActivityIds.has(Number(row.activity_id)) ||
+        !eligibleActivityIds.has(Number(row.entry_activity_id))
+      ) {
+        return [];
+      }
+      return [{
+        id: Number(row.receipt_id),
+        activityId: award?.activityId ?? Number(row.activity_id),
+        businessKey,
+        businessRound: Number(row.business_round ?? 1),
+        organization: award?.organization || String(row.organization ?? ""),
+        region: award?.region || String(row.region ?? ""),
+        budgetType:
+          award?.budgetType ||
+          canonicalBudgetName(row.budget_type) ||
+          "ÎØ∏Î∂ÑÎ•ò",
+        collectionDate: String(row.collection_date ?? "").slice(0, 10),
+        amount: Math.max(0, Number(row.amount ?? 0)),
+        note: String(row.note ?? ""),
+      }];
+    },
+  );
+  const collectedByBusiness = new Map<string, number>();
+  receipts.forEach((receipt) => {
+    collectedByBusiness.set(
+      receipt.businessKey,
+      (collectedByBusiness.get(receipt.businessKey) ?? 0) + receipt.amount,
+    );
+  });
+  const productTotalsByBusiness = new Map<
+    string,
+    {
+      partnerCommission: number;
+      directSalesCollection: number;
+      directMargin: number;
+      consortium: number;
+      margin: number;
+    }
+  >();
+  products.forEach(
+    (product: {
+      businessKey: string;
+      estimatedPartnerCommission: number;
+      estimatedDirectSalesCollection: number;
+      estimatedDirectMargin: number;
+      estimatedConsortiumPayment: number;
+      estimatedMargin: number;
+    }) => {
+    const current = productTotalsByBusiness.get(product.businessKey) ?? {
+      partnerCommission: 0,
+      directSalesCollection: 0,
+      directMargin: 0,
+      consortium: 0,
+      margin: 0,
+    };
+    current.partnerCommission += product.estimatedPartnerCommission;
+    current.directSalesCollection += product.estimatedDirectSalesCollection;
+    current.directMargin += product.estimatedDirectMargin;
+    current.consortium += product.estimatedConsortiumPayment;
+    current.margin += product.estimatedMargin;
+    productTotalsByBusiness.set(product.businessKey, current);
+    },
+  );
+  const constructionMarginByBusiness = new Map<string, number>();
+  const constructionQuotesByBusiness = new Map<
+    string,
+    Array<{ quotationAmount: number; amountRegistered: boolean }>
+  >();
+  constructionResult.results.forEach((row: Record<string, unknown>) => {
+    const businessKey = analyticsBusinessRoundKey(
+      row.organization,
+      row.business_round,
+    );
+    if (
+      !eligibleBusinessKeys.has(businessKey) ||
+      !eligibleActivityIds.has(Number(row.activity_id))
+    ) {
+      return;
+    }
+    const finance = calculateConstructionFinance({
+      constructionAmount:
+        row.construction_amount === null ||
+        row.construction_amount === undefined
+          ? null
+          : Number(row.construction_amount),
+      actualConstructionCost:
+        row.actual_construction_cost === null ||
+        row.actual_construction_cost === undefined
+          ? null
+          : Number(row.actual_construction_cost),
+    });
+    constructionMarginByBusiness.set(
+      businessKey,
+      (constructionMarginByBusiness.get(businessKey) ?? 0) +
+        finance.constructionMargin,
+    );
+    const constructionQuotes =
+      constructionQuotesByBusiness.get(businessKey) ?? [];
+    constructionQuotes.push({
+      quotationAmount: finance.constructionAmount,
+      amountRegistered:
+        row.construction_amount !== null &&
+        row.construction_amount !== undefined,
+    });
+    constructionQuotesByBusiness.set(businessKey, constructionQuotes);
+  });
+  const itemQuotesByBusiness = new Map<
+    string,
+    Array<{ quotationAmount: number; amountRegistered: boolean }>
+  >();
+  products.forEach(
+    (product: {
+      businessKey: string;
+      quotationAmount: number;
+      quoteAmountRegistered: boolean;
+    }) => {
+      const itemQuotes = itemQuotesByBusiness.get(product.businessKey) ?? [];
+      itemQuotes.push({
+        quotationAmount: product.quotationAmount,
+        amountRegistered: product.quoteAmountRegistered,
+      });
+      itemQuotesByBusiness.set(product.businessKey, itemQuotes);
+    },
+  );
+  const awards = awardsBase.map((award) => {
+    const finalQuotation = latestFinalQuotationByBusiness.get(
+      award.businessKey,
+    );
+    const executionType =
+      finalQuotation?.executionType === "Ïª®ÏÜå" || award.executionType === "Ïª®ÏÜå"
+        ? "Ïª®ÏÜå" as const
+        : "ÏßÅÏòÅ" as const;
+    const registeredQuote = calculateRegisteredQuote({
+      items: itemQuotesByBusiness.get(award.businessKey) ?? [],
+      constructions:
+        constructionQuotesByBusiness.get(award.businessKey) ?? [],
+    });
+    if (!award.confirmed) {
+      return {
+        ...award,
+        executionType,
+        confirmedAmount: 0,
+        quoteStatus: finalQuotation ? "complete" as const : registeredQuote.quoteStatus,
+        quoteItemCount: finalQuotation?.items.length ?? registeredQuote.quoteItemCount,
+        quoteMissingAmountItemCount:
+          finalQuotation ? 0 : registeredQuote.quoteMissingAmountItemCount,
+      };
+    }
+    const source = productTotalsByBusiness.get(award.businessKey) ?? {
+      partnerCommission: 0,
+      directSalesCollection: 0,
+      directMargin: 0,
+      consortium: 0,
+      margin: 0,
+    };
+    const expectedConstructionMargin =
+      constructionMarginByBusiness.get(award.businessKey) ?? 0;
+    const finalQuotationPartnerEarning = finalQuotation?.items
+      .filter((item) => item.supplyType !== "direct")
+      .reduce((sum, item) => sum + item.expectedEarning, 0);
+    const finalQuotationDirectEarning = finalQuotation?.items
+      .filter((item) => item.supplyType === "direct")
+      .reduce((sum, item) => sum + item.expectedEarning, 0);
+    const finalQuotationDirectSales = finalQuotation?.items
+      .filter((item) => item.supplyType === "direct" && !item.complimentary)
+      .reduce((sum, item) => sum + item.amount, 0);
+    const projection = calculateAwardSettlementProjection({
+      expectedPartnerCommission: source.partnerCommission,
+      expectedDirectSalesCollection: source.directSalesCollection,
+      expectedDirectMargin: source.directMargin,
+      expectedConstructionMargin,
+      expectedConsortiumSettlement: source.consortium,
+    });
+    const collectedAmount =
+      collectedByBusiness.get(award.businessKey) ?? 0;
+    return {
+      ...award,
+      executionType,
+      confirmedAmount:
+        finalQuotation
+          ? finalQuotation.totalAmount
+          : registeredQuote.quoteStatus === "complete"
+          ? registeredQuote.contractAmount
+          : 0,
+      quoteStatus: finalQuotation ? "complete" as const : registeredQuote.quoteStatus,
+      quoteItemCount: finalQuotation?.items.length ?? registeredQuote.quoteItemCount,
+      quoteMissingAmountItemCount:
+        finalQuotation ? 0 : registeredQuote.quoteMissingAmountItemCount,
+      expectedCommission:
+        finalQuotationPartnerEarning ?? source.partnerCommission,
+      expectedPartnerCommission:
+        finalQuotationPartnerEarning ?? source.partnerCommission,
+      expectedDirectSalesCollection:
+        finalQuotationDirectSales ?? source.directSalesCollection,
+      expectedDirectMargin:
+        finalQuotationDirectEarning ?? source.directMargin,
+      expectedConstructionMargin,
+      rawExpectedCollectionTotal: projection.rawExpectedCollectionTotal,
+      expectedCollectionTotal: projection.expectedCollectionTotal,
+      expectedSettlementDeficit: projection.expectedSettlementDeficit,
+      expectedProfit: projection.expectedProfit,
+      manufacturerCommissionReceived: collectedAmount,
+      commissionReceivable: Math.max(
+        0,
+        projection.expectedCollectionTotal - collectedAmount,
+      ),
+      netRevenue: finalQuotation?.marginAmount ?? projection.expectedProfit,
+    };
+  });
+  const unlinkedProjects = unlinkedProjectResult.results.filter(
+    (row: Record<string, unknown>) =>
+      eligibleBusinessKeys.has(
+        analyticsBusinessRoundKey(row.organization, row.business_round),
+      ),
+  );
+  const linked2025Projects = linked2025ProjectResult.results.filter(
+    (row: Record<string, unknown>) =>
+      eligibleBusinessKeys.has(
+        analyticsBusinessRoundKey(row.organization, row.business_round),
+      ),
+  );
+  return {
+    awards,
+    receipts,
+    products,
+    dataQuality: {
+      unconfirmedAwards: awards.filter(
+        (award) =>
+          award.confirmed && award.manufacturerCommissionReceived <= 0,
+      ).length,
+      unlinkedProductProjects: unlinkedProjects.length,
+      missingCommissionItems: products.filter(
+        (product: { commissionMissing: boolean }) =>
+          product.commissionMissing,
+      ).length,
+      linked2025Projects: linked2025Projects.length,
+    },
+    qualityDetails: {
+      unlinkedProjects: unlinkedProjects.slice(0, 200).map(
+        (row: Record<string, unknown>) => ({
+        projectId: Number(row.project_id),
+        organization: String(row.organization ?? ""),
+        projectName: String(row.project_name ?? ""),
+        status: String(row.status ?? ""),
+        activityDate: "",
+        awardedQuantity: Number(row.awarded_quantity ?? 0),
+        }),
+      ),
+      linked2025Projects: linked2025Projects.slice(0, 200).map(
+        (row: Record<string, unknown>) => ({
+        projectId: Number(row.project_id),
+        organization: String(row.organization ?? ""),
+        projectName: String(row.project_name ?? ""),
+        status: String(row.status ?? ""),
+        activityDate: String(row.activity_date ?? "").slice(0, 10),
+        awardedQuantity: 0,
+        }),
+      ),
+    },
+  };
+}
+
+async function analyticsResponse() {
+  await requireMemberPermission("analytics:view");
+  return Response.json(await buildAnalyticsPayload());
+}
+
+async function ownerPerformanceResponse() {
+  await requirePrimaryOwner();
+  return Response.json(await buildAnalyticsPayload());
+}
+
+export async function GET(request: Request) {
+  try {
+    const params = new URL(request.url).searchParams;
+    if (params.get("mode") === "analytics") return analyticsResponse();
+    if (params.get("mode") === "owner-performance") {
+      return ownerPerformanceResponse();
+    }
+    const member = await requireApprovedMember();
+    const d1 = await ensureAccountingReady();
+    await ensureAuthoredQuotationsReady();
+    const historyActivityId = Number(params.get("historyActivityId"));
+    if (Number.isInteger(historyActivityId) && historyActivityId > 0) {
+      await requireMemberPermission("accounting:manage");
+      const result = await d1
+        .prepare(`
+          SELECT id, snapshot_json, changed_fields_json, changed_by_name, created_at
+          FROM accounting_settlement_history
+          WHERE activity_id = ?
+          ORDER BY created_at DESC, id DESC
+          LIMIT 100
+        `)
+        .bind(historyActivityId)
+        .all<Record<string, unknown>>();
+      return Response.json({
+        history: result.results.map((row: Record<string, unknown>) => ({
+          id: Number(row.id),
+          snapshot: JSON.parse(String(row.snapshot_json ?? "{}")),
+          changedFields: JSON.parse(String(row.changed_fields_json ?? "[]")),
+          changedByName: String(row.changed_by_name ?? ""),
+          createdAt: String(row.created_at ?? ""),
+        })),
+      });
+    }
+
+    const canSeeAll =
+      hasMemberPermission(member, "accounting:manage") ||
+      hasMemberPermission(member, "analytics:view");
+    if (params.get("scope") !== "visible" && !hasMemberPermission(member, "accounting:manage")) {
+      return Response.json({ error: "ÏàòÍ∏à¬∑Ï±ÑÍ∂å Í¥ÄÎ¶¨ Í∂åÌïúÏù¥ ÌïÑÏöîÌï©ÎãàÎã§." }, { status: 403 });
+    }
+    const [result, quotationResult] = await Promise.all([
+      d1.prepare(
+        `${awardAccountingQuery} ORDER BY a.activity_date DESC, a.id DESC`,
+      ).all<RawAccountingRow>(),
+      d1.prepare(`
+        SELECT * FROM authored_quotations
+        WHERE status = 'final' AND deleted_at = ''
+        ORDER BY quote_date DESC, revision_number DESC, id DESC
+        LIMIT 1000
+      `).all<Record<string, unknown>>(),
+    ]);
+    const latestQuotationByBusiness = new Map<string, AuthoredQuotation>();
+    quotationResult.results.forEach((row) => {
+      const quotation = authoredQuotationFromRow(row);
+      const businessKey = analyticsBusinessRoundKey(
+        quotation.organization,
+        quotation.businessRound,
+      );
+      if (!latestQuotationByBusiness.has(businessKey)) {
+        latestQuotationByBusiness.set(businessKey, quotation);
+      }
+    });
+    const latestRows = completedWhizzupAwardRows(result.results);
+    return Response.json({
+      rows: latestRows
+        .filter(
+          (row) =>
+            canSeeAll ||
+            String(row.progress_manager ?? "") === member.displayName,
+        )
+        .map((row) => mapAccountingRow(
+          row,
+          latestQuotationByBusiness.get(
+            analyticsBusinessRoundKey(row.organization, row.business_round),
+          ),
+        )),
+    });
+  } catch (error) {
+    return accessErrorResponse(error);
+  }
+}
+
+export async function PUT() {
+  return Response.json(
+    {
+      error:
+        "Íµ¨Ìòï ÌöåÍ≥Ñ Ï†ïÏÇ∞ Ï†ÄÏû• Í∏∞Îä•ÏùÄ Ï¢ÖÎ£åÎêòÏóàÏäµÎãàÎã§. Ïã§Ï†ú ÏàòÍ∏àÏùÄ Ïã†Í∑ú ÏàòÍ∏à ÏõêÏû•ÏóêÏÑú Îì±Î°ùÌï¥ Ï£ºÏÑ∏Ïöî.",
+    },
+    {
+      status: 405,
+      headers: { Allow: "GET" },
+    },
+  );
+}
