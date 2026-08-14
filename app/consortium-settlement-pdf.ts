@@ -1,4 +1,5 @@
 import type { ConsortiumSettlementWorkbookInput } from "../lib/consortium-settlement-xlsx";
+import { internalProfitCostCategoryLabel } from "../lib/internal-profit-cost-details";
 import type { InternalProfitReportWorkbookInput } from "../lib/internal-profit-report-xlsx";
 import { formatQuotationItemNameForOutput } from "../lib/quotation-output-text";
 
@@ -323,12 +324,12 @@ function drawProfitItems(context: CanvasRenderingContext2D, input: InternalProfi
 
 function drawProfitCostDetails(
   context: CanvasRenderingContext2D,
-  rows: InternalProfitReportWorkbookInput["costDetails"],
+  rows: NonNullable<InternalProfitReportWorkbookInput["costDetails"]>,
   startY: number,
 ) {
-  let y = sectionRow(context, startY, "내부 비용·지원·바이패스 상세");
+  let y = sectionRow(context, startY, "내부 비용·지원·콘텐츠 대체 상세");
   rows.forEach((detail) => {
-    cell(context, 72, y, 220, 50, detail.category, {
+    cell(context, 72, y, 220, 50, internalProfitCostCategoryLabel(detail.category), {
       fill: "#fff5e8",
       color: "#9b5a28",
       bold: true,
@@ -356,14 +357,15 @@ function drawProfitCostDetails(
 
 export async function createInternalProfitReportPdf(input: InternalProfitReportWorkbookInput) {
   const logo = await loadImage("/whizzup-logo.png");
+  const costDetails = input.costDetails ?? [];
   const itemChunks: InternalProfitReportWorkbookInput["rows"][] = [];
   for (let index = 0; index < input.rows.length; index += 10) itemChunks.push(input.rows.slice(index,index+10));
   if (!itemChunks.length) itemChunks.push([]);
-  const detailChunks: InternalProfitReportWorkbookInput["costDetails"][] = [];
-  for (let index = 0; index < input.costDetails.length; index += 18) detailChunks.push(input.costDetails.slice(index,index+18));
+  const detailChunks: NonNullable<InternalProfitReportWorkbookInput["costDetails"]>[] = [];
+  for (let index = 0; index < costDetails.length; index += 18) detailChunks.push(costDetails.slice(index,index+18));
   const pagePlan: Array<
     | { type: "items"; rows: InternalProfitReportWorkbookInput["rows"] }
-    | { type: "costs"; rows: InternalProfitReportWorkbookInput["costDetails"] }
+    | { type: "costs"; rows: NonNullable<InternalProfitReportWorkbookInput["costDetails"]> }
   > = [
     ...itemChunks.map((rows) => ({ type: "items" as const, rows })),
     ...detailChunks.map((rows) => ({ type: "costs" as const, rows })),
