@@ -106,7 +106,7 @@ test("회계와 통계 요약 카드는 상세 창 대신 같은 페이지의 �
   assert.match(accounting, /전체 보기/);
   assert.match(analytics, /onOpenCollectionAnalysis/);
   assert.match(analytics, /당기 수금액/);
-  assert.match(analytics, /직접 공급 수금대상/);
+  assert.doesNotMatch(analytics, /직접 공급 수금대상/);
   assert.match(analytics, /expectedDirectSalesCollection/);
   assert.match(analytics, /협력사 예상 수수료/);
   assert.match(analytics, /analytics-profit-guide/);
@@ -157,7 +157,7 @@ test("통계 수금액과 미수금은 사업별 receipt 원장 합계만 사용
   assert.match(route, /unconfirmedAwards: awards\.filter/);
 });
 
-test("전체 통계는 공사 프로젝트를 품목과 분리해 한 번만 집계하고 정산 예상액에 반영한다", () => {
+test("전체 통계는 공사 프로젝트를 품목 수금과 분리하고 공사비 수금 UI를 노출하지 않는다", () => {
   const route = source("../app/api/accounting/route.ts");
   const analytics = source("../app/analytics-page.tsx");
   const styles = source("../app/globals.css");
@@ -202,13 +202,13 @@ test("전체 통계는 공사 프로젝트를 품목과 분리해 한 번만 집
 
   assert.doesNotMatch(productMapping, /construction_amount|constructionMargin/);
   assert.match(analytics, /expectedConstructionMargin/);
-  assert.match(analytics, /<span>공사 마진<\/span>/);
-  assert.match(analytics, /견적 공사비 − 실제 공사비/);
+  assert.doesNotMatch(analytics, /<span>공사 마진<\/span>/);
+  assert.doesNotMatch(analytics, /견적 공사비 − 실제 공사비/);
   assert.match(analytics, /품목 정산 후 예상수익/);
-  assert.match(analytics, /공사 마진은[\s\S]*배분하지 않습니다/);
+  assert.doesNotMatch(analytics, /공사 마진은[\s\S]*배분하지 않습니다/);
   assert.match(
     styles,
-    /\.analytics-summary-grid\s*\{\s*grid-template-columns: repeat\(8,/,
+    /\.analytics-summary-grid\s*\{\s*grid-template-columns: repeat\(5,/,
   );
   assert.match(styles, /button\.construction/);
 });
@@ -239,10 +239,10 @@ test("통계 요약 카드는 각 카드 집계 조건에 맞는 기관만 상�
   assert.match(analytics, /function showAwardMetricDrilldown/);
   assert.match(analytics, /function showReceiptDrilldown/);
   assert.match(analytics, /수주액 카드에 합산된 납품 완료 기관만 표시합니다/);
-  assert.match(analytics, /직접 공급 수금대상 카드에 합산된 납품 완료 기관만 표시합니다/);
+  assert.doesNotMatch(analytics, /직접 공급 수금대상 카드에 합산된 납품 완료 기관만 표시합니다/);
   assert.match(analytics, /협력사 예상 수수료 카드에 합산된 납품 완료 기관만 표시합니다/);
-  assert.match(analytics, /직접 공급 예상 마진 카드에 합산된 납품 완료 기관만 표시합니다/);
-  assert.match(analytics, /공사 마진 카드에 합산된 납품 완료 기관만 표시합니다/);
+  assert.doesNotMatch(analytics, /직접 공급 예상 마진 카드에 합산된 납품 완료 기관만 표시합니다/);
+  assert.doesNotMatch(analytics, /공사 마진 카드에 합산된 납품 완료 기관만 표시합니다/);
   assert.match(analytics, /정산 후 예상수익 카드에 합산된 납품 완료 기관만 표시합니다/);
   assert.match(analytics, /같은 기관의 입금액은 합산합니다/);
 });

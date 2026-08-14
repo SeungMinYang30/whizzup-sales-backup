@@ -725,10 +725,10 @@ async function buildAnalyticsPayload() {
           ? null
           : Number(row.consortium_payment_amount),
     });
-    const commission = finance.expectedPartnerCommission;
-    const directMargin = finance.expectedDirectMargin;
-    const directSalesCollection =
-      supplyType === "direct" ? finance.quotationAmount : 0;
+    const commission =
+      finance.expectedPartnerCommission + finance.expectedDirectMargin;
+    const directMargin = 0;
+    const directSalesCollection = 0;
     const consortiumPayment = finance.consortiumPayment;
     const unitPriceStatus = String(row.price_status ?? "");
     const quoteAmountRegistered = isRegisteredQuoteItemAmount({
@@ -770,7 +770,7 @@ async function buildAnalyticsPayload() {
       quotationAmount: finance.quotationAmount,
       quoteAmountRegistered,
       unitPrice,
-      supplyType,
+      supplyType: "partner" as const,
       priceStatus:
         unitPriceStatus ||
         (unitPrice > 0 ? "입력 완료" : "금액 미입력"),
@@ -970,18 +970,15 @@ async function buildAnalyticsPayload() {
     const expectedConstructionMargin =
       constructionMarginByBusiness.get(award.businessKey) ?? 0;
     const finalQuotationPartnerEarning = finalQuotation?.items
-      .filter((item) => item.supplyType !== "direct")
+      .filter((item) => item.productId !== "__construction_cost__")
       .reduce((sum, item) => sum + item.expectedEarning, 0);
-    const finalQuotationDirectEarning = finalQuotation?.items
-      .filter((item) => item.supplyType === "direct")
-      .reduce((sum, item) => sum + item.expectedEarning, 0);
-    const finalQuotationDirectSales = finalQuotation?.items
-      .filter((item) => item.supplyType === "direct" && !item.complimentary)
-      .reduce((sum, item) => sum + item.amount, 0);
+    const finalQuotationDirectEarning = finalQuotation ? 0 : undefined;
+    const finalQuotationDirectSales = finalQuotation ? 0 : undefined;
     const projection = calculateAwardSettlementProjection({
-      expectedPartnerCommission: source.partnerCommission,
-      expectedDirectSalesCollection: source.directSalesCollection,
-      expectedDirectMargin: source.directMargin,
+      expectedPartnerCommission:
+        finalQuotationPartnerEarning ?? source.partnerCommission + source.directMargin,
+      expectedDirectSalesCollection: 0,
+      expectedDirectMargin: 0,
       expectedConstructionMargin,
       expectedConsortiumSettlement: source.consortium,
     });
@@ -1001,9 +998,9 @@ async function buildAnalyticsPayload() {
       quoteMissingAmountItemCount:
         finalQuotation ? 0 : registeredQuote.quoteMissingAmountItemCount,
       expectedCommission:
-        finalQuotationPartnerEarning ?? source.partnerCommission,
+        finalQuotationPartnerEarning ?? source.partnerCommission + source.directMargin,
       expectedPartnerCommission:
-        finalQuotationPartnerEarning ?? source.partnerCommission,
+        finalQuotationPartnerEarning ?? source.partnerCommission + source.directMargin,
       expectedDirectSalesCollection:
         finalQuotationDirectSales ?? source.directSalesCollection,
       expectedDirectMargin:

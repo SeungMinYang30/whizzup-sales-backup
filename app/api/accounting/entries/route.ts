@@ -45,6 +45,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const ACCOUNTING_TOTAL_KEY = "award-total";
+const CONSTRUCTION_PRODUCT_ID = "__construction_cost__";
 const D1_SAFE_IN_CHUNK_SIZE = 50;
 const EXCLUDED_ENTRY_RECEIPT_ERROR =
   "회계 관리에서 제외된 기록입니다. 수금 내역을 변경하려면 먼저 작업목록에 복원해 주세요.";
@@ -473,11 +474,10 @@ async function loadActivitySources(
           : Number(row.consortium_payment_amount),
     });
     const itemExpectedPartnerCommission =
-      itemFinance.expectedPartnerCommission;
-    const itemExpectedDirectMargin = itemFinance.expectedDirectMargin;
+      itemFinance.expectedPartnerCommission + itemFinance.expectedDirectMargin;
+    const itemExpectedDirectMargin = 0;
     const itemExpectedConsortium = itemFinance.consortiumPayment;
-    const itemExpectedDirectSalesCollection =
-      supplyType === "direct" ? itemFinance.quotationAmount : 0;
+    const itemExpectedDirectSalesCollection = 0;
     const itemAmountRegistered = isRegisteredQuoteItemAmount({
       priceStatus: String(row.price_status ?? ""),
       unitPrice:
@@ -501,9 +501,9 @@ async function loadActivitySources(
       specification: String(row.specification ?? ""),
       quantity,
       unitPrice,
-      supplyType,
-      commissionRate,
-      marginRate,
+      supplyType: "partner",
+      commissionRate: supplyType === "direct" ? marginRate : commissionRate,
+      marginRate: null,
       expectedPartnerCommission: itemExpectedPartnerCommission,
       expectedDirectSalesCollection: itemExpectedDirectSalesCollection,
       expectedDirectMargin: itemExpectedDirectMargin,
@@ -527,11 +527,14 @@ async function loadActivitySources(
   for (const source of sourcesByBusinessKey.values()) {
     const quotation = source.finalQuotation;
     if (!quotation) continue;
+    const collectionItems = quotation.items.filter(
+      (item) => item.productId !== CONSTRUCTION_PRODUCT_ID,
+    );
     const projectName = quotation.budgets
       .map((budget) => budget.name)
       .filter(Boolean)
       .join(" + ") || quotation.projectTitle || "최종 견적";
-    source.items = quotation.items.map((item, index) => ({
+    source.items = collectionItems.map((item, index) => ({
       id: -(index + 1),
       projectId: 0,
       projectName,
@@ -539,48 +542,38 @@ async function loadActivitySources(
       specification: item.specification,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
-      supplyType: item.supplyType,
-      commissionRate: item.supplyType === "partner" ? item.earningRate : null,
-      marginRate: item.supplyType === "direct" ? item.earningRate : null,
-      expectedPartnerCommission:
-        item.supplyType === "partner" ? item.expectedEarning : 0,
-      expectedDirectSalesCollection:
-        item.supplyType === "direct" ? item.amount + item.procurementFee : 0,
-      expectedDirectMargin:
-        item.supplyType === "direct" ? item.expectedEarning : 0,
-      expectedCommission:
-        item.supplyType === "partner" ? item.expectedEarning : 0,
+      supplyType: "partner",
+      commissionRate: item.earningRate,
+      marginRate: null,
+      expectedPartnerCommission: item.expectedEarning,
+      expectedDirectSalesCollection: 0,
+      expectedDirectMargin: 0,
+      expectedCommission: item.expectedEarning,
       expectedConsortiumSettlement: item.consortiumPayment,
       executionType: quotation.executionType,
       supplierVendorId: null,
       supplierVendorName: "",
     }));
-    source.quoteItems = quotation.items.map((item) => ({
+    source.quoteItems = collectionItems.map((item) => ({
       quotationAmount: item.amount + item.procurementFee,
       amountRegistered: true,
     }));
     source.quoteConstructions = [];
     source.projects = new Map();
-    source.expectedPartnerCommission = quotation.items.reduce(
-      (sum, item) =>
-        sum + (item.supplyType === "partner" ? item.expectedEarning : 0),
+    source.expectedPartnerCommission = collectionItems.reduce(
+      (sum, item) => sum + item.expectedEarning,
       0,
     );
-    source.expectedDirectSalesCollection = quotation.items.reduce(
-      (sum, item) =>
-        sum + (item.supplyType === "direct" ? item.amount + item.procurementFee : 0),
-      0,
-    );
-    source.expectedDirectMargin = quotation.items.reduce(
-      (sum, item) =>
-        sum + (item.supplyType === "direct" ? item.expectedEarning : 0),
-      0,
-    );
+    source.expectedDirectSalesCollection = 0;
+    source.expectedDirectMargin = 0;
     source.expectedConstructionMargin = -Math.max(
       0,
       quotation.additionalInternalConstructionCost,
     );
-    source.expectedConsortiumSettlement = quotation.consortiumPayment;
+    source.expectedConsortiumSettlement = collectionItems.reduce(
+      (sum, item) => sum + item.consortiumPayment,
+      0,
+    );
     source.executionType = quotation.executionType;
     source.consortiumCompany = quotation.consortiumCompany;
   }

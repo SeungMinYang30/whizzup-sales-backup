@@ -53,7 +53,7 @@ test("실제 수금은 누적 저장하고 예상 수수료와의 차액을 자�
   assert.match(route, /DELETE FROM accounting_collection_receipts WHERE id = \?/);
 });
 
-test("협력사 수수료와 직접공급 판매대금·마진은 한 원장에서 구분 계산한다", () => {
+test("모든 비공사 품목은 당사 수수료만 수금 대상으로 계산한다", () => {
   const route = source("../app/api/accounting/entries/route.ts");
   assert.match(route, /ei\.supply_type/);
   assert.match(route, /ei\.margin_rate/);
@@ -64,17 +64,23 @@ test("협력사 수수료와 직접공급 판매대금·마진은 한 원장에�
     route,
     /calculateAwardSettlementProjection/,
   );
-  assert.match(
-    route,
-    /supplyType === "direct" \? itemFinance\.quotationAmount : 0/,
-  );
+  assert.match(route, /itemFinance\.expectedPartnerCommission \+ itemFinance\.expectedDirectMargin/);
+  assert.match(route, /const itemExpectedDirectSalesCollection = 0/);
+  assert.match(route, /supplyType: "partner"/);
   assert.doesNotMatch(
     route,
     /expectedCollectionTotal\s*=\s*source\.expectedPartnerCommission\s*\+\s*source\.expectedDirectSalesCollection\s*\+\s*source\.expectedDirectMargin/,
   );
 });
 
-test("공사 마진은 정산 후 입금 예정액과 예상수익에 소급 반영한다", () => {
+test("공사업체 직접 계약 품목은 수금 대상 품목에서 제외한다", () => {
+  const route = source("../app/api/accounting/entries/route.ts");
+  assert.match(route, /item\.productId !== CONSTRUCTION_PRODUCT_ID/);
+  assert.match(route, /source\.items = collectionItems\.map/);
+  assert.match(route, /source\.expectedDirectSalesCollection = 0/);
+});
+
+test("공사 조정액은 예상수익에만 반영하고 수금액과 분리한다", () => {
   const route = source("../app/api/accounting/entries/route.ts");
   const page = source("../app/accounting-page.tsx");
 
@@ -96,13 +102,9 @@ test("공사 마진은 정산 후 입금 예정액과 예상수익에 소급 반
     /const constructionAmount = Math\.max\(/,
   );
   assert.match(page, /총 입금 예정액/);
-  assert.match(page, /공사 마진/);
   assert.match(page, /정산 부족액 · 지급 검토/);
   assert.match(page, /collectionStatusLabel/);
-  assert.match(
-    page,
-    /project\.constructionAmount !== 0 \|\|\s*project\.actualConstructionCost !== 0/,
-  );
+  assert.doesNotMatch(page, /selectedEntry\.sourceProjects/);
 });
 
 test("직접공급 할인 품목은 음수 견적금액으로 입금 예정액에서 차감한다", () => {
@@ -209,12 +211,12 @@ test("회계 화면은 등록 견적 완성 상태에 따라 계약금액과 확
   assert.doesNotMatch(page, /전체 계약금액\(참고\)/);
 });
 
-test("영업·품목·공사비와 컨소 계산값은 읽기 전용으로 자동 연결한다", () => {
+test("영업·품목 수수료와 컨소 계산값은 읽기 전용으로 자동 연결한다", () => {
   const page = source("../app/accounting-page.tsx");
   const route = source("../app/api/accounting/entries/route.ts");
   assert.match(page, /납품 완료 처리된 위즈업 수주의 계산값을 자동 연결했습니다/);
   assert.match(page, /selectedEntry\.sourceItems/);
-  assert.match(page, /selectedEntry\.sourceProjects/);
+  assert.doesNotMatch(page, /selectedEntry\.sourceProjects/);
   assert.match(page, /selectedEntry\.executionType === "컨소"/);
   assert.match(page, /컨소 업체명/);
   assert.doesNotMatch(page, /selectedEntry\.manufacturerName/);

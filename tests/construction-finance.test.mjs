@@ -50,7 +50,7 @@ test("명시적으로 입력한 실공사비 0원과 음수 공사 금액을 그
   );
 });
 
-test("공사 손실은 협력사 정산 입금 예정액과 예상수익에서 소급 차감한다", () => {
+test("공사 손실은 수금액이 아니라 예상수익에서만 차감한다", () => {
   assert.deepEqual(
     calculateAwardSettlementProjection({
       expectedPartnerCommission: 11_010_550,
@@ -60,15 +60,15 @@ test("공사 손실은 협력사 정산 입금 예정액과 예상수익에서 �
       expectedConsortiumSettlement: 0,
     }),
     {
-      rawExpectedCollectionTotal: 5_384_130,
-      expectedCollectionTotal: 5_384_130,
+      rawExpectedCollectionTotal: 11_010_550,
+      expectedCollectionTotal: 11_010_550,
       expectedSettlementDeficit: 0,
       expectedProfit: 5_384_130,
     },
   );
 });
 
-test("순정산액이 음수면 입금 예정액은 0원이고 정산 부족액으로 분리한다", () => {
+test("공사 손실이 수수료보다 커도 수금 대상은 수수료 전액이다", () => {
   assert.deepEqual(
     calculateAwardSettlementProjection({
       expectedPartnerCommission: 1_000_000.4,
@@ -78,9 +78,9 @@ test("순정산액이 음수면 입금 예정액은 0원이고 정산 부족액�
       expectedConsortiumSettlement: 100_000.4,
     }),
     {
-      rawExpectedCollectionTotal: -1_500_000,
-      expectedCollectionTotal: 0,
-      expectedSettlementDeficit: 1_500_000,
+      rawExpectedCollectionTotal: 1_000_000,
+      expectedCollectionTotal: 1_000_000,
+      expectedSettlementDeficit: 0,
       expectedProfit: -1_400_000,
     },
   );

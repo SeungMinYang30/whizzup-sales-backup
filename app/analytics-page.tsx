@@ -474,22 +474,11 @@ export default function AnalyticsPage({
       commission:
         current.commission +
         (row.expectedPartnerCommission ?? row.expectedCommission),
-      directSalesCollection:
-        current.directSalesCollection +
-        (row.expectedDirectSalesCollection ?? 0),
-      directMargin:
-        current.directMargin + (row.expectedDirectMargin ?? 0),
-      constructionMargin:
-        current.constructionMargin +
-        (row.expectedConstructionMargin ?? 0),
       margin: current.margin + row.netRevenue,
     }),
     {
       amount: 0,
       commission: 0,
-      directSalesCollection: 0,
-      directMargin: 0,
-      constructionMargin: 0,
       margin: 0,
     },
   );
@@ -1098,23 +1087,6 @@ export default function AnalyticsPage({
         </button>
         <button
           type="button"
-          className="direct-sales"
-          onClick={() => showAwardMetricDrilldown(
-            "직접 공급 수금대상 기관",
-            "직접 공급 수금대상 카드에 합산된 납품 완료 기관만 표시합니다.",
-            confirmedAwards.filter(
-              (row) => (row.expectedDirectSalesCollection ?? 0) !== 0,
-            ),
-            (row) => row.expectedDirectSalesCollection ?? 0,
-            "직접 공급 수금대상",
-          )}
-        >
-          <span>직접 공급 수금대상</span>
-          <strong>{formatMoney(totals.directSalesCollection)}</strong>
-          <small>납품 완료된 직접 공급 품목의 판매대금입니다.</small>
-        </button>
-        <button
-          type="button"
           className="commission"
           onClick={() => showAwardMetricDrilldown(
             "협력사 예상 수수료 기관",
@@ -1126,43 +1098,9 @@ export default function AnalyticsPage({
             "협력사 예상 수수료",
           )}
         >
-          <span>협력사 예상 수수료</span>
+          <span>당사 예상 수수료</span>
           <strong>{formatMoney(totals.commission)}</strong>
-          <small>협력사 공급 품목의 판매금액 × 수수료율입니다.</small>
-        </button>
-        <button
-          type="button"
-          className="direct"
-          onClick={() => showAwardMetricDrilldown(
-            "직접 공급 예상 마진 기관",
-            "직접 공급 예상 마진 카드에 합산된 납품 완료 기관만 표시합니다.",
-            confirmedAwards.filter((row) => (row.expectedDirectMargin ?? 0) !== 0),
-            (row) => row.expectedDirectMargin ?? 0,
-            "직접 공급 예상 마진",
-          )}
-        >
-          <span>직접 공급 예상 마진</span>
-          <strong>{formatMoney(totals.directMargin)}</strong>
-          <small>위즈업 직접 공급 품목의 등록 마진율 기준입니다.</small>
-        </button>
-        <button
-          type="button"
-          className={`construction ${
-            totals.constructionMargin < 0 ? "loss" : ""
-          }`}
-          onClick={() => showAwardMetricDrilldown(
-            "공사 마진 기관",
-            "공사 마진 카드에 합산된 납품 완료 기관만 표시합니다.",
-            confirmedAwards.filter(
-              (row) => (row.expectedConstructionMargin ?? 0) !== 0,
-            ),
-            (row) => row.expectedConstructionMargin ?? 0,
-            "공사 마진",
-          )}
-        >
-          <span>공사 마진</span>
-          <strong>{formatMoney(totals.constructionMargin)}</strong>
-          <small>견적 공사비에서 실제 공사비를 뺀 금액입니다.</small>
+          <small>공사비를 제외한 품목별 당사 수수료 합계입니다.</small>
         </button>
         <button
           type="button"
@@ -1177,7 +1115,7 @@ export default function AnalyticsPage({
         >
           <span>정산 후 예상수익</span>
           <strong>{formatMoney(totals.margin)}</strong>
-          <small>제품 수익과 공사 마진에서 컨소 정산액을 뺀 값입니다.</small>
+          <small>당사 수수료에서 컨소 정산액을 뺀 값입니다.</small>
           <em>관련 기관 보기</em>
         </button>
       </div>
@@ -1186,16 +1124,6 @@ export default function AnalyticsPage({
         <span className="commission">
           <small>협력사 예상 수수료</small>
           <strong>협력사 공급 판매금액 × 수수료율</strong>
-        </span>
-        <i aria-hidden="true">+</i>
-        <span className="direct">
-          <small>직접 공급 예상 마진</small>
-          <strong>직접 공급 판매금액 × 마진율</strong>
-        </span>
-        <i aria-hidden="true">+</i>
-        <span className="construction">
-          <small>공사 마진</small>
-          <strong>견적 공사비 − 실제 공사비</strong>
         </span>
         <i aria-hidden="true">−</i>
         <span className="consortium">
@@ -1381,8 +1309,7 @@ export default function AnalyticsPage({
               제품별 성과는 ‘제품·견적 관리’에 등록된 제품을 기준으로 개별
               표시합니다. 기관 상세에서 직접 추가했거나 현재 제품 목록과
               연결되지 않은 품목은 ‘기타 물품’으로 합산하며, 클릭하면 세부
-              품목과 납품 기관을 확인할 수 있습니다. 공사 마진은 제품이나
-              공급 협력사에 임의로 배분하지 않습니다.
+              품목과 납품 기관을 확인할 수 있습니다.
             </p>
             <div className="analytics-product-summary">
               <span>
@@ -1399,16 +1326,6 @@ export default function AnalyticsPage({
               <span>
                 <small>협력사 수수료</small>
                 <strong>{formatMoney(productTotals.commission)}</strong>
-              </span>
-              <span>
-                <small>직접 공급 수금대상</small>
-                <strong>
-                  {formatMoney(productTotals.directSalesCollection)}
-                </strong>
-              </span>
-              <span>
-                <small>직접 공급 마진</small>
-                <strong>{formatMoney(productTotals.directMargin)}</strong>
               </span>
               <span><small>품목 정산 후 예상수익</small><strong>{formatMoney(productTotals.margin)}</strong></span>
               <button
@@ -1460,11 +1377,7 @@ export default function AnalyticsPage({
                             {item.label}
                           </button>
                           <small>
-                            {item.directMargin > 0 && item.commission === 0
-                              ? "위즈업 직접 공급"
-                              : item.directMargin > 0
-                                ? "공급 방식 혼합"
-                                : "협력사 공급"}
+                            협력사 계약 · 당사 수수료
                           </small>
                         </td>
                         <td>{item.quantity.toLocaleString()}개</td>
@@ -1601,11 +1514,9 @@ export default function AnalyticsPage({
         제외합니다. 지역·예산·제품 성과는 납품 완료 기록을 기준으로 하고,
         당기 수금액은 회계에 등록한 실제 입금일과 입금액만 사용합니다. 상세
         수금 추이와 미수금 예상액은 회계의 수금 분석에서 확인합니다.
-        직접 공급 판매대금은 수금액에 포함하지만 수익에는 마진만 반영합니다.
-        정산 후 예상수익은 협력사 수수료와 직접 공급 예상 마진, 공사 마진을
-        합한 뒤 예상 컨소 정산액을 뺀 관리용 예상치입니다. 제품별·공급
-        협력사별 성과표는 품목 성과만 표시하므로 공사 마진을 배분하지
-        않습니다. 인건비·세금·운영비 등을 모두 차감한 순이익이나 확정
+        입금 예정액은 공사비를 제외한 당사 수수료만 반영합니다.
+        정산 후 예상수익은 당사 수수료에서 예상 컨소 정산액을 뺀 관리용
+        예상치입니다. 인건비·세금·운영비 등을 모두 차감한 순이익이나 확정
         재무제표 금액은 아닙니다.
       </p>
 

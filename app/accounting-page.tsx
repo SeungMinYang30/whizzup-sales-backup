@@ -243,14 +243,6 @@ function expectedProfit(entry: AccountingEntry) {
   return entry.expectedProfit ?? entry.expectedContributionMargin;
 }
 
-function directSupplyCostBasis(entry: AccountingEntry) {
-  return Math.max(
-    0,
-    (entry.expectedDirectSalesCollection ?? 0) -
-      (entry.expectedDirectMargin ?? 0),
-  );
-}
-
 function isCollectionComplete(entry: AccountingEntry) {
   const target = collectionTarget(entry);
   return target > 0 && entry.commissionCollectedAmount >= target;
@@ -267,11 +259,9 @@ function contributionMarginView(entry: AccountingEntry) {
   }
   return {
     amount:
-      entry.commissionCollectedAmount -
-      directSupplyCostBasis(entry) -
-      entry.expectedConsortiumSettlement,
+      entry.commissionCollectedAmount - entry.expectedConsortiumSettlement,
     label: "수금 기준 공헌이익",
-    detail: "실제 수금액에서 직접 공급 원가와 컨소 정산 기준액 차감",
+    detail: "실제 수수료 수금액에서 컨소 정산 기준액 차감",
     actual: true,
   };
 }
@@ -1068,8 +1058,7 @@ export default function AccountingPage({
           <span>예상 공헌이익</span>
           <strong>{formatMoney(summary.margin)}</strong>
           <small>
-            수수료·직접 공급 마진·공사 마진에서 컨소 정산 기준액을 뺀
-            값입니다
+            당사 수수료에서 내부 비용과 컨소 정산 기준액을 반영한 값입니다
           </small>
         </button>
       </div>
@@ -1159,18 +1148,6 @@ export default function AccountingPage({
                 </strong>
               </span>
               <span>
-                <small>직접 공급 판매대금 예정</small>
-                <strong>
-                  {formatMoney(upcomingTotals.expectedDirectSalesCollection)}
-                </strong>
-              </span>
-              <span>
-                <small>공사 마진</small>
-                <strong>
-                  {formatMoney(upcomingTotals.expectedConstructionMargin)}
-                </strong>
-              </span>
-              <span>
                 <small>총 입금 예정액</small>
                 <strong>
                   {formatMoney(upcomingTotals.expectedCollectionTotal)}
@@ -1207,7 +1184,6 @@ export default function AccountingPage({
                     <col className="col-upcoming-manager" />
                     <col className="col-upcoming-contract" />
                     <col className="col-upcoming-money" />
-                    <col className="col-upcoming-money" />
                     <col className="col-upcoming-total" />
                     <col className="col-upcoming-profit" />
                   </colgroup>
@@ -1216,7 +1192,7 @@ export default function AccountingPage({
                       <th className="accounting-group-info" colSpan={4}>
                         수주 정보
                       </th>
-                      <th className="accounting-group-expected" colSpan={4}>
+                      <th className="accounting-group-expected" colSpan={3}>
                         입금 예정
                       </th>
                       <th className="accounting-group-status">예상 수익</th>
@@ -1228,7 +1204,6 @@ export default function AccountingPage({
                       <th>담당자</th>
                       <th>등록 견적 기준 계약금액</th>
                       <th>협력사 제품 수수료</th>
-                      <th>직접 공급 판매대금</th>
                       <th>총 입금 예정액</th>
                       <th>예상 공헌이익</th>
                     </tr>
@@ -1274,16 +1249,9 @@ export default function AccountingPage({
                           {formatMoney(entry.expectedPartnerCommission)}
                         </td>
                         <td className="accounting-money-cell">
-                          {formatMoney(entry.expectedDirectSalesCollection)}
-                        </td>
-                        <td className="accounting-money-cell">
                           <strong>
                             {formatMoney(entry.expectedCollectionTotal)}
                           </strong>
-                          <small>
-                            공사 마진{" "}
-                            {formatMoney(entry.expectedConstructionMargin)}
-                          </small>
                           {entry.expectedSettlementDeficit > 0 && (
                             <small>
                               지급 검토{" "}
@@ -1293,12 +1261,6 @@ export default function AccountingPage({
                         </td>
                         <td className="accounting-money-cell">
                           <strong>{formatMoney(entry.expectedProfit)}</strong>
-                          {entry.expectedDirectMargin > 0 && (
-                            <small>
-                              직접 공급 예상 마진{" "}
-                              {formatMoney(entry.expectedDirectMargin)}
-                            </small>
-                          )}
                           {entry.expectedConsortiumSettlement > 0 && (
                             <small>
                               컨소 정산 예정{" "}
@@ -1354,10 +1316,6 @@ export default function AccountingPage({
                           <dt>협력사 제품 수수료</dt>
                           <dd>{formatMoney(entry.expectedPartnerCommission)}</dd>
                         </div>
-                        <div>
-                          <dt>직접 공급 판매대금</dt>
-                          <dd>{formatMoney(entry.expectedDirectSalesCollection)}</dd>
-                        </div>
                         <div className="emphasis">
                           <dt>총 입금 예정액</dt>
                           <dd>{formatMoney(entry.expectedCollectionTotal)}</dd>
@@ -1368,21 +1326,6 @@ export default function AccountingPage({
                         </div>
                       </dl>
                       <footer>
-                        <span
-                          className={
-                            entry.expectedConstructionMargin < 0 ? "loss" : ""
-                          }
-                        >
-                          공사 마진 {formatMoney(entry.expectedConstructionMargin)}
-                        </span>
-                        {entry.expectedDirectMargin !== 0 && (
-                          <span
-                            className={entry.expectedDirectMargin < 0 ? "loss" : ""}
-                          >
-                            직접 공급 예상 마진{" "}
-                            {formatMoney(entry.expectedDirectMargin)}
-                          </span>
-                        )}
                         {entry.expectedConsortiumSettlement > 0 && (
                           <span>
                             컨소 정산 예정{" "}
@@ -2313,11 +2256,11 @@ export default function AccountingPage({
                 ×
               </button>
             </header>
-            <div className="accounting-source-notice">
-              <strong>납품 완료 처리된 위즈업 수주의 계산값을 자동 연결했습니다.</strong>
-              <span>회계 담당자는 실제로 받은 금액과 날짜만 입력하면 됩니다.</span>
-            </div>
             <div className="accounting-editor-body">
+              <div className="accounting-source-notice">
+                <strong>납품 완료 처리된 위즈업 수주의 계산값을 자동 연결했습니다.</strong>
+                <span>공사업체 직접 계약 공사비는 제외하고, 당사 수금액과 날짜만 입력합니다.</span>
+              </div>
               <section>
                 <h3>자동 연동 정보</h3>
                 <div className="accounting-reference-grid">
@@ -2338,28 +2281,6 @@ export default function AccountingPage({
                       {formatMoney(
                         selectedEntry.expectedPartnerCommission ??
                           selectedEntry.expectedCommission,
-                      )}
-                    </strong>
-                  </span>
-                  <span>
-                    <small>직접 공급 판매대금 예정</small>
-                    <strong>
-                      {formatMoney(
-                        selectedEntry.expectedDirectSalesCollection ?? 0,
-                      )}
-                    </strong>
-                  </span>
-                  <span>
-                    <small>직접 공급 예상 마진</small>
-                    <strong>
-                      {formatMoney(selectedEntry.expectedDirectMargin ?? 0)}
-                    </strong>
-                  </span>
-                  <span>
-                    <small>공사 마진</small>
-                    <strong>
-                      {formatMoney(
-                        selectedEntry.expectedConstructionMargin ?? 0,
                       )}
                     </strong>
                   </span>
@@ -2384,89 +2305,48 @@ export default function AccountingPage({
                     <small>{contributionMarginView(selectedEntry).detail}</small>
                   </span>
                 </div>
-                <div className="accounting-source-table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>품목·공사</th>
-                        <th>공급 구분</th>
-                        <th>방식</th>
-                        <th>수량·금액</th>
-                        <th>수수료율 / 마진율</th>
-                        <th>입금 예정 / 예상 공헌이익</th>
-                        <th>예상 컨소 정산</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedEntry.sourceItems.map((item) => (
-                        <tr key={item.id}>
-                          <td><strong>{item.productName}</strong><small>{item.projectName}</small></td>
-                          <td>
-                            {item.supplyType === "direct"
-                              ? "위즈업 직접 공급"
-                              : item.supplierVendorName || "미연결"}
-                          </td>
-                          <td>{item.executionType}</td>
-                          <td>{item.quantity.toLocaleString()}개 · {formatMoney(item.unitPrice)}</td>
-                          <td>
-                            {formatRate(
-                              item.supplyType === "direct"
-                                ? item.marginRate
-                                : item.commissionRate,
-                            )}
-                            <small>
-                              {item.supplyType === "direct"
-                                ? "마진율"
-                                : "수수료율"}
-                            </small>
-                          </td>
-                          <td>
-                            {item.supplyType === "direct" ? (
-                              <>
-                                <strong>
-                                  입금{" "}
-                                  {formatMoney(
-                                    item.expectedDirectSalesCollection ?? 0,
-                                  )}
-                                </strong>
-                                <small>
-                                  예상 마진{" "}
-                                  {formatMoney(item.expectedDirectMargin ?? 0)}
-                                </small>
-                              </>
-                            ) : (
-                              formatMoney(
-                                item.expectedPartnerCommission ??
-                                  item.expectedCommission,
-                              )
-                            )}
-                          </td>
-                          <td>
-                            {item.executionType === "컨소"
-                              ? formatMoney(item.expectedConsortiumSettlement)
-                              : ""}
-                          </td>
-                        </tr>
-                      ))}
-                      {selectedEntry.sourceProjects
-                        .filter(
-                          (project) =>
-                            project.constructionAmount !== 0 ||
-                            project.actualConstructionCost !== 0,
-                        )
-                        .map((project) => (
-                          <tr key={`construction-${project.id}`}>
-                            <td><strong>{project.name || "공사비"}</strong><small>자동 연동 공사비</small></td>
-                            <td>—</td>
-                            <td>공사</td>
-                            <td>{formatMoney(project.constructionAmount)}</td>
-                            <td>실공사비 {formatMoney(project.actualConstructionCost)}</td>
-                            <td>공사 마진 {formatMoney(project.constructionMargin)}</td>
-                            <td>—</td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
+                <div className="accounting-source-item-list">
+                  {selectedEntry.sourceItems.map((item) => (
+                    <article key={item.id} className="accounting-source-item-card">
+                      <header>
+                        <div>
+                          <strong>{item.productName}</strong>
+                          <small>{item.projectName}</small>
+                        </div>
+                        <span>{item.supplyType === "direct" ? "직접 공급" : "수수료 수금"}</span>
+                      </header>
+                      <dl>
+                        <div>
+                          <dt>공급처</dt>
+                          <dd>{item.supplyType === "direct" ? "위즈업" : item.supplierVendorName || "미연결"}</dd>
+                        </div>
+                        <div>
+                          <dt>수량·금액</dt>
+                          <dd>{item.quantity.toLocaleString()}개 · {formatMoney(item.unitPrice)}</dd>
+                        </div>
+                        <div>
+                          <dt>{item.supplyType === "direct" ? "마진율" : "수수료율"}</dt>
+                          <dd>{formatRate(item.supplyType === "direct" ? item.marginRate : item.commissionRate)}</dd>
+                        </div>
+                        <div className="emphasis">
+                          <dt>입금 예정</dt>
+                          <dd>{formatMoney(item.supplyType === "direct" ? item.expectedDirectSalesCollection ?? 0 : item.expectedPartnerCommission ?? item.expectedCommission)}</dd>
+                        </div>
+                        {item.supplyType === "direct" && (
+                          <div>
+                            <dt>예상 마진</dt>
+                            <dd>{formatMoney(item.expectedDirectMargin ?? 0)}</dd>
+                          </div>
+                        )}
+                        {item.executionType === "컨소" && (
+                          <div>
+                            <dt>예상 컨소 정산</dt>
+                            <dd>{formatMoney(item.expectedConsortiumSettlement)}</dd>
+                          </div>
+                        )}
+                      </dl>
+                    </article>
+                  ))}
                 </div>
               </section>
 

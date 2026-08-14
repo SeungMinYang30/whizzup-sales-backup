@@ -56,8 +56,7 @@ export function calculateAwardSettlementProjection({
   );
   const rawExpectedCollectionTotal =
     expectedPartnerCommission +
-    expectedDirectSalesCollection +
-    expectedConstructionMargin;
+    expectedDirectSalesCollection;
 
   return {
     rawExpectedCollectionTotal,
