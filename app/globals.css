@@ -5410,6 +5410,35 @@ tr:hover .row-actions { opacity: 1; }
 }
 
 /* 관리자 데이터 백업·복구 */
+.standby-replication-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid #cde8dc;
+  border-radius: 14px;
+  background: #f3fbf7;
+}
+
+.standby-replication-control p {
+  margin: 4px 0 0;
+  color: #52647a;
+}
+
+.standby-replication-control small {
+  display: block;
+  margin-top: 4px;
+  color: #718096;
+}
+
+@media (max-width: 720px) {
+  .standby-replication-control {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
 .backup-layout {
   display: grid;
   gap: 18px;

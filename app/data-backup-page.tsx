@@ -24,6 +24,12 @@ type DriveBackupOption = {
   folderPath: string;
 };
 
+type StandbyScheduleState = {
+  origin: string;
+  configured: boolean;
+  schedule: string;
+};
+
 const tableLabels: Record<string, string> = {
   members: "구성원·권한",
   member_rejections: "가입 거절 이력",
@@ -78,6 +84,10 @@ export default function DataBackupPage({
   const [backupInspection, setBackupInspection] =
     useState<BackupInspection | null>(null);
   const [backupError, setBackupError] = useState("");
+  const [standbySchedule, setStandbySchedule] =
+    useState<StandbyScheduleState | null>(null);
+  const [standbyScheduleAvailable, setStandbyScheduleAvailable] = useState(false);
+  const [standbyScheduleError, setStandbyScheduleError] = useState("");
   const [safetyBackupDownloaded, setSafetyBackupDownloaded] = useState(false);
   useEffect(() => {
     const savedAt = window.localStorage.getItem("whizzup-last-full-backup-at");
@@ -120,6 +130,67 @@ export default function DataBackupPage({
     // The Drive list only needs an initial refresh when backup access changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManageBackup]);
+
+  useEffect(() => {
+    if (!canManageBackup || !isPrimaryOwner) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/standby-schedule", {
+          cache: "no-store",
+        });
+        if (response.status === 404) return;
+        const payload = (await response.json()) as {
+          origin?: string;
+          schedule?: { configured?: boolean; schedule?: string };
+        };
+        if (!response.ok || cancelled) return;
+        setStandbyScheduleAvailable(true);
+        setStandbySchedule({
+          origin: payload.origin || "",
+          configured: payload.schedule?.configured === true,
+          schedule: payload.schedule?.schedule || "*/10 * * * *",
+        });
+      } catch {
+        // The Sites standby intentionally has no scheduler endpoint.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canManageBackup, isPrimaryOwner]);
+
+  async function configureStandbyReplication() {
+    try {
+      setBusy("configure-standby");
+      setStandbyScheduleError("");
+      const response = await fetch("/api/standby-schedule", { method: "POST" });
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        origin?: string;
+        error?: string;
+        schedule?: { schedule?: string };
+      };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "대기판 자동 복제를 설정하지 못했습니다.");
+      }
+      setStandbyScheduleAvailable(true);
+      setStandbySchedule({
+        origin: payload.origin || standbySchedule?.origin || "",
+        configured: true,
+        schedule: payload.schedule?.schedule || "*/10 * * * *",
+      });
+      notify("Sites 대기판 10분 자동 복제를 시작했습니다.");
+    } catch (error) {
+      setStandbyScheduleError(
+        error instanceof Error
+          ? error.message
+          : "대기판 자동 복제를 설정하지 못했습니다.",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
 
   async function download(kind: DownloadKind, safety = false) {
     try {
@@ -407,6 +478,35 @@ export default function DataBackupPage({
           로그인 세션, OAuth 토큰·비밀키, OpenAI API 비밀값은 백업 파일에
           포함되지 않습니다.
         </p>
+
+        {standbyScheduleAvailable && standbySchedule && (
+          <div className="standby-replication-control">
+            <div>
+              <strong>Sites 비상 대기판</strong>
+              <p>
+                {standbySchedule.configured
+                  ? "운영 DB를 10분마다 별도 D1 대기판에 복제하고 있습니다."
+                  : "운영 DB를 별도 D1 대기판에 10분마다 복제할 수 있습니다."}
+              </p>
+              {standbySchedule.origin && <small>{standbySchedule.origin}</small>}
+            </div>
+            <button
+              type="button"
+              className={standbySchedule.configured ? "ghost-button" : "primary-button"}
+              disabled={Boolean(busy) || standbySchedule.configured}
+              onClick={() => void configureStandbyReplication()}
+            >
+              {busy === "configure-standby"
+                ? "설정 중…"
+                : standbySchedule.configured
+                  ? "10분 자동 복제 중"
+                  : "10분 자동 복제 시작"}
+            </button>
+          </div>
+        )}
+        {standbyScheduleError && (
+          <div className="backup-error">{standbyScheduleError}</div>
+        )}
 
         {backupFileName && (
           <p className="backup-selected-file">선택 파일 · {backupFileName}</p>
