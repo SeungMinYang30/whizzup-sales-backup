@@ -4,12 +4,14 @@ import {
 } from "../../../../lib/collaboration";
 import {
   createDriveResumableUpload,
+  GoogleDriveStorageError,
   getDriveFileMetadata,
   isResourceStorageConfigured,
   removeDriveFile,
   safeDriveFolderName,
   uploadDriveResumableChunk,
 } from "../../../../lib/google-drive-storage";
+import { RESOURCE_UPLOAD_CHUNK_BYTES } from "../../../../lib/resource-upload-config";
 import { ensureResourceLibraryReady } from "../../../../lib/resource-library";
 import {
   isResourceCategoryForKind,
@@ -26,6 +28,14 @@ const blockedExtensions = new Set([
 
 const clean = (value: unknown, maxLength = 240) =>
   String(value ?? "").trim().slice(0, maxLength);
+
+function uploadErrorResponse(error: unknown) {
+  if (error instanceof GoogleDriveStorageError) {
+    const status = error.code === "DRIVE_SESSION_EXPIRED" ? 410 : error.status;
+    return Response.json({ error: error.message, code: error.code }, { status });
+  }
+  return accessErrorResponse(error);
+}
 
 export async function POST(request: Request) {
   try {
@@ -73,7 +83,7 @@ export async function POST(request: Request) {
     });
     return Response.json(session, { status: 201 });
   } catch (error) {
-    return accessErrorResponse(error);
+    return uploadErrorResponse(error);
   }
 }
 
@@ -83,18 +93,45 @@ export async function PUT(request: Request) {
     const uploadUrl = request.headers.get("x-drive-upload-url") || "";
     const contentRange = request.headers.get("content-range") || "";
     const mimeType = request.headers.get("content-type") || "application/octet-stream";
-    if (!uploadUrl || !/^bytes \d+-\d+\/\d+$/.test(contentRange)) {
+    const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(contentRange);
+    if (!uploadUrl || !range) {
       return Response.json({ error: "업로드 조각 정보가 올바르지 않습니다." }, { status: 400 });
+    }
+    const declaredBytes = Number(range[2]) - Number(range[1]) + 1;
+    const contentLength = Number(request.headers.get("content-length") || declaredBytes);
+    if (
+      !Number.isSafeInteger(declaredBytes) ||
+      declaredBytes <= 0 ||
+      declaredBytes > RESOURCE_UPLOAD_CHUNK_BYTES ||
+      contentLength > RESOURCE_UPLOAD_CHUNK_BYTES
+    ) {
+      return Response.json(
+        {
+          code: "VERCEL_PAYLOAD_LIMIT",
+          error: "업로드 청크가 Vercel 요청 용량 제한을 초과했습니다.",
+        },
+        { status: 413 },
+      );
+    }
+    const body = await request.arrayBuffer();
+    if (body.byteLength !== declaredBytes || body.byteLength > RESOURCE_UPLOAD_CHUNK_BYTES) {
+      return Response.json(
+        {
+          code: "VERCEL_PAYLOAD_LIMIT",
+          error: "업로드 청크가 Vercel 요청 용량 제한을 초과했거나 크기가 올바르지 않습니다.",
+        },
+        { status: 413 },
+      );
     }
     const result = await uploadDriveResumableChunk({
       uploadUrl,
       contentRange,
       mimeType,
-      body: await request.arrayBuffer(),
+      body,
     });
     return Response.json(result, { status: result.complete ? 201 : 200 });
   } catch (error) {
-    return accessErrorResponse(error);
+    return uploadErrorResponse(error);
   }
 }
 

@@ -1,5 +1,6 @@
 import { isPostgresDatabase } from "../db";
 import { getPostgresObjectStorage } from "./postgres-object-storage";
+import { RESOURCE_UPLOAD_CHUNK_BYTES } from "./resource-upload-config";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
@@ -7,7 +8,23 @@ const ROOT_FOLDER_NAME = "WHIZZUP 자료실";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const LOCAL_FILE_PREFIX = "postgres-object:";
 const LOCAL_FOLDER_ID = "postgres-object-storage";
-const LOCAL_UPLOAD_CHUNK_BYTES = 5 * 1024 * 1024;
+const LOCAL_UPLOAD_CHUNK_BYTES = RESOURCE_UPLOAD_CHUNK_BYTES;
+
+export type GoogleDriveStorageErrorCode =
+  | "DRIVE_AUTH"
+  | "DRIVE_SESSION_EXPIRED"
+  | "DRIVE_UPLOAD_FAILED";
+
+export class GoogleDriveStorageError extends Error {
+  constructor(
+    public readonly code: GoogleDriveStorageErrorCode,
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "GoogleDriveStorageError";
+  }
+}
 
 type DriveConfig = {
   clientId: string;
@@ -402,7 +419,11 @@ export async function createDriveResumableUpload(input: {
   const uploadUrl = response.headers.get("Location") || "";
   if (!response.ok || !uploadUrl) {
     const payload = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
-    throw new Error(payload.error?.message || "Google Drive 대용량 업로드를 시작하지 못했습니다.");
+    const message = payload.error?.message || "Google Drive 대용량 업로드를 시작하지 못했습니다.";
+    if (response.status === 401 || response.status === 403) {
+      throw new GoogleDriveStorageError("DRIVE_AUTH", message, response.status);
+    }
+    throw new GoogleDriveStorageError("DRIVE_UPLOAD_FAILED", message, response.status || 502);
   }
   return { uploadUrl, folderId };
 }
@@ -436,7 +457,14 @@ export async function uploadDriveResumableChunk(input: {
     return { complete: false as const, range: response.headers.get("Range") || "" };
   }
   if (!response.ok || !payload.id) {
-    throw new Error(payload.error?.message || "Google Drive 파일 조각을 저장하지 못했습니다.");
+    const message = payload.error?.message || "Google Drive 파일 조각을 저장하지 못했습니다.";
+    if (response.status === 401 || response.status === 403) {
+      throw new GoogleDriveStorageError("DRIVE_AUTH", message, response.status);
+    }
+    if (response.status === 404 || response.status === 410) {
+      throw new GoogleDriveStorageError("DRIVE_SESSION_EXPIRED", message, response.status);
+    }
+    throw new GoogleDriveStorageError("DRIVE_UPLOAD_FAILED", message, response.status || 502);
   }
   return { complete: true as const, file: payload };
 }

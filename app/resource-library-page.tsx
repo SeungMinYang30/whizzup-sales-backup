@@ -7,6 +7,11 @@ import {
   isVideoResourceFile,
   VIDEO_RESOURCE_CATEGORIES,
 } from "../lib/resource-library-categories";
+import {
+  resourceUploadErrorMessage,
+  uploadResourceFilesSequentially,
+  type UploadedResourceFile,
+} from "../lib/resource-upload-client";
 
 type ResourceAttachment = {
   id: number;
@@ -50,8 +55,6 @@ type YouTubeCounts = {
 };
 
 type Draft = { title: string; category: string; content: string };
-
-const uploadChunkBytes = 5 * 1024 * 1024;
 
 function formatBytes(value: number) {
   if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)}GB`;
@@ -112,6 +115,10 @@ export default function ResourceLibraryPage({
   const [editDraft, setEditDraft] = useState<Draft>({ title: "", category: "기타", content: "" });
   const filesRef = useRef<HTMLInputElement>(null);
   const editFilesRef = useRef<HTMLInputElement>(null);
+  const uploadAbortRef = useRef<AbortController | null>(null);
+  const attachmentAbortRef = useRef<AbortController | null>(null);
+  const uploadLockRef = useRef(false);
+  const attachmentLockRef = useRef(false);
   const recoveryStartedRef = useRef(false);
   const categories = libraryKind === "videos"
     ? VIDEO_RESOURCE_CATEGORIES
@@ -195,6 +202,7 @@ export default function ResourceLibraryPage({
   }, [isAdmin]);
 
   function selectLibraryKind(nextKind: "documents" | "videos") {
+    if (busy || attachmentBusy) return;
     const nextCategories = nextKind === "videos"
       ? VIDEO_RESOURCE_CATEGORIES
       : DOCUMENT_RESOURCE_CATEGORIES;
@@ -206,6 +214,35 @@ export default function ResourceLibraryPage({
     if (nextKind === "videos" && youtubeVideos.length === 0) void loadYouTube();
     setEditing(null);
     setDraft((current) => ({ ...current, category: nextCategories[0] }));
+  }
+
+  function progressLabel(fileName: string, percent: number, transferredBytes: number, totalBytes: number) {
+    return `${fileName} 업로드 중 · ${percent}% · ${formatBytes(transferredBytes)} / ${formatBytes(totalBytes)}`;
+  }
+
+  async function cleanupUploadedFiles(uploaded: UploadedResourceFile[]) {
+    if (!uploaded.length) return;
+    await fetch("/api/resources/upload-session", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileIds: uploaded.map((item) => item.fileId) }),
+    }).catch(() => undefined);
+  }
+
+  function closeUploadForm() {
+    if (uploadAbortRef.current) {
+      uploadAbortRef.current.abort();
+      return;
+    }
+    if (!busy) setUploadOpen(false);
+  }
+
+  function closeEditForm() {
+    if (attachmentAbortRef.current) {
+      attachmentAbortRef.current.abort();
+      return;
+    }
+    if (!attachmentBusy && !busy) setEditing(null);
   }
 
   function togglePost(postId: number) {
@@ -242,18 +279,17 @@ export default function ResourceLibraryPage({
   async function upload(event: FormEvent) {
     event.preventDefault();
     const files = Array.from(filesRef.current?.files ?? []);
-    if (!files.length || busy) return;
+    if (!files.length || busy || uploadLockRef.current) return;
+    uploadLockRef.current = true;
     setBusy(true);
     setMessage("");
     setUploadProgress("업로드를 준비하고 있습니다.");
     setUploadPercent(0);
-    const uploaded: Array<{
-      fileId: string;
-      folderId: string;
-      originalName: string;
-    }> = [];
+    const uploaded: UploadedResourceFile[] = [];
+    let databaseCommitted = false;
+    const controller = new AbortController();
+    uploadAbortRef.current = controller;
     try {
-      if (files.length > 10) throw new Error("한 번에 10개까지 첨부할 수 있습니다.");
       const expectsVideo = libraryKind === "videos";
       const mismatched = files.find((file) => isVideoFile(file) !== expectsVideo);
       if (mismatched) {
@@ -263,56 +299,23 @@ export default function ResourceLibraryPage({
             : "문서 자료에는 영상 파일을 함께 등록할 수 없습니다.",
         );
       }
-      let completedBytes = 0;
-      const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
-      for (const file of files) {
-        const sessionResponse = await fetch("/api/resources/upload-session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileName: file.name,
-            mimeType: file.type || "application/octet-stream",
-            sizeBytes: file.size,
-            title: draft.title,
-            category: draft.category,
-          }),
-        });
-        const session = (await sessionResponse.json().catch(() => ({}))) as {
-          uploadUrl?: string;
-          folderId?: string;
-          error?: string;
-        };
-        if (!sessionResponse.ok || !session.uploadUrl || !session.folderId) {
-          throw new Error(session.error || `${file.name} 업로드를 시작하지 못했습니다.`);
-        }
-        let fileId = "";
-        for (let start = 0; start < file.size; start += uploadChunkBytes) {
-          const endExclusive = Math.min(file.size, start + uploadChunkBytes);
-          const chunkResponse = await fetch("/api/resources/upload-session", {
-            method: "PUT",
-            headers: {
-              "Content-Type": file.type || "application/octet-stream",
-              "Content-Range": `bytes ${start}-${endExclusive - 1}/${file.size}`,
-              "X-Drive-Upload-Url": session.uploadUrl,
-            },
-            body: file.slice(start, endExclusive),
-          });
-          const chunk = (await chunkResponse.json().catch(() => ({}))) as {
-            complete?: boolean;
-            file?: { id?: string };
-            error?: string;
-          };
-          if (!chunkResponse.ok) throw new Error(chunk.error || `${file.name} 업로드 중 오류가 발생했습니다.`);
-          if (chunk.complete) fileId = chunk.file?.id || "";
-          const currentBytes = completedBytes + endExclusive;
-          const percent = totalBytes ? Math.min(100, Math.round((currentBytes / totalBytes) * 100)) : 100;
-          setUploadPercent(percent);
-          setUploadProgress(`${file.name} 업로드 중 · ${percent}%`);
-        }
-        if (!fileId) throw new Error(`${file.name} 업로드 완료 정보를 확인하지 못했습니다.`);
-        uploaded.push({ fileId, folderId: session.folderId, originalName: file.name });
-        completedBytes += file.size;
-      }
+      await uploadResourceFilesSequentially(files, {
+        title: draft.title,
+        category: draft.category,
+        signal: controller.signal,
+        onFileComplete: (file) => uploaded.push(file),
+        onProgress: (progress) => {
+          setUploadPercent(progress.percent);
+          setUploadProgress(progressLabel(
+            progress.fileName,
+            progress.percent,
+            progress.transferredBytes,
+            progress.totalBytes,
+          ));
+        },
+      });
+      if (controller.signal.aborted) throw new DOMException("Upload cancelled", "AbortError");
+      uploadAbortRef.current = null;
       setUploadProgress("게시글 정보를 저장하고 있습니다.");
       setUploadPercent(100);
       const response = await fetch("/api/resources", {
@@ -322,21 +325,18 @@ export default function ResourceLibraryPage({
       });
       const payload = (await response.json().catch(() => ({}))) as { post?: ResourcePost; error?: string };
       if (!response.ok || !payload.post) throw new Error(payload.error || "자료를 등록하지 못했습니다.");
+      databaseCommitted = true;
       setDraft({ title: "", category: categories[0], content: "" });
       if (filesRef.current) filesRef.current.value = "";
       setUploadOpen(false);
       setMessage("자료를 등록했습니다.");
       await load();
     } catch (error) {
-      if (uploaded.length) {
-        await fetch("/api/resources/upload-session", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileIds: uploaded.map((item) => item.fileId) }),
-        }).catch(() => undefined);
-      }
-      setMessage(error instanceof Error ? error.message : "자료를 등록하지 못했습니다.");
+      if (!databaseCommitted) await cleanupUploadedFiles(uploaded);
+      setMessage(resourceUploadErrorMessage(error));
     } finally {
+      uploadAbortRef.current = null;
+      uploadLockRef.current = false;
       setBusy(false);
       setUploadProgress("");
       setUploadPercent(0);
@@ -370,15 +370,18 @@ export default function ResourceLibraryPage({
     mode: "add" | "replace",
     attachmentId?: number,
   ) {
-    if (!files.length || attachmentBusy) return;
+    if (!files.length || attachmentBusy || attachmentLockRef.current) return;
+    attachmentLockRef.current = true;
     setAttachmentBusy(true);
     setMessage("");
     setAttachmentProgress("업로드를 준비하고 있습니다.");
     setAttachmentPercent(0);
-    const uploaded: Array<{ fileId: string; folderId: string; originalName: string }> = [];
+    const uploaded: UploadedResourceFile[] = [];
+    let attachmentCommitted = false;
+    const controller = new AbortController();
+    attachmentAbortRef.current = controller;
     try {
       if (mode === "replace" && files.length !== 1) throw new Error("교체할 파일 한 개를 선택해 주세요.");
-      if (files.length > 10) throw new Error("한 번에 10개까지 첨부할 수 있습니다.");
       const expectsVideo = libraryKind === "videos";
       const mismatched = files.find((file) => isVideoFile(file) !== expectsVideo);
       if (mismatched) {
@@ -388,57 +391,23 @@ export default function ResourceLibraryPage({
             : "문서 자료에는 영상 파일을 추가할 수 없습니다.",
         );
       }
-      const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
-      let completedBytes = 0;
-      for (const file of files) {
-        const sessionResponse = await fetch("/api/resources/upload-session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileName: file.name,
-            mimeType: file.type || "application/octet-stream",
-            sizeBytes: file.size,
-            title: post.title,
-            category: post.category,
-          }),
-        });
-        const session = (await sessionResponse.json().catch(() => ({}))) as {
-          uploadUrl?: string;
-          folderId?: string;
-          error?: string;
-        };
-        if (!sessionResponse.ok || !session.uploadUrl || !session.folderId) {
-          throw new Error(session.error || `${file.name} 업로드를 시작하지 못했습니다.`);
-        }
-        let fileId = "";
-        for (let start = 0; start < file.size; start += uploadChunkBytes) {
-          const endExclusive = Math.min(file.size, start + uploadChunkBytes);
-          const chunkResponse = await fetch("/api/resources/upload-session", {
-            method: "PUT",
-            headers: {
-              "Content-Type": file.type || "application/octet-stream",
-              "Content-Range": `bytes ${start}-${endExclusive - 1}/${file.size}`,
-              "X-Drive-Upload-Url": session.uploadUrl,
-            },
-            body: file.slice(start, endExclusive),
-          });
-          const chunk = (await chunkResponse.json().catch(() => ({}))) as {
-            complete?: boolean;
-            file?: { id?: string };
-            error?: string;
-          };
-          if (!chunkResponse.ok) throw new Error(chunk.error || `${file.name} 업로드 중 오류가 발생했습니다.`);
-          if (chunk.complete) fileId = chunk.file?.id || "";
-          const percent = totalBytes
-            ? Math.min(100, Math.round(((completedBytes + endExclusive) / totalBytes) * 100))
-            : 100;
-          setAttachmentPercent(percent);
-          setAttachmentProgress(`${file.name} 업로드 중 · ${percent}%`);
-        }
-        if (!fileId) throw new Error(`${file.name} 업로드 완료 정보를 확인하지 못했습니다.`);
-        uploaded.push({ fileId, folderId: session.folderId, originalName: file.name });
-        completedBytes += file.size;
-      }
+      await uploadResourceFilesSequentially(files, {
+        title: post.title,
+        category: post.category,
+        signal: controller.signal,
+        onFileComplete: (file) => uploaded.push(file),
+        onProgress: (progress) => {
+          setAttachmentPercent(progress.percent);
+          setAttachmentProgress(progressLabel(
+            progress.fileName,
+            progress.percent,
+            progress.transferredBytes,
+            progress.totalBytes,
+          ));
+        },
+      });
+      if (controller.signal.aborted) throw new DOMException("Upload cancelled", "AbortError");
+      attachmentAbortRef.current = null;
       setAttachmentProgress(mode === "replace" ? "기존 파일을 교체하고 있습니다." : "새 파일을 추가하고 있습니다.");
       setAttachmentPercent(100);
       const response = await fetch("/api/resources/attachments", {
@@ -448,19 +417,16 @@ export default function ResourceLibraryPage({
       });
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(payload.error || "파일 변경을 완료하지 못했습니다.");
+      attachmentCommitted = true;
       if (editFilesRef.current) editFilesRef.current.value = "";
       setMessage(mode === "replace" ? "파일을 교체했습니다." : "새 파일을 추가했습니다.");
       await load();
     } catch (error) {
-      if (uploaded.length) {
-        await fetch("/api/resources/upload-session", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileIds: uploaded.map((item) => item.fileId) }),
-        }).catch(() => undefined);
-      }
-      setMessage(error instanceof Error ? error.message : "파일 변경을 완료하지 못했습니다.");
+      if (!attachmentCommitted) await cleanupUploadedFiles(uploaded);
+      setMessage(resourceUploadErrorMessage(error));
     } finally {
+      attachmentAbortRef.current = null;
+      attachmentLockRef.current = false;
       setAttachmentBusy(false);
       setAttachmentProgress("");
       setAttachmentPercent(0);
@@ -595,7 +561,12 @@ export default function ResourceLibraryPage({
         </div>
         <div className="resource-hero-actions">
           {libraryKind === "documents" ? (
-            <button type="button" className="primary-button" onClick={() => setUploadOpen((value) => !value)}>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={busy || attachmentBusy}
+              onClick={() => setUploadOpen((value) => !value)}
+            >
               {uploadOpen ? "등록 닫기" : "+ 문서 등록"}
             </button>
           ) : (
@@ -613,7 +584,7 @@ export default function ResourceLibraryPage({
 
       {libraryKind === "documents" && uploadOpen && (
         <form className="resource-upload-form" onSubmit={upload}>
-          <fieldset className="resource-upload-kind">
+          <fieldset className="resource-upload-kind" disabled={busy}>
             <legend>자료 종류</legend>
             <button
               type="button"
@@ -626,7 +597,7 @@ export default function ResourceLibraryPage({
           </fieldset>
           <label>
             <span>분류</span>
-            <select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>
+            <select disabled={busy} value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>
               {categories.map((item) => <option key={item}>{item}</option>)}
             </select>
           </label>
@@ -634,29 +605,28 @@ export default function ResourceLibraryPage({
             <span>제목</span>
             <input
               required
+              disabled={busy}
               maxLength={160}
               value={draft.title}
               onChange={(event) => setDraft({ ...draft, title: event.target.value })}
-              placeholder={libraryKind === "videos" ? "예: 가상현실 스포츠실 제품 시연" : "예: 가상현실 스포츠실 제안서"}
+              placeholder="예: 가상현실 스포츠실 제안서"
             />
           </label>
           <label className="wide">
             <span>설명</span>
-            <textarea value={draft.content} onChange={(event) => setDraft({ ...draft, content: event.target.value })} placeholder="사용처나 참고 내용을 적어 주세요." />
+            <textarea disabled={busy} value={draft.content} onChange={(event) => setDraft({ ...draft, content: event.target.value })} placeholder="사용처나 참고 내용을 적어 주세요." />
           </label>
           <label className="wide resource-file-picker">
             <span>첨부 파일</span>
             <input
               ref={filesRef}
               required
+              disabled={busy}
               type="file"
               multiple
-              accept={libraryKind === "videos" ? "video/*,.mp4,.mov,.avi,.mkv,.webm,.m4v,.wmv,.mpeg,.mpg" : undefined}
             />
             <small>
-              {libraryKind === "videos"
-                ? "영상 파일끼리 등록해 주세요 · 최대 10개"
-                : "문서 자료에는 영상 파일을 함께 등록할 수 없습니다 · 최대 10개"}
+              문서 자료에는 영상 파일을 함께 등록할 수 없습니다 · 최대 10개
             </small>
             {uploadProgress && (
               <div className="resource-upload-progress" role="status" aria-live="polite">
@@ -666,7 +636,7 @@ export default function ResourceLibraryPage({
             )}
           </label>
           <div className="resource-form-actions">
-            <button type="button" className="secondary-button" onClick={() => setUploadOpen(false)}>취소</button>
+            <button type="button" className="secondary-button" onClick={closeUploadForm}>{busy ? "업로드 취소" : "취소"}</button>
             <button type="submit" className="primary-button" disabled={busy || !configured}>{busy ? "등록 중…" : "자료 등록"}</button>
           </div>
         </form>
@@ -816,11 +786,11 @@ export default function ResourceLibraryPage({
             <article key={post.id} className="resource-post-card">
               {editing === post.id ? (
                 <div className="resource-edit-form">
-                  <select value={editDraft.category} onChange={(event) => setEditDraft({ ...editDraft, category: event.target.value })}>
+                  <select disabled={busy || attachmentBusy} value={editDraft.category} onChange={(event) => setEditDraft({ ...editDraft, category: event.target.value })}>
                     {categories.map((item) => <option key={item}>{item}</option>)}
                   </select>
-                  <input value={editDraft.title} onChange={(event) => setEditDraft({ ...editDraft, title: event.target.value })} />
-                  <textarea value={editDraft.content} onChange={(event) => setEditDraft({ ...editDraft, content: event.target.value })} />
+                  <input disabled={busy || attachmentBusy} value={editDraft.title} onChange={(event) => setEditDraft({ ...editDraft, title: event.target.value })} />
+                  <textarea disabled={busy || attachmentBusy} value={editDraft.content} onChange={(event) => setEditDraft({ ...editDraft, content: event.target.value })} />
                   <div className="resource-edit-attachments">
                     <strong>현재 파일</strong>
                     {post.attachments.map((file) => (
@@ -831,7 +801,7 @@ export default function ResourceLibraryPage({
                           교체
                           <input
                             type="file"
-                            disabled={attachmentBusy}
+                            disabled={busy || attachmentBusy}
                             onChange={(event) => {
                               const next = Array.from(event.target.files ?? []);
                               void uploadEditFiles(post, next, "replace", file.id);
@@ -839,7 +809,7 @@ export default function ResourceLibraryPage({
                             }}
                           />
                         </label>
-                        <button type="button" className="danger" disabled={attachmentBusy} onClick={() => void deleteAttachment(post, file)}>삭제</button>
+                        <button type="button" className="danger" disabled={busy || attachmentBusy} onClick={() => void deleteAttachment(post, file)}>삭제</button>
                       </div>
                     ))}
                     <label className="resource-add-files">
@@ -848,7 +818,7 @@ export default function ResourceLibraryPage({
                         ref={editFilesRef}
                         type="file"
                         multiple
-                        disabled={attachmentBusy}
+                        disabled={busy || attachmentBusy}
                         onChange={(event) => void uploadEditFiles(post, Array.from(event.target.files ?? []), "add")}
                       />
                     </label>
@@ -859,7 +829,10 @@ export default function ResourceLibraryPage({
                       </div>
                     )}
                   </div>
-                  <div><button type="button" onClick={() => setEditing(null)}>취소</button><button type="button" className="primary-button" onClick={() => void saveEdit(post)}>저장</button></div>
+                  <div>
+                    <button type="button" onClick={closeEditForm}>{attachmentBusy ? "업로드 취소" : "취소"}</button>
+                    <button type="button" className="primary-button" disabled={busy || attachmentBusy} onClick={() => void saveEdit(post)}>저장</button>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -904,7 +877,7 @@ export default function ResourceLibraryPage({
           );
         })}
         {!loading && !visiblePosts.length && (
-          <div className="empty-state">등록된 {libraryKind === "videos" ? "영상" : "문서"} 자료가 없습니다.</div>
+          <div className="empty-state">등록된 문서 자료가 없습니다.</div>
         )}
         {loading && <div className="empty-state">자료를 불러오는 중입니다.</div>}
       </div>
