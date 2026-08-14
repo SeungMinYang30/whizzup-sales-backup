@@ -1,5 +1,6 @@
 import "server-only";
 import { googleCalendarTitle, removeOriginalGoogleTitleNote } from "./google-calendar-title";
+import { constructionOccurrenceDates } from "./google-calendar-occurrences";
 
 export type GoogleCalendarApiEvent = {
   id: string;
@@ -216,7 +217,10 @@ function defaultTimedEnd(dateValue: string, timeValue: string) {
   };
 }
 
-function eventBody(schedule: GoogleCalendarWriteSchedule) {
+function eventBody(
+  schedule: GoogleCalendarWriteSchedule,
+  occurrenceDate = schedule.scheduledDate,
+) {
   const storedStartTime = normalizeGoogleCalendarTime(schedule.startTime);
   const usesConstructionDisplayTime = schedule.category === "construction" && !storedStartTime;
   const startTime = usesConstructionDisplayTime ? "18:00" : storedStartTime;
@@ -225,11 +229,12 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
   const endDate = schedule.endDate && schedule.endDate >= schedule.scheduledDate
     ? schedule.endDate
     : schedule.scheduledDate;
+  const displayStartDate = usesConstructionDisplayTime ? occurrenceDate : schedule.scheduledDate;
   const start = allDay
     ? { date: schedule.scheduledDate, dateTime: null, timeZone: null }
-    : { date: null, dateTime: `${schedule.scheduledDate}T${startTime}:00+09:00`, timeZone: "Asia/Seoul" };
+    : { date: null, dateTime: `${displayStartDate}T${startTime}:00+09:00`, timeZone: "Asia/Seoul" };
   const fallbackEnd = usesConstructionDisplayTime
-    ? { date: schedule.scheduledDate, time: "18:30" }
+    ? { date: displayStartDate, time: "18:30" }
     : endTime
     ? { date: endDate, time: endTime }
     : defaultTimedEnd(endDate, startTime);
@@ -284,9 +289,34 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
         whizzupBusinessRound: String(schedule.businessRound),
         whizzupAssigneeMemberId: schedule.assigneeMemberId ? String(schedule.assigneeMemberId) : "",
         whizzupAssigneeName: schedule.assigneeName,
+        whizzupOccurrenceDate: usesConstructionDisplayTime ? displayStartDate : "",
       },
     },
   };
+}
+
+async function upsertConstructionOccurrence(
+  schedule: GoogleCalendarWriteSchedule,
+  occurrenceDate: string,
+  googleEventId = "",
+) {
+  const body = eventBody(schedule, occurrenceDate);
+  try {
+    const method = googleEventId ? "PATCH" : "POST";
+    const path = googleEventId
+      ? `/events/${encodeURIComponent(googleEventId)}?sendUpdates=none`
+      : "/events?sendUpdates=none";
+    return await googleRequest(path, {
+      method,
+      body: JSON.stringify(body),
+    }, "construction") as unknown as GoogleCalendarApiEvent;
+  } catch (error) {
+    if (!googleEventId || !isMissingGoogleResource(error)) throw error;
+    return await googleRequest("/events?sendUpdates=none", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }, "construction") as unknown as GoogleCalendarApiEvent;
+  }
 }
 
 export async function upsertGoogleCalendarEvent(
@@ -312,13 +342,59 @@ export async function upsertGoogleCalendarEvent(
 }
 
 export async function findGoogleCalendarEventByScheduleId(scheduleId: number, category = "general") {
+  return (await listGoogleCalendarEventsByScheduleId(scheduleId, category))[0] || null;
+}
+
+export async function listGoogleCalendarEventsByScheduleId(scheduleId: number, category = "general") {
   const params = new URLSearchParams({
     privateExtendedProperty: `whizzupScheduleId=${scheduleId}`,
     showDeleted: "true",
-    maxResults: "10",
+    maxResults: "250",
   });
   const result = await googleRequest(`/events?${params}`, undefined, category) as { items?: GoogleCalendarApiEvent[] };
-  return (result.items || []).find((event) => event.status !== "cancelled") || null;
+  return (result.items || []).filter((event) => event.status !== "cancelled");
+}
+
+export async function deleteGoogleCalendarEventsByScheduleId(
+  scheduleId: number,
+  category = "general",
+  extraEventId = "",
+) {
+  const events = await listGoogleCalendarEventsByScheduleId(scheduleId, category);
+  const ids = new Set(events.map((event) => event.id).filter(Boolean));
+  if (extraEventId) ids.add(extraEventId);
+  for (const eventId of ids) await deleteGoogleCalendarEvent(eventId, category);
+}
+
+export async function syncGoogleCalendarScheduleEvents(
+  schedule: GoogleCalendarWriteSchedule,
+  storedEventId = "",
+) {
+  const occurrenceDates = constructionOccurrenceDates(schedule);
+  if (schedule.category !== "construction" || schedule.startTime.trim()) {
+    return upsertGoogleCalendarEvent(schedule, storedEventId);
+  }
+  const existing = await listGoogleCalendarEventsByScheduleId(schedule.id, "construction");
+  const existingByDate = new Map<string, GoogleCalendarApiEvent[]>();
+  for (const event of existing) {
+    const occurrenceDate = event.extendedProperties?.private?.whizzupOccurrenceDate
+      || event.start?.dateTime?.slice(0, 10)
+      || event.start?.date
+      || "";
+    existingByDate.set(occurrenceDate, [...(existingByDate.get(occurrenceDate) || []), event]);
+  }
+  const synced: GoogleCalendarApiEvent[] = [];
+  for (const date of occurrenceDates) {
+    const candidate = existingByDate.get(date)?.shift();
+    synced.push(await upsertConstructionOccurrence(schedule, date, candidate?.id || ""));
+  }
+  const keptIds = new Set(synced.map((event) => event.id));
+  const obsoleteIds = new Set(
+    [...existingByDate.values()].flat().map((event) => event.id).filter(Boolean),
+  );
+  if (storedEventId && !keptIds.has(storedEventId)) obsoleteIds.add(storedEventId);
+  for (const eventId of obsoleteIds) await deleteGoogleCalendarEvent(eventId, "construction");
+  return synced[0];
 }
 
 export async function getGoogleCalendarEvent(googleEventId: string, category = "general") {

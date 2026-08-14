@@ -757,7 +757,35 @@ function normalizeConstructionScheduleInputs(value: unknown) {
       normalized,
     );
   });
-  return [...unique.values()];
+  const merged: ConstructionScheduleInput[] = [];
+  const latestByGroup = new Map<string, ConstructionScheduleInput>();
+  const normalized = [...unique.values()].sort((left, right) =>
+    left.stage.localeCompare(right.stage, "ko-KR") ||
+    left.scheduledDate.localeCompare(right.scheduledDate) ||
+    (left.endDate || left.scheduledDate).localeCompare(right.endDate || right.scheduledDate)
+  );
+  for (const schedule of normalized) {
+    const groupKey = [
+      schedule.stage,
+      schedule.startTime,
+      schedule.endTime,
+      schedule.vendorName,
+      schedule.details,
+      schedule.completed ? "1" : "0",
+    ].join("\u001f");
+    const current = latestByGroup.get(groupKey);
+    const scheduleEndDate = schedule.endDate || schedule.scheduledDate;
+    const currentEndDate = current?.endDate || current?.scheduledDate || "";
+    if (current && schedule.scheduledDate <= currentEndDate) {
+      current.endDate = currentEndDate >= scheduleEndDate ? currentEndDate : scheduleEndDate;
+      current.id ||= schedule.id;
+      continue;
+    }
+    const next = { ...schedule };
+    merged.push(next);
+    latestByGroup.set(groupKey, next);
+  }
+  return merged;
 }
 
 export async function listConstructionScheduleBoard() {

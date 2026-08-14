@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { googleCalendarTitle, removeOriginalGoogleTitleNote } from "../lib/google-calendar-title.ts";
+import { constructionOccurrenceDates } from "../lib/google-calendar-occurrences.ts";
 import { directPurchaseLimitWarning, procurementContractWarnings } from "../lib/procurement-contract-warning.ts";
 
 test("조달 계약 경고는 공급처별 합계와 1억원 경계를 정확히 적용한다", () => {
@@ -72,6 +73,18 @@ test("Google 설명에서 중복 원본 제목 문구를 제거한다", () => {
     "방문 목적 확인",
   );
   assert.equal(removeOriginalGoogleTitleNote("방문 목적 확인\n원본 제목: 이전 제목"), "방문 목적 확인");
+});
+
+test("시간 없는 복수일 시공 일정은 날짜별 고유 Google 이벤트로 확장한다", () => {
+  const schedule = {
+    id: 37,
+    category: "construction",
+    scheduledDate: "2026-08-13",
+    endDate: "2026-08-14",
+    startTime: "",
+  };
+  assert.deepEqual(constructionOccurrenceDates(schedule), ["2026-08-13", "2026-08-14"]);
+  assert.deepEqual(constructionOccurrenceDates({ ...schedule, startTime: "10:00" }), ["2026-08-13"]);
 });
 
 test("복수 예산은 최종 저장 시 화면과 서버에서 합계 일치를 검증한다", async () => {

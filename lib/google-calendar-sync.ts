@@ -3,11 +3,13 @@ import "server-only";
 import { getD1 } from "../db";
 import {
   deleteGoogleCalendarEvent,
+  deleteGoogleCalendarEventsByScheduleId,
   findGoogleCalendarEventByScheduleId,
   getGoogleCalendarEvent,
   googleConstructionCalendarApiConfigured,
   googleCalendarApiConfigured,
   listGoogleCalendarApiEvents,
+  syncGoogleCalendarScheduleEvents,
   type GoogleCalendarApiEvent,
   upsertGoogleCalendarEvent,
 } from "./google-calendar-api";
@@ -287,9 +289,84 @@ function legacyConstructionStage(description: string) {
   return (CONSTRUCTION_STAGES as readonly string[]).includes(stage) ? stage : "";
 }
 
+async function prepareConstructionOccurrenceMigration() {
+  const d1 = getD1();
+  const migrationKey = "google:construction_occurrences:daily_dedupe:v1";
+  const migrated = await d1.prepare(
+    "SELECT value FROM app_settings WHERE key = ?",
+  ).bind(migrationKey).first<{ value: string }>();
+  if (migrated || !googleConstructionCalendarApiConfigured()) return;
+  const result = await d1.prepare(
+    `SELECT id, organization, business_round, label, scheduled_date, end_date,
+            start_time, end_time, vendor_name, details, completed,
+            assignee_member_id, assignee_name
+     FROM organization_schedules
+     WHERE category = 'construction'
+       AND TRIM(COALESCE(deleted_at, '')) = ''
+     ORDER BY organization ASC, business_round ASC, label ASC, scheduled_date ASC, id ASC`,
+  ).all<Record<string, unknown>>();
+  const groups = new Map<string, Array<{ id: number; startDate: string; endDate: string }>>();
+  for (const row of result.results) {
+    const startDate = String(row.scheduled_date || "");
+    const endDate = String(row.end_date || startDate);
+    const key = [
+      row.organization, row.business_round, row.label, row.start_time, row.end_time,
+      row.vendor_name, row.details, row.completed, row.assignee_member_id, row.assignee_name,
+    ].map((value) => String(value ?? "").trim()).join("\u001f");
+    const ranges = groups.get(key) || [];
+    const current = ranges[ranges.length - 1];
+    if (current && startDate <= current.endDate) {
+      current.endDate = current.endDate >= endDate ? current.endDate : endDate;
+      continue;
+    }
+    ranges.push({ id: Number(row.id), startDate, endDate });
+    groups.set(key, ranges);
+  }
+  const statements = [
+    d1.prepare(
+      `UPDATE organization_schedules
+       SET sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
+       WHERE category = 'construction'
+         AND TRIM(COALESCE(deleted_at, '')) = ''`,
+    ),
+  ];
+  for (const row of result.results) {
+    const startDate = String(row.scheduled_date || "");
+    const key = [
+      row.organization, row.business_round, row.label, row.start_time, row.end_time,
+      row.vendor_name, row.details, row.completed, row.assignee_member_id, row.assignee_name,
+    ].map((value) => String(value ?? "").trim()).join("\u001f");
+    const owner = (groups.get(key) || []).find(
+      (range) => startDate >= range.startDate && startDate <= range.endDate,
+    );
+    if (!owner) continue;
+    if (Number(row.id) === owner.id) {
+      statements.push(d1.prepare(
+        `UPDATE organization_schedules
+         SET end_date = ?, sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
+         WHERE id = ?`,
+      ).bind(owner.endDate, owner.id));
+    } else {
+      statements.push(d1.prepare(
+        `UPDATE organization_schedules
+         SET deleted_at = CURRENT_TIMESTAMP, sync_status = 'pending', sync_operation = 'delete',
+             sync_error = '', updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+      ).bind(Number(row.id)));
+    }
+  }
+  statements.push(d1.prepare(
+    `INSERT INTO app_settings (key, value, updated_at)
+     VALUES (?, 'prepared', CURRENT_TIMESTAMP)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+  ).bind(migrationKey));
+  await d1.batch(statements);
+}
+
 export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?: number }) {
   await ensureOrganizationSchedulesReady();
   await applyGoogleSharingPolicy();
+  await prepareConstructionOccurrenceMigration();
   const d1 = getD1();
   const constructionMigrationKey = "google:construction_calendar_split:v2";
   const constructionMigration = await d1.prepare(
@@ -354,9 +431,21 @@ export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?
       ).bind(constructionDisplayMigrationKey),
     ]);
   }
+  await d1.prepare(
+    `UPDATE organization_schedules
+     SET sync_status = 'pending'
+     WHERE sync_status = 'syncing'
+       AND last_synced_at < datetime('now', '-10 minutes')`,
+  ).run();
   const rows = await pendingRows(options?.ids, options?.limit ?? 20);
   if (!rows.length) return;
   for (const row of rows) {
+    const claimed = await d1.prepare(
+      `UPDATE organization_schedules
+       SET sync_status = 'syncing', last_synced_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND sync_status IN ('pending', 'failed')`,
+    ).bind(row.id).run();
+    if (!claimed.meta.changes) continue;
     try {
       if (!googleCalendarApiConfigured()) {
         throw new Error("Google Calendar 쓰기 연결 정보가 등록되지 않았습니다.");
@@ -379,7 +468,11 @@ export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?
         continue;
       }
       if (row.sync_operation === "delete" || row.deleted_at) {
-        await deleteGoogleCalendarEvent(row.google_event_id || "", row.category);
+        await deleteGoogleCalendarEventsByScheduleId(
+          Number(row.id),
+          row.category,
+          row.google_event_id || "",
+        );
         await d1.prepare("DELETE FROM organization_schedules WHERE id = ?").bind(row.id).run();
         continue;
       }
@@ -390,7 +483,9 @@ export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?
         const existing = await findGoogleCalendarEventByScheduleId(row.id, row.category);
         eventId = existing?.id || "";
       }
-      const event = await upsertGoogleCalendarEvent(writeSchedule(row), eventId);
+      const event = row.category === "construction"
+        ? await syncGoogleCalendarScheduleEvents(writeSchedule(row), eventId)
+        : await upsertGoogleCalendarEvent(writeSchedule(row), eventId);
       if (sourceEventId) {
         await deleteGoogleCalendarEvent(sourceEventId, "general");
       }
