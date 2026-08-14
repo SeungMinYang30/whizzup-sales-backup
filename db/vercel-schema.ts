@@ -1,7 +1,7 @@
 export const VERCEL_SCHEMA_VERSION =
-  "202608120002_vercel_cutover_guard";
+  "202608140001_joint_project_identity_repair";
 export const VERCEL_PREVIOUS_SCHEMA_VERSION =
-  "202608120001_sites_v487_exact_clone";
+  "202608120002_vercel_cutover_guard";
 export const VERCEL_BASE_SCHEMA_VERSION = "202608060007_full_backup_columns";
 
 const COMPLEX_PROJECT_BACKFILL_SQL = `
@@ -154,6 +154,24 @@ ALTER TABLE public.replication_sync_state
   ADD COLUMN IF NOT EXISTS cutover_at timestamptz;
 ALTER TABLE public.replication_sync_state
   ADD COLUMN IF NOT EXISTS cutover_by bigint;
+`;
+
+const JOINT_PROJECT_IDENTITY_REPAIR_SQL = `
+SELECT setval(
+  pg_get_serial_sequence('public.joint_projects', 'id'),
+  COALESCE((SELECT MAX(id) FROM public.joint_projects), 1),
+  EXISTS (SELECT 1 FROM public.joint_projects)
+);
+SELECT setval(
+  pg_get_serial_sequence('public.joint_project_members', 'id'),
+  COALESCE((SELECT MAX(id) FROM public.joint_project_members), 1),
+  EXISTS (SELECT 1 FROM public.joint_project_members)
+);
+SELECT setval(
+  pg_get_serial_sequence('public.joint_project_events', 'id'),
+  COALESCE((SELECT MAX(id) FROM public.joint_project_events), 1),
+  EXISTS (SELECT 1 FROM public.joint_project_events)
+);
 `;
 
 const SITES_V487_SCHEMA_SQL = `
@@ -320,6 +338,7 @@ ${SITES_V416_SCHEMA_SQL}
 ${SITES_V487_SCHEMA_SQL}
 ${COMPLEX_PROJECT_BACKFILL_SQL}
 ${VERCEL_CUTOVER_SCHEMA_SQL}
+${JOINT_PROJECT_IDENTITY_REPAIR_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
@@ -1246,6 +1265,7 @@ ${SITES_V416_SCHEMA_SQL}
 ${SITES_V487_SCHEMA_SQL}
 ${COMPLEX_PROJECT_BACKFILL_SQL}
 ${VERCEL_CUTOVER_SCHEMA_SQL}
+${JOINT_PROJECT_IDENTITY_REPAIR_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
@@ -1510,6 +1530,7 @@ ${SITES_V416_SCHEMA_SQL}
 ${SITES_V487_SCHEMA_SQL}
 ${COMPLEX_PROJECT_BACKFILL_SQL}
 ${VERCEL_CUTOVER_SCHEMA_SQL}
+${JOINT_PROJECT_IDENTITY_REPAIR_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
