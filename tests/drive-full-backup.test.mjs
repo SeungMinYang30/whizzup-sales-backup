@@ -28,3 +28,15 @@ test("full backup action does not download a second copy to the PC", () => {
   assert.doesNotMatch(fullBranch, /saveBlob/);
   assert.match(fullBranch, /return;/);
 });
+
+test("restore selects, inspects, and restores the backup directly from Google Drive", () => {
+  assert.match(route, /action === "list-drive-backups"/);
+  assert.match(route, /action === "inspect-drive-backup"/);
+  assert.match(route, /action === "restore-drive-backup"/);
+  assert.match(route, /loadFullBackupFromDrive/);
+  assert.match(route, /WHIZZUP DB 백업 폴더에서 선택한 파일/);
+  assert.match(page, /aria-label="Google Drive 백업 선택"/);
+  assert.match(page, /action: "inspect-drive-backup"/);
+  assert.match(page, /action: "restore-drive-backup"/);
+  assert.doesNotMatch(page, /type="file"/);
+});

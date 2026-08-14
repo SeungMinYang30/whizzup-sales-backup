@@ -18,7 +18,13 @@ import {
   createEmergencyRecoveryPackage,
   createOfflineStandalonePackage,
 } from "../../../lib/recovery-packages";
-import { uploadDriveFile } from "../../../lib/google-drive-storage";
+import {
+  downloadDriveFile,
+  ensureDrivePath,
+  isDriveFolder,
+  listDriveChildren,
+  uploadDriveFile,
+} from "../../../lib/google-drive-storage";
 import { gunzipSync, gzipSync } from "node:zlib";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +32,7 @@ export const runtime = "nodejs";
 
 const MAX_REQUEST_BYTES = 15 * 1024 * 1024;
 const MAX_COMPRESSED_REQUEST_BYTES = 4 * 1024 * 1024;
+const MAX_DRIVE_BACKUP_BYTES = 25 * 1024 * 1024;
 
 function todayValue() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -76,6 +83,79 @@ async function archiveFullBackupToDrive() {
     totalRows: Object.values(backup.counts).reduce((sum, count) => sum + count, 0),
     ...stored,
   };
+}
+
+async function listFullBackupsFromDrive() {
+  const rootId = await ensureDrivePath(["WHIZZUP DB 백업"]);
+  const years = (await listDriveChildren(rootId)).filter(isDriveFolder);
+  const backups: Array<{
+    fileId: string;
+    fileName: string;
+    sizeBytes: number;
+    folderPath: string;
+  }> = [];
+  for (const year of years) {
+    const months = (await listDriveChildren(year.id)).filter(isDriveFolder);
+    for (const month of months) {
+      const files = await listDriveChildren(month.id);
+      for (const file of files) {
+        if (
+          isDriveFolder(file) ||
+          !file.name?.startsWith("WHIZZUP_full_backup_") ||
+          !file.name.endsWith(".json")
+        ) {
+          continue;
+        }
+        backups.push({
+          fileId: file.id,
+          fileName: file.name,
+          sizeBytes: Number(file.size) || 0,
+          folderPath: `WHIZZUP DB 백업/${year.name || ""}/${month.name || ""}`,
+        });
+      }
+    }
+  }
+  return backups.sort((left, right) =>
+    right.fileName.localeCompare(left.fileName, "ko-KR"),
+  );
+}
+
+async function loadFullBackupFromDrive(fileId: string) {
+  const backups = await listFullBackupsFromDrive();
+  const selected = backups.find((backup) => backup.fileId === fileId);
+  if (!selected) {
+    throw new BackupValidationError(
+      "WHIZZUP DB 백업 폴더에서 선택한 파일을 찾지 못했습니다.",
+    );
+  }
+  if (selected.sizeBytes > MAX_DRIVE_BACKUP_BYTES) {
+    throw new BackupValidationError(
+      "선택한 Drive 백업이 25MB를 넘어 현재 복원할 수 없습니다.",
+    );
+  }
+  const response = await downloadDriveFile(selected.fileId);
+  const contentLength = Number(response.headers.get("content-length") || 0);
+  if (contentLength > MAX_DRIVE_BACKUP_BYTES) {
+    throw new BackupValidationError(
+      "선택한 Drive 백업이 25MB를 넘어 현재 복원할 수 없습니다.",
+    );
+  }
+  const bytes = await response.arrayBuffer();
+  if (bytes.byteLength > MAX_DRIVE_BACKUP_BYTES) {
+    throw new BackupValidationError(
+      "선택한 Drive 백업이 25MB를 넘어 현재 복원할 수 없습니다.",
+    );
+  }
+  try {
+    return {
+      backup: JSON.parse(new TextDecoder().decode(bytes)) as unknown,
+      selected,
+    };
+  } catch {
+    throw new BackupValidationError(
+      "선택한 Google Drive 파일이 올바른 JSON 백업이 아닙니다.",
+    );
+  }
 }
 
 function downloadHeaders(filename: string, contentType: string) {
@@ -184,11 +264,41 @@ export async function POST(request: Request) {
       csv?: string;
       confirmation?: string;
       safetyBackupDownloaded?: boolean;
+      driveFileId?: string;
     };
 
     if (payload.action === "archive-full-backup") {
       const archive = await archiveFullBackupToDrive();
       return Response.json({ ok: true, archive });
+    }
+    if (payload.action === "list-drive-backups") {
+      return Response.json({ backups: await listFullBackupsFromDrive() });
+    }
+    if (payload.action === "inspect-drive-backup") {
+      const { backup, selected } = await loadFullBackupFromDrive(
+        String(payload.driveFileId || ""),
+      );
+      const { inspection } = await validateFullBackup(backup, member);
+      return Response.json({ inspection, selected });
+    }
+    if (payload.action === "restore-drive-backup") {
+      if (
+        payload.confirmation?.trim() !== "복원" ||
+        payload.safetyBackupDownloaded !== true
+      ) {
+        return Response.json(
+          {
+            error:
+              "현재 DB를 Google Drive에 먼저 안전 백업하고 ‘복원’을 입력해 주세요.",
+          },
+          { status: 400 },
+        );
+      }
+      const { backup } = await loadFullBackupFromDrive(
+        String(payload.driveFileId || ""),
+      );
+      const inspection = await restoreFullBackup(backup, member);
+      return Response.json({ ok: true, inspection });
     }
 
     if (payload.action === "inspect-backup") {

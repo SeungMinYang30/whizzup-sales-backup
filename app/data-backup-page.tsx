@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import TrashPage from "./trash-page";
 
 type BackupInspection = {
@@ -16,6 +16,13 @@ type BackupInspection = {
 };
 
 type DownloadKind = "full" | "emergency" | "offline";
+
+type DriveBackupOption = {
+  fileId: string;
+  fileName: string;
+  sizeBytes: number;
+  folderPath: string;
+};
 
 const tableLabels: Record<string, string> = {
   members: "구성원·권한",
@@ -74,24 +81,6 @@ async function readError(response: Response, fallback: string) {
   }
 }
 
-async function compressedJsonRequest(payload: unknown) {
-  const json = JSON.stringify(payload);
-  if (typeof CompressionStream === "undefined") {
-    return {
-      headers: { "Content-Type": "application/json" },
-      body: json,
-    };
-  }
-
-  const compressed = new Blob([json])
-    .stream()
-    .pipeThrough(new CompressionStream("gzip"));
-  return {
-    headers: { "Content-Type": "application/gzip" },
-    body: await new Response(compressed).arrayBuffer(),
-  };
-}
-
 async function downloadableBlob(response: Response) {
   if (response.headers.get("x-whizzup-content-encoding") !== "gzip") {
     return response.blob();
@@ -126,7 +115,8 @@ export default function DataBackupPage({
   );
   const [busy, setBusy] = useState("");
   const [backupFileName, setBackupFileName] = useState("");
-  const [backupPayload, setBackupPayload] = useState<unknown>(null);
+  const [driveBackups, setDriveBackups] = useState<DriveBackupOption[]>([]);
+  const [selectedDriveBackupId, setSelectedDriveBackupId] = useState("");
   const [backupInspection, setBackupInspection] =
     useState<BackupInspection | null>(null);
   const [backupError, setBackupError] = useState("");
@@ -139,6 +129,39 @@ export default function DataBackupPage({
     }
   }, []);
   const [restoreConfirmation, setRestoreConfirmation] = useState("");
+
+  async function loadDriveBackups() {
+    try {
+      setBusy((current) => current || "list-drive-backups");
+      const response = await fetch("/api/backup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "list-drive-backups" }),
+      });
+      const payload = (await response.json()) as {
+        backups?: DriveBackupOption[];
+        error?: string;
+      };
+      if (!response.ok || !payload.backups) {
+        throw new Error(payload.error || "Google Drive 백업 목록을 불러오지 못했습니다.");
+      }
+      setDriveBackups(payload.backups);
+    } catch (error) {
+      setBackupError(
+        error instanceof Error
+          ? error.message
+          : "Google Drive 백업 목록을 불러오지 못했습니다.",
+      );
+    } finally {
+      setBusy((current) => (current === "list-drive-backups" ? "" : current));
+    }
+  }
+
+  useEffect(() => {
+    if (canManageBackup) void loadDriveBackups();
+    // The Drive list only needs an initial refresh when backup access changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManageBackup]);
 
   async function download(kind: DownloadKind, safety = false) {
     try {
@@ -160,6 +183,7 @@ export default function DataBackupPage({
         const now = new Date().toISOString();
         window.localStorage.setItem("whizzup-last-full-backup-at", now);
         if (safety) setSafetyBackupDownloaded(true);
+        await loadDriveBackups();
         notify(
           safety
             ? `복원 직전 안전 백업을 Google Drive에 저장했습니다. (${payload.archive.folderPath})`
@@ -201,30 +225,23 @@ export default function DataBackupPage({
     }
   }
 
-  async function inspectBackupFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    setBackupFileName(file.name);
-    setBackupPayload(null);
+  async function inspectDriveBackup(fileId: string) {
+    const selected = driveBackups.find((backup) => backup.fileId === fileId);
+    setSelectedDriveBackupId(fileId);
+    setBackupFileName(selected?.fileName || "");
     setBackupInspection(null);
     setBackupError("");
     setRestoreConfirmation("");
-    if (file.size > 12 * 1024 * 1024) {
-      setBackupError("12MB 이하의 전체 백업 파일을 선택해 주세요.");
-      return;
-    }
+    if (!fileId) return;
     try {
       setBusy("inspect-backup");
-      const text = await file.text();
-      const backup = JSON.parse(text) as unknown;
-      const request = await compressedJsonRequest({
-        action: "inspect-backup",
-        backup,
-      });
       const response = await fetch("/api/backup", {
         method: "POST",
-        ...request,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "inspect-drive-backup",
+          driveFileId: fileId,
+        }),
       });
       const payload = (await response.json()) as {
         inspection?: BackupInspection;
@@ -233,15 +250,12 @@ export default function DataBackupPage({
       if (!response.ok || !payload.inspection) {
         throw new Error(payload.error || "백업 파일을 검사하지 못했습니다.");
       }
-      setBackupPayload(backup);
       setBackupInspection(payload.inspection);
     } catch (error) {
       setBackupError(
-        error instanceof SyntaxError
-          ? "JSON 형식의 WHIZZUP 전체 백업 파일이 아닙니다."
-          : error instanceof Error
-            ? error.message
-            : "백업 파일을 검사하지 못했습니다.",
+        error instanceof Error
+          ? error.message
+          : "Google Drive 백업을 검사하지 못했습니다.",
       );
     } finally {
       setBusy("");
@@ -249,7 +263,7 @@ export default function DataBackupPage({
   }
 
   async function restoreBackup() {
-    if (!backupPayload || !backupInspection) return;
+    if (!selectedDriveBackupId || !backupInspection) return;
     if (
       !window.confirm(
         "현재 업무 DB를 선택한 백업 시점으로 전체 교체합니다. 계속할까요?",
@@ -259,15 +273,15 @@ export default function DataBackupPage({
     }
     try {
       setBusy("restore");
-      const request = await compressedJsonRequest({
-        action: "restore-backup",
-        backup: backupPayload,
-        confirmation: restoreConfirmation,
-        safetyBackupDownloaded,
-      });
       const response = await fetch("/api/backup", {
         method: "POST",
-        ...request,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "restore-drive-backup",
+          driveFileId: selectedDriveBackupId,
+          confirmation: restoreConfirmation,
+          safetyBackupDownloaded,
+        }),
       });
       const payload = (await response.json()) as {
         ok?: boolean;
@@ -278,9 +292,9 @@ export default function DataBackupPage({
       }
       await onDataChanged();
       notify("전체 DB 복원이 완료되었습니다.");
-      setBackupPayload(null);
       setBackupInspection(null);
       setBackupFileName("");
+      setSelectedDriveBackupId("");
       setRestoreConfirmation("");
       setSafetyBackupDownloaded(false);
     } catch (error) {
@@ -370,20 +384,39 @@ export default function DataBackupPage({
           </section>
           <section className="backup-recovery-action backup-recovery-action-restore">
             <div>
-              <strong>저장한 전체 DB 복원</strong>
+              <strong>Google Drive 백업 복원</strong>
               <p>
-                백업 파일을 먼저 검사하고, 원본 ID와 연결 관계를 유지한 채
-                복원합니다.
+                날짜·시간별 백업을 선택해 무결성을 검사한 뒤 원본 ID와 연결
+                관계를 유지한 채 복원합니다.
               </p>
             </div>
-            <label className="backup-file-button">
-              전체 백업 파일 선택
-              <input
-                type="file"
-                accept=".json,application/json"
-                onChange={(event) => void inspectBackupFile(event)}
-              />
-            </label>
+            <div className="backup-drive-picker">
+              <select
+                aria-label="Google Drive 백업 선택"
+                value={selectedDriveBackupId}
+                disabled={Boolean(busy)}
+                onChange={(event) => void inspectDriveBackup(event.target.value)}
+              >
+                <option value="">
+                  {busy === "list-drive-backups"
+                    ? "Drive 백업 불러오는 중…"
+                    : "복원할 Drive 백업 선택"}
+                </option>
+                {driveBackups.map((backup) => (
+                  <option key={backup.fileId} value={backup.fileId}>
+                    {backup.fileName} · {(backup.sizeBytes / 1024 / 1024).toFixed(1)}MB
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={Boolean(busy)}
+                onClick={() => void loadDriveBackups()}
+              >
+                목록 새로고침
+              </button>
+            </div>
           </section>
         </div>
         <p className="backup-security-note">
@@ -396,7 +429,7 @@ export default function DataBackupPage({
         )}
         {backupError && <div className="backup-error">{backupError}</div>}
         {busy === "inspect-backup" && (
-          <div className="backup-checking">파일과 데이터 연결을 검사하는 중…</div>
+          <div className="backup-checking">Drive 백업과 데이터 연결을 검사하는 중…</div>
         )}
 
         {backupInspection && (

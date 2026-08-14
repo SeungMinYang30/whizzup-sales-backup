@@ -6304,6 +6304,31 @@ tr:hover .row-actions { opacity: 1; }
   min-height: 46px;
 }
 
+.backup-drive-picker {
+  width: min(420px, 100%);
+  display: grid;
+  grid-template-columns: minmax(230px, 1fr) auto;
+  gap: 8px;
+}
+
+.backup-drive-picker select {
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 36px 0 13px;
+  border: 1px solid #b9ddcc;
+  border-radius: 7px;
+  background: #fff;
+  color: #263752;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.backup-drive-picker .ghost-button {
+  min-height: 46px;
+  white-space: nowrap;
+}
+
 .backup-checking {
   margin-top: 16px;
   padding: 18px;
@@ -6522,6 +6547,10 @@ tr:hover .row-actions { opacity: 1; }
   .backup-recovery-action .backup-file-button {
     width: 100%;
     min-width: 0;
+  }
+  .backup-drive-picker {
+    width: 100%;
+    grid-template-columns: 1fr;
   }
   .backup-package-card {
     padding: 18px 16px;
