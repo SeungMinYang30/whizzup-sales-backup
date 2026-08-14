@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { googleCalendarTitle } from "../lib/google-calendar-title.ts";
+import { googleCalendarTitle, removeOriginalGoogleTitleNote } from "../lib/google-calendar-title.ts";
 import { directPurchaseLimitWarning, procurementContractWarnings } from "../lib/procurement-contract-warning.ts";
 
 test("조달 계약 경고는 공급처별 합계와 1억원 경계를 정확히 적용한다", () => {
@@ -55,12 +55,19 @@ test("물품 수의계약 2,200만원은 수의계약과 학교장터만 합산�
   ]), { totalAmount: 22_000_001, itemCount: 2, threshold: 22_000_000 });
 });
 
-test("Google 일정 제목은 유형별 규칙을 적용하고 기관명 중복을 제거한다", () => {
-  assert.equal(googleCalendarTitle({ organization: "선영어린이집", label: "영업 · 인제 선영어린이집", category: "general" }).summary, "[영업] 선영어린이집 방문");
-  assert.equal(googleCalendarTitle({ organization: "A학교", label: "회의 · 예산 협의", category: "meeting" }).summary, "[회의] A학교 회의");
+test("일반 Google 일정은 입력한 일정 제목을 그대로 사용하고 시공 제목 규칙은 유지한다", () => {
+  assert.equal(googleCalendarTitle({ organization: "선영어린이집", label: "영업 · 인제 선영어린이집 협상", category: "general" }).summary, "인제 선영어린이집 협상");
+  assert.equal(googleCalendarTitle({ organization: "A학교", label: "회의 · 예산 협의", category: "meeting" }).summary, "예산 협의");
   assert.equal(googleCalendarTitle({ organization: "A학교", label: "착공", category: "construction", productSummary: "VR실 구축" }).summary, "[시공] A학교 · VR실 구축");
-  assert.equal(googleCalendarTitle({ organization: "A학교", label: "쇼룸 · 방문", category: "showroom" }).summary, "[쇼룸] A학교 방문");
-  assert.equal(googleCalendarTitle({ organization: "A학교", label: "기타 · 설명회", category: "other" }).summary, "[기타] A학교 · 설명회");
+  assert.equal(googleCalendarTitle({ organization: "A학교", label: "쇼룸 · 제품 시연", category: "showroom" }).summary, "제품 시연");
+  assert.equal(googleCalendarTitle({ organization: "A학교", label: "기타 · 설명회", category: "other" }).summary, "설명회");
+});
+
+test("Google 설명에서 중복 원본 제목 문구를 제거한다", () => {
+  assert.equal(
+    removeOriginalGoogleTitleNote("방문 목적 확인\n원본 Google 제목: 인제 선영어린이집 협상"),
+    "방문 목적 확인",
+  );
 });
 
 test("복수 예산은 최종 저장 시 화면과 서버에서 합계 일치를 검증한다", async () => {

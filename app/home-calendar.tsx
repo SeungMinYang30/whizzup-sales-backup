@@ -5,6 +5,7 @@ import {
   CONSTRUCTION_STAGES,
   constructionStageIndex,
 } from "../lib/construction-stages";
+import { removeOriginalGoogleTitleNote } from "../lib/google-calendar-title";
 import { resilientFetch } from "./resilient-fetch";
 import { personDisplayLabel } from "../lib/person-label";
 
@@ -382,7 +383,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       title: cleanScheduleTitle(schedule.label), scheduledDate: schedule.scheduledDate,
       allDay: !schedule.startTime, startTime: schedule.startTime || "", endTime: schedule.endTime || "",
       assigneeMemberId: schedule.assigneeMemberId || 0, assigneeName: schedule.assigneeName,
-      details: schedule.details || "", completed: Boolean(schedule.completed), syncError: schedule.syncError || "",
+      details: removeOriginalGoogleTitleNote(schedule.details || ""), completed: Boolean(schedule.completed), syncError: schedule.syncError || "",
     });
     setEditorOpen(true);
   }

@@ -50,7 +50,7 @@ test("기존 시공 Google 일정은 안전하게 다시 연결하고 신뢰 가
   assert.match(sync, /unlinked\.length === 1/);
   assert.match(sync, /forcedRefreshIds/);
   assert.match(api, /담당자: \$\{required\(schedule\.assigneeName\)\}/);
-  assert.match(api, /메모: \$\{required\(schedule\.details\)\}/);
+  assert.match(api, /메모: \$\{required\(removeOriginalGoogleTitleNote\(schedule\.details \|\| ""\)\)\}/);
   assert.doesNotMatch(api, /시공 단계: \$\{/);
   assert.doesNotMatch(api, /시공업체: \$\{/);
   assert.doesNotMatch(api, /공사·품목: \$\{/);
@@ -70,7 +70,7 @@ test("새 메모만 저장·양방향 동기화하고 과거 메모는 임의 �
   assert.match(calendar, /details: draft\.details\.trim\(\)/);
   assert.match(route, /details: payload\.details/);
   assert.match(store, /const details = clean\(input\.details\)\.slice\(0, 500\)/);
-  assert.match(api, /메모: \$\{required\(schedule\.details\)\}/);
+  assert.match(api, /메모: \$\{required\(removeOriginalGoogleTitleNote\(schedule\.details \|\| ""\)\)\}/);
   assert.match(sync, /memoFromGoogleDescription\(event\.description \|\| ""\)/);
   assert.match(sync, /googleStructuredDescription/);
   assert.match(sync, /\["\[입력 필요\]", "미정", "미입력"\]/);
@@ -177,13 +177,14 @@ test("Google에서 가져온 일정은 팀 연결함에서 기관에 연결하�
   assert.match(calendar, /Google에서도 삭제/);
 });
 
-test("공유 업무만 Google로 보내고 기존 일정 제목과 개인 일정은 소급 정리한다", () => {
+test("공유 업무만 Google로 보내고 입력 제목과 개인 일정 정책을 적용한다", () => {
   assert.match(api, /googleCalendarTitle\(schedule\)/);
-  assert.match(title, /`\[영업\] \$\{input\.organization\} 방문`/);
-  assert.match(title, /`\[회의\] \$\{input\.organization\} 회의`/);
+  assert.match(title, /scheduleTitleForGoogle\(input\.label\)/);
+  assert.match(title, /: scheduleTitle \|\| input\.organization/);
   assert.match(title, /`\[시공\] \$\{input\.organization\} · \$\{input\.productSummary/);
-  assert.match(title, /`\[쇼룸\] \$\{input\.organization\} 방문`/);
-  assert.match(title, /`\[기타\] \$\{input\.organization\} · \$\{cleanLabel\}`/);
+  assert.match(api, /removeOriginalGoogleTitleNote\(schedule\.details \|\| ""\)/);
+  assert.doesNotMatch(sync, /`원본 Google 제목: \$\{/);
+  assert.match(sync, /event\.summary\.trim\(\) !== expectedSummary/);
   assert.match(api, /colorId: colorId\[category\]/);
   assert.match(sync, /applyGoogleSharingPolicy/);
   assert.match(sync, /sync_operation === "unlink"/);

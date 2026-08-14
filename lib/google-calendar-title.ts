@@ -9,22 +9,30 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+export function scheduleTitleForGoogle(label: string) {
+  return label
+    .replace(/^(영업|회의|시공|쇼룸|기타|내 일정)\s*[·•-]\s*/u, "")
+    .trim();
+}
+
+export function removeOriginalGoogleTitleNote(value: string) {
+  return value
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*원본\s+Google\s+제목\s*:/iu.test(line))
+    .join("\n")
+    .trim();
+}
+
 export function googleCalendarTitle(input: CalendarTitleInput) {
   const category = input.category === "general" && /^영업\s*[·•-]\s*/u.test(input.label)
     ? "sales"
     : input.category;
-  const cleanLabel = input.label
-    .replace(/^(영업|회의|시공|쇼룸|기타)\s*[·•-]\s*/u, "")
+  const scheduleTitle = scheduleTitleForGoogle(input.label);
+  const cleanLabel = scheduleTitle
     .replace(new RegExp(`^${escapeRegExp(input.organization)}\\s*[·•-]?\\s*`, "u"), "")
     .trim();
-  const summary = category === "sales"
-    ? `[영업] ${input.organization} 방문`
-    : category === "meeting"
-      ? `[회의] ${input.organization} 회의`
-      : category === "construction"
-        ? `[시공] ${input.organization} · ${input.productSummary?.trim() || cleanLabel}`
-        : category === "showroom"
-          ? `[쇼룸] ${input.organization} 방문`
-          : `[기타] ${input.organization} · ${cleanLabel}`;
+  const summary = category === "construction"
+    ? `[시공] ${input.organization} · ${input.productSummary?.trim() || cleanLabel || scheduleTitle}`
+    : scheduleTitle || input.organization;
   return { category, cleanLabel, summary };
 }

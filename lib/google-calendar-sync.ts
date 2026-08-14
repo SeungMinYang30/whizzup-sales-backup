@@ -11,6 +11,7 @@ import {
   type GoogleCalendarApiEvent,
   upsertGoogleCalendarEvent,
 } from "./google-calendar-api";
+import { googleCalendarTitle, removeOriginalGoogleTitleNote } from "./google-calendar-title";
 import {
   CONSTRUCTION_STAGES,
   isValidConstructionStage,
@@ -442,9 +443,7 @@ export async function linkGoogleCalendarSchedule(input: {
   const details = typeof input.details === "string"
     ? input.details.trim().slice(0, 500)
     : memoFromGoogleDescription(event.description || "");
-  const originalGoogleTitle = text(event.summary).slice(0, 120);
-  const storedDetails = [details, originalGoogleTitle ? `원본 Google 제목: ${originalGoogleTitle}` : ""]
-    .filter(Boolean).join("\n").slice(0, 500);
+  const storedDetails = removeOriginalGoogleTitleNote(details).slice(0, 500);
   const completed = input.completed === true
     || input.completed === 1
     || input.completed === "1"
@@ -720,11 +719,22 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
         "공사·품목:",
         "일정 내용:",
         "원본 제목:",
+        "원본 Google 제목:",
       ];
       const missingManagedDescription =
         requiredDescriptionFields.some((field) => !description.includes(field)) ||
         legacyManagedDescriptionFields.some((field) => description.includes(field));
-      if (row && event.status !== "cancelled" && missingManagedDescription) {
+      const expectedSummary = row && row.category !== "construction"
+        ? googleCalendarTitle({
+            organization: row.organization,
+            label: row.label,
+            category: row.category,
+          }).summary
+        : "";
+      const outdatedManagedTitle = Boolean(
+        expectedSummary && event.summary.trim() !== expectedSummary,
+      );
+      if (row && event.status !== "cancelled" && (missingManagedDescription || outdatedManagedTitle)) {
         await d1.prepare(
           `UPDATE organization_schedules
            SET sync_status = 'pending', sync_operation = 'upsert', sync_error = ''

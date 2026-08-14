@@ -1,5 +1,5 @@
 import "server-only";
-import { googleCalendarTitle } from "./google-calendar-title";
+import { googleCalendarTitle, removeOriginalGoogleTitleNote } from "./google-calendar-title";
 
 export type GoogleCalendarApiEvent = {
   id: string;
@@ -244,7 +244,7 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
   const summary = title.summary;
   const description = [
     `담당자: ${required(schedule.assigneeName)}`,
-    `메모: ${required(schedule.details)}`,
+    `메모: ${required(removeOriginalGoogleTitleNote(schedule.details || ""))}`,
   ].join("\n");
   return {
     summary,
