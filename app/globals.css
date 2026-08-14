@@ -264,6 +264,15 @@
 .my-schedule-recent{display:inline-flex;width:max-content;margin-top:4px;color:#3157c8;font-size:10px;font-style:normal;font-weight:800}
 
 @media(max-width:1000px){.quotation-editor-layout{grid-template-columns:1fr}.quotation-profit-panel{position:static}.quotation-parties{grid-template-columns:1fr}.quotation-parties>div+div{border-left:0;border-top:1px solid #cfd8e8}.construction-schedule-header,.quotation-workspace-header{align-items:flex-start}.construction-schedule-controls{flex-wrap:wrap;justify-content:flex-end}.construction-timeline{display:none}.construction-mobile-list{display:grid;gap:10px;padding:14px}.construction-mobile-list article{border:1px solid #dce3ee;border-radius:12px;padding:13px}.construction-mobile-list header{display:flex;justify-content:space-between}.construction-mobile-list header button{border:0;background:transparent;padding:0;font-weight:900;color:#132644}.construction-mobile-list p{margin:5px 0 10px;color:#7a879b;font-size:12px}.construction-mobile-list article>div{display:flex;flex-wrap:wrap;gap:6px}.construction-mobile-list article>div button{display:flex;gap:6px;border:0;border-radius:7px;background:#edf2ff;color:#344c9e;padding:7px;font-size:11px}}
+
+.construction-days > span.past:not(.today) {
+  color: #8994a8;
+  background-color: #f7f9fc;
+}
+
+.construction-row-days > span.past:not(.today) .construction-event {
+  opacity: .72;
+}
 @media(max-width:1000px){.quotation-list-row{grid-template-columns:1fr}.quotation-row-facts{grid-template-columns:repeat(4,minmax(0,1fr))}.quotation-row-actions{justify-content:flex-start}}
 @media(max-width:700px){.quotation-workspace-header,.construction-schedule-header{padding:18px;flex-direction:column}.quotation-workspace-header-actions{justify-content:flex-start}.construction-schedule-controls{justify-content:flex-start}.quotation-editor{width:100vw}.quotation-editor-layout{padding:8px}.quotation-paper{padding:15px}.quotation-paper-title strong{font-size:24px}.quotation-inline-fields{grid-template-columns:1fr 1fr}.quotation-inline-fields label:last-child{grid-column:1/-1}.quotation-product-picker>div:last-child{grid-template-columns:1fr}.quotation-customer-summary{flex-wrap:wrap}.quotation-customer-summary dl{width:100%;grid-template-columns:1fr 1fr}.schedule-editor-items>div{grid-template-columns:1fr}.quotation-list{padding:10px}.quotation-list-row{padding:14px}.quotation-row-facts{grid-template-columns:1fr 1fr}.quotation-row-actions button{flex:1}}
 
