@@ -13449,6 +13449,9 @@ button:is(
 .quotation-complimentary-toggle b { color: #294263; font-size: 12px; }
 .quotation-complimentary-toggle.active b { color: #08765b; }
 .quotation-complimentary-toggle small { color: #7b899d; font-size: 10px; line-height: 1.4; }
+.quotation-teaching-aid-support > .quotation-complimentary-toggle { grid-column: 1 / -1; flex-direction: row; align-items: center; margin: 0; border-color: #d9c5a6; background: rgba(255, 255, 255, .72); }
+.quotation-teaching-aid-support > .quotation-complimentary-toggle.active { border-color: #7ec9ae; background: #effbf7; }
+.quotation-teaching-aid-support > .quotation-complimentary-toggle input { padding: 0; }
 .quote-consortium-settlement{margin:12px 16px;padding:13px;border:1px solid #bfd0ff;border-radius:11px;background:#f5f7ff}.quote-consortium-settlement header{display:flex;align-items:center;justify-content:space-between;gap:10px}.quote-consortium-settlement header>div{display:grid;gap:2px}.quote-consortium-settlement header strong{color:#203a83;font-size:13px}.quote-consortium-settlement header small{color:#7786ad;font-size:10px}.quote-consortium-settlement header>span{padding:4px 7px;border-radius:999px;background:#dfe7ff;color:#3157e6;font-size:10px;font-weight:900}.quote-consortium-settlement dl{display:grid;grid-template-columns:1fr auto;margin:10px 0}.quote-consortium-settlement dt,.quote-consortium-settlement dd{margin:0;padding:7px 0;border-top:1px solid #dfe5f6;font-size:11px}.quote-consortium-settlement dd{text-align:right;color:#203a83;font-weight:900}.quote-consortium-settlement dt:last-of-type,.quote-consortium-settlement dd:last-of-type{font-weight:900;color:#244bd1}.quote-consortium-settlement button{width:100%;min-height:40px;border:1px solid #3157e6;border-radius:8px;background:#3157e6;color:#fff;font-size:12px;font-weight:900}.quote-consortium-settlement button:disabled{opacity:.45}.quote-consortium-settlement p{margin:8px 0 0;color:#73809c;font-size:10px;line-height:1.45}
 .quote-internal-report-shell { position: fixed; inset: 0; z-index: 280; display: grid; place-items: center; padding: 24px; background: rgba(18, 29, 51, .58); }
 .quote-internal-report-dialog { display: grid; width: min(1060px, 100%); max-height: calc(100dvh - 48px); overflow: hidden; border: 1px solid #d8e1ee; border-radius: 18px; background: #fff; box-shadow: 0 28px 80px rgba(10, 24, 51, .28); }
@@ -13562,14 +13565,12 @@ button:is(
   .internal-profit-print-deduction { margin: 2mm 1mm 0; color: #b04d3b; font-weight: 800; }
   .internal-profit-print-cost-details { margin: 2mm 1mm 0; break-inside: avoid; }
   .internal-profit-print-cost-details h2 { margin: 0; padding: 1.8mm 2.2mm; background: #182842; color: #fff; font-size: 9pt; }
-  .internal-profit-print-cost-details table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  .internal-profit-print-cost-details th, .internal-profit-print-cost-details td { padding: 1.5mm 2mm; border: .25mm solid #ccd6e6; font-size: 7.4pt; line-height: 1.3; overflow-wrap: anywhere; }
-  .internal-profit-print-cost-details th { background: #f4f7fc; color: #52617d; text-align: center; }
-  .internal-profit-print-cost-details th:nth-child(1) { width: 21%; }
-  .internal-profit-print-cost-details th:nth-child(2) { width: 30%; }
-  .internal-profit-print-cost-details th:nth-child(3) { width: 31%; }
-  .internal-profit-print-cost-details th:nth-child(4) { width: 18%; }
-  .internal-profit-print-cost-details td:last-child { color: #c24b3f; font-weight: 800; text-align: right; white-space: nowrap; }
+  .internal-profit-print-cost-details ul { margin: 0; padding: 0; list-style: none; }
+  .internal-profit-print-cost-details li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4mm; padding: 1.7mm 2.2mm; border: .25mm solid #ccd6e6; border-top: 0; break-inside: avoid; page-break-inside: avoid; }
+  .internal-profit-print-cost-details li > span { display: grid; gap: .7mm; min-width: 0; }
+  .internal-profit-print-cost-details li strong { color: #263751; font-size: 7.6pt; }
+  .internal-profit-print-cost-details li small { color: #687891; font-size: 6.8pt; line-height: 1.3; overflow-wrap: anywhere; }
+  .internal-profit-print-cost-details li > b { color: #c24b3f; font-size: 8pt; white-space: nowrap; }
   .internal-profit-print-total { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 5mm; margin-top: 4mm; padding: 3mm 4mm; border-top: 1.5px solid #3157e6; border-bottom: 1.5px solid #3157e6; background: #eef3ff; break-inside: avoid; page-break-inside: avoid; }
   .internal-profit-print-total span { color: #52617c; font-weight: 800; }
   .internal-profit-print-total small { display: block; margin-top: 1mm; color: #20304d; }
