@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("기관 병합 API는 관리자 권한과 정확히 두 기관을 요구한다", async () => {
+test("기관 병합 API는 승인된 모든 직원과 정확히 두 기관을 허용한다", async () => {
   const root = new URL("../", import.meta.url);
   const route = await readFile(
     new URL("app/api/institutions/merge/route.ts", root),
     "utf8",
   );
-  assert.match(route, /requireMemberPermission\("records:manage"\)/);
+  assert.match(route, /requireApprovedMember\(\)/);
+  assert.doesNotMatch(route, /requireMemberPermission\("records:manage"\)/);
   assert.match(route, /organizations\.length !== 2/);
   assert.match(route, /payload\.confirm !== true/);
   assert.match(route, /mergeInstitutionRecords/);

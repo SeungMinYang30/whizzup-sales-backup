@@ -14111,3 +14111,16 @@ button:is(
 @media print{
   body.internal-profit-printing>.quotation-print-portal{display:none!important;visibility:hidden!important}
 }
+
+
+/* Keep the settlement card as legible as the profit summary beside it. */
+.quote-consortium-settlement header strong{font-size:14px;line-height:1.35}
+.quote-consortium-settlement header small{font-size:11px;line-height:1.4}
+.quote-consortium-settlement header>span{padding:5px 8px;font-size:11px}
+.quote-consortium-settlement dt,.quote-consortium-settlement dd{padding:9px 0;font-size:12px;line-height:1.4}
+.quotation-settlement-adjustments>div strong{font-size:12px}
+.quotation-settlement-adjustments>div button{min-height:34px;padding:0 10px;font-size:11px}
+.quotation-settlement-adjustments article select,.quotation-settlement-adjustments article input{min-height:36px;padding:0 9px;font-size:12px}
+.quotation-settlement-adjustments>small,.quote-consortium-settlement p{font-size:11px;line-height:1.55}
+.quotation-output-menu-settlement>summary{min-height:42px;font-size:12px}
+.quotation-output-menu-settlement .quotation-output-menu-panel>button{font-size:12px}

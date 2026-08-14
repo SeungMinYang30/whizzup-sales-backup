@@ -1,6 +1,6 @@
 import {
   accessErrorResponse,
-  requireMemberPermission,
+  requireApprovedMember,
 } from "../../../../lib/collaboration";
 import {
   inspectInstitutionMerge,
@@ -16,7 +16,10 @@ function cleanOrganization(value: unknown) {
 
 export async function POST(request: Request) {
   try {
-    const member = await requireMemberPermission("records:manage");
+    // Institution merging is a shared correction workflow. Any approved
+    // employee may merge duplicate institutions; administrative recovery and
+    // permanent cleanup remain protected by their separate APIs.
+    const member = await requireApprovedMember();
     const payload = (await request.json()) as {
       organizations?: unknown[];
       targetOrganization?: unknown;

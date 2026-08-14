@@ -18214,8 +18214,7 @@ export default function CrmApp({
                       }`}
                     </button>
                   )}
-                  {canManageRecords && (
-                    <button
+                  {<button
                       type="button"
                       className="institution-merge-button"
                       disabled={
@@ -18232,8 +18231,7 @@ export default function CrmApp({
                               ? ` ${selectedInstitutionIds.length}`
                               : ""
                           }`}
-                    </button>
-                  )}
+                    </button>}
                   {canDeleteRecords && (
                     <button
                       type="button"
@@ -18316,8 +18314,7 @@ export default function CrmApp({
                         공동사업 연결
                       </button>
                     )}
-                    {canManageRecords && (
-                      <button
+                    {<button
                         type="button"
                         className="merge"
                         disabled={
@@ -18327,8 +18324,7 @@ export default function CrmApp({
                         onClick={() => void openInstitutionMerge()}
                       >
                         {institutionMergeBusy ? "확인 중…" : "선택 기관 합치기"}
-                      </button>
-                    )}
+                      </button>}
                     {canDeleteRecords && (
                       <button
                         type="button"
@@ -19191,8 +19187,7 @@ export default function CrmApp({
                       }`}
                     </button>
                   )}
-                  {view === "awards" && canManageRecords && (
-                    <button
+                  {view === "awards" && (<button
                       type="button"
                       className="institution-merge-button"
                       disabled={
@@ -19209,8 +19204,7 @@ export default function CrmApp({
                               ? ` ${selectedAwardOrganizations.length}`
                               : ""
                           }`}
-                    </button>
-                  )}
+                    </button>)}
                   {view === "awards" && isOwner && selectedAwardIds.length > 0 && (
                     <button
                       type="button"
