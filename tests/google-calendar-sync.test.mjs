@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [api, sync, store, route, calendar, crm, migration, connectionMigration, contentRefreshMigration, descriptionRefreshMigration, structuredRefreshMigration, scheduleDedupMigration, semanticScheduleDedupMigration, schema] = await Promise.all([
+const [api, sync, store, route, calendar, crm, migration, connectionMigration, contentRefreshMigration, descriptionRefreshMigration, structuredRefreshMigration, scheduleDedupMigration, semanticScheduleDedupMigration, scheduleContentMigration, schema] = await Promise.all([
   readFile(new URL("../lib/google-calendar-api.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/google-calendar-sync.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/organization-schedules.ts", import.meta.url), "utf8"),
@@ -16,9 +16,11 @@ const [api, sync, store, route, calendar, crm, migration, connectionMigration, c
   readFile(new URL("../drizzle/0073_google_calendar_structured_description.sql", import.meta.url), "utf8"),
   readFile(new URL("../drizzle/0087_organization_schedule_identity_dedup.sql", import.meta.url), "utf8"),
   readFile(new URL("../drizzle/0088_organization_schedule_semantic_identity.sql", import.meta.url), "utf8"),
+  readFile(new URL("../drizzle/0093_organization_schedule_content.sql", import.meta.url), "utf8"),
   readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
 ]);
 const title = await readFile(new URL("../lib/google-calendar-title.ts", import.meta.url), "utf8");
+const backup = await readFile(new URL("../lib/backup-store.ts", import.meta.url), "utf8");
 const aiOrganizer = await readFile(new URL("../app/api/ai/organize/route.ts", import.meta.url), "utf8");
 const constructionPage = await readFile(new URL("../app/construction-schedule-page.tsx", import.meta.url), "utf8");
 
@@ -50,7 +52,8 @@ test("기존 시공 Google 일정은 안전하게 다시 연결하고 신뢰 가
   assert.match(sync, /unlinked\.length === 1/);
   assert.match(sync, /forcedRefreshIds/);
   assert.match(api, /담당자: \$\{required\(schedule\.assigneeName\)\}/);
-  assert.match(api, /메모: \$\{required\(removeOriginalGoogleTitleNote\(schedule\.details \|\| ""\)\)\}/);
+  assert.match(api, /내용: \$\{required\(schedule\.content\)\}/);
+  assert.match(api, /if \(memo\) descriptionLines\.push\(`메모: \$\{memo\}`\)/);
   assert.doesNotMatch(api, /시공 단계: \$\{/);
   assert.doesNotMatch(api, /시공업체: \$\{/);
   assert.doesNotMatch(api, /공사·품목: \$\{/);
@@ -65,15 +68,26 @@ test("기존 시공 Google 일정은 안전하게 다시 연결하고 신뢰 가
   assert.match(structuredRefreshMigration, /sync_status = 'pending'/);
 });
 
-test("새 메모만 저장·양방향 동기화하고 과거 메모는 임의 생성하지 않는다", () => {
-  assert.match(calendar, /메모 <small>선택 입력 · 새 일정부터 저장됩니다/);
+test("일정 내용과 선택 메모를 분리 저장하고 Google 설명 순서를 유지한다", () => {
+  assert.match(calendar, /<label>내용 <small>Google 일정 설명에 표시됩니다/);
+  assert.match(calendar, /content: draft\.content\.trim\(\)/);
+  assert.match(calendar, /메모 <small>선택 입력 · 비어 있으면 Google 일정에 표시되지 않습니다/);
   assert.match(calendar, /details: draft\.details\.trim\(\)/);
+  assert.match(route, /content: payload\.content/);
   assert.match(route, /details: payload\.details/);
+  assert.match(store, /const content = clean\(input\.content\)\.slice\(0, 500\)/);
   assert.match(store, /const details = clean\(input\.details\)\.slice\(0, 500\)/);
-  assert.match(api, /메모: \$\{required\(removeOriginalGoogleTitleNote\(schedule\.details \|\| ""\)\)\}/);
+  assert.ok(api.indexOf("`담당자:") < api.indexOf("`내용:"));
+  assert.ok(api.indexOf("`내용:") < api.indexOf("descriptionLines.push(`메모:"));
+  assert.doesNotMatch(api, /required\(removeOriginalGoogleTitleNote\(schedule\.details/);
   assert.match(sync, /memoFromGoogleDescription\(event\.description \|\| ""\)/);
   assert.match(sync, /googleStructuredDescription/);
+  assert.match(sync, /field === "내용" \|\| field === "일정 내용"/);
   assert.match(sync, /\["\[입력 필요\]", "미정", "미입력"\]/);
+  assert.match(scheduleContentMigration, /ADD COLUMN content TEXT NOT NULL DEFAULT ''/);
+  assert.match(schema, /content: text\("content"\)/);
+  assert.match(backup, /"vendor_name",\s*"content",\s*"details"/);
+  assert.match(backup, /content: "content" in row \? row\.content : ""/);
   assert.doesNotMatch(descriptionRefreshMigration, /메모:/);
 });
 

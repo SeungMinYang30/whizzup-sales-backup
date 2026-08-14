@@ -692,6 +692,7 @@ CREATE TABLE IF NOT EXISTS public.organization_schedules (
   stage text NOT NULL DEFAULT '',
   end_date text NOT NULL DEFAULT '',
   vendor_name text NOT NULL DEFAULT '',
+  content text NOT NULL DEFAULT '',
   details text NOT NULL DEFAULT '',
   completed smallint NOT NULL DEFAULT 0,
   source_activity_id bigint,
@@ -716,6 +717,8 @@ CREATE TABLE IF NOT EXISTS public.organization_schedules (
 );
 ALTER TABLE public.organization_schedules
   ADD COLUMN IF NOT EXISTS business_round integer NOT NULL DEFAULT 1;
+ALTER TABLE public.organization_schedules
+  ADD COLUMN IF NOT EXISTS content text NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS organization_schedules_scope_date_idx
   ON public.organization_schedules
   (organization, business_round, completed, scheduled_date, id);

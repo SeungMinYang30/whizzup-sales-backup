@@ -125,6 +125,7 @@ export const organizationSchedules = sqliteTable(
     stage: text("stage").notNull().default(""),
     endDate: text("end_date").notNull().default(""),
     vendorName: text("vendor_name").notNull().default(""),
+    content: text("content").notNull().default(""),
     details: text("details").notNull().default(""),
     completed: integer("completed", { mode: "boolean" })
       .notNull()

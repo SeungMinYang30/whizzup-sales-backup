@@ -33,6 +33,7 @@ type SyncRow = {
   end_time: string;
   end_date: string;
   category: string;
+  content: string;
   details: string;
   vendor_name: string;
   project_work_summary: string;
@@ -112,13 +113,13 @@ function googleStructuredDescription(value: string): GoogleStructuredDescription
   let memoStarted = false;
   for (const rawLine of value.split(/\r?\n/)) {
     const line = rawLine.trim();
-    const matched = line.match(/^(담당자|일정 내용|시공 단계|시공업체|공사·품목|메모):\s*(.*)$/);
+    const matched = line.match(/^(담당자|내용|일정 내용|시공 단계|시공업체|공사·품목|메모):\s*(.*)$/);
     if (matched) {
       const field = matched[1];
       const content = matched[2].trim();
       memoStarted = field === "메모";
       if (field === "담당자") result.assignee = content;
-      else if (field === "일정 내용") result.content = content;
+      else if (field === "내용" || field === "일정 내용") result.content = content;
       else if (field === "시공 단계") result.constructionStage = content;
       else if (field === "시공업체") result.vendor = content;
       else if (field === "공사·품목") result.products = content;
@@ -179,7 +180,7 @@ async function pendingRows(ids: number[] | undefined, limit: number) {
   const d1 = getD1();
   const selection = `SELECT
        os.id, os.organization, os.business_round, os.label, os.scheduled_date,
-       os.start_time, os.end_time, os.end_date, os.category, os.details,
+       os.start_time, os.end_time, os.end_date, os.category, os.content, os.details,
        os.vendor_name, os.assignee_member_id,
        COALESCE(
          NULLIF(TRIM(os.assignee_name), ''),
@@ -269,6 +270,7 @@ function writeSchedule(row: SyncRow) {
     endTime: row.end_time || "",
     endDate: row.end_date || row.scheduled_date,
     category: row.category || "general",
+    content: row.content.trim(),
     details: row.details.trim(),
     constructionStage: row.category === "construction" ? row.label.trim() : "",
     vendorName: row.category === "construction" ? row.vendor_name.trim() : "",
@@ -395,6 +397,7 @@ export async function linkGoogleCalendarSchedule(input: {
   category: unknown;
   assigneeMemberId: unknown;
   assigneeName: unknown;
+  content?: unknown;
   details?: unknown;
   member: { id: number; displayName: string };
 }) {
@@ -440,6 +443,9 @@ export async function linkGoogleCalendarSchedule(input: {
     : category === "showroom" ? "쇼룸" : category === "other" ? "기타" : "";
   if (categoryLabel) title = `${categoryLabel} · ${title.replace(/^(영업|회의|쇼룸|기타)\s*[·•-]\s*/, "")}`;
   const assignee = await resolveScheduleAssignee(d1, input.assigneeMemberId, input.member.displayName);
+  const content = typeof input.content === "string"
+    ? input.content.trim().slice(0, 500)
+    : structured.content.slice(0, 500);
   const details = typeof input.details === "string"
     ? input.details.trim().slice(0, 500)
     : memoFromGoogleDescription(event.description || "");
@@ -452,10 +458,10 @@ export async function linkGoogleCalendarSchedule(input: {
     const inserted = await d1.prepare(
       `INSERT INTO organization_schedules (
          organization, business_round, label, scheduled_date, start_time, end_time, end_date,
-         category, stage, details, vendor_name, completed, created_by, created_by_name, updated_by, updated_by_name,
+         category, stage, content, details, vendor_name, completed, created_by, created_by_name, updated_by, updated_by_name,
          assignee_member_id, assignee_name, google_event_id, google_event_etag, google_updated_at,
          google_origin, sync_status, sync_operation
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending', 'upsert')
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending', 'upsert')
        RETURNING id`,
     ).bind(
       organization,
@@ -467,6 +473,7 @@ export async function linkGoogleCalendarSchedule(input: {
       values.endDate || values.scheduledDate,
       storedCategory,
       category === "construction" ? title : "",
+      content,
       storedDetails,
       category === "construction" ? structured.vendor : "",
       completed ? 1 : 0,
@@ -684,6 +691,8 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
                   ) THEN ? ELSE assignee_name END,
                vendor_name = CASE
                  WHEN TRIM(COALESCE(vendor_name, '')) = '' AND ? <> '' THEN ? ELSE vendor_name END,
+               content = CASE
+                 WHEN TRIM(COALESCE(content, '')) = '' AND ? <> '' THEN ? ELSE content END,
                details = CASE
                  WHEN TRIM(COALESCE(details, '')) = '' AND ? <> '' THEN ? ELSE details END
            WHERE id = ?`,
@@ -692,6 +701,8 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
           existingStructured.assignee,
           existingStructured.vendor,
           existingStructured.vendor,
+          existingStructured.content,
+          existingStructured.content,
           existingStructured.memo,
           existingStructured.memo,
           siteId,
@@ -712,7 +723,7 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
           ).bind(existingStructured.products, row.organization, row.business_round).run();
         }
       }
-      const requiredDescriptionFields = ["담당자:", "메모:"];
+      const requiredDescriptionFields = ["담당자:", "내용:"];
       const legacyManagedDescriptionFields = [
         "시공 단계:",
         "시공업체:",
@@ -773,28 +784,23 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
         const values = eventValues(event);
         const organization = (properties.whizzupOrganization || row.organization).slice(0, 120);
         const structured = googleStructuredDescription(event.description || "");
-        const prefix = row.category === "general" ? "영업"
-          : row.category === "meeting" ? "회의"
-          : row.category === "showroom" ? "쇼룸"
-          : row.category === "other" ? "기타"
-          : "";
-        const trustedContent = structured.content.slice(0, 120);
-        const label = trustedContent ? (!prefix ? trustedContent : `${prefix} · ${trustedContent}`) : row.label;
+        const trustedContent = structured.content.slice(0, 500);
         const trustedAssignee = structured.assignee.slice(0, 120);
         await d1.prepare(
           `UPDATE organization_schedules
-           SET organization = ?, label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, details = ?,
+           SET organization = ?, label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, content = ?, details = ?,
                assignee_name = CASE WHEN assignee_member_id IS NULL AND ? <> '' THEN ? ELSE assignee_name END,
                google_event_id = ?, google_event_etag = ?, google_updated_at = ?, sync_error = '',
                last_synced_at = CURRENT_TIMESTAMP, updated_by_name = 'Google Calendar', updated_at = CURRENT_TIMESTAMP
            WHERE id = ? AND category <> 'construction'`,
         ).bind(
           organization,
-          label.slice(0, 120),
+          row.label,
           values.scheduledDate,
           values.startTime,
           values.endTime,
           values.endDate,
+          trustedContent,
           memoFromGoogleDescription(event.description || ""),
           trustedAssignee,
           trustedAssignee,
@@ -812,8 +818,8 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
       const organization = (properties.whizzupOrganization || suggestedOrganization(event)).trim().slice(0, 120);
       const businessRound = Math.max(0, Number(properties.whizzupBusinessRound) || 0);
       const structured = googleStructuredDescription(event.description || "");
-      const eventLabel = structured.content.trim()
-        || (event.summary || "").replace(/^\s*\[[^\]]{1,10}\]\s*/u, "").replace(organization, "").replace(/^\s*[·•:\-]\s*/, "").trim();
+      const eventLabel = (event.summary || "").replace(/^\s*\[[^\]]{1,10}\]\s*/u, "").trim()
+        || structured.content.trim();
       if (organization && eventLabel) {
         const candidates = await d1.prepare(
           `SELECT id, label, start_time, end_time, google_event_id

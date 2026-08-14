@@ -25,6 +25,7 @@ export type GoogleCalendarWriteSchedule = {
   endTime: string;
   endDate: string;
   category: string;
+  content: string;
   details: string;
   constructionStage?: string;
   vendorName?: string;
@@ -242,10 +243,13 @@ function eventBody(schedule: GoogleCalendarWriteSchedule) {
   };
   const required = (value: string | undefined) => value?.trim() || "-";
   const summary = title.summary;
-  const description = [
+  const descriptionLines = [
     `담당자: ${required(schedule.assigneeName)}`,
-    `메모: ${required(removeOriginalGoogleTitleNote(schedule.details || ""))}`,
-  ].join("\n");
+    `내용: ${required(schedule.content)}`,
+  ];
+  const memo = removeOriginalGoogleTitleNote(schedule.details || "").trim();
+  if (memo) descriptionLines.push(`메모: ${memo}`);
+  const description = descriptionLines.join("\n");
   return {
     summary,
     location: schedule.organization,

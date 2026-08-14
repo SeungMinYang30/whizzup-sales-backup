@@ -32,6 +32,7 @@ export type OrganizationSchedule = {
   stage: string;
   endDate: string;
   vendorName: string;
+  content: string;
   details: string;
   completed: boolean;
   sourceActivityId: number | null;
@@ -109,6 +110,7 @@ const schemaStatements = [
     stage TEXT NOT NULL DEFAULT '',
     end_date TEXT NOT NULL DEFAULT '',
     vendor_name TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
     details TEXT NOT NULL DEFAULT '',
     completed INTEGER NOT NULL DEFAULT 0,
     source_activity_id INTEGER,
@@ -293,6 +295,7 @@ async function initializeOrganizationSchedules() {
     ["stage", "TEXT NOT NULL DEFAULT ''"],
     ["end_date", "TEXT NOT NULL DEFAULT ''"],
     ["vendor_name", "TEXT NOT NULL DEFAULT ''"],
+    ["content", "TEXT NOT NULL DEFAULT ''"],
     ["details", "TEXT NOT NULL DEFAULT ''"],
     ["assignee_member_id", "INTEGER"],
     ["assignee_name", "TEXT NOT NULL DEFAULT ''"],
@@ -502,6 +505,7 @@ function scheduleJson(row: Record<string, unknown>): OrganizationSchedule {
     stage: String(row.stage ?? ""),
     endDate: String(row.end_date ?? row.scheduled_date ?? ""),
     vendorName: String(row.vendor_name ?? ""),
+    content: String(row.content ?? ""),
     details: String(row.details ?? ""),
     completed: Number(row.completed) === 1,
     sourceActivityId:
@@ -886,6 +890,7 @@ export async function addOrganizationSchedule(input: {
   linked?: unknown;
   assigneeMemberId?: unknown;
   assigneeName?: unknown;
+  content?: unknown;
   details?: unknown;
   memberId: number;
   memberName: string;
@@ -900,6 +905,7 @@ export async function addOrganizationSchedule(input: {
   const rawEndTime = clean(input.endTime);
   const startTime = validTime(rawStartTime);
   const endTime = validTime(rawEndTime);
+  const content = clean(input.content).slice(0, 500);
   const details = clean(input.details).slice(0, 500);
   if (!organization || !label || !scheduledDate) {
     throw new Error("기관, 일정 제목, 날짜를 확인해 주세요.");
@@ -937,7 +943,7 @@ export async function addOrganizationSchedule(input: {
     if (existingCategory !== category) {
       await d1.prepare(
         `UPDATE organization_schedules
-         SET label = ?, start_time = ?, end_time = ?, end_date = ?, category = ?, details = ?,
+         SET label = ?, start_time = ?, end_time = ?, end_date = ?, category = ?, content = ?, details = ?,
              assignee_member_id = ?, assignee_name = ?,
              sync_status = CASE
                WHEN ? = 'personal' AND TRIM(COALESCE(google_event_id, '')) <> '' THEN 'pending'
@@ -956,6 +962,7 @@ export async function addOrganizationSchedule(input: {
         endTime,
         scheduledDate,
         category,
+        content || clean(existing.content),
         details || clean(existing.details),
         assignee.memberId ?? existing.assignee_member_id ?? null,
         assignee.name || clean(existing.assignee_name),
@@ -982,11 +989,11 @@ export async function addOrganizationSchedule(input: {
   }
   await d1.prepare(
       `INSERT OR IGNORE INTO organization_schedules (
-         organization, business_round, label, scheduled_date, start_time, end_time, category, details, completed,
+         organization, business_round, label, scheduled_date, start_time, end_time, category, content, details, completed,
          created_by, created_by_name, updated_by, updated_by_name,
          assignee_member_id, assignee_name, sync_status
         )
-        SELECT ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?
         WHERE NOT EXISTS (
           SELECT 1 FROM organization_schedules
           WHERE LOWER(TRIM(organization)) = LOWER(TRIM(?))
@@ -1004,6 +1011,7 @@ export async function addOrganizationSchedule(input: {
       startTime,
       endTime,
       category,
+      content,
       details,
       input.memberId,
       input.memberName,
@@ -1576,6 +1584,7 @@ export async function updateOrganizationSchedule(input: {
   category?: unknown;
   assigneeMemberId?: unknown;
   assigneeName?: unknown;
+  content?: unknown;
   details?: unknown;
   completed?: unknown;
   member: ScheduleActor;
@@ -1597,6 +1606,7 @@ export async function updateOrganizationSchedule(input: {
   }
   if (endTime && !startTime) throw new Error("종료 시간보다 시작 시간을 먼저 입력해 주세요.");
   if (startTime && endTime && endTime < startTime) throw new Error("종료 시간은 시작 시간 이후여야 합니다.");
+  const content = clean(input.content).slice(0, 500);
   const details = clean(input.details).slice(0, 500);
   const assignee = await resolveScheduleAssignee(d1, input.assigneeMemberId, input.member.displayName);
   if (category === "construction") {
@@ -1633,7 +1643,7 @@ export async function updateOrganizationSchedule(input: {
   if (duplicate) throw new Error("같은 기관·날짜·제목의 일정이 이미 등록되어 있습니다.");
   await d1.prepare(
     `UPDATE organization_schedules
-     SET label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, category = ?, stage = ?, details = ?, completed = ?,
+     SET label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, category = ?, stage = ?, content = ?, details = ?, completed = ?,
          assignee_member_id = ?, assignee_name = ?,
          sync_status = CASE
            WHEN ? = 'personal' AND TRIM(COALESCE(google_event_id, '')) <> '' THEN 'pending'
@@ -1656,6 +1666,7 @@ export async function updateOrganizationSchedule(input: {
     scheduledDate,
     category,
     category === "construction" ? label : "",
+    content,
     details,
     input.completed === true ? 1 : 0,
     assignee.memberId,

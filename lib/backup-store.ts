@@ -820,6 +820,7 @@ export const BACKUP_TABLES = [
       "stage",
       "end_date",
       "vendor_name",
+      "content",
       "details",
       "completed",
       "source_activity_id",
@@ -2949,8 +2950,7 @@ export async function validateFullBackup(
                   }
                 : row,
             )
-          : table.name === "organization_schedules" &&
-              input.schemaVersion !== BACKUP_SCHEMA_VERSION
+          : table.name === "organization_schedules"
             ? rows.map((row) =>
                 isPlainObject(row)
                   ? {
@@ -2959,6 +2959,7 @@ export async function validateFullBackup(
                         "complex_delivery_id" in row
                           ? row.complex_delivery_id
                           : null,
+                      content: "content" in row ? row.content : "",
                     }
                   : row,
               )
