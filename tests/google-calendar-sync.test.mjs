@@ -249,3 +249,11 @@ test("schedule category changes reuse the existing Google event and clean only m
   assert.match(sync, /if \(replacements\.length === 1\)/);
   assert.match(sync, /await deleteGoogleCalendarEvent\(event\.id, "general"\)/);
 });
+
+test("personal schedules stay local and their legacy public Google events are removed", () => {
+  assert.match(store, /WHEN \? = 'personal' AND TRIM\(COALESCE\(google_event_id, ''\)\) <> '' THEN 'pending'/);
+  assert.match(sync, /row\.category === "personal" \? "general" : row\.category/);
+  assert.match(sync, /if \(row\?\.category === "personal"\)/);
+  assert.match(sync, /await deleteGoogleCalendarEvent\(event\.id, "general"\)/);
+  assert.match(sync, /sync_status = 'local_only', sync_operation = 'upsert'/);
+});

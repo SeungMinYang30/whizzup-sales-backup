@@ -173,3 +173,32 @@ test("only visible schedules before today can be completed from reminders", () =
     false,
   );
 });
+
+test("personal schedule visibility prefers assignee member id over display-name aliases", () => {
+  const schedule = {
+    awardStatus: "pending",
+    category: "personal",
+    label: "private visit",
+    assigneeMemberId: 7,
+    progressManager: "Manager Kim",
+    creatorMemberId: 3,
+    creatorName: "Other Member",
+  };
+
+  assert.equal(
+    canMemberSeeScheduleReminder(schedule, {
+      id: 7,
+      displayName: "Kim",
+      role: "member",
+    }),
+    true,
+  );
+  assert.equal(
+    canMemberSeeScheduleReminder(schedule, {
+      id: 8,
+      displayName: "Manager Kim",
+      role: "member",
+    }),
+    false,
+  );
+});

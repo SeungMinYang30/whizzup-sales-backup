@@ -320,7 +320,13 @@ export async function flushGoogleCalendarSync(options?: { ids?: number[]; limit?
         throw new Error("Google Calendar ì“°ê¸° ì—°ê²° ì •ë³´ê°€ ë“±ë¡ë˜ì§€ ì•Šì•˜ìŠµë‹ˆë‹¤.");
       }
       if (row.sync_operation === "unlink") {
-        await deleteGoogleCalendarEvent(row.google_event_id || "", row.category);
+        // Personal schedules live only inside Whizzup. If they previously came
+        // from a shared category, the linked event still belongs to the public
+        // general calendar and must be removed there during reclassification.
+        await deleteGoogleCalendarEvent(
+          row.google_event_id || "",
+          row.category === "personal" ? "general" : row.category,
+        );
         await d1.prepare(
           `UPDATE organization_schedules
            SET google_event_id = '', google_event_etag = '', google_updated_at = '',
@@ -384,485 +390,9 @@ export async function linkGoogleCalendarSchedule(input: {
   businessRound: unknown;
   title: unknown;
   label?: unknown;
-  completed?: unknown;
-  category: unknown;
-  assigneeMemberId: unknown;
-  assigneeName: unknown;
-  details?: unknown;
-  member: { id: number; displayName: string };
-}) {
-  await ensureOrganizationSchedulesReady();
-  const text = (value: unknown) => String(value || "").trim();
-  const googleEventId = text(input.googleEventId).slice(0, 1024);
-  const organization = text(input.organization).slice(0, 120);
-  const businessRound = Math.max(1, Number(input.businessRound) || 1);
-  const category = text(input.category);
-  if (!googleEventId || !organization || !["sales", "meeting", "construction", "showroom", "other"].includes(category)) {
-    throw new Error("Google ì¼ì •ì˜ ê¸°ê´€ê³¼ ë¶„ë¥˜ë¥¼ í™•ì¸í•´ ì£¼ì„¸ìš”.");
-  }
-  const d1 = getD1();
-  const institution = await d1.prepare(
-    `SELECT id FROM activities WHERE organization = ? AND business_round = ? LIMIT 1`,
-  ).bind(organization, businessRound).first<{ id: number }>();
-  if (!institution) throw new Error("ì—°ê²°í•  ê¸°ê´€ì„ ë¨¼ì € ì„ íƒí•˜ê±°ë‚˜ ë“±ë¡í•´ ì£¼ì„¸ìš”.");
-  const event = await getGoogleCalendarEvent(googleEventId, "general");
-  if (event.status === "cancelled") throw new Error("ì´ë¯¸ ì‚­ì œëœ Google ì¼ì •ì…ë‹ˆë‹¤.");
-  const values = eventValues(event);
-  const structured = googleStructuredDescription(event.description || "");
-  let title = text(input.title).slice(0, 120)
-    || text(input.label).slice(0, 120)
-    || text(event.summary).slice(0, 120)
-    || (category === "construction" ? structured.constructionStage : structured.content).slice(0, 120);
-  if (!title) throw new Error("ì¼ì • ë‚´ìš©ì„ ì§ì ‘ ì…ë ¥í•´ ì£¼ì„¸ìš”.");
-  const storedCategory = category === "sales" ? "general" : category;
-  let constructionProject: { id: number; work_summary: string } | null = null;
-  if (category === "construction") {
-    if (!googleConstructionCalendarApiConfigured()) {
-      throw new Error("Google 'ìœ„ì¦ˆì—… ì‹œê³µ' ìº˜ë¦°ë”ë¥¼ ë¨¼ì € ì—°ê²°í•´ ì£¼ì„¸ìš”.");
-    }
-    if (!isValidConstructionStage(title)) {
-      throw new Error("ì‹œê³µ ê³µì •ëª…ì„ 40ì ì´ë‚´ë¡œ ì…ë ¥í•´ ì£¼ì„¸ìš”.");
-    }
-    constructionProject = await d1.prepare(
-      `SELECT id, work_summary FROM construction_schedule_projects
-       WHERE organization = ? AND business_round = ? AND TRIM(COALESCE(hidden_at, '')) = '' LIMIT 1`,
-    ).bind(organization, businessRound).first<{ id: number; work_summary: string }>();
-    if (!constructionProject) throw new Error("ì‹œê³µÂ·ë‚©í’ˆ ì¼ì •í‘œì— í•´ë‹¹ ê¸°ê´€ì„ ë¨¼ì € ì¶”ê°€í•´ ì£¼ì„¸ìš”.");
-  }
-  const categoryLabel = category === "sales" ? "ì˜ì—…" : category === "meeting" ? "íšŒì˜"
-    : category === "showroom" ? "ì‡¼ë£¸" : category === "other" ? "ê¸°íƒ€" : "";
-  if (categoryLabel) title = `${categoryLabel} Â· ${title.replace(/^(ì˜ì—…|íšŒì˜|ì‡¼ë£¸|ê¸°íƒ€)\s*[Â·â€¢-]\s*/, "")}`;
-  const assignee = await resolveScheduleAssignee(d1, input.assigneeMemberId, input.member.displayName);
-  const details = typeof input.details === "string"
-    ? input.details.trim().slice(0, 500)
-    : memoFromGoogleDescription(event.description || "");
-  const originalGoogleTitle = text(event.summary).slice(0, 120);
-  const storedDetails = [details, originalGoogleTitle ? `ì›ë³¸ Google ì œëª©: ${originalGoogleTitle}` : ""]
-    .filter(Boolean).join("\n").slice(0, 500);
-  const completed = input.completed === true
-    || input.completed === 1
-    || input.completed === "1"
-    || input.completed === "true";
-  try {
-    const inserted = await d1.prepare(
-      `INSERT INTO organization_schedules (
-         organization, business_round, label, scheduled_date, start_time, end_time, end_date,
-         category, stage, details, vendor_name, completed, created_by, created_by_name, updated_by, updated_by_name,
-         assignee_member_id, assignee_name, google_event_id, google_event_etag, google_updated_at,
-         google_origin, sync_status, sync_operation
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending', 'upsert')
-       RETURNING id`,
-    ).bind(
-      organization,
-      businessRound,
-      title,
-      values.scheduledDate,
-      values.startTime,
-      values.endTime,
-      values.endDate || values.scheduledDate,
-      storedCategory,
-      category === "construction" ? title : "",
-      storedDetails,
-      category === "construction" ? structured.vendor : "",
-      completed ? 1 : 0,
-      input.member.id,
-      input.member.displayName,
-      input.member.id,
-      input.member.displayName,
-      assignee.memberId,
-      assignee.name,
-      googleEventId,
-      event.etag || "",
-      event.updated || "",
-    ).first<{ id: number }>();
-    if (!inserted?.id) throw new Error("Google ì¼ì •ì„ ì—°ê²°í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.");
-    if (category === "construction") {
-      await deleteGoogleCalendarEvent(googleEventId, "general");
-      await d1.prepare(
-        `UPDATE organization_schedules
-         SET google_event_id = '', google_event_etag = '', google_updated_at = '',
-             sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
-         WHERE id = ?`,
-      ).bind(Number(inserted.id)).run();
-    }
-    if (constructionProject && !constructionProject.work_summary?.trim() && structured.products) {
-      await d1.prepare(
-        `UPDATE construction_schedule_projects
-         SET work_summary = ?, work_summary_mode = 'manual', updated_at = CURRENT_TIMESTAMP
-         WHERE id = ? AND TRIM(COALESCE(work_summary, '')) = ''`,
-      ).bind(structured.products, constructionProject.id).run();
-    }
-    await flushGoogleCalendarSync({ ids: [Number(inserted.id)] });
-    await refreshOrganizationScheduleMirror(organization, businessRound);
-    return { id: Number(inserted.id) };
-  } catch (error) {
-    if (error instanceof Error && /unique|constraint/i.test(error.message)) {
-      throw new Error("ë‹¤ë¥¸ ì‚¬ìš©ìê°€ ì´ë¯¸ ì´ Google ì¼ì •ì„ ì—°ê²°í–ˆìŠµë‹ˆë‹¤.");
-    }
-    throw error;
-  }
-}
-
-export async function deleteUnlinkedGoogleCalendarSchedule(
-  googleEventIdValue: unknown,
-  member: { role: string },
-) {
-  await ensureOrganizationSchedulesReady();
-  if (member.role !== "admin") throw new Error("Google ì›ë³¸ ì¼ì •ì€ ê´€ë¦¬ìë§Œ ì‚­ì œí•  ìˆ˜ ìˆìŠµë‹ˆë‹¤.");
-  const googleEventId = String(googleEventIdValue || "").trim().slice(0, 1024);
-  if (!googleEventId) throw new Error("ì‚­ì œí•  Google ì¼ì •ì„ ì„ íƒí•´ ì£¼ì„¸ìš”.");
-  const linked = await getD1().prepare(
-    `SELECT id FROM organization_schedules
-     WHERE google_event_id = ? AND TRIM(COALESCE(deleted_at, '')) = '' LIMIT 1`,
-  ).bind(googleEventId).first<{ id: number }>();
-  if (linked) throw new Error("ì—°ê²°ëœ ì¼ì •ì€ ì¼ë°˜ ì¼ì • ì‚­ì œ ê¸°ëŠ¥ì„ ì‚¬ìš©í•´ ì£¼ì„¸ìš”.");
-  await deleteGoogleCalendarEvent(googleEventId);
-  return { googleEventId };
-}
-
-export async function listCalendarSyncIssues() {
-  await ensureOrganizationSchedulesReady();
-  const result = await getD1().prepare(
-    `SELECT id, label, organization, sync_operation, sync_error, sync_attempts
-     FROM organization_schedules
-     WHERE sync_status = 'failed'
-     ORDER BY updated_at DESC, id DESC
-     LIMIT 25`,
-  ).all<Record<string, unknown>>();
-  return result.results.map((row: Record<string, unknown>) => ({
-    id: Number(row.id),
-    label: String(row.label || "ì¼ì •"),
-    organization: String(row.organization || ""),
-    operation: ["delete", "unlink"].includes(String(row.sync_operation))
-      ? String(row.sync_operation) as "delete" | "unlink"
-      : "upsert",
-    error: String(row.sync_error || "Google Calendar ë™ê¸°í™”ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤."),
-    attempts: Math.max(0, Number(row.sync_attempts) || 0),
-  } satisfies CalendarSyncIssue));
-}
-
-async function localSiteScheduleIds() {
-  const result = await getD1().prepare(
-    `SELECT id FROM organization_schedules WHERE TRIM(COALESCE(deleted_at, '')) = ''`,
-  ).all<{ id: number }>();
-  return new Set(result.results.map((row: { id: number }) => Number(row.id)));
-}
-
-async function repairDeletedConstructionCalendarEvents(
-  start: string,
-  end: string,
-  events: GoogleCalendarApiEvent[],
-) {
-  const d1 = getD1();
-  const activeByScheduleId = new Map<number, GoogleCalendarApiEvent>();
-  const activeEventIds = new Set<string>();
-  for (const event of events) {
-    if (event.status === "cancelled") continue;
-    if (event.id) activeEventIds.add(event.id);
-    const properties = event.extendedProperties?.private || {};
-    const scheduleId = Number(properties.whizzupScheduleId);
-    if (
-      properties.whizzupSource === "site"
-      && Number.isSafeInteger(scheduleId)
-      && scheduleId > 0
-      && !activeByScheduleId.has(scheduleId)
-    ) {
-      activeByScheduleId.set(scheduleId, event);
-    }
-  }
-  const rows = await d1.prepare(
-    `SELECT id, google_event_id
-     FROM organization_schedules
-     WHERE category = 'construction'
-       AND TRIM(COALESCE(deleted_at, '')) = ''
-       AND sync_status = 'synced'
-       AND TRIM(COALESCE(google_event_id, '')) <> ''
-       AND scheduled_date <= ?
-       AND COALESCE(NULLIF(end_date, ''), scheduled_date) >= ?`,
-  ).bind(end, start).all<{ id: number; google_event_id: string }>();
-  const restoreIds: number[] = [];
-  const updates = [];
-  for (const row of rows.results) {
-    const scheduleId = Number(row.id);
-    const matchingEvent = activeByScheduleId.get(scheduleId);
-    if (matchingEvent) {
-      if (matchingEvent.id !== row.google_event_id) {
-        updates.push(d1.prepare(
-          `UPDATE organization_schedules
-           SET google_event_id = ?, google_event_etag = ?, google_updated_at = ?,
-               sync_error = '', last_synced_at = CURRENT_TIMESTAMP
-           WHERE id = ?`,
-        ).bind(
-          matchingEvent.id,
-          matchingEvent.etag || "",
-          matchingEvent.updated || "",
-          scheduleId,
-        ));
-      }
-      continue;
-    }
-    if (activeEventIds.has(row.google_event_id)) continue;
-    updates.push(d1.prepare(
-      `UPDATE organization_schedules
-       SET google_event_id = '', google_event_etag = '', google_updated_at = '',
-           sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
-       WHERE id = ?`,
-    ).bind(scheduleId));
-    restoreIds.push(scheduleId);
-  }
-  if (updates.length) await d1.batch(updates);
-  return restoreIds;
-}
-
-export async function reconcileGoogleCalendarRange(start: string, end: string) {
-  await ensureOrganizationSchedulesReady();
-  const [result, constructionResult] = await Promise.all([
-    listGoogleCalendarApiEvents(start, end),
-    googleConstructionCalendarApiConfigured()
-      ? listGoogleCalendarApiEvents(start, end, "construction")
-      : Promise.resolve({ configured: false, connected: false, events: [] as GoogleCalendarApiEvent[], error: "" }),
-  ]);
-  const forcedRefreshIds = new Set<number>();
-  if (constructionResult.connected) {
-    const restoreIds = await repairDeletedConstructionCalendarEvents(start, end, constructionResult.events);
-    restoreIds.forEach((id) => forcedRefreshIds.add(id));
-  }
-  if (!result.connected) {
-    if (forcedRefreshIds.size) await flushGoogleCalendarSync({ ids: [...forcedRefreshIds] });
-    return { ...result, readOnlyEvents: [] as ReadOnlyGoogleSchedule[] };
-  }
-  const d1 = getD1();
-  const siteIds = await localSiteScheduleIds();
-  const readonly: ReadOnlyGoogleSchedule[] = [];
-  const seenReadonly = new Set<string>();
-  for (const event of result.events) {
-    const properties = event.extendedProperties?.private || {};
-    const siteId = Number(properties.whizzupScheduleId);
-    const siteOwned = properties.whizzupSource === "site" && Number.isSafeInteger(siteId) && siteId > 0;
-    if (siteOwned && siteIds.has(siteId)) {
-      const row = await d1.prepare(
-        `SELECT organization, business_round, label, category, sync_status, sync_operation, google_updated_at
-         FROM organization_schedules WHERE id = ?`,
-      ).bind(siteId).first<{
-        organization: string; business_round: number; label: string; category: string; sync_status: string;
-        sync_operation: string; google_updated_at: string;
-      }>();
-      const description = event.description || "";
-      const existingStructured = googleStructuredDescription(description);
-      if (row?.category === "construction") {
-        await d1.prepare(
-          `UPDATE organization_schedules
-           SET assignee_name = CASE
-                 WHEN assignee_member_id IS NULL AND TRIM(COALESCE(assignee_name, '')) = '' AND ? <> ''
-                  AND NOT EXISTS (
-                    SELECT 1 FROM activities a
-                    WHERE a.organization = organization_schedules.organization
-                      AND a.business_round = organization_schedules.business_round
-                      AND TRIM(COALESCE(a.progress_manager, '')) <> ''
-                  ) THEN ? ELSE assignee_name END,
-               vendor_name = CASE
-                 WHEN TRIM(COALESCE(vendor_name, '')) = '' AND ? <> '' THEN ? ELSE vendor_name END,
-               details = CASE
-                 WHEN TRIM(COALESCE(details, '')) = '' AND ? <> '' THEN ? ELSE details END
-           WHERE id = ?`,
-        ).bind(
-          existingStructured.assignee,
-          existingStructured.assignee,
-          existingStructured.vendor,
-          existingStructured.vendor,
-          existingStructured.memo,
-          existingStructured.memo,
-          siteId,
-        ).run();
-        if (existingStructured.products) {
-          await d1.prepare(
-            `UPDATE construction_schedule_projects
-             SET work_summary = ?, work_summary_mode = 'manual', updated_at = CURRENT_TIMESTAMP
-             WHERE organization = ? AND business_round = ?
-               AND TRIM(COALESCE(work_summary, '')) = ''
-               AND NOT EXISTS (
-                 SELECT 1 FROM equipment_projects ep
-                 JOIN equipment_items ei ON ei.project_id = ep.id
-                 WHERE ep.organization = construction_schedule_projects.organization
-                   AND ep.business_round = construction_schedule_projects.business_round
-                   AND TRIM(COALESCE(ei.product_name, '')) <> ''
-               )`,
-          ).bind(existingStructured.products, row.organization, row.business_round).run();
-        }
-      }
-      const requiredDescriptionFields = row?.category === "construction"
-        ? ["ë‹´ë‹¹ì:", "ì‹œê³µ ë‹¨ê³„:", "ì‹œê³µì—…ì²´:", "ê³µì‚¬Â·í’ˆëª©:", "ë©”ëª¨:"]
-        : ["ë‹´ë‹¹ì:", "ì¼ì • ë‚´ìš©:", "ë©”ëª¨:"];
-      const missingManagedDescription = requiredDescriptionFields.some((field) => !description.includes(field));
-      if (row && event.status !== "cancelled" && missingManagedDescription) {
-        await d1.prepare(
-          `UPDATE organization_schedules
-           SET sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
-           WHERE id = ?`,
-        ).bind(siteId).run();
-        forcedRefreshIds.add(siteId);
-        continue;
-      }
-      if (event.status === "cancelled") {
-        if (row?.category === "construction") {
-          await d1.prepare(
-            `UPDATE organization_schedules
-             SET google_event_id = '', google_event_etag = '', google_updated_at = '',
-                 sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
-             WHERE id = ?`,
-          ).bind(siteId).run();
-        } else {
-          await d1.prepare(
-            `UPDATE organization_schedules
-             SET google_event_id = '', google_event_etag = '', google_updated_at = '',
-                 sync_status = 'local_only', sync_operation = 'upsert',
-                 sync_error = 'google_event_deleted', last_synced_at = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-          ).bind(siteId).run();
-        }
-        continue;
-      }
-      if (row?.category === "construction" && event.updated && event.updated > (row.google_updated_at || "")) {
-        await d1.prepare(
-          `UPDATE organization_schedules
-           SET sync_status = 'pending', sync_operation = 'upsert', sync_error = '' WHERE id = ?`,
-        ).bind(siteId).run();
-        continue;
-      }
-      if (row?.sync_status === "synced" && event.updated && event.updated > (row.google_updated_at || "")) {
-        const values = eventValues(event);
-        const organization = (properties.whizzupOrganization || row.organization).slice(0, 120);
-        const structured = googleStructuredDescription(event.description || "");
-        const prefix = row.category === "general" ? "ì˜ì—…"
-          : row.category === "meeting" ? "íšŒì˜"
-          : row.category === "showroom" ? "ì‡¼ë£¸"
-          : row.category === "other" ? "ê¸°íƒ€"
-          : "";
-        const trustedContent = structured.content.slice(0, 120);
-        const label = trustedContent ? (!prefix ? trustedContent : `${prefix} Â· ${trustedContent}`) : row.label;
-        const trustedAssignee = structured.assignee.slice(0, 120);
-        await d1.prepare(
-          `UPDATE organization_schedules
-           SET organization = ?, label = ?, scheduled_date = ?, start_time = ?, end_time = ?, end_date = ?, details = ?,
-               assignee_name = CASE WHEN assignee_member_id IS NULL AND ? <> '' THEN ? ELSE assignee_name END,
-               google_event_id = ?, google_event_etag = ?, google_updated_at = ?, sync_error = '',
-               last_synced_at = CURRENT_TIMESTAMP, updated_by_name = 'Google Calendar', updated_at = CURRENT_TIMESTAMP
-           WHERE id = ? AND category <> 'construction'`,
-        ).bind(
-          organization,
-          label.slice(0, 120),
-          values.scheduledDate,
-          values.startTime,
-          values.endTime,
-          values.endDate,
-          memoFromGoogleDescription(event.description || ""),
-          trustedAssignee,
-          trustedAssignee,
-          event.id,
-          event.etag || "",
-          event.updated || "",
-          siteId,
-        ).run();
-      }
-      continue;
-    }
-    if (event.status === "cancelled" || !event.start) continue;
-    const values = eventValues(event);
-    if (siteOwned && !siteIds.has(siteId) && values.scheduledDate) {
-      const organization = (properties.whizzupOrganization || suggestedOrganization(event)).trim().slice(0, 120);
-      const businessRound = Math.max(0, Number(properties.whizzupBusinessRound) || 0);
-      const structured = googleStructuredDescription(event.description || "");
-      const eventLabel = structured.content.trim()
-        || (event.summary || "").replace(/^\s*\[[^\]]{1,10}\]\s*/u, "").replace(organization, "").replace(/^\s*[Â·â€¢:\-]\s*/, "").trim();
-      if (organization && eventLabel) {
-        const candidates = await d1.prepare(
-          `SELECT id, label, start_time, end_time, google_event_id
-           FROM organization_schedules
-           WHERE LOWER(TRIM(organization)) = LOWER(TRIM(?))
-             AND business_round = ?
-             AND scheduled_date = ?
-             AND COALESCE(category, 'general') <> 'construction'
-             AND TRIM(COALESCE(deleted_at, '')) = ''`,
-        ).bind(organization, businessRound, values.scheduledDate).all<{
-          id: number; label: string; start_time: string; end_time: string; google_event_id: string;
-        }>();
-        const semanticLabel = normalizeScheduleSemanticLabel(organization, eventLabel);
-        const replacements = candidates.results.filter((candidate) =>
-          normalizeScheduleSemanticLabel(organization, candidate.label) === semanticLabel
-            && (candidate.start_time || "") === values.startTime
-            && (candidate.end_time || "") === values.endTime
-            && Boolean(candidate.google_event_id?.trim())
-            && candidate.google_event_id !== event.id,
-        );
-        if (replacements.length === 1) {
-          await deleteGoogleCalendarEvent(event.id, "general");
-          continue;
-        }
-      }
-    }
-    const legacyStage = legacyConstructionStage(event.description || "");
-    if (legacyStage && values.scheduledDate) {
-      const candidates = await d1.prepare(
-        `SELECT id, google_event_id
-         FROM organization_schedules
-         WHERE category = 'construction'
-           AND TRIM(COALESCE(deleted_at, '')) = ''
-           AND label = ? AND scheduled_date = ?
-           AND COALESCE(NULLIF(end_date, ''), scheduled_date) = ?
-           AND (google_event_id = ? OR TRIM(COALESCE(google_event_id, '')) = '')
-         ORDER BY CASE WHEN google_event_id = ? THEN 0 ELSE 1 END, id ASC`,
-      ).bind(
-        legacyStage,
-        values.scheduledDate,
-        values.endDate || values.scheduledDate,
-        event.id,
-        event.id,
-      ).all<{ id: number; google_event_id: string }>();
-      const exact = candidates.results.filter((candidate: { id: number; google_event_id: string }) => candidate.google_event_id === event.id);
-      const unlinked = candidates.results.filter((candidate: { id: number; google_event_id: string }) => !candidate.google_event_id?.trim());
-      const matched = exact.length === 1 ? exact[0] : exact.length === 0 && unlinked.length === 1 ? unlinked[0] : null;
-      if (matched) {
-        await d1.prepare(
-          `UPDATE organization_schedules
-           SET google_event_id = ?, google_event_etag = ?, google_updated_at = ?, google_origin = 0,
-               sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
-           WHERE id = ?`,
-        ).bind(event.id, event.etag || "", event.updated || "", matched.id).run();
-        forcedRefreshIds.add(Number(matched.id));
-        continue;
-      }
-    }
-    const dedupeKey = `${event.id}\u001f${values.scheduledDate}`;
-    if (!values.scheduledDate || seenReadonly.has(dedupeKey)) continue;
-    seenReadonly.add(dedupeKey);
-    readonly.push({
-      id: `google:${dedupeKey}`,
-      organization: suggestedOrganization(event) || "Google Calendar",
-      businessRound: 0,
-      label: event.summary || "ìœ„ì¦ˆì—… ì¼ì •",
-      category: "google",
-      scheduledDate: values.scheduledDate,
-      startTime: values.startTime,
-      endTime: values.endTime,
-      endDate: values.endDate || values.scheduledDate,
-      visibility: "shared-post-award",
-      assigneeName: "ìœ„ì¦ˆì—… ê³µìœ ì¼ì •",
-      assigneeMemberId: null,
-      editable: false,
-      externalUrl: event.htmlLink || "https://calendar.google.com/calendar/u/0/r",
-      details: event.description || "",
-      updatedAt: event.updated || "",
-      updatedByName: "Google Calendar",
-      conflict: false,
-      syncStatus: "readonly",
-      syncError: "",
-      syncAttempts: 0,
-      googleEventId: event.id,
-      suggestedCategory: googleStructuredDescription(event.description || "").constructionStage ? "construction" : "other",
-    });
-  }
-  if (forcedRefreshIds.size) {
-    await flushGoogleCalendarSync({ ids: [...forcedRefreshIds] });
-  }
-  return { ...result, readOnlyEvents: readonly };
-}
+ßM´¶‰ËkºwµçP°€œœ¤¤€ô€œœ4(€€€€€€9Íå¹}ÍÑ…ÑÕÌ€ô€Íå¹•œ4(€€€€€€9QI%4¡=1M¡½½±•}•Ù•¹Ñ}¥°€œœ¤¤€ğø€œœ4(€€€€€€9Í¡•‘Õ±•‘}‘…Ñ”€ğô€ü4(€€€€€€9=1M¡9U11%¡•¹‘}‘…Ñ”°€œœ¤°Í¡•‘Õ±•‘}‘…Ñ”¤€øô€ı€°4(€€¤¹‰¥¹¡•¹°ÍÑ…ÉĞ¤¹…±°ñì¥è¹Õµ‰•Èì½½±•}•Ù•¹Ñ}¥èÍÑÉ¥¹œôø ¤ì4(€½¹ÍĞÉ•ÍÑ½É•%‘Ìè¹Õµ‰•Émt€ômtì4(€½¹ÍĞÕÁ‘…Ñ•Ì€ômtì4(€™½È€¡½¹ÍĞÉ½Ü½˜É½İÌ¹É•ÍÕ±ÑÌ¤ì4(€€€½¹ÍĞÍ¡•‘Õ±•%€ô9Õµ‰•È¡É½Ü¹¥¤ì4(€€€½¹ÍĞµ…Ñ¡¥¹Ù•¹Ğ€ô…Ñ¥Ù•	åM¡•‘Õ±•%¹•Ğ¡Í¡•‘Õ±•%¤ì4(€€€¥˜€¡µ…Ñ¡¥¹Ù•¹Ğ¤ì4(€€€€€¥˜€¡µ…Ñ¡¥¹Ù•¹Ğ¹¥€„ôôÉ½Ü¹½½±•}•Ù•¹Ñ}¥¤ì4(€€€€€€€ÕÁ‘…Ñ•Ì¹ÁÕÍ ¡Ä¹ÁÉ•Á…É” 4(€€€€€€€€€UAQ½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì4(€€€€€€€€€€MP½½±•}•Ù•¹Ñ}¥€ô€ü°½½±•}•Ù•¹Ñ}•Ñ…œ€ô€ü°½½±•}ÕÁ‘…Ñ•‘}…Ğ€ô€ü°4(€€€€€€€€€€€€€€Íå¹}•ÉÉ½È€ô€œœ°±…ÍÑ}Íå¹•‘}…Ğ€ôUII9Q}Q%5MQ5@4(€€€€€€€€€€]!I¥€ô€ı€°4(€€€€€€€€¤¹‰¥¹ 4(€€€€€€€€€µ…Ñ¡¥¹Ù•¹Ğ¹¥°4(€€€€€€€€€µ…Ñ¡¥¹Ù•¹Ğ¹•Ñ…œñğ€ˆˆ°4(€€€€€€€€€µ…Ñ¡¥¹Ù•¹Ğ¹ÕÁ‘…Ñ•ñğ€ˆˆ°4(€€€€€€€€€Í¡•‘Õ±•%°4(€€€€€€€€¤¤ì4(€€€€€ô4(€€€€€½¹Ñ¥¹Õ”ì4(€€€ô4(€€€¥˜€¡…Ñ¥Ù•Ù•¹Ñ%‘Ì¹¡…Ì¡É½Ü¹½½±•}•Ù•¹Ñ}¥¤¤½¹Ñ¥¹Õ”ì4(€€€ÕÁ‘…Ñ•Ì¹ÁÕÍ ¡Ä¹ÁÉ•Á…É” 4(€€€€€UAQ½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì4(€€€€€€MP½½±•}•Ù•¹Ñ}¥€ô€œœ°½½±•}•Ù•¹Ñ}•Ñ…œ€ô€œœ°½½±•}ÕÁ‘…Ñ•‘}…Ğ€ô€œœ°4(€€€€€€€€€€Íå¹}ÍÑ…ÑÕÌ€ô€Á•¹‘¥¹œœ°Íå¹}½Á•É…Ñ¥½¸€ô€ÕÁÍ•ÉĞœ°Íå¹}•ÉÉ½È€ô€œœ4(€€€€€€]!I¥€ô€ı€°4(€€€€¤¹‰¥¹¡Í¡•‘Õ±•%¤¤ì4(€€€É•ÍÑ½É•%‘Ì¹ÁÕÍ ¡Í¡•‘Õ±•%¤ì4(€ô4(€¥˜€¡ÕÁ‘…Ñ•Ì¹±•¹Ñ ¤…İ…¥ĞÄ¹‰…Ñ ¡ÕÁ‘…Ñ•Ì¤ì4(€É•ÑÕÉ¸É•ÍÑ½É•%‘Ìì4)ô4(4)•áÁ½ÉĞ…Íå¹Œ™Õ¹Ñ¥½¸É•½¹¥±•½½±•…±•¹‘…ÉI…¹”¡ÍÑ…ÉĞèÍÑÉ¥¹œ°•¹èÍÑÉ¥¹œ¤ì4(€…İ…¥Ğ•¹ÍÕÉ•=É…¹¥é…Ñ¥½¹M¡•‘Õ±•ÍI•…‘ä ¤ì4(€½¹ÍĞmÉ•ÍÕ±Ğ°½¹ÍÑÉÕÑ¥½¹I•ÍÕ±Ñt€ô…İ…¥ĞAÉ½µ¥Í”¹…±°¡l4(€€€±¥ÍÑ½½±•…±•¹‘…ÉÁ¥Ù•¹ÑÌ¡ÍÑ…ÉĞ°•¹¤°4(€€€½½±•½¹ÍÑÉÕÑ¥½¹…±•¹‘…ÉÁ¥½¹™¥ÕÉ• ¤4(€€€€€€ü±¥ÍÑ½½±•…±•¹‘…ÉÁ¥Ù•¹ÑÌ¡ÍÑ…ÉĞ°•¹°€‰½¹ÍÑÉÕÑ¥½¸ˆ¤4(€€€€€€èAÉ½µ¥Í”¹É•Í½±Ù”¡ì½¹™¥ÕÉ•è™…±Í”°½¹¹•Ñ•è™…±Í”°•Ù•¹ÑÌèmt…Ì½½±•…±•¹‘…ÉÁ¥Ù•¹Ñmt°•ÉÉ½Èè€ˆˆô¤°4(€t¤ì4(€½¹ÍĞ™½É•‘I•™É•Í¡%‘Ì€ô¹•ÜM•Ğñ¹Õµ‰•Èø ¤ì4(€¥˜€¡½¹ÍÑÉÕÑ¥½¹I•ÍÕ±Ğ¹½¹¹•Ñ•¤ì4(€€€½¹ÍĞÉ•ÍÑ½É•%‘Ì€ô…İ…¥ĞÉ•Á…¥É•±•Ñ•‘½¹ÍÑÉÕÑ¥½¹…±•¹‘…ÉÙ•¹ÑÌ¡ÍÑ…ÉĞ°•¹°½¹ÍÑÉÕÑ¥½¹I•ÍÕ±Ğ¹•Ù•¹ÑÌ¤ì4(€€€É•ÍÑ½É•%‘Ì¹™½É…  ¡¥¤€ôø™½É•‘I•™É•Í¡%‘Ì¹…‘¡¥¤¤ì4(€ô4(€¥˜€ …É•ÍÕ±Ğ¹½¹¹•Ñ•¤ì4(€€€¥˜€¡™½É•‘I•™É•Í¡%‘Ì¹Í¥é”¤…İ…¥Ğ™±ÕÍ¡½½±•…±•¹‘…ÉMå¹Œ¡ì¥‘Ìèl¸¸¹™½É•‘I•™É•Í¡%‘Ítô¤ì4(€€€É•ÑÕÉ¸ì€¸¸¹É•ÍÕ±Ğ°É•…‘=¹±åÙ•¹ÑÌèmt…ÌI•…‘=¹±å½½±•M¡•‘Õ±•mtôì4(€ô4(€½¹ÍĞÄ€ô•ÑÄ ¤ì4(€½¹ÍĞÍ¥Ñ•%‘Ì€ô…İ…¥Ğ±½…±M¥Ñ•M¡•‘Õ±•%‘Ì ¤ì4(€½¹ÍĞÉ•…‘½¹±äèI•…‘=¹±å½½±•M¡•‘Õ±•mt€ômtì4(€½¹ÍĞÍ••¹I•…‘½¹±ä€ô¹•ÜM•ĞñÍÑÉ¥¹œø ¤ì4(€™½È€¡½¹ÍĞ•Ù•¹Ğ½˜É•ÍÕ±Ğ¹•Ù•¹ÑÌ¤ì4(€€€½¹ÍĞÁÉ½Á•ÉÑ¥•Ì€ô•Ù•¹Ğ¹•áÑ•¹‘•‘AÉ½Á•ÉÑ¥•Ìü¹ÁÉ¥Ù…Ñ”ñğíôì4(€€€½¹ÍĞÍ¥Ñ•%€ô9Õµ‰•È¡ÁÉ½Á•ÉÑ¥•Ì¹İ¡¥ééÕÁM¡•‘Õ±•%¤ì4(€€€½¹ÍĞÍ¥Ñ•=İ¹•€ôÁÉ½Á•ÉÑ¥•Ì¹İ¡¥ééÕÁM½ÕÉ”€ôôô€‰Í¥Ñ”ˆ€˜˜9Õµ‰•È¹¥ÍM…™•%¹Ñ••È¡Í¥Ñ•%¤€˜˜Í¥Ñ•%€ø€Àì4(€€€¥˜€¡Í¥Ñ•=İ¹•€˜˜Í¥Ñ•%‘Ì¹¡…Ì¡Í¥Ñ•%¤¤ì(€€€€€½¹ÍĞÉ½Ü€ô…İ…¥ĞÄ¹ÁÉ•Á…É” (€€€€€€€M1P½É…¹¥é…Ñ¥½¸°‰ÕÍ¥¹•ÍÍ}É½Õ¹°±…‰•°°…Ñ•½Éä°Íå¹}ÍÑ…ÑÕÌ°Íå¹}½Á•É…Ñ¥½¸°(€€€€€€€€€€€€€€€½½±•}•Ù•¹Ñ}¥°½½±•}ÕÁ‘…Ñ•‘}…Ğ(€€€€€€€€I=4½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì]!I¥€ô€ı€°(€€€€€€¤¹‰¥¹¡Í¥Ñ•%¤¹™¥ÉÍĞñì(€€€€€€€½É…¹¥é…Ñ¥½¸èÍÑÉ¥¹œì‰ÕÍ¥¹•ÍÍ}É½Õ¹è¹Õµ‰•Èì±…‰•°èÍÑÉ¥¹œì…Ñ•½ÉäèÍÑÉ¥¹œìÍå¹}ÍÑ…ÑÕÌèÍÑÉ¥¹œì(€€€€€€€Íå¹}½Á•É…Ñ¥½¸èÍÑÉ¥¹œì½½±•}•Ù•¹Ñ}¥èÍÑÉ¥¹œì½½±•}ÕÁ‘…Ñ•‘}…ĞèÍÑÉ¥¹œì(€€€€€ôø ¤ì(€€€€€€¼¼Á•ÉÍ½¹…°Í¡•‘Õ±”µÕÍĞÉ•µ…¥¸½¹±ä¥¸Ñ¡”Í¥Ñ”…±•¹‘…È¸Q¡¥Ì…±Í¼(€€€€€€¼¼É•µ½Ù•Ì±•…äÁÕ‰±¥Œ•Ù•¹ÑÌİ¡½Í”±½…°½½±”±¥¹¬İ…Ì…±É•…‘ä(€€€€€€¼¼±•…É•‰•™½É”Ñ¡”Õ¹±¥¹¬É•ÅÕ•ÍĞ½Õ±½µÁ±•Ñ”¸(€€€€€¥˜€¡É½Üü¹…Ñ•½Éä€ôôô€‰Á•ÉÍ½¹…°ˆ¤ì(€€€€€€€¥˜€¡•Ù•¹Ğ¹ÍÑ…ÑÕÌ€„ôô€‰…¹•±±•ˆ¤ì(€€€€€€€€€…İ…¥Ğ‘•±•Ñ•½½±•…±•¹‘…ÉÙ•¹Ğ¡•Ù•¹Ğ¹¥°€‰•¹•É…°ˆ¤ì(€€€€€€€ô(€€€€€€€…İ…¥ĞÄ¹ÁÉ•Á…É” (€€€€€€€€€UAQ½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì(€€€€€€€€€€MP½½±•}•Ù•¹Ñ}¥€ô€œœ°½½±•}•Ù•¹Ñ}•Ñ…œ€ô€œœ°½½±•}ÕÁ‘…Ñ•‘}…Ğ€ô€œœ°(€€€€€€€€€€€€€€Íå¹}ÍÑ…ÑÕÌ€ô€±½…±}½¹±äœ°Íå¹}½Á•É…Ñ¥½¸€ô€ÕÁÍ•ÉĞœ°Íå¹}•ÉÉ½È€ô€œœ°(€€€€€€€€€€€€€€±…ÍÑ}Íå¹•‘}…Ğ€ôUII9Q}Q%5MQ5@(€€€€€€€€€€]!I¥€ô€ı€°(€€€€€€€€¤¹‰¥¹¡Í¥Ñ•%¤¹ÉÕ¸ ¤ì(€€€€€€€½¹Ñ¥¹Õ”ì(€€€€€ô(€€€€€½¹ÍĞ‘•ÍÉ¥ÁÑ¥½¸€ô•Ù•¹Ğ¹‘•ÍÉ¥ÁÑ¥½¸ñğ€ˆˆì(€€€€€½¹ÍĞ•á¥ÍÑ¥¹MÑÉÕÑÕÉ•€ô½½±•MÑÉÕÑÕÉ•‘•ÍÉ¥ÁÑ¥½¸¡‘•ÍÉ¥ÁÑ¥½¸¤ì4(€€€€€¥˜€¡É½Üü¹…Ñ•½Éä€ôôô€‰½¹ÍÑÉÕÑ¥½¸ˆ¤ì4(€€€€€€€…İ…¥ĞÄ¹ÁÉ•Á…É” 4(€€€€€€€€€UAQ½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì4(€€€€€€€€€€MP…ÍÍ¥¹••}¹…µ”€ôM4(€€€€€€€€€€€€€€€€]!8…ÍÍ¥¹••}µ•µ‰•É}¥%L9U109QI%4¡=1M¡…ÍÍ¥¹••}¹…µ”°€œœ¤¤€ô€œœ9€ü€ğø€œœ4(€€€€€€€€€€€€€€€€€99=Pa%MQL€ 4(€€€€€€€€€€€€€€€€€€€M1P€ÄI=4…Ñ¥Ù¥Ñ¥•Ì„4(€€€€€€€€€€€€€€€€€€€]!I„¹½É…¹¥é…Ñ¥½¸€ô½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì¹½É…¹¥é…Ñ¥½¸4(€€€€€€€€€€€€€€€€€€€€€9„¹‰ÕÍ¥¹•ÍÍ}É½Õ¹€ô½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì¹‰ÕÍ¥¹•ÍÍ}É½Õ¹4(€€€€€€€€€€€€€€€€€€€€€9QI%4¡=1M¡„¹ÁÉ½É•ÍÍ}µ…¹…•È°€œœ¤¤€ğø€œœ4(€€€€€€€€€€€€€€€€€€¤Q!8€ü1M…ÍÍ¥¹••}¹…µ”9°4(€€€€€€€€€€€€€€Ù•¹‘½É}¹…µ”€ôM4(€€€€€€€€€€€€€€€€]!8QI%4¡=1M¡Ù•¹‘½É}¹…µ”°€œœ¤¤€ô€œœ9€ü€ğø€œœQ!8€ü1MÙ•¹‘½É}¹…µ”9°4(€€€€€€€€€€€€€€‘•Ñ…¥±Ì€ôM4(€€€€€€€€€€€€€€€€]!8QI%4¡=1M¡‘•Ñ…¥±Ì°€œœ¤¤€ô€œœ9€ü€ğø€œœQ!8€ü1M‘•Ñ…¥±Ì94(€€€€€€€€€€]!I¥€ô€ı€°4(€€€€€€€€¤¹‰¥¹ 4(€€€€€€€€€•á¥ÍÑ¥¹MÑÉÕÑÕÉ•¹…ÍÍ¥¹•”°4(€€€€€€€€€•á¥ÍÑ¥¹MÑÉÕÑÕÉ•¹…ÍÍ¥¹•”°4(€€€€€€€€€•á¥ÍÑ¥¹MÑÉÕÑÕÉ•¹Ù•¹‘½È°4(€€€€€€€€€•á¥ÍÑ¥¹MÑÉÕÑÕÉ•¹Ù•¹‘½È°4(€€€€€€€€€•á¥ÍÑ¥¹MÑÉÕÑÕÉ•¹µ•µ¼°4(€€€€€€€€€•á¥ÍÑ¥¹MÑÉÕÑÕÉ•¹µ•µ¼°4(€€€€€€€€€Í¥Ñ•%°4(€€€€€€€€¤¹ÉÕ¸ ¤ì4(€€€€€€€¥˜€¡•á¥ÍÑ¥¹MÑÉÕÑÕÉ•¹ÁÉ½‘ÕÑÌ¤ì4(€€€€€€€€€…İ…¥ĞÄ¹ÁÉ•Á…É” 4(€€€€€€€€€€€UAQ½¹ÍÑÉÕÑ¥½¹}Í¡•‘Õ±•}ÁÉ½©•ÑÌ4(€€€€€€€€€€€€MPİ½É­}ÍÕµµ…Éä€ô€ü°İ½É­}ÍÕµµ…Éå}µ½‘”€ô€µ…¹Õ…°œ°ÕÁ‘…Ñ•‘}…Ğ€ôUII9Q}Q%5MQ5@4(€€€€€€€€€€€€]!I½É…¹¥é…Ñ¥½¸€ô€ü9‰ÕÍ¥¹•ÍÍ}É½Õ¹€ô€ü4(€€€€€€€€€€€€€€9QI%4¡=1M¡İ½É­}ÍÕµµ…Éä°€œœ¤¤€ô€œœ4(€€€€€€€€€€€€€€99=Pa%MQL€ 4(€€€€€€€€€€€€€€€€M1P€ÄI=4•ÅÕ¥Áµ•¹Ñ}ÁÉ½©•ÑÌ•À4(€€€€€€€€€€€€€€€€)=%8•ÅÕ¥Áµ•¹Ñ}¥Ñ•µÌ•¤=8•¤¹ÁÉ½©•Ñ}¥€ô•À¹¥4(€€€€€€€€€€€€€€€€]!I•À¹½É…¹¥é…Ñ¥½¸€ô½¹ÍÑÉÕÑ¥½¹}Í¡•‘Õ±•}ÁÉ½©•ÑÌ¹½É…¹¥é…Ñ¥½¸4(€€€€€€€€€€€€€€€€€€9•À¹‰ÕÍ¥¹•ÍÍ}É½Õ¹€ô½¹ÍÑÉÕÑ¥½¹}Í¡•‘Õ±•}ÁÉ½©•ÑÌ¹‰ÕÍ¥¹•ÍÍ}É½Õ¹4(€€€€€€€€€€€€€€€€€€9QI%4¡=1M¡•¤¹ÁÉ½‘ÕÑ}¹…µ”°€œœ¤¤€ğø€œœ4(€€€€€€€€€€€€€€€¥€°4(€€€€€€€€€€¤¹‰¥¹¡•á¥ÍÑ¥¹MÑÉÕÑÕÉ•¹ÁÉ½‘ÕÑÌ°É½Ü¹½É…¹¥é…Ñ¥½¸°É½Ü¹‰ÕÍ¥¹•ÍÍ}É½Õ¹¤¹ÉÕ¸ ¤ì4(€€€€€€€ô4(€€€€€ô4(€€€€€½¹ÍĞÉ•ÅÕ¥É•‘•ÍÉ¥ÁÑ¥½¹¥•±‘Ì€ôÉ½Üü¹…Ñ•½Éä€ôôô€‰½¹ÍÑÉÕÑ¥½¸ˆ4(€€€€€€€€ül‹®.Ó®.ç²z@èˆ°€‹².sªÎÔƒ®.£ªÎèˆ°€‹².sªÎ×²^²ÊĞèˆ°€‹ªÎ×²
+³
+ß¶J#®ª¤èˆ°€‹®¦S®ª è‰t4(€€€€€€€€èl‹®.Ó®.ç²z@èˆ°€‹²vó²‚Tƒ®
+Ó²j¤èˆ°€‹®¦S®ª è‰tì4(€€€€€½¹ÍĞµ¥ÍÍ¥¹5…¹…•‘•ÍÉ¥ÁÑ¥½¸€ôÉ•ÅÕ¥É•‘•ÍÉ¥ÁÑ¥½¹¥•±‘Ì¹Í½µ” ¡™¥•±¤€ôø€…‘•ÍÉ¥ÁÑ¥½¸¹¥¹±Õ‘•Ì¡™¥•±¤¤ì4(€€€€€¥˜€¡É½Ü€˜˜•Ù•¹Ğ¹ÍÑ…ÑÕÌ€„ôô€‰…¹•±±•ˆ€˜˜µ¥ÍÍ¥¹5…¹…•‘•ÍÉ¥ÁÑ¥½¸¤ì4(€€€€€€€…İ…¥ĞÄ¹ÁÉ•Á…É” 4(€€€€€€€€€UAQ½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì4(€€€€€€€€€€MPÍå¹}ÍÑ…ÑÕÌ€ô€Á•¹‘¥¹œœ°Íå¹}½Á•É…Ñ¥½¸€ô€ÕÁÍ•ÉĞœ°Íå¹}•ÉÉ½È€ô€œœ4(€€€€€€€€€€]!I¥€ô€ı€°4(€€€€€€€€¤¹‰¥¹¡Í¥Ñ•%¤¹ÉÕ¸ ¤ì4(€€€€€€€™½É•‘I•™É•Í¡%‘Ì¹…‘¡Í¥Ñ•%¤ì4(€€€€€€€½¹Ñ¥¹Õ”ì4(€€€€€ô4(€€€€€¥˜€¡•Ù•¹Ğ¹ÍÑ…ÑÕÌ€ôôô€‰…¹•±±•ˆ¤ì4(€€€€€€€¥˜€¡É½Üü¹…Ñ•½Éä€ôôô€‰½¹ÍÑÉÕÑ¥½¸ˆ¤ì4(€€€€€€€€€…İ…¥ĞÄ¹ÁÉ•Á…É” 4(€€€€€€€€€€€UAQ½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì4(€€€€€€€€€€€€MP½½±•}•Ù•¹Ñ}¥€ô€œœ°½½±•}•Ù•¹Ñ}•Ñ…œ€ô€œœ°½½±•}ÕÁ‘…Ñ•‘}…Ğ€ô€œœ°4(€€€€€€€€€€€€€€€€Íå¹}ÍÑ…ÑÕÌ€ô€Á•¹‘¥¹œœ°Íå¹}½Á•É…Ñ¥½¸€ô€ÕÁÍ•ÉĞœ°Íå¹}•ÉÉ½È€ô€œœ4(€€€€€€€€€€€€]!I¥€ô€ı€°4(€€€€€€€€€€¤¹‰¥¹¡Í¥Ñ•%¤¹ÉÕ¸ ¤ì4(€€€€€€€ô•±Í”ì4(€€€€€€€€€…İ…¥ĞÄ¹ÁÉ•Á…É” 4(€€€€€€€€€€€UAQ½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì4(€€€€€€€€€€€€MP½½±•}•Ù•¹Ñ}¥€ô€œœ°½½±•}•Ù•¹Ñ}•Ñ…œ€ô€œœ°½½±•}ÕÁ‘…Ñ•‘}…Ğ€ô€œœ°4(€€€€€€€€€€€€€€€€Íå¹}ÍÑ…ÑÕÌ€ô€±½…±}½¹±äœ°Íå¹}½Á•É…Ñ¥½¸€ô€ÕÁÍ•ÉĞœ°4(€€€€€€€€€€€€€€€€Íå¹}•ÉÉ½È€ô€½½±•}•Ù•¹Ñ}‘•±•Ñ•œ°±…ÍÑ}Íå¹•‘}…Ğ€ôUII9Q}Q%5MQ5@4(€€€€€€€€€€€€]!I¥€ô€ı€°4(€€€€€€€€€€¤¹‰¥¹¡Í¥Ñ•%¤¹ÉÕ¸ ¤ì4(€€€€€€€ô4(€€€€€€€½¹Ñ¥¹Õ”ì4(€€€€€ô4(€€€€€¥˜€¡É½Üü¹…Ñ•½Éä€ôôô€‰½¹ÍÑÉÕÑ¥½¸ˆ€˜˜•Ù•¹Ğ¹ÕÁ‘…Ñ•€˜˜•Ù•¹Ğ¹ÕÁ‘…Ñ•€ø€¡É½Ü¹½½±•}ÕÁ‘…Ñ•‘}…Ğñğ€ˆˆ¤¤ì4(€€€€€€€…İ…¥ĞÄ¹ÁÉ•Á…É” 4(€€€€€€€€€UAQ½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì4(€€€€€€€€€€MPÍå¹}ÍÑ…ÑÕÌ€ô€Á•¹‘¥¹œœ°Íå¹}½Á•É…Ñ¥½¸€ô€ÕÁÍ•ÉĞœ°Íå¹}•ÉÉ½È€ô€œœ]!I¥€ô€ı€°4(€€€€€€€€¤¹‰¥¹¡Í¥Ñ•%¤¹ÉÕ¸ ¤ì4(€€€€€€€½¹Ñ¥¹Õ”ì4(€€€€€ô4(€€€€€¥˜€¡É½Üü¹Íå¹}ÍÑ…ÑÕÌ€ôôô€‰Íå¹•ˆ€˜˜•Ù•¹Ğ¹ÕÁ‘…Ñ•€˜˜•Ù•¹Ğ¹ÕÁ‘…Ñ•€ø€¡É½Ü¹½½±•}ÕÁ‘…Ñ•‘}…Ğñğ€ˆˆ¤¤ì4(€€€€€€€½¹ÍĞÙ…±Õ•Ì€ô•Ù•¹ÑY…±Õ•Ì¡•Ù•¹Ğ¤ì4(€€€€€€€½¹ÍĞ½É…¹¥é…Ñ¥½¸€ô€¡ÁÉ½Á•ÉÑ¥•Ì¹İ¡¥ééÕÁ=É…¹¥é…Ñ¥½¸ñğÉ½Ü¹½É…¹¥é…Ñ¥½¸¤¹Í±¥” À°€ÄÈÀ¤ì4(€€€€€€€½¹ÍĞÍÑÉÕÑÕÉ•€ô½½±•MÑÉÕÑÕÉ•‘•ÍÉ¥ÁÑ¥½¸¡•Ù•¹Ğ¹‘•ÍÉ¥ÁÑ¥½¸ñğ€ˆˆ¤ì4(€€€€€€€½¹ÍĞÁÉ•™¥à€ôÉ½Ü¹…Ñ•½Éä€ôôô€‰•¹•É…°ˆ€ü€‹²b²^ˆ4(€€€€€€€€€€èÉ½Ü¹…Ñ•½Éä€ôôô€‰µ••Ñ¥¹œˆ€ü€‹¶j3²v`ˆ4(€€€€€€€€€€èÉ½Ü¹…Ñ•½Éä€ôôô€‰Í¡½İÉ½½´ˆ€ü€‹²ó®àˆ4(€€€€€€€€€€èÉ½Ü¹…Ñ•½Éä€ôôô€‰½Ñ¡•Èˆ€ü€‹ªâÃ¶ ˆ4(€€€€€€€€€€è€ˆˆì4(€€€€€€€½¹ÍĞÑÉÕÍÑ•‘½¹Ñ•¹Ğ€ôÍÑÉÕÑÕÉ•¹½¹Ñ•¹Ğ¹Í±¥” À°€ÄÈÀ¤ì4(€€€€€€€½¹ÍĞ±…‰•°€ôÑÉÕÍÑ•‘½¹Ñ•¹Ğ€ü€ …ÁÉ•™¥à€üÑÉÕÍÑ•‘½¹Ñ•¹Ğ€è€‘íÁÉ•™¥áôƒ
+Ü€‘íÑÉÕÍÑ•‘½¹Ñ•¹Ñõ€¤€èÉ½Ü¹±…‰•°ì4(€€€€€€€½¹ÍĞÑÉÕÍÑ•‘ÍÍ¥¹•”€ôÍÑÉÕÑÕÉ•¹…ÍÍ¥¹•”¹Í±¥” À°€ÄÈÀ¤ì4(€€€€€€€…İ…¥ĞÄ¹ÁÉ•Á…É” 4(€€€€€€€€€UAQ½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì4(€€€€€€€€€€MP½É…¹¥é…Ñ¥½¸€ô€ü°±…‰•°€ô€ü°Í¡•‘Õ±•‘}‘…Ñ”€ô€ü°ÍÑ…ÉÑ}Ñ¥µ”€ô€ü°•¹‘}Ñ¥µ”€ô€ü°•¹‘}‘…Ñ”€ô€ü°‘•Ñ…¥±Ì€ô€ü°4(€€€€€€€€€€€€€€…ÍÍ¥¹••}¹…µ”€ôM]!8…ÍÍ¥¹••}µ•µ‰•É}¥%L9U109€ü€ğø€œœQ!8€ü1M…ÍÍ¥¹••}¹…µ”9°4(€€€€€€€€€€€€€€½½±•}•Ù•¹Ñ}¥€ô€ü°½½±•}•Ù•¹Ñ}•Ñ…œ€ô€ü°½½±•}ÕÁ‘…Ñ•‘}…Ğ€ô€ü°Íå¹}•ÉÉ½È€ô€œœ°4(€€€€€€€€€€€€€€±…ÍÑ}Íå¹•‘}…Ğ€ôUII9Q}Q%5MQ5@°ÕÁ‘…Ñ•‘}‰å}¹…µ”€ô€½½±”…±•¹‘…Èœ°ÕÁ‘…Ñ•‘}…Ğ€ôUII9Q}Q%5MQ5@4(€€€€€€€€€€]!I¥€ô€ü9…Ñ•½Éä€ğø€½¹ÍÑÉÕÑ¥½¸€°4(€€€€€€€€¤¹‰¥¹ 4(€€€€€€€€€½É…¹¥é…Ñ¥½¸°4(€€€€€€€€€±…‰•°¹Í±¥” À°€ÄÈÀ¤°4(€€€€€€€€€Ù…±Õ•Ì¹Í¡•‘Õ±•‘…Ñ”°4(€€€€€€€€€Ù…±Õ•Ì¹ÍÑ…ÉÑQ¥µ”°4(€€€€€€€€€Ù…±Õ•Ì¹•¹‘Q¥µ”°4(€€€€€€€€€Ù…±Õ•Ì¹•¹‘…Ñ”°4(€€€€€€€€€µ•µ½É½µ½½±••ÍÉ¥ÁÑ¥½¸¡•Ù•¹Ğ¹‘•ÍÉ¥ÁÑ¥½¸ñğ€ˆˆ¤°4(€€€€€€€€€ÑÉÕÍÑ•‘ÍÍ¥¹•”°4(€€€€€€€€€ÑÉÕÍÑ•‘ÍÍ¥¹•”°4(€€€€€€€€€•Ù•¹Ğ¹¥°4(€€€€€€€€€•Ù•¹Ğ¹•Ñ…œñğ€ˆˆ°4(€€€€€€€€€•Ù•¹Ğ¹ÕÁ‘…Ñ•ñğ€ˆˆ°4(€€€€€€€€€Í¥Ñ•%°4(€€€€€€€€¤¹ÉÕ¸ ¤ì4(€€€€€ô4(€€€€€½¹Ñ¥¹Õ”ì4(€€€ô4(€€€¥˜€¡•Ù•¹Ğ¹ÍÑ…ÑÕÌ€ôôô€‰…¹•±±•ˆñğ€…•Ù•¹Ğ¹ÍÑ…ÉĞ¤½¹Ñ¥¹Õ”ì4(€€€½¹ÍĞÙ…±Õ•Ì€ô•Ù•¹ÑY…±Õ•Ì¡•Ù•¹Ğ¤ì4(€€€¥˜€¡Í¥Ñ•=İ¹•€˜˜€…Í¥Ñ•%‘Ì¹¡…Ì¡Í¥Ñ•%¤€˜˜Ù…±Õ•Ì¹Í¡•‘Õ±•‘…Ñ”¤ì4(€€€€€½¹ÍĞ½É…¹¥é…Ñ¥½¸€ô€¡ÁÉ½Á•ÉÑ¥•Ì¹İ¡¥ééÕÁ=É…¹¥é…Ñ¥½¸ñğÍÕ•ÍÑ•‘=É…¹¥é…Ñ¥½¸¡•Ù•¹Ğ¤¤¹ÑÉ¥´ ¤¹Í±¥” À°€ÄÈÀ¤ì4(€€€€€½¹ÍĞ‰ÕÍ¥¹•ÍÍI½Õ¹€ô5…Ñ ¹µ…à À°9Õµ‰•È¡ÁÉ½Á•ÉÑ¥•Ì¹İ¡¥ééÕÁ	ÕÍ¥¹•ÍÍI½Õ¹¤ñğ€À¤ì4(€€€€€½¹ÍĞÍÑÉÕÑÕÉ•€ô½½±•MÑÉÕÑÕÉ•‘•ÍÉ¥ÁÑ¥½¸¡•Ù•¹Ğ¹‘•ÍÉ¥ÁÑ¥½¸ñğ€ˆˆ¤ì4(€€€€€½¹ÍĞ•Ù•¹Ñ1…‰•°€ôÍÑÉÕÑÕÉ•¹½¹Ñ•¹Ğ¹ÑÉ¥´ ¤4(€€€€€€€ñğ€¡•Ù•¹Ğ¹ÍÕµµ…Éäñğ€ˆˆ¤¹É•Á±…” ½yqÌ©qmmyquuìÄ°ÄÁõquqÌ¨½Ô°€ˆˆ¤¹É•Á±…”¡½É…¹¥é…Ñ¥½¸°€ˆˆ¤¹É•Á±…” ½yqÌ©o
+ßŠˆépµuqÌ¨¼°€ˆˆ¤¹ÑÉ¥´ ¤ì4(€€€€€¥˜€¡½É…¹¥é…Ñ¥½¸€˜˜•Ù•¹Ñ1…‰•°¤ì4(€€€€€€€½¹ÍĞ…¹‘¥‘…Ñ•Ì€ô…İ…¥ĞÄ¹ÁÉ•Á…É” 4(€€€€€€€€€M1P¥°±…‰•°°ÍÑ…ÉÑ}Ñ¥µ”°•¹‘}Ñ¥µ”°½½±•}•Ù•¹Ñ}¥4(€€€€€€€€€€I=4½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì4(€€€€€€€€€€]!I1=]H¡QI%4¡½É…¹¥é…Ñ¥½¸¤¤€ô1=]H¡QI%4 ü¤¤4(€€€€€€€€€€€€9‰ÕÍ¥¹•ÍÍ}É½Õ¹€ô€ü4(€€€€€€€€€€€€9Í¡•‘Õ±•‘}‘…Ñ”€ô€ü4(€€€€€€€€€€€€9=1M¡…Ñ•½Éä°€•¹•É…°œ¤€ğø€½¹ÍÑÉÕÑ¥½¸œ4(€€€€€€€€€€€€9QI%4¡=1M¡‘•±•Ñ•‘}…Ğ°€œœ¤¤€ô€œ€°4(€€€€€€€€¤¹‰¥¹¡½É…¹¥é…Ñ¥½¸°‰ÕÍ¥¹•ÍÍI½Õ¹°Ù…±Õ•Ì¹Í¡•‘Õ±•‘…Ñ”¤¹…±°ñì4(€€€€€€€€€¥è¹Õµ‰•Èì±…‰•°èÍÑÉ¥¹œìÍÑ…ÉÑ}Ñ¥µ”èÍÑÉ¥¹œì•¹‘}Ñ¥µ”èÍÑÉ¥¹œì½½±•}•Ù•¹Ñ}¥èÍÑÉ¥¹œì4(€€€€€€€ôø ¤ì4(€€€€€€€½¹ÍĞÍ•µ…¹Ñ¥1…‰•°€ô¹½Éµ…±¥é•M¡•‘Õ±•M•µ…¹Ñ¥1…‰•°¡½É…¹¥é…Ñ¥½¸°•Ù•¹Ñ1…‰•°¤ì4(€€€€€€€½¹ÍĞÉ•Á±…•µ•¹ÑÌ€ô…¹‘¥‘…Ñ•Ì¹É•ÍÕ±ÑÌ¹™¥±Ñ•È ¡…¹‘¥‘…Ñ”¤€ôø4(€€€€€€€€€¹½Éµ…±¥é•M¡•‘Õ±•M•µ…¹Ñ¥1…‰•°¡½É…¹¥é…Ñ¥½¸°…¹‘¥‘…Ñ”¹±…‰•°¤€ôôôÍ•µ…¹Ñ¥1…‰•°4(€€€€€€€€€€€€˜˜€¡…¹‘¥‘…Ñ”¹ÍÑ…ÉÑ}Ñ¥µ”ñğ€ˆˆ¤€ôôôÙ…±Õ•Ì¹ÍÑ…ÉÑQ¥µ”4(€€€€€€€€€€€€˜˜€¡…¹‘¥‘…Ñ”¹•¹‘}Ñ¥µ”ñğ€ˆˆ¤€ôôôÙ…±Õ•Ì¹•¹‘Q¥µ”4(€€€€€€€€€€€€˜˜	½½±•…¸¡…¹‘¥‘…Ñ”¹½½±•}•Ù•¹Ñ}¥ü¹ÑÉ¥´ ¤¤4(€€€€€€€€€€€€˜˜…¹‘¥‘…Ñ”¹½½±•}•Ù•¹Ñ}¥€„ôô•Ù•¹Ğ¹¥°4(€€€€€€€€¤ì4(€€€€€€€¥˜€¡É•Á±…•µ•¹ÑÌ¹±•¹Ñ €ôôô€Ä¤ì4(€€€€€€€€€…İ…¥Ğ‘•±•Ñ•½½±•…±•¹‘…ÉÙ•¹Ğ¡•Ù•¹Ğ¹¥°€‰•¹•É…°ˆ¤ì4(€€€€€€€€€½¹Ñ¥¹Õ”ì4(€€€€€€€ô4(€€€€€ô4(€€€ô4(€€€½¹ÍĞ±•…åMÑ…”€ô±•…å½¹ÍÑÉÕÑ¥½¹MÑ…”¡•Ù•¹Ğ¹‘•ÍÉ¥ÁÑ¥½¸ñğ€ˆˆ¤ì4(€€€¥˜€¡±•…åMÑ…”€˜˜Ù…±Õ•Ì¹Í¡•‘Õ±•‘…Ñ”¤ì4(€€€€€½¹ÍĞ…¹‘¥‘…Ñ•Ì€ô…İ…¥ĞÄ¹ÁÉ•Á…É” 4(€€€€€€€M1P¥°½½±•}•Ù•¹Ñ}¥4(€€€€€€€€I=4½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì4(€€€€€€€€]!I…Ñ•½Éä€ô€½¹ÍÑÉÕÑ¥½¸œ4(€€€€€€€€€€9QI%4¡=1M¡‘•±•Ñ•‘}…Ğ°€œœ¤¤€ô€œœ4(€€€€€€€€€€9±…‰•°€ô€ü9Í¡•‘Õ±•‘}‘…Ñ”€ô€ü4(€€€€€€€€€€9=1M¡9U11%¡•¹‘}‘…Ñ”°€œœ¤°Í¡•‘Õ±•‘}‘…Ñ”¤€ô€ü4(€€€€€€€€€€9€¡½½±•}•Ù•¹Ñ}¥€ô€ü=HQI%4¡=1M¡½½±•}•Ù•¹Ñ}¥°€œœ¤¤€ô€œœ¤4(€€€€€€€€=IH	dM]!8½½±•}•Ù•¹Ñ}¥€ô€üQ!8€À1M€Ä9°¥M€°4(€€€€€€¤¹‰¥¹ 4(€€€€€€€±•…åMÑ…”°4(€€€€€€€Ù…±Õ•Ì¹Í¡•‘Õ±•‘…Ñ”°4(€€€€€€€Ù…±Õ•Ì¹•¹‘…Ñ”ñğÙ…±Õ•Ì¹Í¡•‘Õ±•‘…Ñ”°4(€€€€€€€•Ù•¹Ğ¹¥°4(€€€€€€€•Ù•¹Ğ¹¥°4(€€€€€€¤¹…±°ñì¥è¹Õµ‰•Èì½½±•}•Ù•¹Ñ}¥èÍÑÉ¥¹œôø ¤ì4(€€€€€½¹ÍĞ•á…Ğ€ô…¹‘¥‘…Ñ•Ì¹É•ÍÕ±ÑÌ¹™¥±Ñ•È ¡…¹‘¥‘…Ñ”èì¥è¹Õµ‰•Èì½½±•}•Ù•¹Ñ}¥èÍÑÉ¥¹œô¤€ôø…¹‘¥‘…Ñ”¹½½±•}•Ù•¹Ñ}¥€ôôô•Ù•¹Ğ¹¥¤ì4(€€€€€½¹ÍĞÕ¹±¥¹­•€ô…¹‘¥‘…Ñ•Ì¹É•ÍÕ±ÑÌ¹™¥±Ñ•È ¡…¹‘¥‘…Ñ”èì¥è¹Õµ‰•Èì½½±•}•Ù•¹Ñ}¥èÍÑÉ¥¹œô¤€ôø€……¹‘¥‘…Ñ”¹½½±•}•Ù•¹Ñ}¥ü¹ÑÉ¥´ ¤¤ì4(€€€€€½¹ÍĞµ…Ñ¡•€ô•á…Ğ¹±•¹Ñ €ôôô€Ä€ü•á…ÑlÁt€è•á…Ğ¹±•¹Ñ €ôôô€À€˜˜Õ¹±¥¹­•¹±•¹Ñ €ôôô€Ä€üÕ¹±¥¹­•‘lÁt€è¹Õ±°ì4(€€€€€¥˜€¡µ…Ñ¡•¤ì4(€€€€€€€…İ…¥ĞÄ¹ÁÉ•Á…É” 4(€€€€€€€€€UAQ½É…¹¥é…Ñ¥½¹}Í¡•‘Õ±•Ì4(€€€€€€€€€€MP½½±•}•Ù•¹Ñ}¥€ô€ü°½½±•}•Ù•¹Ñ}•Ñ…œ€ô€ü°½½±•}ÕÁ‘…Ñ•‘}…Ğ€ô€ü°½½±•}½É¥¥¸€ô€À°4(€€€€€€€€€€€€€€Íå¹}ÍÑ…ÑÕÌ€ô€Á•¹‘¥¹œœ°Íå¹}½Á•É…Ñ¥½¸€ô€ÕÁÍ•ÉĞœ°Íå¹}•ÉÉ½È€ô€œœ4(€€€€€€€€€€]!I¥€ô€ı€°4(€€€€€€€€¤¹‰¥¹¡•Ù•¹Ğ¹¥°•Ù•¹Ğ¹•Ñ…œñğ€ˆˆ°•Ù•¹Ğ¹ÕÁ‘…Ñ•ñğ€ˆˆ°µ…Ñ¡•¹¥¤¹ÉÕ¸ ¤ì4(€€€€€€€™½É•‘I•™É•Í¡%‘Ì¹…‘¡9Õµ‰•È¡µ…Ñ¡•¹¥¤¤ì4(€€€€€€€½¹Ñ¥¹Õ”ì4(€€€€€ô4(€€€ô4(€€€½¹ÍĞ‘•‘ÕÁ•-•ä€ô€‘í•Ù•¹Ğ¹¥‘õqÔÀÀÅ˜‘íÙ…±Õ•Ì¹Í¡•‘Õ±•‘…Ñ•õ€ì4(€€€¥˜€ …Ù…±Õ•Ì¹Í¡•‘Õ±•‘…Ñ”ñğÍ••¹I•…‘½¹±ä¹¡…Ì¡‘•‘ÕÁ•-•ä¤¤½¹Ñ¥¹Õ”ì4(€€€Í••¹I•…‘½¹±ä¹…‘¡‘•‘ÕÁ•-•ä¤ì4(€€€É•…‘½¹±ä¹ÁÕÍ ¡ì4(€€€€€¥è½½±”è‘í‘•‘ÕÁ•-•åõ€°4(€€€€€½É…¹¥é…Ñ¥½¸èÍÕ•ÍÑ•‘=É…¹¥é…Ñ¥½¸¡•Ù•¹Ğ¤ñğ€‰½½±”…±•¹‘…Èˆ°4(€€€€€‰ÕÍ¥¹•ÍÍI½Õ¹è€À°4(€€€€€±…‰•°è•Ù•¹Ğ¹ÍÕµµ…Éäñğ€‹²r²š#²^ƒ²vó²‚Tˆ°4(€€€€€…Ñ•½Éäè€‰½½±”ˆ°4(€€€€€Í¡•‘Õ±•‘…Ñ”èÙ…±Õ•Ì¹Í¡•‘Õ±•‘…Ñ”°4(€€€€€ÍÑ…ÉÑQ¥µ”èÙ…±Õ•Ì¹ÍÑ…ÉÑQ¥µ”°4(€€€€€•¹‘Q¥µ”èÙ…±Õ•Ì¹•¹‘Q¥µ”°4(€€€€€•¹‘…Ñ”èÙ…±Õ•Ì¹•¹‘…Ñ”ñğÙ…±Õ•Ì¹Í¡•‘Õ±•‘…Ñ”°4(€€€€€Ù¥Í¥‰¥±¥Ñäè€‰Í¡…É•µÁ½ÍĞµ…İ…Éˆ°4(€€€€€…ÍÍ¥¹••9…µ”è€‹²r²š#²^ƒªÎ×²rƒ²vó²‚Tˆ°4(€€€€€…ÍÍ¥¹••5•µ‰•É%è¹Õ±°°4(€€€€€•‘¥Ñ…‰±”è™…±Í”°4(€€€€€•áÑ•É¹…±UÉ°è•Ù•¹Ğ¹¡Ñµ±1¥¹¬ñğ€‰¡ÑÑÁÌè¼½…±•¹‘…È¹½½±”¹½´½…±•¹‘…È½Ô¼À½Èˆ°4(€€€€€‘•Ñ…¥±Ìè•Ù•¹Ğ¹‘•ÍÉ¥ÁÑ¥½¸ñğ€ˆˆ°4(€€€€€ÕÁ‘…Ñ•‘Ğè•Ù•¹Ğ¹ÕÁ‘…Ñ•ñğ€ˆˆ°4(€€€€€ÕÁ‘…Ñ•‘	å9…µ”è€‰½½±”…±•¹‘…Èˆ°4(€€€€€½¹™±¥Ğè™…±Í”°4(€€€€€Íå¹MÑ…ÑÕÌè€‰É•…‘½¹±äˆ°4(€€€€€Íå¹ÉÉ½Èè€ˆˆ°4(€€€€€Íå¹ÑÑ•µÁÑÌè€À°4(€€€€€½½±•Ù•¹Ñ%è•Ù•¹Ğ¹¥°4(€€€€€ÍÕ•ÍÑ•‘…Ñ•½Éäè½½±•MÑÉÕÑÕÉ•‘•ÍÉ¥ÁÑ¥½¸¡•Ù•¹Ğ¹‘•ÍÉ¥ÁÑ¥½¸ñğ€ˆˆ¤¹½¹ÍÑÉÕÑ¥½¹MÑ…”€ü€‰½¹ÍÑÉÕÑ¥½¸ˆ€è€‰½Ñ¡•Èˆ°4(€€€ô¤ì4(€ô4(€¥˜€¡™½É•‘I•™É•Í¡%‘Ì¹Í¥é”¤ì4(€€€…İ…¥Ğ™±ÕÍ¡½½±•…±•¹‘…ÉMå¹Œ¡ì¥‘Ìèl¸¸¹™½É•‘I•™É•Í¡%‘Ítô¤ì4(€ô4(€É•ÑÕÉ¸ì€¸¸¹É•ÍÕ±Ğ°É•…‘=¹±åÙ•¹ÑÌèÉ•…‘½¹±äôì4)ô4

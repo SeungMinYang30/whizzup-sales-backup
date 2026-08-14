@@ -46,6 +46,7 @@ export function canMemberSeeScheduleReminder(
     awardStatus: unknown;
     category?: unknown;
     label: unknown;
+    assigneeMemberId?: unknown;
     progressManager: unknown;
     creatorMemberId: unknown;
     creatorName: unknown;
@@ -63,7 +64,11 @@ export function canMemberSeeScheduleReminder(
   const viewerName = normalizedPersonName(member.displayName);
   const managerName = normalizedPersonName(row.progressManager);
   const creatorName = normalizedPersonName(row.creatorName);
-  const assignedToViewer = Boolean(viewerName) && managerName === viewerName;
+  const assigneeMemberId = Number(row.assigneeMemberId);
+  const hasAssigneeMemberId = Number.isSafeInteger(assigneeMemberId) && assigneeMemberId > 0;
+  const assignedToViewer = hasAssigneeMemberId
+    ? assigneeMemberId === member.id
+    : Boolean(viewerName) && managerName === viewerName;
   const createdByViewer =
     Number(row.creatorMemberId) === member.id ||
     (Boolean(viewerName) && creatorName === viewerName);
