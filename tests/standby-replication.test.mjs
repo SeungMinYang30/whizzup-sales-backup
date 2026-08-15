@@ -57,6 +57,11 @@ const continuityBackup = await readFile(
 test("standby sync is one-way, authenticated, bounded, and uncached", () => {
   assert.match(syncRoute, /STANDBY_SYNC_SECRET/);
   assert.match(syncRoute, /PRIMARY_EXPORT_SECRET/);
+  assert.match(syncRoute, /VERCEL_PRIMARY_ORIGIN/);
+  assert.match(
+    syncRoute,
+    /VERCEL_PRIMARY_ORIGIN[\s\S]*PRIMARY_SITE_ORIGIN[\s\S]*DEFAULT_PRIMARY_ORIGIN/,
+  );
   assert.match(syncRoute, /https:\/\/whizzup\.kr/);
   assert.match(syncRoute, /\/api\/standby-export/);
   assert.match(syncRoute, /secureEqual/);

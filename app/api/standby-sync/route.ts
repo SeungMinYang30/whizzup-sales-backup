@@ -55,7 +55,10 @@ function authorized(request: Request) {
 }
 
 function primaryOrigin() {
-  const configured = serverValue("PRIMARY_SITE_ORIGIN") || DEFAULT_PRIMARY_ORIGIN;
+  const configured =
+    serverValue("VERCEL_PRIMARY_ORIGIN") ||
+    serverValue("PRIMARY_SITE_ORIGIN") ||
+    DEFAULT_PRIMARY_ORIGIN;
   return configured.replace(/\/+$/, "");
 }
 
