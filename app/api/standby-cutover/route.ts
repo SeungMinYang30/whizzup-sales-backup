@@ -2,6 +2,7 @@ import {
   accessErrorResponse,
   requirePrimaryOwner,
 } from "../../../lib/collaboration";
+import { getStoredStandbySyncSecret } from "../../../lib/replication-scheduler";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +17,9 @@ function sitesOrigin() {
   ).replace(/\/+$/, "");
 }
 
-function cutoverSecret() {
+async function cutoverSecret() {
   return (
+    (await getStoredStandbySyncSecret()) ||
     serverValue("STANDBY_SYNC_SECRET") ||
     serverValue("STANDBY_EXPORT_SECRET") ||
     serverValue("CUTOVER_API_SECRET")
@@ -25,7 +27,7 @@ function cutoverSecret() {
 }
 
 async function forwardToSites(method: "GET" | "POST", body?: unknown) {
-  const secret = cutoverSecret();
+  const secret = await cutoverSecret();
   if (!secret) throw new Error("전환용 서버 비밀키가 없습니다.");
   const response = await fetch(`${sitesOrigin()}/api/standby-cutover`, {
     method,

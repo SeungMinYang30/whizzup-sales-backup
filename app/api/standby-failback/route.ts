@@ -10,6 +10,7 @@ import {
   restoreStandbyCredentials,
   validateStandbyCredentialSnapshot,
 } from "../../../lib/standby-credentials";
+import { getStoredStandbySyncSecret } from "../../../lib/replication-scheduler";
 import { gunzipSync } from "node:zlib";
 
 export const dynamic = "force-dynamic";
@@ -35,9 +36,10 @@ function secureEqual(left: string, right: string) {
   return difference === 0;
 }
 
-function authorized(request: Request) {
+async function authorized(request: Request) {
   const authorization = request.headers.get("authorization") ?? "";
   return [
+    await getStoredStandbySyncSecret(),
     serverValue("STANDBY_SYNC_SECRET"),
     serverValue("STANDBY_EXPORT_SECRET"),
     serverValue("CUTOVER_API_SECRET"),
@@ -48,7 +50,7 @@ function authorized(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!authorized(request)) {
+  if (!(await authorized(request))) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
