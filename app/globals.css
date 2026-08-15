@@ -5558,6 +5558,55 @@ tr:hover .row-actions { opacity: 1; }
 .version-status-cell.warning strong { color: #a66708; }
 .version-status-cell.danger { background: #fff5f3; }
 .version-status-cell.danger strong { color: #bd4a3f; }
+.continuity-control-card {
+  padding: 21px 24px 22px;
+  border-top: 3px solid #1f9d73;
+}
+.continuity-control-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.continuity-control-heading h3 { margin: 5px 0 0; color: #17233c; font-size: 19px; }
+.continuity-control-heading p { max-width: 720px; margin: 7px 0 0; color: #6d7890; font-size: 12px; line-height: 1.6; }
+.continuity-control-summary {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid #dfe5ef;
+  border-radius: 11px;
+  background: #fbfcfe;
+  overflow: hidden;
+}
+.continuity-control-summary > div { min-height: 74px; padding: 13px 16px; display: grid; align-content: center; gap: 5px; }
+.continuity-control-summary > div + div { border-left: 1px solid #e3e8f1; }
+.continuity-control-summary span { color: #77839a; font-size: 11px; font-weight: 750; }
+.continuity-control-summary strong { color: #1c2a47; font-size: 14px; }
+.continuity-control-summary strong.success { color: #087653; }
+.continuity-control-summary strong.warning { color: #a66708; }
+.continuity-blockers { margin: 14px 0 0; padding: 12px 14px 12px 31px; border: 1px solid #f0d6a0; border-radius: 10px; background: #fff9ed; color: #8b5b10; font-size: 11px; line-height: 1.65; }
+.continuity-message { margin: 14px 0 0; padding: 11px 13px; border-radius: 9px; font-size: 11px; font-weight: 750; }
+.continuity-message.error { border: 1px solid #efc3bd; background: #fff5f3; color: #b7433a; }
+.continuity-message.success { border: 1px solid #b9e5d2; background: #f0faf6; color: #087653; }
+.continuity-control-actions { margin-top: 16px; display: flex; justify-content: flex-end; gap: 8px; }
+.continuity-control-card .danger-button { border: 1px solid #b94f45; background: #b94f45; color: #fff; }
+.continuity-control-card button:disabled { opacity: .48; cursor: not-allowed; box-shadow: none; }
+.continuity-confirmation { margin-top: 16px; padding: 16px; border: 1px solid #e4c6c1; border-radius: 11px; background: #fff8f6; display: grid; gap: 10px; }
+.continuity-confirmation > strong { color: #73352f; font-size: 13px; }
+.continuity-confirmation p { margin: 0; color: #755c59; font-size: 11px; }
+.continuity-confirmation code { padding: 2px 6px; border-radius: 5px; background: #fff; color: #9f352c; font-family: inherit; font-weight: 900; }
+.continuity-confirmation input { width: 100%; min-height: 42px; padding: 0 13px; border: 1px solid #d9c0bc; border-radius: 9px; background: #fff; color: #24314a; font: inherit; }
+.continuity-confirmation > div { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 720px) {
+  .continuity-control-card { padding: 18px 16px; }
+  .continuity-control-heading { align-items: stretch; flex-direction: column; gap: 10px; }
+  .continuity-control-heading .backup-owner-badge { align-self: flex-start; }
+  .continuity-control-summary { grid-template-columns: 1fr; }
+  .continuity-control-summary > div + div { border-top: 1px solid #e3e8f1; border-left: 0; }
+  .continuity-control-actions, .continuity-confirmation > div { display: grid; grid-template-columns: 1fr; }
+  .continuity-control-actions button, .continuity-confirmation button { width: 100%; }
+}
 
 .data-control-panel {
   overflow: hidden;

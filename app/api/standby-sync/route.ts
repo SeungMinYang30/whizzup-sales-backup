@@ -105,10 +105,10 @@ function safeErrorMessage(error: unknown) {
 
 async function forceRequested(request: Request) {
   try {
-    const body = (await request.json()) as { force?: unknown };
-    return body?.force === true;
+    const body = (await request.json()) as { force?: unknown; cutover?: unknown };
+    return { force: body?.force === true, cutover: body?.cutover === true };
   } catch {
-    return false;
+    return { force: false, cutover: false };
   }
 }
 
@@ -151,7 +151,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const force = await forceRequested(request);
+  const options = await forceRequested(request);
+  const force = options.force;
   const startedAt = Date.now();
   const sourceOrigin = primaryOrigin();
   try {
@@ -181,6 +182,7 @@ export async function POST(request: Request) {
         sourceChecksum: contentChecksum,
         sourceCountsJson: JSON.stringify(sourceInspection.counts),
         durationMs: Date.now() - startedAt,
+        keepLocked: options.cutover,
       });
       return Response.json({
         ok: true,
@@ -227,6 +229,7 @@ export async function POST(request: Request) {
       sourceChecksum: contentChecksum,
       sourceCountsJson: JSON.stringify(inspection.counts),
       durationMs,
+      keepLocked: options.cutover,
     });
     return Response.json({
       ok: true,

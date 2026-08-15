@@ -45,6 +45,14 @@ const exportRoute = await readFile(
   new URL("../app/api/standby-export/route.ts", import.meta.url),
   "utf8",
 );
+const failbackRoute = await readFile(
+  new URL("../app/api/standby-failback/route.ts", import.meta.url),
+  "utf8",
+);
+const continuityBackup = await readFile(
+  new URL("../lib/continuity-backup.ts", import.meta.url),
+  "utf8",
+);
 
 test("standby sync is one-way, authenticated, bounded, and uncached", () => {
   assert.match(syncRoute, /STANDBY_SYNC_SECRET/);
@@ -149,21 +157,29 @@ test("primary owner can schedule the current Sites standby every ten minutes", (
   assert.match(syncRoute, /PRIMARY_EXPORT_SECRET[\s\S]*STANDBY_EXPORT_SECRET/);
 });
 
-test("Vercel cutover performs a final verified sync and permanently blocks replica overwrite", () => {
+test("Vercel delegates owner-confirmed cutover control to the Sites gateway", () => {
   assert.match(cutoverRoute, /requirePrimaryOwner/);
-  assert.match(cutoverRoute, /authorizedByServerSecret/);
   assert.match(cutoverRoute, /CUTOVER_API_SECRET/);
-  assert.match(cutoverRoute, /missingMembers/);
-  assert.match(cutoverRoute, /screenshot service/);
   assert.match(cutoverRoute, /STANDBY_SYNC_SECRET/);
-  assert.match(cutoverRoute, /VERCEL 운영 전환/);
-  assert.match(cutoverRoute, /removeStandbySchedule/);
-  assert.match(cutoverRoute, /force:\s*true/);
-  assert.match(cutoverRoute, /localChecksum !== state\.source_checksum/);
-  assert.match(cutoverRoute, /markVercelPrimaryMode/);
+  assert.match(cutoverRoute, /STANDBY_SITE_ORIGIN/);
+  assert.match(cutoverRoute, /\/api\/standby-cutover/);
+  assert.match(cutoverRoute, /AbortSignal\.timeout/);
+});
+
+test("Vercel failback creates a Drive safety copy and verifies reverse restore", () => {
+  assert.match(failbackRoute, /CUTOVER_API_SECRET/);
+  assert.match(failbackRoute, /MAX_REQUEST_BYTES/);
+  assert.match(failbackRoute, /archivePreFailbackBackup/);
+  assert.match(failbackRoute, /restoreReplicaBackup/);
+  assert.match(failbackRoute, /restoreStandbyCredentials/);
+  assert.match(failbackRoute, /checksum !== sourceChecksum/);
+  assert.match(continuityBackup, /WHIZZUP_pre_failback_/);
+  assert.match(continuityBackup, /전환 안전본/);
+  assert.match(continuityBackup, /uploadDriveFile/);
   assert.match(syncRoute, /isVercelPrimaryMode/);
   assert.match(syncRoute, /replica overwrite is blocked/);
   assert.match(replicationStore, /operating_mode = 'primary'/);
+  assert.match(replicationStore, /operating_mode = 'replica'/);
   assert.match(vercelSchema, /VERCEL_CUTOVER_SCHEMA_SQL/);
   assert.match(vercelSchema, /ADD COLUMN IF NOT EXISTS operating_mode/);
 });

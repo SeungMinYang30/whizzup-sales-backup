@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [route, component, backupPage, styles] = await Promise.all([
+const [route, component, control, backupPage, styles] = await Promise.all([
   readFile(new URL("../app/api/system-version/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/version-status-card.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../app/continuity-control-card.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/data-backup-page.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
 ]);
@@ -26,10 +27,18 @@ test("system version endpoint marks zone-less D1 timestamps as UTC", () => {
 });
 
 test("backup page renders a compact release status before backup actions", () => {
-  assert.match(backupPage, /<VersionStatusCard\s*\/>[\s\S]*backup-restore-card/);
+  assert.match(backupPage, /<VersionStatusCard\s*\/>[\s\S]*<ContinuityControlCard[\s\S]*backup-restore-card/);
   assert.match(component, /비상 전환 준비 완료/);
+  assert.match(control, /비상 운영 전환/);
+  assert.match(control, /운영자 본인 전용/);
+  assert.match(control, /confirmation\.trim\(\) !== expected/);
   assert.match(component, /vercel\.upstreamVercelCommit === sites\.upstreamVercelCommit/);
   assert.match(component, /replicationAgeMinutes <= 30/);
+});
+
+test("continuity controls fold into full-width mobile actions", () => {
+  assert.match(styles, /\.continuity-control-summary\s*\{[\s\S]*repeat\(3, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /@media \(max-width: 720px\)[\s\S]*\.continuity-control-summary \{ grid-template-columns: 1fr/);
 });
 
 test("version status layout folds without horizontal overflow", () => {

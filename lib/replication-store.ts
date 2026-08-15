@@ -28,25 +28,48 @@ export async function getReplicationSyncState() {
     .first<ReplicationSyncState>();
 }
 
-export async function isVercelPrimaryMode() {
+export async function isStandbyPrimaryMode() {
   const state = await getReplicationSyncState();
   return state?.operating_mode === "primary";
 }
 
-export async function markVercelPrimaryMode(memberId: number) {
+export async function markStandbyPrimaryMode(memberId: number) {
   await getD1()
     .prepare(
       `INSERT INTO replication_sync_state (
-         id, operating_mode, cutover_at, cutover_by
-       ) VALUES (1, 'primary', CURRENT_TIMESTAMP, ?)
+         id, operating_mode, status, error_message, cutover_at, cutover_by
+       ) VALUES (1, 'primary', 'succeeded', '', CURRENT_TIMESTAMP, ?)
        ON CONFLICT(id) DO UPDATE SET
          operating_mode = 'primary',
+         status = 'succeeded',
+         error_message = '',
          cutover_at = CURRENT_TIMESTAMP,
          cutover_by = excluded.cutover_by`,
     )
     .bind(memberId)
     .run();
 }
+
+export async function markStandbyReplicaMode(memberId: number) {
+  await getD1()
+    .prepare(
+      `INSERT INTO replication_sync_state (
+         id, operating_mode, status, error_message, cutover_at, cutover_by
+       ) VALUES (1, 'replica', 'succeeded', '', CURRENT_TIMESTAMP, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         operating_mode = 'replica',
+         status = 'succeeded',
+         error_message = '',
+         cutover_at = CURRENT_TIMESTAMP,
+         cutover_by = excluded.cutover_by`,
+    )
+    .bind(memberId)
+    .run();
+}
+
+// Compatibility aliases for older deployments and source-sync tests.
+export const isVercelPrimaryMode = isStandbyPrimaryMode;
+export const markVercelPrimaryMode = markStandbyPrimaryMode;
 
 export async function markReplicationAttempt(sourceOrigin: string) {
   await getD1()
@@ -70,6 +93,7 @@ export async function markReplicationSuccess(input: {
   sourceChecksum: string;
   sourceCountsJson: string;
   durationMs: number;
+  keepLocked?: boolean;
 }) {
   await getD1()
     .prepare(
@@ -78,14 +102,14 @@ export async function markReplicationSuccess(input: {
          source_counts_json, status, last_attempt_at, last_success_at,
          duration_ms, error_message
        ) VALUES (
-         1, ?, ?, ?, ?, 'succeeded', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ''
+         1, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ''
        )
        ON CONFLICT(id) DO UPDATE SET
          source_origin = excluded.source_origin,
          source_created_at = excluded.source_created_at,
          source_checksum = excluded.source_checksum,
          source_counts_json = excluded.source_counts_json,
-         status = 'succeeded',
+         status = excluded.status,
          last_attempt_at = CURRENT_TIMESTAMP,
          last_success_at = CURRENT_TIMESTAMP,
          duration_ms = excluded.duration_ms,
@@ -96,6 +120,7 @@ export async function markReplicationSuccess(input: {
       input.sourceCreatedAt,
       input.sourceChecksum,
       input.sourceCountsJson,
+      input.keepLocked ? "syncing" : "succeeded",
       input.durationMs,
     )
     .run();
