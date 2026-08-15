@@ -37,6 +37,7 @@ test("backup page renders a compact release status before backup actions", () =>
   assert.match(component, /whizzup:version-status-refresh/);
   assert.match(control, /activationBlockers/);
   assert.match(control, /최종 동기화 후 Sites 전환/);
+  assert.match(control, /whizzup:version-status-refresh/);
 });
 
 test("continuity controls fold into full-width mobile actions", () => {

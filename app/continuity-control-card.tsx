@@ -56,6 +56,13 @@ export default function ContinuityControlCard({
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const refresh = () => void load();
+    window.addEventListener("whizzup:version-status-refresh", refresh);
+    return () =>
+      window.removeEventListener("whizzup:version-status-refresh", refresh);
+  }, [load]);
+
   const expected = useMemo(() => {
     if (!readiness || !action) return "";
     return action === "activate-sites"
