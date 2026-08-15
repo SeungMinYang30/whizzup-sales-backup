@@ -126,6 +126,7 @@ import {
   calculateConstructionDashboardCounts,
   type ConstructionDashboardCounts,
 } from "../lib/construction-dashboard";
+import { resilientFetch } from "./resilient-fetch";
 
 const DataBackupPage = lazy(() => import("./data-backup-page"));
 const HoldemLounge = lazy(() => import("./holdem-lounge"));
@@ -3341,9 +3342,13 @@ async function requestRecords(scope: RecordsScope = "full") {
   let offset = 0;
 
   for (let page = 0; page < maximumPages; page += 1) {
-    const response = await fetch(
+    const response = await resilientFetch(
       `/api/records?scope=${scope}&limit=${pageSize}&offset=${offset}`,
-      { cache: "no-store" },
+      {
+        cache: "no-store",
+        timeoutMs: 20_000,
+        retries: 5,
+      },
     );
     const payload = (await response.json()) as {
       records?: Record<string, unknown>[];
@@ -6303,6 +6308,8 @@ export default function CrmApp({
     useState<TeamDetailMode>("activity");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [dashboardConstructionReady, setDashboardConstructionReady] =
+    useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editReturnOrganization, setEditReturnOrganization] = useState("");
@@ -6658,6 +6665,7 @@ export default function CrmApp({
 
   async function loadRecords(scope?: RecordsScope) {
     try {
+      setError("");
       setLoading(true);
       const requestedScope =
         scope ??
@@ -6877,7 +6885,7 @@ export default function CrmApp({
   }, []);
 
   useEffect(() => {
-    if (sessionStatus !== "approved") return;
+    if (sessionStatus !== "approved" || loading) return;
     void fetch("/api/award-vendors", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) return;
@@ -6910,10 +6918,10 @@ export default function CrmApp({
         );
       })
       .catch(() => undefined);
-  }, [sessionStatus]);
+  }, [loading, sessionStatus]);
 
   useEffect(() => {
-    if (sessionStatus !== "approved") return;
+    if (sessionStatus !== "approved" || loading) return;
     let active = true;
     void requestConstructionDashboardCounts()
       .then((counts) => {
@@ -6925,10 +6933,16 @@ export default function CrmApp({
     return () => {
       active = false;
     };
-  }, [sessionStatus]);
+  }, [loading, sessionStatus]);
 
   useEffect(() => {
-    if (sessionStatus !== "approved") return;
+    if (
+      sessionStatus !== "approved" ||
+      loading ||
+      window.location.hostname.endsWith(".chatgpt.site")
+    ) {
+      return;
+    }
     const heartbeat = () => {
       if (document.visibilityState !== "visible") return;
       void fetch("/api/presence", {
@@ -6951,10 +6965,33 @@ export default function CrmApp({
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [sessionStatus, view]);
+  }, [loading, sessionStatus, view]);
 
   useEffect(() => {
-    if (sessionStatus !== "approved" || view !== "dashboard") return;
+    if (
+      sessionStatus !== "approved" ||
+      view !== "dashboard" ||
+      loading ||
+      error
+    ) {
+      setDashboardConstructionReady(false);
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setDashboardConstructionReady(true),
+      1_500,
+    );
+    return () => window.clearTimeout(timer);
+  }, [error, loading, sessionStatus, view]);
+
+  useEffect(() => {
+    if (
+      sessionStatus !== "approved" ||
+      view !== "dashboard" ||
+      loading
+    ) {
+      return;
+    }
     let active = true;
     setScheduleRemindersLoading(true);
     void requestScheduleReminders()
@@ -6975,7 +7012,7 @@ export default function CrmApp({
     return () => {
       active = false;
     };
-  }, [scheduleReminderRefreshVersion, sessionStatus, view]);
+  }, [loading, scheduleReminderRefreshVersion, sessionStatus, view]);
 
   const completePastScheduleReminder = async (
     reminder: ScheduleReminderRecord,
@@ -16407,37 +16444,47 @@ export default function CrmApp({
                 )}
               </section>
 
-              <Suspense fallback={<DeferredPageFallback />}>
-                <HomeCalendar
-                  key={scheduleReminderRefreshVersion}
-                  refreshVersion={scheduleReminderRefreshVersion}
-                  records={records}
-                  onRecordsChanged={() => loadRecords("full")}
-                  onOpenOrganization={(organization, businessRound) => {
-                    setDetailBusinessRound(businessRound);
-                    setDetailOrganization(organization);
-                  }}
-                  onOpenConstructionSchedule={() => navigateTo("installation-schedule")}
-                />
-              </Suspense>
+              {!loading && !error ? (
+                <Suspense fallback={<DeferredPageFallback />}>
+                  <HomeCalendar
+                    key={scheduleReminderRefreshVersion}
+                    refreshVersion={scheduleReminderRefreshVersion}
+                    records={records}
+                    onRecordsChanged={() => loadRecords("full")}
+                    onOpenOrganization={(organization, businessRound) => {
+                      setDetailBusinessRound(businessRound);
+                      setDetailOrganization(organization);
+                    }}
+                    onOpenConstructionSchedule={() =>
+                      navigateTo("installation-schedule")
+                    }
+                  />
+                </Suspense>
+              ) : (
+                <DeferredPageFallback />
+              )}
 
-              <Suspense fallback={<DeferredPageFallback />}>
-                <ConstructionSchedulePage
-                  embedded
-                  records={records}
-                  isPrimaryOwner={isPrimaryOwner}
-                  formatManagerName={displayProgressManager}
-                  onDashboardCounts={setConstructionDashboardCounts}
-                  onSchedulesChanged={() => {
-                    setScheduleReminderRefreshVersion((current) => current + 1);
-                    void loadRecords("full");
-                  }}
-                  onOpenOrganization={(organization, businessRound) => {
-                    setDetailBusinessRound(businessRound);
-                    setDetailOrganization(organization);
-                  }}
-                />
-              </Suspense>
+              {dashboardConstructionReady ? (
+                <Suspense fallback={<DeferredPageFallback />}>
+                  <ConstructionSchedulePage
+                    embedded
+                    records={records}
+                    isPrimaryOwner={isPrimaryOwner}
+                    formatManagerName={displayProgressManager}
+                    onDashboardCounts={setConstructionDashboardCounts}
+                    onSchedulesChanged={() => {
+                      setScheduleReminderRefreshVersion(
+                        (current) => current + 1,
+                      );
+                      void loadRecords("full");
+                    }}
+                    onOpenOrganization={(organization, businessRound) => {
+                      setDetailBusinessRound(businessRound);
+                      setDetailOrganization(organization);
+                    }}
+                  />
+                </Suspense>
+              ) : null}
 
               <section
                 className={`my-record-review-card ${

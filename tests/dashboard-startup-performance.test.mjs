@@ -42,3 +42,18 @@ test("calendar reconciliation no longer waits several seconds", async () => {
   assert.ok(Number(delay[1].replaceAll("_", "")) <= 1_000);
   assert.doesNotMatch(calendar, /3_500/);
 });
+
+test("direct Sites startup avoids competing writes and recovers transient D1 capacity errors", async () => {
+  const [crm, calendar, resilientFetch] = await Promise.all([
+    readFile(new URL("app/crm-app.tsx", projectUrl), "utf8"),
+    readFile(new URL("app/home-calendar.tsx", projectUrl), "utf8"),
+    readFile(new URL("app/resilient-fetch.ts", projectUrl), "utf8"),
+  ]);
+
+  assert.match(crm, /retries: 5/);
+  assert.match(crm, /setError\(""\);\s*setLoading\(true\)/);
+  assert.match(crm, /window\.location\.hostname\.endsWith\("\.chatgpt\.site"\)/);
+  assert.match(crm, /dashboardConstructionReady/);
+  assert.match(calendar, /if \(!shouldReconcileGoogle\) return/);
+  assert.match(resilientFetch, /450 \* 2 \*\* attempt/);
+});

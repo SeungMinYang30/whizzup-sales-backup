@@ -56,7 +56,7 @@ export async function POST(request: Request) {
       stage,
       verifyMemberPassword(Number(member.id), password),
     );
-    if (!verified.ok) {
+    if (!verified.ok && verified.reason === "not-set") {
       stage = "password_setup_ticket";
       await withAuthTimeout(
         stage,
@@ -69,6 +69,17 @@ export async function POST(request: Request) {
           message: "새 로그인 비밀번호를 설정해 주세요.",
         },
         { status: 409 },
+      );
+    }
+    if (!verified.ok) {
+      return Response.json(
+        {
+          error:
+            verified.reason === "locked"
+              ? "로그인 시도가 많아 잠시 보호 중입니다. 15분 후 다시 시도해 주세요."
+              : "비밀번호가 일치하지 않습니다.",
+        },
+        { status: verified.reason === "locked" ? 429 : 401 },
       );
     }
 

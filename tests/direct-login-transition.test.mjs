@@ -29,6 +29,8 @@ test("approved employee email can establish a new direct-login password", async 
 
   assert.match(loginRoute, /createPasswordSetupTicket/);
   assert.match(loginRoute, /code: "PASSWORD_SETUP_REQUIRED"/);
+  assert.match(loginRoute, /verified\.reason === "not-set"/);
+  assert.match(loginRoute, /비밀번호가 일치하지 않습니다/);
   assert.match(loginRoute, /String\(member\.status\) !== "approved"/);
   assert.doesNotMatch(loginRoute, /verifyAgainstPrimarySite/);
 

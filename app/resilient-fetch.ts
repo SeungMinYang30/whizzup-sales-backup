@@ -8,7 +8,8 @@ type ResilientFetchInit = RequestInit & {
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
 
 function delayedRetry(attempt: number) {
-  return new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+  const delayMs = Math.min(3_000, 450 * 2 ** attempt);
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 export async function resilientFetch(

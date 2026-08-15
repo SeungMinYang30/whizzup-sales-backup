@@ -180,6 +180,9 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   const institutionCreatingRef = useRef(false);
   const scheduleSavingRef = useRef(false);
   const [readOnlySchedule, setReadOnlySchedule] = useState<HomeCalendarSchedule | null>(null);
+  const shouldReconcileGoogle =
+    typeof window !== "undefined" &&
+    !window.location.hostname.endsWith(".chatgpt.site");
   const dates = useMemo(() => monthGrid(monthValue), [monthValue]);
   const rangeStart = dateValue(dates[0]);
   const rangeEnd = dateValue(dates[dates.length - 1]);
@@ -268,6 +271,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
         applyPayload(await requestCalendar(false));
         if (!active) return;
         setLoading(false);
+        if (!shouldReconcileGoogle) return;
         // Give the primary dashboard request a brief head start, then reconcile
         // Google without making the calendar appear idle for several seconds.
         await new Promise((resolve) => window.setTimeout(resolve, 900));
@@ -290,7 +294,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
       }
     })();
     return () => { active = false; controller.abort(); };
-  }, [rangeEnd, rangeStart, refreshVersion, reloadVersion]);
+  }, [rangeEnd, rangeStart, refreshVersion, reloadVersion, shouldReconcileGoogle]);
 
   useEffect(() => {
     const query = editor.organizationQuery.trim();
