@@ -1360,18 +1360,24 @@ async function checksumBackup(backup: Omit<FullBackup, "checksum">) {
 function replicaChecksumData(data: FullBackup["data"]) {
   return {
     ...data,
-    members: data.members.map(({ last_seen_at: _lastSeenAt, ...member }) => {
-      let permissions = member.permissions;
-      if (typeof permissions === "string") {
-        try {
-          permissions = JSON.parse(permissions);
-        } catch {
-          // Malformed permissions are reported by validation. Keep the source
-          // value here so the replica checksum remains deterministic.
+    members: data.members.map(
+      ({
+        last_seen_at: _lastSeenAt,
+        current_view: _currentView,
+        ...member
+      }) => {
+        let permissions = member.permissions;
+        if (typeof permissions === "string") {
+          try {
+            permissions = JSON.parse(permissions);
+          } catch {
+            // Malformed permissions are reported by validation. Keep the source
+            // value here so the replica checksum remains deterministic.
+          }
         }
-      }
-      return { ...member, permissions };
-    }),
+        return { ...member, permissions };
+      },
+    ),
   };
 }
 

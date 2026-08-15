@@ -98,6 +98,7 @@ test("replica restore validates the signed backup before replacement", () => {
   assert.match(backupStore, /column === "permissions"/);
   assert.match(backupStore, /name: "members"[\s\S]*?"job_title"/);
   assert.match(backupStore, /last_seen_at: _lastSeenAt/);
+  assert.match(backupStore, /current_view: _currentView/);
   assert.match(backupStore, /permissions = JSON\.parse\(permissions\)/);
   assert.match(backupStore, /data: replicaChecksumData\(backup\.data\)/);
   assert.match(backupStore, /jsonb_build_array/);

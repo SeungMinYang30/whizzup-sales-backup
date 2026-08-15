@@ -62,6 +62,16 @@ function formatDateTime(value: string) {
   }).format(date);
 }
 
+function standbyErrorMessage(message: string) {
+  if (
+    message ===
+    "Replica has independent local changes; automatic overwrite was blocked"
+  ) {
+    return "대기판에 운영 DB와 다른 값이 감지되어 안전을 위해 자동 덮어쓰기를 멈췄습니다.";
+  }
+  return message;
+}
+
 export default function DataBackupPage({
   onDataChanged,
   notify,
@@ -193,7 +203,7 @@ export default function DataBackupPage({
     } catch (error) {
       setStandbyScheduleError(
         error instanceof Error
-          ? error.message
+          ? standbyErrorMessage(error.message)
           : "대기판 자동 복제를 설정하지 못했습니다.",
       );
     } finally {
