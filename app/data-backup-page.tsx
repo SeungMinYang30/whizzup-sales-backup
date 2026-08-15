@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import TrashPage from "./trash-page";
+import VersionStatusCard from "./version-status-card";
 
 type BackupInspection = {
   valid: true;
@@ -413,6 +414,7 @@ export default function DataBackupPage({
     <section className="backup-workspace">
       {sectionTabs}
     <section className="backup-layout">
+      <VersionStatusCard />
       <article className="panel backup-restore-card">
         <div className="backup-restore-heading">
           <div>
