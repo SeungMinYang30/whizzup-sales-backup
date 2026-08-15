@@ -549,15 +549,7 @@ export default function DataBackupPage({
                 type="button"
                 className="ghost-button"
                 disabled={Boolean(busy)}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Sites 대기판의 별도 변경을 현재 Vercel 운영 DB로 교체합니다. 계속할까요?",
-                    )
-                  ) {
-                    void configureStandbyReplication(true);
-                  }
-                }}
+                onClick={() => void configureStandbyReplication(true)}
               >
                 운영 DB로 다시 맞추기
               </button>

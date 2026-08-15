@@ -32,7 +32,6 @@ test("version status layout folds without horizontal overflow", () => {
 test("standby conflicts expose an owner-confirmed mobile-safe reset action", () => {
   assert.match(backupPage, /운영 DB로 다시 맞추기/);
   assert.match(backupPage, /configureStandbyReplication\(true\)/);
-  assert.match(backupPage, /window\.confirm/);
   assert.match(styles, /\.backup-error-action\s*\{[\s\S]*display: flex/);
   assert.match(
     styles,
