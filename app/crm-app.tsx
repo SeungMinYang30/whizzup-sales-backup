@@ -22966,6 +22966,28 @@ export default function CrmApp({
                   )}
                 </label>
                 <label><span>활동 날짜</span><input type="date" value={form.activityDate.length === 10 ? form.activityDate : ""} onChange={(event) => setForm({ ...form, activityDate: event.target.value })} /></label>
+                {editingId && isOwner && (
+                  <label>
+                    <span>사업 차수</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="99"
+                      inputMode="numeric"
+                      value={form.businessRound}
+                      onChange={(event) =>
+                        setForm({
+                          ...form,
+                          businessRound: Math.min(
+                            99,
+                            Math.max(1, Number(event.target.value) || 1),
+                          ),
+                        })
+                      }
+                    />
+                    <small>잘못 연결된 기록의 차수를 바로잡을 때만 변경해 주세요.</small>
+                  </label>
+                )}
                 <div className="activity-region-field">
                   <span className="activity-region-label">지역</span>
                   <div className="activity-region-summary">

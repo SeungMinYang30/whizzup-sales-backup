@@ -15,6 +15,7 @@ const repairRoute = await readFile(
 test("완료된 사업의 후속 기록은 요청한 차수를 유지하고 명시한 새 차수만 신규 사업으로 시작한다", () => {
   assert.match(client, /const resolvedBusinessRound = form\.businessRound/);
   assert.doesNotMatch(client, /resolvedBusinessRound = reusableActiveRound/);
+  assert.match(client, /editingId && isOwner[\s\S]*<span>사업 차수<\/span>/);
   assert.match(store, /businessRound > latestCompletedRound/);
   assert.match(store, /if \(startsFreshBusiness\)[\s\S]*awardStatus: "[^"]+"[\s\S]*awardStage: "[^"]+"/);
   assert.doesNotMatch(store, /businessRound = reusableActiveRound/);
