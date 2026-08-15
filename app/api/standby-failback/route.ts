@@ -36,11 +36,14 @@ function secureEqual(left: string, right: string) {
 }
 
 function authorized(request: Request) {
-  const secret =
-    serverValue("CUTOVER_API_SECRET") || serverValue("STANDBY_SYNC_SECRET");
-  return (
-    Boolean(secret) &&
-    secureEqual(request.headers.get("authorization") ?? "", `Bearer ${secret}`)
+  const authorization = request.headers.get("authorization") ?? "";
+  return [
+    serverValue("STANDBY_SYNC_SECRET"),
+    serverValue("STANDBY_EXPORT_SECRET"),
+    serverValue("CUTOVER_API_SECRET"),
+  ].some(
+    (secret) =>
+      Boolean(secret) && secureEqual(authorization, `Bearer ${secret}`),
   );
 }
 

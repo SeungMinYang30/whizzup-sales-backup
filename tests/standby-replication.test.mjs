@@ -161,6 +161,7 @@ test("Vercel delegates owner-confirmed cutover control to the Sites gateway", ()
   assert.match(cutoverRoute, /requirePrimaryOwner/);
   assert.match(cutoverRoute, /CUTOVER_API_SECRET/);
   assert.match(cutoverRoute, /STANDBY_SYNC_SECRET/);
+  assert.match(cutoverRoute, /STANDBY_EXPORT_SECRET/);
   assert.match(cutoverRoute, /STANDBY_SITE_ORIGIN/);
   assert.match(cutoverRoute, /\/api\/standby-cutover/);
   assert.match(cutoverRoute, /AbortSignal\.timeout/);
@@ -168,6 +169,8 @@ test("Vercel delegates owner-confirmed cutover control to the Sites gateway", ()
 
 test("Vercel failback creates a Drive safety copy and verifies reverse restore", () => {
   assert.match(failbackRoute, /CUTOVER_API_SECRET/);
+  assert.match(failbackRoute, /STANDBY_SYNC_SECRET/);
+  assert.match(failbackRoute, /STANDBY_EXPORT_SECRET/);
   assert.match(failbackRoute, /MAX_REQUEST_BYTES/);
   assert.match(failbackRoute, /archivePreFailbackBackup/);
   assert.match(failbackRoute, /restoreReplicaBackup/);

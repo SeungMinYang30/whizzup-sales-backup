@@ -17,7 +17,11 @@ function sitesOrigin() {
 }
 
 function cutoverSecret() {
-  return serverValue("CUTOVER_API_SECRET") || serverValue("STANDBY_SYNC_SECRET");
+  return (
+    serverValue("STANDBY_SYNC_SECRET") ||
+    serverValue("STANDBY_EXPORT_SECRET") ||
+    serverValue("CUTOVER_API_SECRET")
+  );
 }
 
 async function forwardToSites(method: "GET" | "POST", body?: unknown) {
