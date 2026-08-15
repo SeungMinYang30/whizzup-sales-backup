@@ -16,6 +16,15 @@ test("system version endpoint exposes only release and replication health metada
   assert.doesNotMatch(route, /syncSecret|password|token/i);
 });
 
+test("system version endpoint marks zone-less D1 timestamps as UTC", () => {
+  assert.match(route, /function normalizeUtcTimestamp/);
+  assert.match(route, /normalized\.replace\(" ", "T"\)/);
+  assert.match(
+    route,
+    /lastSuccessAt: normalizeUtcTimestamp\(state\.last_success_at\)/,
+  );
+});
+
 test("backup page renders a compact release status before backup actions", () => {
   assert.match(backupPage, /<VersionStatusCard\s*\/>[\s\S]*backup-restore-card/);
   assert.match(component, /비상 전환 준비 완료/);

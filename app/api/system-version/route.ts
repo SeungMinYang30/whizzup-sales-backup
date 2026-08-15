@@ -27,6 +27,14 @@ function normalizeCommit(value: string | undefined, fallback: string) {
   return /^[a-f0-9]{7,64}$/i.test(commit) ? commit.toLowerCase() : fallback;
 }
 
+function normalizeUtcTimestamp(value: string | null) {
+  if (!value) return null;
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(normalized)) return normalized;
+  return `${normalized.replace(" ", "T")}Z`;
+}
+
 function releaseLabel(commit: string, timestamp: string) {
   const date = new Date(timestamp);
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -66,9 +74,9 @@ export async function GET(request: Request) {
       replication = state
         ? {
             status: state.status,
-            lastAttemptAt: state.last_attempt_at,
-            lastSuccessAt: state.last_success_at,
-            sourceCreatedAt: state.source_created_at,
+            lastAttemptAt: normalizeUtcTimestamp(state.last_attempt_at),
+            lastSuccessAt: normalizeUtcTimestamp(state.last_success_at),
+            sourceCreatedAt: normalizeUtcTimestamp(state.source_created_at),
             durationMs: state.duration_ms,
             operatingMode: state.operating_mode,
           }
