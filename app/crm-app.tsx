@@ -1120,6 +1120,8 @@ type DashboardAwardSummary = {
   completed: number;
 };
 
+type DashboardSalesSummary = DashboardAwardSummary;
+
 type SessionMember = {
   id: number;
   email: string;
@@ -3429,6 +3431,22 @@ async function requestDashboardAwardSummary() {
     throw new Error(payload.error || "수주 현황을 불러오지 못했습니다.");
   }
   return payload.awardCounts;
+}
+
+async function requestDashboardSalesSummary() {
+  const response = await resilientFetch("/api/records?scope=sales-summary", {
+    cache: "no-store",
+    timeoutMs: 20_000,
+    retries: 5,
+  });
+  const payload = (await response.json()) as {
+    salesCounts?: DashboardSalesSummary;
+    error?: string;
+  };
+  if (!response.ok || !payload.salesCounts) {
+    throw new Error(payload.error || "영업 현황을 불러오지 못했습니다.");
+  }
+  return payload.salesCounts;
 }
 
 async function requestInstitutionRegistry() {
@@ -6212,6 +6230,8 @@ export default function CrmApp({
   const [records, setRecords] = useState<Activity[]>([]);
   const [dashboardAwardSummary, setDashboardAwardSummary] =
     useState<DashboardAwardSummary | null>(null);
+  const [dashboardSalesSummary, setDashboardSalesSummary] =
+    useState<DashboardSalesSummary | null>(null);
   const [institutionRegistry, setInstitutionRegistry] = useState<
     InstitutionRegistryEntry[]
   >([]);
@@ -6744,14 +6764,16 @@ export default function CrmApp({
       const requestedScope =
         scope ??
         (recordsFullyLoaded || view !== "dashboard" ? "full" : "dashboard");
-      const [nextRecords, nextInstitutions, nextAwardSummary] = await Promise.all([
+      const [nextRecords, nextInstitutions, nextAwardSummary, nextSalesSummary] = await Promise.all([
         requestRecords(requestedScope),
         requestInstitutionRegistry(),
         requestDashboardAwardSummary().catch(() => null),
+        requestDashboardSalesSummary().catch(() => null),
       ]);
       setRecords(nextRecords);
       setInstitutionRegistry(nextInstitutions);
       if (nextAwardSummary) setDashboardAwardSummary(nextAwardSummary);
+      if (nextSalesSummary) setDashboardSalesSummary(nextSalesSummary);
       recordsLastRefreshedAtRef.current = Date.now();
       if (requestedScope === "full") {
         recordsFullyLoadedRef.current = true;
@@ -6771,14 +6793,16 @@ export default function CrmApp({
     try {
       const requestedScope =
         recordsFullyLoaded || view !== "dashboard" ? "full" : "dashboard";
-      const [nextRecords, nextInstitutions, nextAwardSummary] = await Promise.all([
+      const [nextRecords, nextInstitutions, nextAwardSummary, nextSalesSummary] = await Promise.all([
         requestRecords(requestedScope),
         requestInstitutionRegistry(),
         requestDashboardAwardSummary().catch(() => null),
+        requestDashboardSalesSummary().catch(() => null),
       ]);
       setRecords(nextRecords);
       setInstitutionRegistry(nextInstitutions);
       if (nextAwardSummary) setDashboardAwardSummary(nextAwardSummary);
+      if (nextSalesSummary) setDashboardSalesSummary(nextSalesSummary);
       recordsLastRefreshedAtRef.current = Date.now();
       if (requestedScope === "full") {
         recordsFullyLoadedRef.current = true;
@@ -6933,12 +6957,14 @@ export default function CrmApp({
         if (nextSession.member.status === "approved") {
           // The dashboard needs only its compact record scope. Manager-only data and
           // the full activity history are loaded when their screens are opened.
-          const [nextRecords, nextAwardSummary] = await Promise.all([
+          const [nextRecords, nextAwardSummary, nextSalesSummary] = await Promise.all([
             requestRecords("dashboard"),
             requestDashboardAwardSummary().catch(() => null),
+            requestDashboardSalesSummary().catch(() => null),
           ]);
           if (!active) return;
           if (nextAwardSummary) setDashboardAwardSummary(nextAwardSummary);
+          if (nextSalesSummary) setDashboardSalesSummary(nextSalesSummary);
           if (!recordsFullyLoadedRef.current) {
             setRecords(nextRecords);
             recordsLastRefreshedAtRef.current = Date.now();
@@ -8974,19 +9000,40 @@ export default function CrmApp({
       ).length,
     [latestAwardRecords],
   );
-  const dashboardSalesCounts = useMemo(() => {
-    const completed = latestInstitutionRows.filter(
+  const fallbackDashboardSalesCounts = useMemo(() => {
+    const latestByInstitution = new Map<string, Activity>();
+    records.forEach((record) => {
+      if (
+        isPartnerRegistrationSystemRecord(record) ||
+        isAwardManagementSystemRecord(record) ||
+        isPdfCampaignRegistration(record)
+      ) return;
+      const key = institutionAliasKey(record.organization);
+      const current = latestByInstitution.get(key);
+      if (
+        key &&
+        (!current ||
+          record.activityDate > current.activityDate ||
+          (record.activityDate === current.activityDate && record.id > current.id))
+      ) {
+        latestByInstitution.set(key, record);
+      }
+    });
+    const latest = [...latestByInstitution.values()];
+    const completed = latest.filter(
       (record) =>
         record.awardStatus !== "미정" ||
         record.status.includes("완료") ||
         record.status.includes("종료"),
     ).length;
     return {
-      total: latestInstitutionRows.length,
-      active: Math.max(0, latestInstitutionRows.length - completed),
+      total: latest.length,
+      active: Math.max(0, latest.length - completed),
       completed,
     };
-  }, [latestInstitutionRows]);
+  }, [records]);
+  const dashboardSalesCounts =
+    dashboardSalesSummary ?? fallbackDashboardSalesCounts;
   const fallbackDashboardAwardCounts = useMemo(() => {
     const whizzupAwards = latestAwardRecords.filter(
       (record) => record.awardStatus === "위즈업 수주",

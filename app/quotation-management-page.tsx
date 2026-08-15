@@ -1351,7 +1351,9 @@ export default function QuotationManagementPage({
       budgets: budgetOptionsForInstitution(selectedRound).length === 1 ? budgetOptionsForInstitution(selectedRound) : [],
       ...(collaboration ?? {}),
     };
-    if (await loadInstitutionItems(targetDraft)) setInstitutionQuery(selectedRound.organization);
+    setInstitutionQuery(selectedRound.organization);
+    setDraft(targetDraft);
+    await loadInstitutionItems(targetDraft);
   }
 
   async function selectBusinessRound(businessRound: number) {
@@ -1399,6 +1401,7 @@ export default function QuotationManagementPage({
         if (target.scope?.organization) {
           window.sessionStorage.removeItem("whizzup.quotationTarget");
           setProductQuery("");
+          setInstitutionQuery(target.scope.organization);
           beginEditor(draftForScope(target.scope));
         }
       } catch { /* 잘못된 임시 이동 정보는 무시합니다. */ }

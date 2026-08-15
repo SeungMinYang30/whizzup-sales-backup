@@ -102,6 +102,7 @@ import { chunkValues } from "../../../lib/d1-bulk";
 import { serializeActivityBudgets } from "../../../lib/activity-budgets";
 import { mergeActivityProgressSchedule } from "../../../lib/organization-schedules";
 import { summarizeWhizzupAwards } from "../../../lib/award-dashboard-summary";
+import { summarizeSalesDashboard } from "../../../lib/sales-dashboard-summary";
 
 export const dynamic = "force-dynamic";
 
@@ -398,6 +399,19 @@ export async function GET(request: Request) {
         .all<Record<string, unknown>>();
       return Response.json({
         awardCounts: summarizeWhizzupAwards(result.results),
+      });
+    }
+    if (searchParams.get("scope") === "sales-summary") {
+      const result = await d1
+        .prepare(
+          `SELECT id, organization, award_status, status, activity_date, source_chat, activity_type
+           FROM activities
+           WHERE TRIM(COALESCE(organization, '')) <> ''
+           ORDER BY activity_date DESC, id DESC`,
+        )
+        .all<Record<string, unknown>>();
+      return Response.json({
+        salesCounts: summarizeSalesDashboard(result.results),
       });
     }
     const dashboardManagerName = dashboardScope
