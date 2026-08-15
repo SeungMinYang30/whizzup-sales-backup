@@ -6443,6 +6443,26 @@ tr:hover .row-actions { opacity: 1; }
   min-height: 46px;
 }
 
+.backup-error-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.backup-error-action button {
+  flex: 0 0 auto;
+  border-color: #ef9c91;
+  color: #b83f33;
+}
+
+@media (max-width: 720px) {
+  .backup-error-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .backup-drive-picker {
   width: min(420px, 100%);
   display: grid;

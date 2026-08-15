@@ -31,6 +31,9 @@ type StandbyScheduleState = {
   schedule: string;
 };
 
+const STANDBY_CONFLICT_ERROR =
+  "Replica has independent local changes; automatic overwrite was blocked";
+
 const tableLabels: Record<string, string> = {
   members: "구성원·권한",
   member_rejections: "가입 거절 이력",
@@ -63,10 +66,7 @@ function formatDateTime(value: string) {
 }
 
 function standbyErrorMessage(message: string) {
-  if (
-    message ===
-    "Replica has independent local changes; automatic overwrite was blocked"
-  ) {
+  if (message === STANDBY_CONFLICT_ERROR) {
     return "대기판에 운영 DB와 다른 값이 감지되어 안전을 위해 자동 덮어쓰기를 멈췄습니다.";
   }
   return message;
@@ -99,6 +99,7 @@ export default function DataBackupPage({
     useState<StandbyScheduleState | null>(null);
   const [standbyScheduleAvailable, setStandbyScheduleAvailable] = useState(false);
   const [standbyScheduleError, setStandbyScheduleError] = useState("");
+  const [standbyConflict, setStandbyConflict] = useState(false);
   const [standbyConnectionKey, setStandbyConnectionKey] = useState("");
   const [safetyBackupDownloaded, setSafetyBackupDownloaded] = useState(false);
   useEffect(() => {
@@ -172,7 +173,7 @@ export default function DataBackupPage({
     };
   }, [canManageBackup, isPrimaryOwner]);
 
-  async function configureStandbyReplication() {
+  async function configureStandbyReplication(force = false) {
     try {
       setBusy("configure-standby");
       setStandbyScheduleError("");
@@ -181,6 +182,7 @@ export default function DataBackupPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           syncSecret: standbyConnectionKey.trim() || undefined,
+          force: force || undefined,
         }),
       });
       const payload = (await response.json()) as {
@@ -199,12 +201,16 @@ export default function DataBackupPage({
         schedule: payload.schedule?.schedule || "*/10 * * * *",
       });
       setStandbyConnectionKey("");
+      setStandbyConflict(false);
       notify("Sites 대기판 예약과 즉시 동기화를 완료했습니다.");
     } catch (error) {
-      setStandbyScheduleError(
+      const message =
         error instanceof Error
-          ? standbyErrorMessage(error.message)
-          : "대기판 자동 복제를 설정하지 못했습니다.",
+          ? error.message
+          : "대기판 자동 복제를 설정하지 못했습니다.";
+      setStandbyConflict(message === STANDBY_CONFLICT_ERROR);
+      setStandbyScheduleError(
+        standbyErrorMessage(message),
       );
     } finally {
       setBusy("");
@@ -536,7 +542,27 @@ export default function DataBackupPage({
           </div>
         )}
         {standbyScheduleError && (
-          <div className="backup-error">{standbyScheduleError}</div>
+          <div className="backup-error backup-error-action">
+            <span>{standbyScheduleError}</span>
+            {standbyConflict && (
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={Boolean(busy)}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Sites 대기판의 별도 변경을 현재 Vercel 운영 DB로 교체합니다. 계속할까요?",
+                    )
+                  ) {
+                    void configureStandbyReplication(true);
+                  }
+                }}
+              >
+                운영 DB로 다시 맞추기
+              </button>
+            )}
+          </div>
         )}
 
         {backupFileName && (
