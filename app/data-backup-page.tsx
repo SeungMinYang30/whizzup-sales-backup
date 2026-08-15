@@ -186,12 +186,22 @@ export default function DataBackupPage({
           force: force || undefined,
         }),
       });
-      const payload = (await response.json()) as {
-        ok?: boolean;
-        origin?: string;
-        error?: string;
-        schedule?: { schedule?: string };
-      };
+      const responseText = await response.text();
+      const payload = (() => {
+        try {
+          return JSON.parse(responseText) as {
+            ok?: boolean;
+            origin?: string;
+            error?: string;
+            schedule?: { schedule?: string };
+          };
+        } catch {
+          return {
+            ok: false,
+            error: `대기판 동기화 서버가 HTTP ${response.status}로 응답했습니다. 잠시 후 다시 시도해 주세요.`,
+          };
+        }
+      })();
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || "대기판 자동 복제를 설정하지 못했습니다.");
       }

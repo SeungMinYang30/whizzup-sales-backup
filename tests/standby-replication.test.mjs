@@ -147,6 +147,7 @@ test("Supabase sync can only be scheduled after an explicit server-side opt in",
 
 test("primary owner can schedule the current Sites standby every ten minutes", () => {
   assert.match(scheduleRoute, /requirePrimaryOwner/);
+  assert.match(scheduleRoute, /export const maxDuration = 120/);
   assert.match(scheduleRoute, /STANDBY_SITE_ORIGIN/);
   assert.match(scheduleRoute, /whizzup-sales-hub\.jackallan\.chatgpt\.site/);
   assert.match(scheduleRoute, /configureStandbySchedule/);

@@ -10,6 +10,7 @@ import {
 } from "../../../lib/replication-scheduler";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 const DEFAULT_STANDBY_ORIGIN =
   "https://whizzup-sales-hub.jackallan.chatgpt.site";
