@@ -111,6 +111,19 @@ export const activities = sqliteTable(
   ],
 );
 
+export const institutionRegistry = sqliteTable(
+  "institution_registry",
+  {
+    organization: text("organization").primaryKey(),
+    region: text("region").notNull().default(""),
+    createdBy: integer("created_by"),
+    createdByName: text("created_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("institution_registry_region_idx").on(table.region, table.organization)],
+);
+
 export const organizationSchedules = sqliteTable(
   "organization_schedules",
   {

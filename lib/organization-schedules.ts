@@ -350,44 +350,14 @@ async function initializeOrganizationSchedules() {
   if (!projectColumns.results.some((column) => column.name === "hidden_at")) {
     await d1.prepare("ALTER TABLE construction_schedule_projects ADD COLUMN hidden_at TEXT NOT NULL DEFAULT ''").run();
   }
-  const duplicateLegacyScheduleIds = `
-    SELECT legacy.id
-    FROM organization_schedules legacy
-    WHERE COALESCE(legacy.category, 'general') <> 'construction'
-      AND legacy.source_activity_id IS NOT NULL
-      AND TRIM(COALESCE(legacy.deleted_at, '')) = ''
-      AND EXISTS (
-        SELECT 1 FROM organization_schedules construction
-        WHERE construction.organization = legacy.organization
-          AND construction.business_round = legacy.business_round
-          AND construction.category = 'construction'
-          AND construction.source_activity_id = legacy.source_activity_id
-          AND construction.stage = legacy.label
-          AND construction.scheduled_date = legacy.scheduled_date
-          AND COALESCE(construction.start_time, '') = COALESCE(legacy.start_time, '')
-          AND COALESCE(construction.end_time, '') = COALESCE(legacy.end_time, '')
-          AND TRIM(COALESCE(construction.deleted_at, '')) = ''
-      )`;
-  await d1.batch([
-    d1.prepare(
-      `INSERT OR IGNORE INTO organization_schedule_import_state (organization, business_round)
-       SELECT DISTINCT organization, business_round
-       FROM organization_schedules
-       WHERE category = 'construction'`,
-    ),
-    d1.prepare(
-      `UPDATE organization_schedules
-       SET deleted_at = CURRENT_TIMESTAMP, sync_status = 'pending', sync_operation = 'delete',
-           sync_error = '', updated_at = CURRENT_TIMESTAMP
-       WHERE id IN (${duplicateLegacyScheduleIds})
-         AND TRIM(COALESCE(google_event_id, '')) <> ''`,
-    ),
-    d1.prepare(
-      `DELETE FROM organization_schedules
-       WHERE id IN (${duplicateLegacyScheduleIds})
-         AND TRIM(COALESCE(google_event_id, '')) = ''`,
-    ),
-  ]);
+  // Keep imported sales rows intact. Construction/sales overlap is resolved by
+  // the deterministic calendar presentation merge, never by deleting source data.
+  await d1.prepare(
+    `INSERT OR IGNORE INTO organization_schedule_import_state (organization, business_round)
+     SELECT DISTINCT organization, business_round
+     FROM organization_schedules
+     WHERE category = 'construction'`,
+  ).run();
   return d1;
 }
 
@@ -1863,46 +1833,10 @@ export async function mergeActivityProgressSchedule(input: {
        schedule.endTime,
      )));
 
-    const duplicateGeneralWhere = `
-      organization = ? AND business_round = ?
-      AND COALESCE(category, 'general') <> 'construction'
-      AND source_activity_id = ?
-      AND EXISTS (
-        SELECT 1 FROM organization_schedules construction
-        WHERE construction.organization = organization_schedules.organization
-          AND construction.business_round = organization_schedules.business_round
-          AND construction.category = 'construction'
-          AND construction.source_activity_id = ?
-          AND construction.stage = organization_schedules.label
-          AND construction.scheduled_date = organization_schedules.scheduled_date
-          AND COALESCE(construction.start_time, '') = COALESCE(organization_schedules.start_time, '')
-          AND COALESCE(construction.end_time, '') = COALESCE(organization_schedules.end_time, '')
-          AND TRIM(COALESCE(construction.deleted_at, '')) = ''
-      )`;
-    await d1.batch([
-      d1.prepare(
-        `UPDATE organization_schedules
-         SET deleted_at = CURRENT_TIMESTAMP, sync_status = 'pending', sync_operation = 'delete',
-             sync_error = '', updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
-         WHERE ${duplicateGeneralWhere} AND TRIM(COALESCE(google_event_id, '')) <> ''`,
-      ).bind(
-        input.memberId,
-        input.memberName,
-        organization,
-        businessRound,
-        input.activityId,
-        input.activityId,
-      ),
-      d1.prepare(
-        `DELETE FROM organization_schedules
-         WHERE ${duplicateGeneralWhere} AND TRIM(COALESCE(google_event_id, '')) = ''`,
-      ).bind(
-        organization,
-        businessRound,
-        input.activityId,
-        input.activityId,
-      ),
-    ]);
+    // Do not remove the originating sales schedule. The calendar merge uses the
+    // shared source activity id and exact occurrence identity to show the
+    // construction entry while it exists, and restores the sales entry when it
+    // is later cancelled or deleted.
 
     await d1.prepare(
       `UPDATE activities

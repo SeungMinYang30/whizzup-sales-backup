@@ -4834,15 +4834,6 @@ export default function SalesMapPage({
               </p>
             </div>
             <div className="budget-board-actions">
-              {activeCampaign && isOwner && (
-                <button
-                  type="button"
-                  className="campaign-card-edit-button"
-                  onClick={() => beginBudgetCardEdit(activeCampaign)}
-                >
-                  예산카드 수정
-                </button>
-              )}
               {activeCampaign && canManageCampaigns && (
                 <button
                   type="button"
@@ -4859,21 +4850,35 @@ export default function SalesMapPage({
               >
                 예산카드 등록
               </button>
-              <button
-                type="button"
-                className="campaign-pdf-button"
-                onClick={() => campaignPdfRef.current?.click()}
-                disabled={campaignPdfAnalyzing}
-              >
-                {campaignPdfAnalyzing ? "PDF 분석 중" : "PDF 등록"}
-              </button>
-              <button
-                type="button"
-                className="campaign-import-button"
-                onClick={() => campaignFileRef.current?.click()}
-              >
-                엑셀 등록
-              </button>
+              {activeCampaign && isOwner && (
+                <button
+                  type="button"
+                  className="campaign-card-edit-button"
+                  onClick={() => beginBudgetCardEdit(activeCampaign)}
+                >
+                  예산카드 수정
+                </button>
+              )}
+              <details className="campaign-file-menu">
+                <summary>파일 등록</summary>
+                <div>
+                  <button
+                    type="button"
+                    className="campaign-pdf-button"
+                    onClick={() => campaignPdfRef.current?.click()}
+                    disabled={campaignPdfAnalyzing}
+                  >
+                    {campaignPdfAnalyzing ? "PDF 분석 중" : "PDF로 등록"}
+                  </button>
+                  <button
+                    type="button"
+                    className="campaign-import-button"
+                    onClick={() => campaignFileRef.current?.click()}
+                  >
+                    Excel로 등록
+                  </button>
+                </div>
+              </details>
             </div>
           </header>
 

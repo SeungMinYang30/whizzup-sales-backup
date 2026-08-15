@@ -33,6 +33,7 @@ export type TrashBatchRow = {
 };
 
 const allowedRestoreTables = new Set([
+  "institution_registry",
   "activities",
   "organization_schedules",
   "activity_authors",
@@ -53,6 +54,7 @@ const allowedRestoreTables = new Set([
 ]);
 
 const restoreOrder = [
+  "institution_registry",
   "activities",
   "organization_schedules",
   "activity_authors",

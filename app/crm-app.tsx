@@ -212,6 +212,14 @@ type Activity = {
   updatedAt: string;
 };
 
+type InstitutionRegistryEntry = {
+  organization: string;
+  region: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type ActivityDetailLevel = "compact" | "standard" | "detailed";
 type ActivityDetailFact = {
   label: string;
@@ -1420,7 +1428,7 @@ const memberPermissionOptions: {
   {
     id: "trash:manage",
     group: "operations",
-    label: "휴지통 복구",
+      label: "복구·변경 이력",
     description: "백업·복구 화면에서 삭제된 자료 확인·복원",
   },
   {
@@ -2007,6 +2015,28 @@ function normalize(row: Record<string, unknown>): Activity {
     createdAt: String(value("createdAt", "created_at")),
     updatedAt: String(value("updatedAt", "updated_at")),
   };
+}
+
+function institutionMasterActivity(
+  institution: InstitutionRegistryEntry,
+  index: number,
+) {
+  return normalize({
+    id: -(index + 1),
+    activity_date: institution.createdAt.slice(0, 10),
+    date_confidence: "확정",
+    activity_type: "기관 등록",
+    category: "외부",
+    region: institution.region,
+    organization: institution.organization,
+    business_round: 1,
+    award_status: "미정",
+    award_stage: "미정",
+    source_chat: "기관 마스터",
+    created_by_name: institution.createdByName,
+    created_at: institution.createdAt,
+    updated_at: institution.updatedAt,
+  });
 }
 
 function normalizeEquipmentItem(
@@ -3376,6 +3406,22 @@ async function requestRecords(scope: RecordsScope = "full") {
   }
 
   throw new Error("기록이 너무 많아 전체 목록을 불러오지 못했습니다.");
+}
+
+async function requestInstitutionRegistry() {
+  const response = await resilientFetch("/api/institutions", {
+    cache: "no-store",
+    timeoutMs: 20_000,
+    retries: 5,
+  });
+  const payload = (await response.json()) as {
+    institutions?: InstitutionRegistryEntry[];
+    error?: string;
+  };
+  if (!response.ok) {
+    throw new Error(payload.error || "기관 목록을 불러오지 못했습니다.");
+  }
+  return payload.institutions ?? [];
 }
 
 function upsertActivity(
@@ -6141,6 +6187,9 @@ export default function CrmApp({
   signOutPath: string;
 }) {
   const [records, setRecords] = useState<Activity[]>([]);
+  const [institutionRegistry, setInstitutionRegistry] = useState<
+    InstitutionRegistryEntry[]
+  >([]);
   const [selectedInstitutionIds, setSelectedInstitutionIds] = useState<number[]>(
     [],
   );
@@ -6670,8 +6719,12 @@ export default function CrmApp({
       const requestedScope =
         scope ??
         (recordsFullyLoaded || view !== "dashboard" ? "full" : "dashboard");
-      const nextRecords = await requestRecords(requestedScope);
+      const [nextRecords, nextInstitutions] = await Promise.all([
+        requestRecords(requestedScope),
+        requestInstitutionRegistry(),
+      ]);
       setRecords(nextRecords);
+      setInstitutionRegistry(nextInstitutions);
       recordsLastRefreshedAtRef.current = Date.now();
       if (requestedScope === "full") {
         recordsFullyLoadedRef.current = true;
@@ -6691,8 +6744,12 @@ export default function CrmApp({
     try {
       const requestedScope =
         recordsFullyLoaded || view !== "dashboard" ? "full" : "dashboard";
-      const nextRecords = await requestRecords(requestedScope);
+      const [nextRecords, nextInstitutions] = await Promise.all([
+        requestRecords(requestedScope),
+        requestInstitutionRegistry(),
+      ]);
       setRecords(nextRecords);
+      setInstitutionRegistry(nextInstitutions);
       recordsLastRefreshedAtRef.current = Date.now();
       if (requestedScope === "full") {
         recordsFullyLoadedRef.current = true;
@@ -7113,6 +7170,19 @@ export default function CrmApp({
       window.removeEventListener("focus", refreshIfStale);
       document.removeEventListener("visibilitychange", refreshIfStale);
     };
+  }, [recordsFullyLoaded, sessionStatus, view]);
+
+  useEffect(() => {
+    if (sessionStatus !== "approved") return;
+    const refreshReplicatedData = () => {
+      void refreshRecordsInBackground();
+      setScheduleReminderRefreshVersion((current) => current + 1);
+      void requestConstructionDashboardCounts()
+        .then(setConstructionDashboardCounts)
+        .catch(() => undefined);
+    };
+    window.addEventListener("whizzup:replicated-data-refreshed", refreshReplicatedData);
+    return () => window.removeEventListener("whizzup:replicated-data-refreshed", refreshReplicatedData);
   }, [recordsFullyLoaded, sessionStatus, view]);
 
   useEffect(() => {
@@ -8298,6 +8368,11 @@ export default function CrmApp({
     return grouped;
   }, [records]);
 
+  const institutionMasterRows = useMemo(
+    () => institutionRegistry.map(institutionMasterActivity),
+    [institutionRegistry],
+  );
+
   const latestInstitutionRows = useMemo(() => {
     const latestByOrganization = new Map<string, Activity>();
     records.forEach((record) => {
@@ -8316,8 +8391,14 @@ export default function CrmApp({
         latestByOrganization.set(key, record);
       }
     });
+    institutionMasterRows.forEach((record) => {
+      const key = institutionAliasKey(record.organization);
+      if (key && !latestByOrganization.has(key)) {
+        latestByOrganization.set(key, record);
+      }
+    });
     return [...latestByOrganization.values()];
-  }, [records]);
+  }, [institutionMasterRows, records]);
   const preAwardInstitutionRows = useMemo(() => {
     return latestInstitutionRows.flatMap((record) => {
       const businessKey = analyticsBusinessRoundKey(
@@ -8454,8 +8535,10 @@ export default function CrmApp({
     () => new Set(selectedInstitutionIds),
     [selectedInstitutionIds],
   );
-  const currentInstitutionPageIds = jointProjectGroupMemberIds(institutionPageGroups);
-  const allFilteredInstitutionIds = jointProjectGroupMemberIds(followupDisplayGroups);
+  const currentInstitutionPageIds = jointProjectGroupMemberIds(institutionPageGroups)
+    .filter((id) => id > 0);
+  const allFilteredInstitutionIds = jointProjectGroupMemberIds(followupDisplayGroups)
+    .filter((id) => id > 0);
   const currentInstitutionPageSelected =
     currentInstitutionPageIds.length > 0 &&
     currentInstitutionPageIds.every((id) => selectedInstitutionIdSet.has(id));
@@ -18364,55 +18447,50 @@ export default function CrmApp({
                   </h2>
                 </div>
                 <div className="records-heading-actions">
-                  {canManageActivityHistory && (
-                    <button
-                      type="button"
-                      className="award-history-button"
-                      onClick={() => void openAwardChangeHistory()}
-                    >
-                      변경 이력
-                    </button>
-                  )}
                   <button
                     type="button"
-                    className="institution-budget-button"
+                    className="institution-budget-button mobile-short-label"
+                    data-mobile-label="정보 수정"
                     disabled={selectedInstitutionIds.length === 0}
                     onClick={toggleInstitutionBulkEditor}
                     title="선택한 기관의 담당자·예산·재연락·다음 행동·상태를 한 번에 수정합니다."
                   >
-                    {`선택 기관 일괄 수정${
+                    <span>{`선택 정보 수정${
                       selectedInstitutionIds.length > 0
                         ? ` ${selectedInstitutionIds.length}`
                         : ""
-                    }`}
+                    }`}</span>
                   </button>
                   {selectedInstitutionIds.length > 0 && (
                     <button
                       type="button"
-                      className="excel-export-button"
+                      className="excel-export-button mobile-short-label"
+                      data-mobile-label="해제"
                       onClick={clearInstitutionSelection}
                     >
-                      선택 전체 해제
+                      <span>선택 전체 해제</span>
                     </button>
                   )}
                   {canManageRecords && (
                     <button
                       type="button"
-                      className="joint-project-button"
+                      className="joint-project-button mobile-short-label"
+                      data-mobile-label="공동사업"
                       disabled={selectedJointProjectCandidates.length < 2}
                       onClick={() => setJointProjectOpen(true)}
                       title="기관은 그대로 유지하고 주관기관과 설치기관의 공동사업 관계만 연결합니다."
                     >
-                      {`공동사업 연결${
+                      <span>{`공동사업 연결${
                         selectedJointProjectCandidates.length > 0
                           ? ` ${selectedJointProjectCandidates.length}`
                           : ""
-                      }`}
+                      }`}</span>
                     </button>
                   )}
                   <button
                     type="button"
-                    className="institution-merge-button"
+                    className="institution-merge-button mobile-short-label"
+                    data-mobile-label="기관 합치기"
                     disabled={
                       selectedInstitutionNames.length < 2 ||
                       institutionMergeBusy
@@ -18420,18 +18498,19 @@ export default function CrmApp({
                     onClick={() => void openInstitutionMerge()}
                     title="같은 기관이 여러 이름으로 등록됐을 때 선택한 기관을 하나로 합칩니다."
                   >
-                    {institutionMergeBusy
+                    <span>{institutionMergeBusy
                       ? "기관 확인 중…"
                       : `선택 기관 합치기${
                           selectedInstitutionIds.length > 0
                             ? ` ${selectedInstitutionIds.length}`
                             : ""
-                        }`}
+                        }`}</span>
                   </button>
                   {canDeleteRecords && (
                     <button
                       type="button"
-                      className="institution-bulk-delete-button"
+                      className="institution-bulk-delete-button mobile-short-label"
+                      data-mobile-label="삭제"
                       disabled={
                         selectedInstitutionIds.length === 0 ||
                         institutionDeleteBusy
@@ -18439,39 +18518,19 @@ export default function CrmApp({
                       onClick={() => void removeSelectedInstitutions()}
                       title="선택한 기관과 연결된 모든 업무 기록을 삭제합니다."
                     >
-                      {institutionDeleteBusy
+                      <span>{institutionDeleteBusy
                         ? "삭제 중…"
                         : `선택 기관 삭제${
                             selectedInstitutionIds.length > 0
                               ? ` ${selectedInstitutionIds.length}`
                               : ""
-                          }`}
-                    </button>
-                  )}
-                  {canExportData && (
-                    <button
-                      type="button"
-                      className="excel-export-button"
-                      onClick={exportInstitutionWorkbook}
-                    >
-                      {selectedInstitutionIds.length > 0
-                        ? `선택 ${selectedInstitutionIds.length}건 엑셀`
-                        : "엑셀 내보내기"}
+                          }`}</span>
                     </button>
                   )}
                   <span className="record-count">{followupDisplayGroups.length}개 사업</span>
                 </div>
                 <div className="institution-mobile-header-actions">
                   <span className="record-count">{followupDisplayGroups.length}개 사업</span>
-                  {canExportData && (
-                    <button
-                      type="button"
-                      className="institution-mobile-export"
-                      onClick={exportInstitutionWorkbook}
-                    >
-                      엑셀
-                    </button>
-                  )}
                 </div>
               </div>
               {selectedInstitutionIds.length > 0 && (
@@ -18792,6 +18851,7 @@ export default function CrmApp({
                             className="row-select-checkbox"
                             type="checkbox"
                             aria-label={`${group.sponsorOrganization} 공동사업 전체 선택`}
+                            disabled={group.members.every((member) => member.id < 0)}
                             checked={group.members.every((member) => selectedInstitutionIdSet.has(member.id))}
                             onClick={(event) => event.stopPropagation()}
                             onChange={() =>
@@ -19321,72 +19381,67 @@ export default function CrmApp({
                       </button>
                     </div>
                   )}
-                  {view === "awards" && canManageActivityHistory && (
+                  {view === "awards" && (
                     <button
                       type="button"
-                      className="award-history-button"
-                      onClick={() => void openAwardChangeHistory()}
+                      className="award-register-button mobile-short-label"
+                      data-mobile-label="＋ 등록"
+                      onClick={openNewAward}
                     >
-                      변경 이력
-                    </button>
-                  )}
-                  {view === "awards" && canExportData && (
-                    <button
-                      type="button"
-                      className="excel-export-button"
-                      onClick={exportAwardWorkbook}
-                    >
-                      {selectedAwardIds.length > 0
-                        ? `선택 ${selectedAwardIds.length}건 엑셀`
-                        : "엑셀 내보내기"}
+                      <span>＋ 수주 등록</span>
                     </button>
                   )}
                   {view === "awards" && (
                     <button
                       type="button"
-                      className="excel-export-button"
+                      className="excel-export-button mobile-short-label"
+                      data-mobile-label="일괄 등록"
                       onClick={openAwardGoogleSheetImport}
                     >
-                      수주 일괄 등록
+                      <span>수주 일괄 등록</span>
                     </button>
                   )}
                   {view === "awards" && selectedAwardIds.length > 0 && (
                     <button
                       type="button"
-                      className="excel-export-button"
+                      className="excel-export-button mobile-short-label"
+                      data-mobile-label="정보 수정"
                       onClick={toggleAwardBulkEditor}
                     >
-                      선택 정보 변경
+                      <span>선택 정보 수정</span>
                     </button>
                   )}
                   {view === "awards" && selectedAwardIds.length > 0 && (
                     <button
                       type="button"
-                      className="excel-export-button"
+                      className="excel-export-button mobile-short-label"
+                      data-mobile-label="해제"
                       onClick={clearAwardSelection}
                     >
-                      선택 전체 해제
+                      <span>선택 전체 해제</span>
                     </button>
                   )}
                   {view === "awards" && canManageRecords && (
                     <button
                       type="button"
-                      className="joint-project-button"
+                      className="joint-project-button mobile-short-label"
+                      data-mobile-label="공동사업"
                       disabled={selectedJointProjectCandidates.length < 2}
                       onClick={() => setJointProjectOpen(true)}
                       title="기관 자료를 이동하지 않고 같은 공동사업 관계로 연결합니다."
                     >
-                      {`공동사업 연결${
+                      <span>{`공동사업 연결${
                         selectedJointProjectCandidates.length > 0
                           ? ` ${selectedJointProjectCandidates.length}`
                           : ""
-                      }`}
+                      }`}</span>
                     </button>
                   )}
                   {view === "awards" && (
                     <button
                       type="button"
-                      className="institution-merge-button"
+                      className="institution-merge-button mobile-short-label"
+                      data-mobile-label="기관 합치기"
                       disabled={
                         selectedAwardOrganizations.length < 2 ||
                         institutionMergeBusy
@@ -19394,32 +19449,23 @@ export default function CrmApp({
                       onClick={() => void openInstitutionMerge()}
                       title="같은 기관이 여러 이름으로 등록됐을 때 선택한 기관을 하나로 합칩니다."
                     >
-                      {institutionMergeBusy
+                      <span>{institutionMergeBusy
                         ? "기관 확인 중…"
                         : `선택 기관 합치기${
                             selectedAwardOrganizations.length > 0
                               ? ` ${selectedAwardOrganizations.length}`
                               : ""
-                          }`}
+                          }`}</span>
                     </button>
                   )}
                   {view === "awards" && isOwner && selectedAwardIds.length > 0 && (
                     <button
                       type="button"
-                      className="award-delete-button"
+                      className="award-delete-button mobile-short-label"
+                      data-mobile-label="삭제"
                       onClick={() => openAwardDelete("selected")}
                     >
-                      선택 {selectedAwardIds.length}건 삭제
-                    </button>
-                  )}
-                  {view === "awards" && (
-                    <button
-                      type="button"
-                      className="award-register-button"
-                      onClick={openNewAward}
-                    >
-                      <span>＋</span>
-                      수주 등록
+                      <span>선택 {selectedAwardIds.length}건 삭제</span>
                     </button>
                   )}
                   {view === "records" && teamDetailMode !== "activity" && (

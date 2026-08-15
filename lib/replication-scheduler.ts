@@ -1,8 +1,10 @@
 import { getD1 } from "../db";
 
-const JOB_NAME = "whizzup-standby-sync-every-10-minutes";
+const JOB_NAME = "whizzup-standby-sync-daily-0430-kst";
+const LEGACY_JOB_NAME = "whizzup-standby-sync-every-10-minutes";
 const VAULT_SECRET_NAME = "whizzup_standby_sync_secret";
-const CRON_EXPRESSION = "*/10 * * * *";
+// Supabase pg_cron uses UTC. 19:30 UTC is 04:30 KST on the next calendar day.
+const CRON_EXPRESSION = "30 19 * * *";
 
 type VaultSecretRow = {
   id: string;
@@ -40,10 +42,10 @@ export async function getStandbyScheduleStatus() {
       .prepare(
         `SELECT jobid
          FROM cron.job
-         WHERE jobname = ?
+         WHERE jobname IN (?, ?)
          ORDER BY jobid DESC`,
       )
-      .bind(JOB_NAME)
+      .bind(JOB_NAME, LEGACY_JOB_NAME)
       .all<CronJobRow>();
     return {
       configured: jobs.results.length > 0,
@@ -100,8 +102,8 @@ export async function configureStandbySchedule(input: {
   }
 
   const existingJobs = await d1
-    .prepare("SELECT jobid FROM cron.job WHERE jobname = ?")
-    .bind(JOB_NAME)
+    .prepare("SELECT jobid FROM cron.job WHERE jobname IN (?, ?)")
+    .bind(JOB_NAME, LEGACY_JOB_NAME)
     .all<CronJobRow>();
   for (const job of existingJobs.results) {
     await d1.prepare("SELECT cron.unschedule(?::bigint)").bind(job.jobid).run();
@@ -140,8 +142,8 @@ export async function configureStandbySchedule(input: {
 export async function removeStandbySchedule() {
   const d1 = getD1();
   const existingJobs = await d1
-    .prepare("SELECT jobid FROM cron.job WHERE jobname = ?")
-    .bind(JOB_NAME)
+    .prepare("SELECT jobid FROM cron.job WHERE jobname IN (?, ?)")
+    .bind(JOB_NAME, LEGACY_JOB_NAME)
     .all<CronJobRow>();
   for (const job of existingJobs.results) {
     await d1.prepare("SELECT cron.unschedule(?::bigint)").bind(job.jobid).run();

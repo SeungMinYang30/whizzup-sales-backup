@@ -125,6 +125,187 @@
   .restore-safety strong { font-size: 13px; }
 }
 
+/* 2026-08 mobile workspace pass: no horizontal hunting for primary controls. */
+.mobile-short-label::after { content: none; }
+
+.campaign-file-menu { position: relative; }
+.campaign-file-menu > summary {
+  min-height: 40px;
+  padding: 10px 14px;
+  border: 1px solid #b9c9ea;
+  border-radius: 10px;
+  color: #294b91;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+  background: #fff;
+}
+.campaign-file-menu > summary::-webkit-details-marker { display: none; }
+.campaign-file-menu > div {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  display: grid;
+  width: 170px;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid #d9e2f2;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 14px 36px rgba(31, 57, 104, .16);
+}
+
+.change-history-list { display: grid; gap: 8px; padding: 14px 18px 18px; }
+.change-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid #e1e7f1;
+  border-radius: 12px;
+  background: #fff;
+}
+.change-history-row > div:first-child { min-width: 0; }
+.change-history-row span,
+.change-history-row p { color: #6c7b94; font-size: 12px; }
+.change-history-row strong { display: block; margin: 3px 0; color: #172c4e; }
+.change-history-row p { overflow: hidden; margin: 0; text-overflow: ellipsis; white-space: nowrap; }
+.change-history-status { display: grid; justify-items: end; gap: 2px; }
+.change-history-row button { min-height: 38px; padding: 0 14px; }
+
+@media (max-width: 760px) {
+  .mobile-short-label > span { display: none; }
+  .mobile-short-label::after { content: attr(data-mobile-label); }
+
+  .topbar.has-dashboard-status {
+    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+  }
+  .topbar.has-dashboard-status .global-institution-search,
+  .topbar.has-dashboard-status .global-search { grid-column: 2; grid-row: 1; }
+  .topbar.has-dashboard-status .top-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+  .topbar.has-dashboard-status .top-actions > button {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    white-space: nowrap;
+  }
+  .dashboard-status-strip {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    gap: 5px;
+    padding: 0;
+    overflow: visible;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .dashboard-status-card {
+    min-width: 0;
+    min-height: 42px;
+    width: auto;
+    padding: 5px 6px;
+  }
+  .dashboard-status-card dl { justify-content: space-between; gap: 2px; }
+  .dashboard-status-card dt { display: none; }
+
+  .records-heading-actions,
+  .organization-header-actions,
+  .manager-header-actions,
+  .manager-selection-actions,
+  .team-work-controls,
+  .team-period-switch,
+  .budget-board-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    gap: 6px;
+    overflow: visible;
+    flex-wrap: wrap;
+  }
+  .records-heading-actions > *,
+  .organization-header-actions > *,
+  .manager-header-actions > *,
+  .manager-selection-actions > *,
+  .team-work-controls > *,
+  .team-period-switch > *,
+  .budget-board-actions > * {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding-inline: 6px;
+    font-size: 11px;
+  }
+  .records-heading-actions .record-count { grid-column: 1 / -1; min-height: 0; text-align: right; }
+  .campaign-file-menu > div { right: 0; width: min(180px, 88vw); }
+
+  .product-workspace-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+    overflow: visible;
+  }
+  .product-workspace-tabs button { min-width: 0; padding: 9px 4px; }
+  .product-workspace-tabs button span { font-size: 10px; }
+
+  .data-list-table:has(.followup-table),
+  .data-list-table:has(.awards-table) { overflow: visible; }
+  .followup-table,
+  .awards-table,
+  .followup-table tbody,
+  .awards-table tbody { display: block; width: 100%; min-width: 0 !important; }
+  .followup-table thead,
+  .awards-table thead { display: none; }
+  .followup-table tr,
+  .awards-table tr {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1fr);
+    gap: 7px 10px;
+    margin: 9px 10px;
+    padding: 12px;
+    border: 1px solid #dfe6f1;
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 4px 15px rgba(27, 54, 98, .05);
+  }
+  .followup-table td,
+  .awards-table td { display: block; min-width: 0; padding: 0; border: 0; }
+  .followup-table td:nth-child(1),
+  .awards-table td:nth-child(1) { grid-column: 1; grid-row: 1 / span 2; }
+  .followup-table td:nth-child(3),
+  .awards-table td:nth-child(3) { grid-column: 2; }
+  .followup-table td:nth-child(5),
+  .awards-table td:nth-child(5) { grid-column: 2 / -1; font-size: 14px; font-weight: 800; }
+  .followup-table td:nth-child(8),
+  .followup-table td:nth-child(9),
+  .awards-table td:nth-child(6),
+  .awards-table td:nth-child(7) { grid-column: 2 / -1; }
+  .followup-table td:nth-child(2),
+  .followup-table td:nth-child(4),
+  .followup-table td:nth-child(6),
+  .followup-table td:nth-child(7),
+  .awards-table td:nth-child(2),
+  .awards-table td:nth-child(4),
+  .awards-table td:nth-child(9),
+  .awards-table td:nth-child(10) { display: none; }
+  .followup-table td:nth-child(9) { max-height: 4.4em; overflow: hidden; }
+
+  .change-history-list { padding: 10px; }
+  .change-history-row { grid-template-columns: 1fr auto; gap: 10px; }
+  .change-history-status { grid-column: 1; justify-items: start; }
+  .change-history-row > button { grid-column: 2; grid-row: 1 / span 2; }
+}
+
 .quotation-recent-rate {
   display: block;
   margin-top: 5px;
@@ -1829,4 +2010,78 @@
     min-width: 0;
     flex: 1;
   }
+}
+
+@media (max-width: 760px) {
+  .mobile-short-label > span { display: none !important; }
+  .mobile-short-label::after { content: attr(data-mobile-label) !important; }
+  .topbar.has-dashboard-status {
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+    grid-template-rows: auto auto auto;
+  }
+  .topbar.has-dashboard-status .top-actions {
+    grid-column: 1 / -1 !important;
+    grid-row: 2 !important;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+  .topbar.has-dashboard-status .top-actions > button {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+  }
+  .dashboard-status-strip {
+    grid-column: 1 / -1 !important;
+    grid-row: 3 !important;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    gap: 5px;
+    padding: 0;
+    overflow: visible;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .dashboard-status-card {
+    width: auto !important;
+    min-width: 0 !important;
+    flex: initial !important;
+  }
+  .dashboard-status-card dt { display: none; }
+  .records-heading-actions,
+  .organization-header-actions,
+  .manager-header-actions,
+  .manager-selection-actions,
+  .team-work-controls,
+  .team-period-switch,
+  .budget-board-actions {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    gap: 6px;
+    overflow: visible !important;
+    flex-wrap: wrap !important;
+  }
+  .records-heading-actions > *,
+  .organization-header-actions > *,
+  .manager-header-actions > *,
+  .manager-selection-actions > *,
+  .team-work-controls > *,
+  .team-period-switch > *,
+  .budget-board-actions > * {
+    width: 100%;
+    min-width: 0 !important;
+    min-height: 40px;
+    padding-inline: 6px;
+    font-size: 11px;
+  }
+  .product-workspace-tabs {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible !important;
+  }
+  .product-workspace-tabs button { min-width: 0 !important; }
+  .manager-inspection-table,
+  .team-work-table { min-width: 0; }
 }

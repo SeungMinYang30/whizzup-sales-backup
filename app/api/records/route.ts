@@ -1987,13 +1987,10 @@ export async function DELETE(request: Request) {
         totalCountByOrganization.set(row.organization, Number(row.count) || 0),
       );
     }
-    const cleanupOrganizations = organizations.length
-      ? organizations
-      : affectedOrganizations.filter(
-          (organization) =>
-            (selectedCountByOrganization.get(organization) || 0) >=
-            (totalCountByOrganization.get(organization) || 0),
-        );
+    // Deleting a detail/history row must never delete the institution master or
+    // organization-level data.  Full institution cleanup is only authorized by
+    // the explicit `organizations` deletion path.
+    const cleanupOrganizations = organizations;
 
     const businessKey = (organization: string, businessRound: number) =>
       `${organization}\u0000${businessRound}`;
@@ -2041,13 +2038,13 @@ export async function DELETE(request: Request) {
         ),
       );
     }
-    const cleanupBusinessPairs = selectedBusinessPairs.filter((pair) => {
+    const cleanupBusinessPairs = organizations.length ? selectedBusinessPairs.filter((pair) => {
       const key = businessKey(pair.organization, pair.businessRound);
       return (
         (selectedCountByBusiness.get(key) || 0) >=
         (totalCountByBusiness.get(key) || 0)
       );
-    });
+    }) : [];
 
     const snapshot: TrashSnapshot = { tables: { activities: activityRows } };
     const loadRows = async (
@@ -2085,6 +2082,11 @@ export async function DELETE(request: Request) {
       return rows;
     };
     await Promise.all([
+      loadRows(
+        "institution_registry",
+        "organization",
+        cleanupOrganizations,
+      ),
       loadRows("activity_authors", "activity_id", selectedActivityIds),
       loadRows(
         "activity_assignment_history",
@@ -2256,6 +2258,12 @@ export async function DELETE(request: Request) {
     for (const chunk of cleanupChunks) {
       const placeholders = chunk.map(() => "?").join(", ");
       deleteStatements.push(
+        d1
+          .prepare(
+            `DELETE FROM institution_registry
+             WHERE organization IN (${placeholders})`,
+          )
+          .bind(...chunk),
         d1
           .prepare(
           `DELETE FROM organization_locations

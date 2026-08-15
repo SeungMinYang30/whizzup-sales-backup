@@ -39,6 +39,18 @@ test("기관 전체 삭제에만 견적서를 휴지통 스냅샷과 삭제 대�
   );
 });
 
+test("상세 기록 삭제는 기관 마스터를 남기고 명시적 기관 삭제만 함께 복구 대상으로 보낸다", () => {
+  assert.match(recordsRoute, /const cleanupOrganizations = organizations/);
+  assert.match(
+    recordsRoute,
+    /loadRows\(\s*"institution_registry",\s*"organization",\s*cleanupOrganizations/,
+  );
+  assert.match(
+    recordsRoute,
+    /DELETE FROM institution_registry[\s\S]*organization IN/,
+  );
+});
+
 test("협력사 등록은 영업 활동이 아니라 전용 업체 자료에 저장한다", () => {
   assert.match(crm, /fetch\("\/api\/award-vendors"/);
   assert.doesNotMatch(crm, /activityType: "협력사 등록"/);

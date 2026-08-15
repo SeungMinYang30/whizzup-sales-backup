@@ -36,6 +36,8 @@ export type ScheduleReminder = {
   syncStatus: "pending" | "synced" | "failed" | "local_only";
   syncError: string;
   syncAttempts: number;
+  sourceActivityId: number | null;
+  stage: string;
 };
 
 function scheduleReminderFromRow(
@@ -103,6 +105,11 @@ function scheduleReminderFromRow(
       : "pending",
     syncError: String(row.sync_error || ""),
     syncAttempts: Math.max(0, Number(row.sync_attempts) || 0),
+    sourceActivityId:
+      Number.isSafeInteger(Number(row.source_activity_id)) && Number(row.source_activity_id) > 0
+        ? Number(row.source_activity_id)
+        : null,
+    stage: clean(row.stage),
   };
 }
 
@@ -131,6 +138,8 @@ type ReminderRow = {
   google_origin: number;
   sync_error: string;
   sync_attempts: number;
+  source_activity_id: number | null;
+  stage: string;
 };
 
 function hasAssignedManager(value: unknown) {
@@ -181,6 +190,8 @@ SELECT
   COALESCE(s.google_origin, 0) AS google_origin,
   COALESCE(s.sync_error, '') AS sync_error,
   COALESCE(s.sync_attempts, 0) AS sync_attempts,
+  s.source_activity_id,
+  COALESCE(s.stage, '') AS stage,
   source_author.member_id AS source_author_id,
   COALESCE(source_author.created_by_name, '') AS source_author_name,
   COALESCE(latest.award_status, '미정') AS award_status,

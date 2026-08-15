@@ -461,24 +461,35 @@ export default function ProductCatalogPage({
 
   useEffect(() => {
     let active = true;
-    void fetch("/api/product-catalog", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("제품 정보를 불러오지 못했습니다.");
-        return (await response.json()) as {
+    void Promise.all([
+      fetch("/api/product-catalog", { cache: "no-store" }),
+      fetch("/api/quotations?summary=1", { cache: "no-store" }),
+    ])
+      .then(async ([productResponse, quotationResponse]) => {
+        if (!productResponse.ok) throw new Error("제품 정보를 불러오지 못했습니다.");
+        const productData = (await productResponse.json()) as {
           products?: ProductCatalogItem[];
           favoriteProductIds?: string[];
           vendors?: ProductVendorOption[];
         };
+        const quotationData = quotationResponse.ok
+          ? (await quotationResponse.json()) as { totalCount?: number }
+          : {};
+        return { productData, quotationData };
       })
-      .then((data) => {
-        if (active && Array.isArray(data.products) && data.products.length) {
-          setProducts(data.products);
+      .then(({ productData, quotationData }) => {
+        if (active && Array.isArray(productData.products) && productData.products.length) {
+          setProducts(productData.products);
         }
-        if (active && Array.isArray(data.favoriteProductIds)) {
-          setFavoriteProductIds(data.favoriteProductIds);
+        if (active && Array.isArray(productData.favoriteProductIds)) {
+          setFavoriteProductIds(productData.favoriteProductIds);
         }
-        if (active && Array.isArray(data.vendors)) {
-          setVendorOptions(data.vendors);
+        if (active && Array.isArray(productData.vendors)) {
+          setVendorOptions(productData.vendors);
+          setVendorCount(productData.vendors.length);
+        }
+        if (active && Number.isSafeInteger(quotationData.totalCount)) {
+          setQuotationCount(Math.max(0, Number(quotationData.totalCount)));
         }
       })
       .catch((error: unknown) => {

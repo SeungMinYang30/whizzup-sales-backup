@@ -1,7 +1,7 @@
 export const VERCEL_SCHEMA_VERSION =
-  "202608140002_organization_schedule_content";
+  "202608150001_institution_registry";
 export const VERCEL_PREVIOUS_SCHEMA_VERSION =
-  "202608140001_joint_project_identity_repair";
+  "202608140002_organization_schedule_content";
 export const VERCEL_BASE_SCHEMA_VERSION = "202608060007_full_backup_columns";
 
 const COMPLEX_PROJECT_BACKFILL_SQL = `
@@ -305,6 +305,39 @@ REVOKE ALL ON public.youtube_resource_links FROM anon, authenticated;
 REVOKE ALL ON public.youtube_channel_videos FROM anon, authenticated;
 `;
 
+const INSTITUTION_REGISTRY_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS public.institution_registry (
+  organization text PRIMARY KEY,
+  region text NOT NULL DEFAULT '',
+  created_by bigint,
+  created_by_name text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS institution_registry_region_idx
+  ON public.institution_registry (region, organization);
+INSERT INTO public.institution_registry (
+  organization, region, created_by_name, created_at, updated_at
+)
+SELECT
+  organization,
+  COALESCE(MAX(NULLIF(BTRIM(region), '')), ''),
+  '',
+  COALESCE(MIN(created_at), now()),
+  COALESCE(MAX(updated_at), now())
+FROM public.activities
+WHERE BTRIM(COALESCE(organization, '')) <> ''
+GROUP BY organization
+ON CONFLICT (organization) DO UPDATE SET
+  region = CASE
+    WHEN BTRIM(COALESCE(public.institution_registry.region, '')) = ''
+      THEN excluded.region
+    ELSE public.institution_registry.region
+  END,
+  updated_at = GREATEST(public.institution_registry.updated_at, excluded.updated_at);
+REVOKE ALL ON public.institution_registry FROM anon, authenticated;
+`;
+
 export const VERCEL_LOCAL_AUTH_SCHEMA_SQL = `
 ALTER TABLE public.organization_schedules
   ADD COLUMN IF NOT EXISTS content text NOT NULL DEFAULT '';
@@ -341,6 +374,7 @@ ${SITES_V487_SCHEMA_SQL}
 ${COMPLEX_PROJECT_BACKFILL_SQL}
 ${VERCEL_CUTOVER_SCHEMA_SQL}
 ${JOINT_PROJECT_IDENTITY_REPAIR_SQL}
+${INSTITUTION_REGISTRY_SCHEMA_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
@@ -1271,6 +1305,7 @@ ${SITES_V487_SCHEMA_SQL}
 ${COMPLEX_PROJECT_BACKFILL_SQL}
 ${VERCEL_CUTOVER_SCHEMA_SQL}
 ${JOINT_PROJECT_IDENTITY_REPAIR_SQL}
+${INSTITUTION_REGISTRY_SCHEMA_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
@@ -1538,6 +1573,7 @@ ${SITES_V487_SCHEMA_SQL}
 ${COMPLEX_PROJECT_BACKFILL_SQL}
 ${VERCEL_CUTOVER_SCHEMA_SQL}
 ${JOINT_PROJECT_IDENTITY_REPAIR_SQL}
+${INSTITUTION_REGISTRY_SCHEMA_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;

@@ -132,7 +132,7 @@ export async function GET(request: Request) {
           quotationCount: selected.length,
         };
       });
-      return Response.json({ summaries });
+      return Response.json({ summaries, totalCount: latestByRoot.size });
     }
     const consortiumRates = deleted === "active"
       ? latestConsortiumRates(await listAuthoredQuotations({ deleted: "active", member }) as AuthoredQuotation[])

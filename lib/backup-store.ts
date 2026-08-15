@@ -270,6 +270,18 @@ export const BACKUP_TABLES = [
     orderBy: "id",
   },
   {
+    name: "institution_registry",
+    columns: [
+      "organization",
+      "region",
+      "created_by",
+      "created_by_name",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "organization",
+  },
+  {
     name: "activity_authors",
     columns: ["activity_id", "member_id", "created_by_name", "created_at"],
     orderBy: "activity_id",

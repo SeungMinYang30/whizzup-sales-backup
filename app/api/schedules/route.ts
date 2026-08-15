@@ -13,7 +13,6 @@ import {
   listConstructionStageOptions,
   listScheduleCancellationCandidates,
   listOrganizationSchedules,
-  normalizeScheduleSemanticLabel,
   removeConstructionScheduleProject,
   replaceOrganizationSchedules,
   saveConstructionSchedules,
@@ -34,6 +33,7 @@ import {
   reconcileGoogleCalendarRange,
   retryGoogleCalendarSync,
 } from "../../../lib/google-calendar-sync";
+import { mergeCalendarSchedules } from "../../../lib/calendar-schedule-merge";
 
 export const dynamic = "force-dynamic";
 
@@ -77,31 +77,6 @@ function validCalendarDate(value: string) {
   return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-function scheduleDedupeKey(schedule: Record<string, unknown>) {
-  const text = (value: unknown) => String(value || "").trim().toLocaleLowerCase("ko-KR");
-  return [
-    text(schedule.organization),
-    normalizeScheduleSemanticLabel(schedule.organization, schedule.label),
-    text(schedule.scheduledDate),
-    text(schedule.endDate || schedule.scheduledDate),
-    text(schedule.startTime),
-    text(schedule.endTime),
-  ].join("\u001f");
-}
-
-function mergeCalendarSchedules(
-  siteSchedules: Array<Record<string, unknown>>,
-  googleSchedules: Array<Record<string, unknown>>,
-) {
-  const merged = new Map<string, Record<string, unknown>>();
-  siteSchedules.forEach((schedule) => merged.set(scheduleDedupeKey(schedule), schedule));
-  googleSchedules.forEach((schedule) => {
-    const key = scheduleDedupeKey(schedule);
-    if (!merged.has(key)) merged.set(key, schedule);
-  });
-  return [...merged.values()];
-}
-
 export async function GET(request: Request) {
   try {
     const member = await requireApprovedMember();
@@ -131,7 +106,9 @@ export async function GET(request: Request) {
           listCalendarSyncIssues(),
         ]);
         return Response.json({
-          schedules: siteSchedules,
+          schedules: mergeCalendarSchedules(
+            siteSchedules as unknown as Array<Record<string, unknown>>,
+          ),
           currentMember: { id: member.id, displayName: member.displayName, role: member.role },
           syncIssues,
           googleRefreshPending: true,

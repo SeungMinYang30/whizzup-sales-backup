@@ -13,6 +13,22 @@ type TrashItem = {
   expiresAt: string;
 };
 
+type ChangeBatch = {
+  id: string;
+  scopeLabel: string;
+  operationLabel: string;
+  itemCount: number;
+  changedCount: number;
+  conflictCount: number;
+  status: string;
+  undoable: boolean;
+  actorName: string;
+  createdAt: string;
+  undoneAt: string;
+  undoneByName: string;
+  sampleOrganizations: string[];
+};
+
 type Props = {
   onDataChanged: () => void | Promise<void>;
   notify: (message: string) => void;
@@ -84,6 +100,7 @@ export default function TrashPage({
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [changeBatches, setChangeBatches] = useState<ChangeBatch[]>([]);
 
   const filteredItems = useMemo(() => {
     const keyword = query.trim().toLocaleLowerCase("ko-KR");
@@ -100,13 +117,20 @@ export default function TrashPage({
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/trash", { cache: "no-store" });
+      const [response, historyResponse] = await Promise.all([
+        fetch("/api/trash", { cache: "no-store" }),
+        fetch("/api/activity-changes?scope=all&limit=50", { cache: "no-store" }),
+      ]);
       const payload = (await response.json()) as {
         items?: TrashItem[];
         error?: string;
       };
       if (!response.ok) throw new Error(payload.error || "휴지통을 불러오지 못했습니다.");
+      const historyPayload = (await historyResponse.json().catch(() => ({}))) as {
+        batches?: ChangeBatch[];
+      };
       setItems(payload.items || []);
+      if (historyResponse.ok) setChangeBatches(historyPayload.batches || []);
       setSelectedIds([]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "휴지통을 불러오지 못했습니다.");
@@ -285,14 +309,43 @@ export default function TrashPage({
     }
   }
 
+  async function undoChange(batch: ChangeBatch) {
+    if (!batch.undoable || busy) return;
+    if (!window.confirm(`${batch.operationLabel} 작업을 충돌 없는 항목만 되돌릴까요?`)) return;
+    setBusyId(`undo:${batch.id}`);
+    try {
+      const response = await fetch("/api/activity-changes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "undo", batchId: batch.id }),
+      });
+      const payload = (await response.json()) as {
+        error?: string;
+        restoredCount?: number;
+        conflictCount?: number;
+      };
+      if (!response.ok) throw new Error(payload.error || "변경을 되돌리지 못했습니다.");
+      await Promise.all([loadTrash(), onDataChanged()]);
+      notify(
+        `${payload.restoredCount || 0}건을 되돌렸습니다.${
+          payload.conflictCount ? ` 이후 수정된 ${payload.conflictCount}건은 보존했습니다.` : ""
+        }`,
+      );
+    } catch (caught) {
+      notify(caught instanceof Error ? caught.message : "변경을 되돌리지 못했습니다.");
+    } finally {
+      setBusyId("");
+    }
+  }
+
   return (
     <section className="trash-layout">
       <article className="panel trash-panel">
         <div className="panel-header trash-panel-header">
           <div>
             <span className="section-kicker">DATA RECOVERY</span>
-            <h2>삭제된 항목</h2>
-            <p>기관·활동 기록·견적서를 복원합니다. 자동 영구 삭제 없이 관리자가 정리할 때까지 보관됩니다.</p>
+            <h2>복구·변경 이력</h2>
+            <p>삭제 항목은 자동 영구 삭제 없이 복구할 수 있고, 일괄 변경 기록도 한곳에서 확인합니다. 되돌리기는 이후 수정된 값과 충돌하지 않는 항목에만 적용됩니다.</p>
           </div>
           <div className="trash-header-actions">
             {canPermanentlyDelete && (
@@ -431,6 +484,44 @@ export default function TrashPage({
                     </button>
                   )}
                 </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </article>
+      <article className="panel trash-panel change-history-panel">
+        <div className="panel-header trash-panel-header">
+          <div>
+            <span className="section-kicker">CHANGE HISTORY</span>
+            <h2>최근 변경 작업</h2>
+            <p>수주 전·수주 후 일괄 수정과 되돌리기 결과를 최근 순으로 표시합니다.</p>
+          </div>
+        </div>
+        {changeBatches.length === 0 ? (
+          <div className="trash-empty compact"><strong>기록된 일괄 변경이 없습니다.</strong></div>
+        ) : (
+          <div className="change-history-list">
+            {changeBatches.map((batch) => (
+              <article className="change-history-row" key={batch.id}>
+                <div>
+                  <span>{batch.scopeLabel}</span>
+                  <strong>{batch.operationLabel}</strong>
+                  <p>
+                    {batch.actorName} · {formatDate(batch.createdAt)} · 변경 {batch.changedCount.toLocaleString()}건
+                    {batch.sampleOrganizations.length ? ` · ${batch.sampleOrganizations.join(", ")}` : ""}
+                  </p>
+                </div>
+                <div className="change-history-status">
+                  <span>{batch.undoneAt ? `${batch.undoneByName || "관리자"} 되돌림` : batch.status}</span>
+                  {batch.conflictCount > 0 && <small>충돌 {batch.conflictCount}건 보존</small>}
+                </div>
+                <button
+                  type="button"
+                  disabled={!batch.undoable || busy}
+                  onClick={() => void undoChange(batch)}
+                >
+                  {busyId === `undo:${batch.id}` ? "처리 중…" : batch.undoable ? "되돌리기" : "완료"}
+                </button>
               </article>
             ))}
           </div>

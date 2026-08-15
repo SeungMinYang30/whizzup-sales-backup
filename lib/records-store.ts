@@ -123,6 +123,17 @@ const createTableSql = `
   )
 `;
 
+const createInstitutionRegistrySql = `
+  CREATE TABLE IF NOT EXISTS institution_registry (
+    organization TEXT PRIMARY KEY,
+    region TEXT NOT NULL DEFAULT '',
+    created_by INTEGER,
+    created_by_name TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )
+`;
+
 export function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -1177,7 +1188,7 @@ export function resolveAwardManagement(payload: Record<string, unknown>) {
 }
 
 let recordsReadyPromise: Promise<ReturnType<typeof getD1>> | null = null;
-const recordsRuntimeReadyKey = "records_runtime_ready_v75";
+const recordsRuntimeReadyKey = "records_runtime_ready_v76";
 
 async function isRecordsRuntimeReady(d1: ReturnType<typeof getD1>) {
   try {
@@ -1218,10 +1229,37 @@ async function initializeRecords() {
   await ensureCollaborationReady();
   await d1.batch([
     d1.prepare(createTableSql),
+    d1.prepare(createInstitutionRegistrySql),
     d1.prepare(
       "CREATE INDEX IF NOT EXISTS activities_follow_up_idx ON activities (follow_up_required, follow_up_date)",
     ),
   ]);
+
+  await d1.prepare(`
+    INSERT INTO institution_registry (
+      organization, region, created_by_name, created_at, updated_at
+    )
+    SELECT
+      organization,
+      COALESCE(MAX(NULLIF(TRIM(region), '')), ''),
+      '',
+      COALESCE(MIN(created_at), CURRENT_TIMESTAMP),
+      COALESCE(MAX(updated_at), CURRENT_TIMESTAMP)
+    FROM activities
+    WHERE TRIM(COALESCE(organization, '')) <> ''
+    GROUP BY organization
+    ON CONFLICT(organization) DO UPDATE SET
+      region = CASE
+        WHEN TRIM(COALESCE(institution_registry.region, '')) = ''
+          THEN excluded.region
+        ELSE institution_registry.region
+      END,
+      updated_at = CASE
+        WHEN institution_registry.updated_at > excluded.updated_at
+          THEN institution_registry.updated_at
+        ELSE excluded.updated_at
+      END
+  `).run();
 
   const columnInfo = await d1
     .prepare("PRAGMA table_info(activities)")
@@ -1794,6 +1832,20 @@ export async function insertActivity(
       .first<Record<string, unknown>>();
 
     if (!record) throw new Error("기록을 저장하지 못했습니다.");
+    await transaction
+      .prepare(`
+        INSERT INTO institution_registry (
+          organization, region, created_by, created_by_name, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT(organization) DO UPDATE SET
+          region = CASE
+            WHEN TRIM(COALESCE(excluded.region, '')) <> '' THEN excluded.region
+            ELSE institution_registry.region
+          END,
+          updated_at = CURRENT_TIMESTAMP
+      `)
+      .bind(organization, region, member.id, member.displayName)
+      .run();
     if (payload.skipRelatedWrites !== true) {
       await transaction
         .prepare(`

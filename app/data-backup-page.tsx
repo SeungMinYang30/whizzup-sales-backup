@@ -163,7 +163,7 @@ export default function DataBackupPage({
         setStandbySchedule({
           origin: payload.origin || "",
           configured: payload.schedule?.configured === true,
-          schedule: payload.schedule?.schedule || "*/10 * * * *",
+          schedule: payload.schedule?.schedule || "30 19 * * *",
         });
       } catch {
         // The Sites standby intentionally has no scheduler endpoint.
@@ -209,12 +209,13 @@ export default function DataBackupPage({
       setStandbySchedule({
         origin: payload.origin || standbySchedule?.origin || "",
         configured: true,
-        schedule: payload.schedule?.schedule || "*/10 * * * *",
+        schedule: payload.schedule?.schedule || "30 19 * * *",
       });
       setStandbyConnectionKey("");
       setStandbyConflict(false);
       window.dispatchEvent(new Event("whizzup:version-status-refresh"));
-      notify("Sites 대기판 예약과 즉시 동기화를 완료했습니다.");
+      window.dispatchEvent(new Event("whizzup:replicated-data-refreshed"));
+      notify("Sites 대기판 즉시 동기화와 매일 새벽 4시 30분 예약을 완료했습니다.");
     } catch (error) {
       const message =
         error instanceof Error
@@ -408,7 +409,7 @@ export default function DataBackupPage({
           className={activeSection === "trash" ? "active" : ""}
           onClick={() => setActiveSection("trash")}
         >
-          휴지통 복구
+              복구·변경 이력
         </button>
       )}
       {canManageBackup && (
@@ -524,8 +525,8 @@ export default function DataBackupPage({
               <strong>Sites 비상 대기판</strong>
               <p>
                 {standbySchedule.configured
-                  ? "운영 DB를 10분마다 별도 D1 대기판에 복제하고 있습니다."
-                  : "운영 DB를 별도 D1 대기판에 10분마다 복제할 수 있습니다."}
+                  ? "운영 DB를 매일 새벽 4시 30분 별도 D1 대기판에 복제합니다."
+                  : "운영 DB를 별도 D1 대기판에 매일 새벽 4시 30분 복제할 수 있습니다."}
               </p>
               {standbySchedule.origin && <small>{standbySchedule.origin}</small>}
             </div>
@@ -542,7 +543,7 @@ export default function DataBackupPage({
                   ? "동기화 중…"
                   : standbySchedule.configured
                     ? "운영 DB로 지금 맞추기"
-                    : "10분 자동 복제 시작"}
+                    : "매일 04:30 자동 복제"}
               </button>
               <label className="standby-connection-key">
                 <span>연결키 재설정</span>

@@ -138,7 +138,9 @@ test("Supabase sync can only be scheduled after an explicit server-side opt in",
   assert.match(scheduler, /vault\.create_secret/);
   assert.match(scheduler, /vault\.update_secret/);
   assert.match(scheduler, /cron\.schedule/);
-  assert.match(scheduler, /\*\/10 \* \* \* \*/);
+  assert.match(scheduler, /30 19 \* \* \*/);
+  assert.match(scheduler, /whizzup-standby-sync-daily-0430-kst/);
+  assert.match(scheduler, /whizzup-standby-sync-every-10-minutes/);
   assert.match(scheduler, /Authorization/);
   assert.match(scheduler, /body := '\{"force":true\}'::jsonb/);
   assert.match(syncRoute, /export async function DELETE/);
@@ -146,7 +148,7 @@ test("Supabase sync can only be scheduled after an explicit server-side opt in",
   assert.match(scheduler, /cron\.unschedule/);
 });
 
-test("primary owner can schedule the current Sites standby every ten minutes", () => {
+test("primary owner can schedule the current Sites standby daily at 04:30 KST", () => {
   assert.match(scheduleRoute, /requirePrimaryOwner/);
   assert.match(scheduleRoute, /export const maxDuration = 120/);
   assert.match(scheduleRoute, /STANDBY_SITE_ORIGIN/);

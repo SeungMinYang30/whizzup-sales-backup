@@ -733,6 +733,22 @@ export async function mergeInstitutionRecords(
 
   const statements = [
     d1
+      .prepare(`
+        INSERT INTO institution_registry (
+          organization, region, created_by, created_by_name, created_at, updated_at
+        ) VALUES (?, ?, ?, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT(organization) DO UPDATE SET
+          region = CASE
+            WHEN TRIM(COALESCE(excluded.region, '')) <> '' THEN excluded.region
+            ELSE institution_registry.region
+          END,
+          updated_at = CURRENT_TIMESTAMP
+      `)
+      .bind(canonical, preferredRegion, memberId),
+    d1
+      .prepare("DELETE FROM institution_registry WHERE organization = ?")
+      .bind(alias),
+    d1
       .prepare(
         `UPDATE organization_schedules
          SET organization = ?, updated_at = CURRENT_TIMESTAMP

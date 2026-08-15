@@ -8,6 +8,7 @@ import {
 import { removeOriginalGoogleTitleNote } from "../lib/google-calendar-title";
 import { resilientFetch } from "./resilient-fetch";
 import { personDisplayLabel } from "../lib/person-label";
+import { mergeCalendarSchedules } from "../lib/calendar-schedule-merge";
 
 type ScheduleCategory = "sales" | "meeting" | "construction" | "showroom" | "other" | "personal" | "google";
 type CalendarFilter = "all" | ScheduleCategory;
@@ -34,6 +35,9 @@ type HomeCalendarSchedule = {
   googleOrigin?: boolean;
   googleEventId?: string;
   suggestedCategory?: "sales" | "meeting" | "construction" | "showroom" | "other";
+  sourceActivityId?: number | null;
+  originScheduleId?: number | null;
+  stage?: string;
 };
 type SyncIssue = { id: number; label: string; organization: string; operation: "upsert" | "delete" | "unlink"; error: string; attempts: number };
 type Institution = {
@@ -253,7 +257,9 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
     };
     const applyPayload = (payload: Awaited<ReturnType<typeof requestCalendar>>) => {
       if (!active) return;
-        setSchedules(Array.isArray(payload.schedules) ? payload.schedules : []);
+        setSchedules(mergeCalendarSchedules(
+          Array.isArray(payload.schedules) ? payload.schedules : [],
+        ));
         if (payload.currentMember) setCurrentMember(payload.currentMember);
         if (typeof payload.googleCalendarConfigured === "boolean") {
           setGoogleState({
@@ -295,6 +301,12 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
     })();
     return () => { active = false; controller.abort(); };
   }, [rangeEnd, rangeStart, refreshVersion, reloadVersion, shouldReconcileGoogle]);
+
+  useEffect(() => {
+    const refreshReplicatedData = () => setReloadVersion((value) => value + 1);
+    window.addEventListener("whizzup:replicated-data-refreshed", refreshReplicatedData);
+    return () => window.removeEventListener("whizzup:replicated-data-refreshed", refreshReplicatedData);
+  }, []);
 
   useEffect(() => {
     const query = editor.organizationQuery.trim();
