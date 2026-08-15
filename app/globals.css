@@ -5411,15 +5411,26 @@ tr:hover .row-actions { opacity: 1; }
 
 /* 관리자 데이터 백업·복구 */
 .standby-replication-control {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  align-items: start;
+  gap: 16px 24px;
   margin-top: 14px;
   padding: 14px 16px;
   border: 1px solid #cde8dc;
   border-radius: 14px;
   background: #f3fbf7;
+}
+
+.standby-replication-actions {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.standby-replication-actions > button {
+  width: 100%;
+  min-height: 42px;
 }
 
 .standby-replication-control p {
@@ -5436,7 +5447,7 @@ tr:hover .row-actions { opacity: 1; }
 .standby-connection-key {
   display: grid;
   gap: 4px;
-  min-width: 190px;
+  min-width: 0;
   color: #52647a;
   font-size: 12px;
 }
@@ -5452,8 +5463,7 @@ tr:hover .row-actions { opacity: 1; }
 
 @media (max-width: 720px) {
   .standby-replication-control {
-    align-items: stretch;
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 }
 .backup-layout {

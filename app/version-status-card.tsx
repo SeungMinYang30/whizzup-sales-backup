@@ -90,6 +90,13 @@ export default function VersionStatusCard() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const refresh = () => void load();
+    window.addEventListener("whizzup:version-status-refresh", refresh);
+    return () =>
+      window.removeEventListener("whizzup:version-status-refresh", refresh);
+  }, [load]);
+
   const featureSynced = Boolean(
     vercel &&
       sites &&

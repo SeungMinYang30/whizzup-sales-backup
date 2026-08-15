@@ -120,7 +120,7 @@ export async function configureStandbySchedule(input: {
           LIMIT 1
         )
       ),
-      body := '{}'::jsonb,
+      body := '{"force":true}'::jsonb,
       timeout_milliseconds := 60000
     );
   `;

@@ -34,6 +34,9 @@ test("backup page renders a compact release status before backup actions", () =>
   assert.match(control, /confirmation\.trim\(\) !== expected/);
   assert.match(component, /vercel\.upstreamVercelCommit === sites\.upstreamVercelCommit/);
   assert.match(component, /replicationAgeMinutes <= 30/);
+  assert.match(component, /whizzup:version-status-refresh/);
+  assert.match(control, /activationBlockers/);
+  assert.match(control, /최종 동기화 후 Sites 전환/);
 });
 
 test("continuity controls fold into full-width mobile actions", () => {
@@ -50,6 +53,9 @@ test("version status layout folds without horizontal overflow", () => {
 test("standby conflicts expose an owner-confirmed mobile-safe reset action", () => {
   assert.match(backupPage, /운영 DB로 다시 맞추기/);
   assert.match(backupPage, /configureStandbyReplication\(true\)/);
+  assert.match(backupPage, /configureStandbyReplication\(standbySchedule\.configured\)/);
+  assert.match(backupPage, /운영 DB로 지금 맞추기/);
+  assert.match(styles, /\.standby-replication-control\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\) minmax\(220px, 300px\)/);
   assert.match(styles, /\.backup-error-action\s*\{[\s\S]*display: flex/);
   assert.match(
     styles,

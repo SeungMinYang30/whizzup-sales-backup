@@ -68,10 +68,13 @@ export default function ContinuityControlCard({
   const activeLabel = readiness?.mode === "sites" ? "Sites 대기판" : "Vercel 운영판";
   const nextAction: CutoverAction =
     readiness?.mode === "sites" ? "return-vercel" : "activate-sites";
+  const activationBlockers = (readiness?.blockers ?? []).filter(
+    (blocker) => !blocker.includes("최종 동기화 성공 기록"),
+  );
   const actionReady = Boolean(
     readiness?.gateway.ready &&
       !readiness.transition &&
-      (nextAction === "return-vercel" || readiness.ready),
+      (nextAction === "return-vercel" || activationBlockers.length === 0),
   );
 
   async function submit() {
@@ -175,7 +178,7 @@ export default function ContinuityControlCard({
             }}
           >
             {nextAction === "activate-sites"
-              ? "Sites로 비상 전환"
+              ? "최종 동기화 후 Sites 전환"
               : "Vercel로 정상 복귀"}
           </button>
           <button

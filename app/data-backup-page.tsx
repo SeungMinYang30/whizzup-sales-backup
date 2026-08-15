@@ -213,6 +213,7 @@ export default function DataBackupPage({
       });
       setStandbyConnectionKey("");
       setStandbyConflict(false);
+      window.dispatchEvent(new Event("whizzup:version-status-refresh"));
       notify("Sites 대기판 예약과 즉시 동기화를 완료했습니다.");
     } catch (error) {
       const message =
@@ -528,29 +529,33 @@ export default function DataBackupPage({
               </p>
               {standbySchedule.origin && <small>{standbySchedule.origin}</small>}
             </div>
-            <button
-              type="button"
-              className={standbySchedule.configured ? "ghost-button" : "primary-button"}
-              disabled={Boolean(busy)}
-              onClick={() => void configureStandbyReplication()}
-            >
-              {busy === "configure-standby"
-                ? "동기화 중…"
-                : standbySchedule.configured
-                  ? "지금 동기화"
-                  : "10분 자동 복제 시작"}
-            </button>
-            <label className="standby-connection-key">
-              <span>연결키 재설정</span>
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={standbyConnectionKey}
-                placeholder="필요할 때만 입력"
+            <div className="standby-replication-actions">
+              <button
+                type="button"
+                className={standbySchedule.configured ? "ghost-button" : "primary-button"}
                 disabled={Boolean(busy)}
-                onChange={(event) => setStandbyConnectionKey(event.target.value)}
-              />
-            </label>
+                onClick={() =>
+                  void configureStandbyReplication(standbySchedule.configured)
+                }
+              >
+                {busy === "configure-standby"
+                  ? "동기화 중…"
+                  : standbySchedule.configured
+                    ? "운영 DB로 지금 맞추기"
+                    : "10분 자동 복제 시작"}
+              </button>
+              <label className="standby-connection-key">
+                <span>연결키 재설정</span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={standbyConnectionKey}
+                  placeholder="필요할 때만 입력"
+                  disabled={Boolean(busy)}
+                  onChange={(event) => setStandbyConnectionKey(event.target.value)}
+                />
+              </label>
+            </div>
           </div>
         )}
         {standbyScheduleError && (

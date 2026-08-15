@@ -140,6 +140,7 @@ test("Supabase sync can only be scheduled after an explicit server-side opt in",
   assert.match(scheduler, /cron\.schedule/);
   assert.match(scheduler, /\*\/10 \* \* \* \*/);
   assert.match(scheduler, /Authorization/);
+  assert.match(scheduler, /body := '\{"force":true\}'::jsonb/);
   assert.match(syncRoute, /export async function DELETE/);
   assert.match(scheduler, /removeStandbySchedule/);
   assert.match(scheduler, /cron\.unschedule/);
