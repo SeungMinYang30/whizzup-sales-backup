@@ -8048,7 +8048,11 @@ export default function CrmApp({
       ) {
         return false;
       }
-      if (awardFilter !== "전체 수주" && record.awardStatus !== awardFilter) return false;
+      if (
+        view === "awards" &&
+        awardFilter !== "전체 수주" &&
+        record.awardStatus !== awardFilter
+      ) return false;
       if (
         view === "awards" &&
         awardExecutionFilter !== "전체 사업방식" &&
@@ -8484,10 +8488,6 @@ export default function CrmApp({
               record.followUpDate <= followupAlertEndValue,
           ),
       )
-      .filter(
-        ({ record }) =>
-          awardFilter === "전체 수주" || record.awardStatus === awardFilter,
-      )
       .filter(({ record }) =>
         matchesStandardBudgetFilter(
           record,
@@ -8538,7 +8538,6 @@ export default function CrmApp({
     preAwardInstitutionRows,
     typeFilter,
     statusFilter,
-    awardFilter,
     budgetGroupFilter,
     budgetReviewCatalog,
     followupSort,
@@ -8720,7 +8719,17 @@ export default function CrmApp({
     },
     [records, detailOrganization],
   );
-  const detailBaseRecord = detailLatest ?? detailCampaignRegistration;
+  const detailRegistryRecord = useMemo(() => {
+    const detailOrganizationKey = institutionAliasKey(detailOrganization);
+    return detailOrganizationKey
+      ? institutionMasterRows.find(
+          (record) =>
+            institutionAliasKey(record.organization) === detailOrganizationKey,
+        ) ?? null
+      : null;
+  }, [detailOrganization, institutionMasterRows]);
+  const detailBaseRecord =
+    detailLatest ?? detailCampaignRegistration ?? detailRegistryRecord;
   const detailQuoteSummary = detailBaseRecord
     ? equipmentQuoteSummaryForRecord(detailBaseRecord)
     : undefined;
@@ -13379,28 +13388,7 @@ export default function CrmApp({
     ) {
       return;
     }
-    let resolvedBusinessRound = form.businessRound;
-    if (!editingId) {
-      const organizationKey = institutionAliasKey(form.organization);
-      const organizationRecords = records.filter(
-        (record) =>
-          institutionAliasKey(record.organization) === organizationKey &&
-          !isPdfCampaignRegistration(record),
-      );
-      const completedRounds = new Set(
-        organizationRecords
-          .filter((record) => isCompletedAwardStage(record.awardStage))
-          .map((record) => Math.max(1, record.businessRound)),
-      );
-      const latestCompletedRound = Math.max(0, ...completedRounds);
-      if (latestCompletedRound > 0 && resolvedBusinessRound <= latestCompletedRound) {
-        const reusableActiveRound = organizationRecords
-          .map((record) => Math.max(1, record.businessRound))
-          .filter((round) => round > latestCompletedRound && !completedRounds.has(round))
-          .sort((left, right) => left - right)[0];
-        resolvedBusinessRound = reusableActiveRound ?? latestCompletedRound + 1;
-      }
-    }
+    const resolvedBusinessRound = form.businessRound;
     try {
       setSaving(true);
       const formWithBudgetAmount: FormState = formBudgetStandardizationExcluded
@@ -18814,17 +18802,6 @@ export default function CrmApp({
                   <option value="unclassified">미분류 예산</option>
                 </select>
                 <select
-                  value={awardFilter}
-                  onChange={(event) => setAwardFilter(event.target.value)}
-                  aria-label="수주 결과 필터"
-                >
-                  <option value="전체 수주">전체</option>
-                  <option>위즈업 수주</option>
-                  <option>협력사 수주</option>
-                  <option>타업체 수주</option>
-                  <option>미정</option>
-                </select>
-                <select
                   className="sort-select"
                   value={followupSort}
                   onChange={(event) => setFollowupSort(event.target.value)}
@@ -18839,7 +18816,6 @@ export default function CrmApp({
                 </select>
                 {(search ||
                   budgetGroupFilter !== "all" ||
-                  awardFilter !== "전체 수주" ||
                   followupSort !== "activity-desc" ||
                   followupDueSoonOnly) && (
                   <button
@@ -18847,7 +18823,6 @@ export default function CrmApp({
                     onClick={() => {
                       setSearch("");
                       setBudgetGroupFilter("all");
-                      setAwardFilter("전체 수주");
                       setFollowupSort("activity-desc");
                       setFollowupDueSoonOnly(false);
                     }}
@@ -20256,7 +20231,9 @@ export default function CrmApp({
                   {detailDisplayRecord.region || "지역 미입력"} ·{" "}
                   {detailLatest
                     ? `${detailHistory.length}건의 컨택 기록`
-                    : "캠페인 대상 등록 · 아직 컨택 기록 없음"}
+                    : detailCampaignRegistration
+                      ? "캠페인 대상 등록 · 아직 컨택 기록 없음"
+                      : "기관 등록 · 아직 컨택 기록 없음"}
                   {detailShellOrganization !== detailOrganization
                     ? ` · 현재 보기 ${detailOrganization}`
                     : ""}

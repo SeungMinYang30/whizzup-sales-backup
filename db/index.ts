@@ -372,17 +372,29 @@ export function normalizeSqlForPostgres(query: string) {
   }
 
   const tableInfo = query.match(
-    /^\s*PRAGMA\s+table_info\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*;?\s*$/i,
+    /^\s*PRAGMA\s+table_info\(\s*(?:"([A-Za-z_][A-Za-z0-9_]*)"|([A-Za-z_][A-Za-z0-9_]*))\s*\)\s*;?\s*$/i,
   );
   if (tableInfo) {
+    const tableName = tableInfo[1] || tableInfo[2];
     return `SELECT
       column_name AS name,
       data_type AS type,
       CASE WHEN is_nullable = 'NO' THEN 1 ELSE 0 END AS notnull,
       column_default AS dflt_value,
-      CASE WHEN position('nextval' in COALESCE(column_default, '')) > 0 THEN 1 ELSE 0 END AS pk
-    FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = '${tableInfo[1]}'
+      CASE WHEN EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+          ON tc.constraint_name = kcu.constraint_name
+         AND tc.table_schema = kcu.table_schema
+         AND tc.table_name = kcu.table_name
+        WHERE tc.constraint_type = 'PRIMARY KEY'
+          AND tc.table_schema = columns.table_schema
+          AND tc.table_name = columns.table_name
+          AND kcu.column_name = columns.column_name
+      ) THEN 1 ELSE 0 END AS pk
+    FROM information_schema.columns AS columns
+    WHERE table_schema = 'public' AND table_name = '${tableName}'
     ORDER BY ordinal_position`;
   }
 

@@ -19,6 +19,10 @@ test("trash supports selected restore, selected delete, and guarded empty all", 
     new URL("../lib/trash-store.ts", import.meta.url),
     "utf8",
   );
+  const database = readFileSync(
+    new URL("../db/index.ts", import.meta.url),
+    "utf8",
+  );
 
   assert.match(page, /selectedIds/);
   assert.match(page, /선택 복구/);
@@ -48,4 +52,8 @@ test("trash supports selected restore, selected delete, and guarded empty all", 
   );
   assert.match(styles, /\.trash-selection-bar/);
   assert.match(styles, /Readability pass/);
+  assert.match(database, /const tableName = tableInfo\[1\] \|\| tableInfo\[2\]/);
+  assert.match(database, /information_schema\.table_constraints/);
+  assert.match(database, /tc\.constraint_type = 'PRIMARY KEY'/);
+  assert.match(database, /\?:"\(\[A-Za-z_\]/);
 });

@@ -1513,7 +1513,6 @@ export async function insertActivity(
     Number.isSafeInteger(requestedBusinessRound) && requestedBusinessRound > 0
       ? Math.min(99, requestedBusinessRound)
       : 1;
-  const originallyRequestedBusinessRound = businessRound;
   let startsFreshBusiness = false;
   if (!lightweightSystemRecord) {
     const roundRows = await d1
@@ -1531,21 +1530,13 @@ export async function insertActivity(
         .map((row) => Math.max(1, Number(row.businessRound) || 1)),
     );
     const latestCompletedRound = Math.max(0, ...completedRounds);
-    if (latestCompletedRound > 0 && businessRound <= latestCompletedRound) {
-      const reusableActiveRound = (roundRows.results ?? [])
-        .map((row) => Math.max(1, Number(row.businessRound) || 1))
-        .filter((round) => round > latestCompletedRound && !completedRounds.has(round))
-        .sort((left, right) => left - right)[0];
-      businessRound = reusableActiveRound ?? Math.min(99, latestCompletedRound + 1);
-      startsFreshBusiness = reusableActiveRound === undefined;
-    } else if (latestCompletedRound > 0 && businessRound > latestCompletedRound) {
+    if (latestCompletedRound > 0 && businessRound > latestCompletedRound) {
       startsFreshBusiness = !(roundRows.results ?? []).some(
         (row) => Math.max(1, Number(row.businessRound) || 1) === businessRound,
       );
     }
   }
-  const advancedFromCompletedBusiness = businessRound > originallyRequestedBusinessRound;
-  if (advancedFromCompletedBusiness || startsFreshBusiness) {
+  if (startsFreshBusiness) {
     // A later inquiry must start a fresh opportunity.  Do not carry a completed
     // result/stage from the prior business merely because an older client sent it.
     payload = {

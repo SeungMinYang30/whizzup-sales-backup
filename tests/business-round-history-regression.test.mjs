@@ -12,10 +12,13 @@ const repairRoute = await readFile(
   "utf8",
 );
 
-test("a new record after a completed business reuses one active next round or creates exactly one", () => {
-  assert.match(client, /latestCompletedRound[\s\S]*reusableActiveRound[\s\S]*latestCompletedRound \+ 1/);
-  assert.match(store, /latestCompletedRound[\s\S]*reusableActiveRound[\s\S]*latestCompletedRound \+ 1/);
-  assert.match(store, /advancedFromCompletedBusiness[\s\S]*awardStatus: "[^"]+"[\s\S]*awardStage: "[^"]+"/);
+test("완료된 사업의 후속 기록은 요청한 차수를 유지하고 명시한 새 차수만 신규 사업으로 시작한다", () => {
+  assert.match(client, /const resolvedBusinessRound = form\.businessRound/);
+  assert.doesNotMatch(client, /resolvedBusinessRound = reusableActiveRound/);
+  assert.match(store, /businessRound > latestCompletedRound/);
+  assert.match(store, /if \(startsFreshBusiness\)[\s\S]*awardStatus: "[^"]+"[\s\S]*awardStage: "[^"]+"/);
+  assert.doesNotMatch(store, /businessRound = reusableActiveRound/);
+  assert.doesNotMatch(store, /latestCompletedRound \+ 1/);
 });
 
 test("activity history deletion removes optional children before the parent and reports the server error", () => {
