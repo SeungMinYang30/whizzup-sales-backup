@@ -20,7 +20,10 @@ function serverValue(name: string) {
 
 async function syncSecret(request?: Request) {
   const body = request
-    ? ((await request.json().catch(() => null)) as { syncSecret?: unknown } | null)
+    ? ((await request.json().catch(() => null)) as {
+        syncSecret?: unknown;
+        force?: unknown;
+      } | null)
     : null;
   const requested =
     typeof body?.syncSecret === "string" ? body.syncSecret.trim() : "";
@@ -34,7 +37,7 @@ async function syncSecret(request?: Request) {
   if (!secret) {
     throw new Error("Standby replication secret is not configured");
   }
-  return secret;
+  return { secret, force: body?.force === true };
 }
 
 function standbyOrigin() {
@@ -61,7 +64,7 @@ export async function POST(request: Request) {
   try {
     await requirePrimaryOwner();
     const origin = standbyOrigin();
-    const secret = await syncSecret(request);
+    const { secret, force } = await syncSecret(request);
     const schedule = await configureStandbySchedule({
       syncUrl: `${origin}/api/standby-sync`,
       syncSecret: secret,
@@ -72,7 +75,7 @@ export async function POST(request: Request) {
         Authorization: `Bearer ${secret}`,
         "Content-Type": "application/json",
       },
-      body: "{}",
+      body: JSON.stringify({ force }),
       cache: "no-store",
       signal: AbortSignal.timeout(90_000),
     });
