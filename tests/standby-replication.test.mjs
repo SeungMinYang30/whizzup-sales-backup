@@ -154,6 +154,8 @@ test("primary owner can schedule the current Sites standby every ten minutes", (
   assert.match(scheduleRoute, /STANDBY_EXPORT_SECRET/);
   assert.match(scheduleRoute, /fetch\(`\$\{origin\}\/api\/standby-sync`/);
   assert.match(scheduleRoute, /AbortSignal\.timeout\(90_000\)/);
+  assert.match(scheduleRoute, /upstreamStatus: syncResponse\.status/);
+  assert.match(scheduleRoute, /\{ status: 200 \}/);
   assert.match(scheduleRoute, /getStoredStandbySyncSecret/);
   assert.match(scheduleRoute, /syncSecret\?: unknown/);
   assert.match(scheduleRoute, /force\?: unknown/);

@@ -90,11 +90,12 @@ export async function POST(request: Request) {
           origin,
           schedule,
           sync,
+          upstreamStatus: syncResponse.status,
           error:
             sync?.error ||
             `대기판 즉시 동기화가 HTTP ${syncResponse.status}로 실패했습니다.`,
         },
-        { status: 502 },
+        { status: 200 },
       );
     }
     return Response.json({ ok: true, origin, schedule, sync });
