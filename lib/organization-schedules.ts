@@ -658,17 +658,25 @@ export async function listOrganizationSchedules(
   return listStoredOrganizationSchedules(organization, businessRound);
 }
 
-export async function listConstructionStageOptions() {
+export async function listConstructionStageOptions(
+  organizationValue?: unknown,
+  businessRoundValue?: unknown,
+) {
+  const organization = clean(organizationValue).slice(0, 120);
+  const businessRound = Math.max(1, Number(businessRoundValue) || 1);
+  if (!organization) return [...CONSTRUCTION_STAGES];
   const d1 = await ensureOrganizationSchedulesReady();
   const result = await d1.prepare(
     `SELECT DISTINCT TRIM(COALESCE(NULLIF(stage, ''), label)) AS stage
      FROM organization_schedules
      WHERE category = 'construction'
+       AND organization = ?
+       AND business_round = ?
        AND TRIM(COALESCE(deleted_at, '')) = ''
        AND TRIM(COALESCE(NULLIF(stage, ''), label)) <> ''
      ORDER BY stage COLLATE NOCASE ASC
      LIMIT 100`,
-  ).all<{ stage: string }>();
+  ).bind(organization, businessRound).all<{ stage: string }>();
   return [...new Set([
     ...CONSTRUCTION_STAGES,
     ...result.results.map((row) => clean(row.stage).slice(0, 40)).filter(Boolean),

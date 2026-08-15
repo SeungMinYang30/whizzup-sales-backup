@@ -2084,4 +2084,75 @@
   .product-workspace-tabs button { min-width: 0 !important; }
   .manager-inspection-table,
   .team-work-table { min-width: 0; }
+
+  /* Post-award records stay compact: no desktop column widths or auto-created blank rows. */
+  .awards-table tr {
+    grid-template-columns: 32px minmax(0, 1fr) minmax(92px, .55fr);
+    grid-auto-rows: auto;
+    align-items: start;
+    gap: 6px 9px;
+    margin: 7px 8px;
+    padding: 10px;
+  }
+  .awards-table td { width: auto !important; min-height: 0; }
+  .awards-table td:nth-child(1) { grid-column: 1; grid-row: 1 / span 2; }
+  .awards-table td:nth-child(3) { grid-column: 2; grid-row: 1; }
+  .awards-table td:nth-child(5) { grid-column: 2 / -1; grid-row: 2; }
+  .awards-table td:nth-child(6) { grid-column: 2 / -1; grid-row: 3; }
+  .awards-table td:nth-child(7) { grid-column: 2 / -1; grid-row: 4; }
+  .awards-table td:nth-child(8) { grid-column: 2; grid-row: 5; }
+  .awards-table td:nth-child(11) { grid-column: 3; grid-row: 5; }
+  .awards-table td:nth-child(12) { grid-column: 2 / -1; grid-row: 6; }
+  .awards-table td:nth-child(2),
+  .awards-table td:nth-child(4),
+  .awards-table td:nth-child(9),
+  .awards-table td:nth-child(10) { display: none; }
+  .awards-table .award-stage-cell {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  /* The destructive action must remain fully visible above the mobile safe area. */
+  .home-schedule-editor .schedule-editor-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 7px;
+    padding-bottom: max(4px, env(safe-area-inset-bottom));
+  }
+  .home-schedule-editor .schedule-editor-actions .schedule-editor-action-spacer {
+    display: none;
+  }
+  .home-schedule-editor .schedule-editor-actions button {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    white-space: normal;
+  }
+
+  /* Four quotation actions share one row without the cancel button being clipped. */
+  .quote-studio-topbar nav {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    overflow: visible;
+  }
+  .quote-studio-topbar .quote-topbar-action-group { display: contents; }
+  .quote-studio-topbar button {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 5px;
+    border-radius: 9px;
+    box-shadow: none;
+    font-size: 10px;
+    line-height: 1.2;
+    white-space: normal;
+  }
+  .quote-studio-topbar .quote-topbar-cancel {
+    border-color: #cfd8e7;
+    background: #fff;
+    color: #34445f;
+  }
 }

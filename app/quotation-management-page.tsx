@@ -2538,7 +2538,7 @@ export default function QuotationManagementPage({
             </div>
             <div className="quote-topbar-action-group quote-topbar-navigation-actions">
               {institutions.some((item) => item.organization === draft.organization && item.businessRound === draft.businessRound) && <button className="app-button app-button-secondary" type="button" onClick={() => { closeEditor(); onOpenOrganization?.(draft.organization, draft.businessRound); }}>기관 상세 보기</button>}
-              <button className="app-button app-button-neutral" type="button" onClick={closeEditor}>취소</button>
+              <button className="app-button app-button-neutral quote-topbar-cancel" type="button" onClick={closeEditor}>취소</button>
             </div>
             <div className="quote-topbar-action-group quote-topbar-save-actions">
               {draft.id && draft.status === "final"

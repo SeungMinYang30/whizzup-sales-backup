@@ -219,16 +219,44 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
   }, [editorOpen, members.length]);
 
   useEffect(() => {
-    void fetch("/api/schedules?scope=construction-stages", { cache: "no-store" })
+    if (
+      !editorOpen ||
+      editor.kind !== "시공" ||
+      !editor.linked ||
+      !editor.organization.trim()
+    ) {
+      setConstructionStages([...CONSTRUCTION_STAGES]);
+      return;
+    }
+    let active = true;
+    const params = new URLSearchParams({
+      scope: "construction-stages",
+      organization: editor.organization,
+      businessRound: String(Math.max(1, editor.businessRound || 1)),
+    });
+    void fetch(`/api/schedules?${params.toString()}`, { cache: "no-store" })
       .then((response) => response.json())
       .then((payload: { stages?: unknown[] }) => {
+        if (!active) return;
         const stages = Array.isArray(payload.stages)
           ? payload.stages.map((stage) => String(stage || "").trim()).filter(Boolean)
           : [];
-        if (stages.length) setConstructionStages(stages);
+        setConstructionStages(stages.length ? stages : [...CONSTRUCTION_STAGES]);
       })
-      .catch(() => undefined);
-  }, [reloadVersion]);
+      .catch(() => {
+        if (active) setConstructionStages([...CONSTRUCTION_STAGES]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    editor.businessRound,
+    editor.kind,
+    editor.linked,
+    editor.organization,
+    editorOpen,
+    reloadVersion,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -799,7 +827,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
             <small className="home-schedule-link-note">{editor.linked ? editor.kind === "시공" ? "시공·납품 일정표와 기관 상세의 예정 일정에 연결됩니다." : "기관 상세의 예정 일정에 연결됩니다." : editor.kind === "시공" ? "시공 일정은 기존 기관을 선택해야 하며, 일정표 미등록 기관은 저장할 때 등록 여부를 확인합니다." : editor.googleEventId ? "추천 기관을 선택한 뒤 연결할 수 있습니다." : editor.kind === "영업" ? "영업 일정은 기존 기관을 선택하거나 새 기관으로 등록해야 합니다." : "회의·쇼룸·기타·내 일정은 기관 연결 또는 자유 장소 입력이 모두 가능합니다."}</small>
             {!editor.linked && editor.kind !== "시공" && editor.organizationQuery.trim().length >= 2 ? <div className="home-schedule-institution-create"><button type="button" className="schedule-create-institution" disabled={institutionCreating || saving} onClick={() => void createInstitution()}>{institutionCreating ? "기관 등록 중…" : "+ 새 기관 등록 후 연결"}</button></div> : null}
           </div>
-          {editor.kind === "시공" ? <label>시공 공정 <b>*</b><input list="construction-stage-options" maxLength={40} value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))} placeholder="목록에서 선택하거나 공정명 직접 입력" /><datalist id="construction-stage-options">{constructionStages.map((stage) => <option key={stage} value={stage} />)}</datalist><small>목록에 없어도 직접 입력하면 저장 후 다음 선택부터 재사용됩니다.</small></label> : <label>일정 제목 <b>*</b><input value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))} placeholder="예: 담당자 방문 미팅" /></label>}
+          {editor.kind === "시공" ? <label>시공 공정 <b>*</b><input list="construction-stage-options" maxLength={40} value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))} placeholder="목록에서 선택하거나 공정명 직접 입력" /><datalist id="construction-stage-options">{constructionStages.map((stage) => <option key={stage} value={stage} />)}</datalist><small>해당 기관에서 직접 입력한 공정만 다음 선택부터 재사용됩니다.</small></label> : <label>일정 제목 <b>*</b><input value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))} placeholder="예: 담당자 방문 미팅" /></label>}
           <label>내용 <small>Google 일정 설명에 표시됩니다.</small><textarea value={editor.content} maxLength={500} rows={3} onChange={(event) => setEditor((current) => ({ ...current, content: event.target.value }))} placeholder="방문 목적이나 주요 내용을 입력해 주세요." /></label>
           <label>일정 담당자 <b>*</b><select value={editor.assigneeMemberId || ""} onChange={(event) => changeAssignee(event.target.value)}><option value="">담당자 선택</option>{members.map((member) => <option key={member.id} value={member.id}>{personDisplayLabel(member)}</option>)}</select></label>
           <div className="home-schedule-date-grid"><label>날짜 <b>*</b><input type="date" value={editor.scheduledDate} onChange={(event) => setEditor((current) => ({ ...current, scheduledDate: event.target.value }))} /></label>
@@ -809,7 +837,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
           <label>메모 <small>선택 입력 · 비어 있으면 Google 일정에 표시되지 않습니다.</small><textarea value={editor.details} maxLength={500} rows={4} onChange={(event) => setEditor((current) => ({ ...current, details: event.target.value }))} placeholder="추가로 남길 메모가 있을 때만 입력해 주세요." /></label>
           {editor.scheduleId ? <label className="schedule-completed"><input type="checkbox" checked={editor.completed} onChange={(event) => setEditor((current) => ({ ...current, completed: event.target.checked }))} /> 이 일정을 완료 상태로 지정</label> : null}
           {editorError ? <div className="home-calendar-error" role="alert">{editorError}</div> : null}
-          <footer>{editor.scheduleId ? <button type="button" className="danger-button" onClick={() => void deleteSchedule()}>사이트에서 삭제</button> : null}{linkedDetailAvailable ? <button type="button" onClick={() => { setEditorOpen(false); onOpenOrganization(editor.organization, editor.businessRound); }}>기관 상세 보기</button> : null}<span /><button type="button" disabled={institutionCreating || saving} onClick={() => setEditorOpen(false)}>취소</button><button type="button" className="primary-button" disabled={institutionCreating || saving || !editor.title.trim() || !editor.organizationQuery.trim() || !editor.assigneeMemberId || ((editor.kind === "영업" || editor.kind === "시공" || Boolean(editor.googleEventId)) && !editor.linked)} onClick={() => void saveSchedule()}>{saving ? "저장 중" : editor.syncError === GOOGLE_EVENT_DELETED_SYNC_ERROR ? "Google에 다시 연결" : editor.googleEventId ? "이대로 연결" : "저장"}</button></footer>
+          <footer className="schedule-editor-actions">{editor.scheduleId ? <button type="button" className="danger-button mobile-short-label" data-mobile-label="삭제" onClick={() => void deleteSchedule()}><span>사이트에서 삭제</span></button> : null}{linkedDetailAvailable ? <button type="button" className="mobile-short-label" data-mobile-label="기관 보기" onClick={() => { setEditorOpen(false); onOpenOrganization(editor.organization, editor.businessRound); }}><span>기관 상세 보기</span></button> : null}<span className="schedule-editor-action-spacer" /><button type="button" disabled={institutionCreating || saving} onClick={() => setEditorOpen(false)}>취소</button><button type="button" className="primary-button" disabled={institutionCreating || saving || !editor.title.trim() || !editor.organizationQuery.trim() || !editor.assigneeMemberId || ((editor.kind === "영업" || editor.kind === "시공" || Boolean(editor.googleEventId)) && !editor.linked)} onClick={() => void saveSchedule()}>{saving ? "저장 중" : editor.syncError === GOOGLE_EVENT_DELETED_SYNC_ERROR ? "Google에 다시 연결" : editor.googleEventId ? "이대로 연결" : "저장"}</button></footer>
         </div>
       </div> : null}
 

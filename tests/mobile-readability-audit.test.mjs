@@ -33,3 +33,17 @@ test("mobile workspaces use cards or explicit internal scrolling instead of page
   assert.match(audit, /\.resource-post-card[\s\S]*border-radius: 12px/);
   assert.match(audit, /\.accounting-table th:first-child[\s\S]*position: sticky/);
 });
+
+test("post-award cards and modal action bars are compact and fully visible", async () => {
+  const [styles, calendar, quotation] = await Promise.all([
+    read("../app/readability.css"),
+    read("../app/home-calendar.tsx"),
+    read("../app/quotation-management-page.tsx"),
+  ]);
+  const finalMobile = styles.slice(styles.lastIndexOf("@media (max-width: 760px)"));
+  assert.match(finalMobile, /\.awards-table td:nth-child\(12\)[\s\S]*grid-row: 6/);
+  assert.match(finalMobile, /\.schedule-editor-actions[\s\S]*grid-template-columns: repeat\(2/);
+  assert.match(finalMobile, /\.quote-studio-topbar nav[\s\S]*grid-template-columns: repeat\(4/);
+  assert.match(calendar, /data-mobile-label="삭제"/);
+  assert.match(quotation, /quote-topbar-cancel/);
+});

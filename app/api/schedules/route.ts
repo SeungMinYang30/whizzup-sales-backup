@@ -85,7 +85,12 @@ export async function GET(request: Request) {
       return Response.json(await listConstructionScheduleBoard());
     }
     if (url.searchParams.get("scope") === "construction-stages") {
-      return Response.json({ stages: await listConstructionStageOptions() });
+      return Response.json({
+        stages: await listConstructionStageOptions(
+          url.searchParams.get("organization"),
+          url.searchParams.get("businessRound"),
+        ),
+      });
     }
     if (url.searchParams.get("scope") === "calendar") {
       const start = url.searchParams.get("start") ?? "";

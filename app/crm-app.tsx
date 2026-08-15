@@ -1111,6 +1111,13 @@ type ViewHistoryState = {
   whizzupRecordDateScope?: "all" | "recent";
   whizzupActiveAwardsOnly?: boolean;
   whizzupFollowupDueSoonOnly?: boolean;
+  whizzupAwardFilter?: string;
+};
+
+type DashboardAwardSummary = {
+  total: number;
+  active: number;
+  completed: number;
 };
 
 type SessionMember = {
@@ -3406,6 +3413,22 @@ async function requestRecords(scope: RecordsScope = "full") {
   }
 
   throw new Error("기록이 너무 많아 전체 목록을 불러오지 못했습니다.");
+}
+
+async function requestDashboardAwardSummary() {
+  const response = await resilientFetch("/api/records?scope=award-summary", {
+    cache: "no-store",
+    timeoutMs: 20_000,
+    retries: 5,
+  });
+  const payload = (await response.json()) as {
+    awardCounts?: DashboardAwardSummary;
+    error?: string;
+  };
+  if (!response.ok || !payload.awardCounts) {
+    throw new Error(payload.error || "수주 현황을 불러오지 못했습니다.");
+  }
+  return payload.awardCounts;
 }
 
 async function requestInstitutionRegistry() {
@@ -6187,6 +6210,8 @@ export default function CrmApp({
   signOutPath: string;
 }) {
   const [records, setRecords] = useState<Activity[]>([]);
+  const [dashboardAwardSummary, setDashboardAwardSummary] =
+    useState<DashboardAwardSummary | null>(null);
   const [institutionRegistry, setInstitutionRegistry] = useState<
     InstitutionRegistryEntry[]
   >([]);
@@ -6719,12 +6744,14 @@ export default function CrmApp({
       const requestedScope =
         scope ??
         (recordsFullyLoaded || view !== "dashboard" ? "full" : "dashboard");
-      const [nextRecords, nextInstitutions] = await Promise.all([
+      const [nextRecords, nextInstitutions, nextAwardSummary] = await Promise.all([
         requestRecords(requestedScope),
         requestInstitutionRegistry(),
+        requestDashboardAwardSummary().catch(() => null),
       ]);
       setRecords(nextRecords);
       setInstitutionRegistry(nextInstitutions);
+      if (nextAwardSummary) setDashboardAwardSummary(nextAwardSummary);
       recordsLastRefreshedAtRef.current = Date.now();
       if (requestedScope === "full") {
         recordsFullyLoadedRef.current = true;
@@ -6744,12 +6771,14 @@ export default function CrmApp({
     try {
       const requestedScope =
         recordsFullyLoaded || view !== "dashboard" ? "full" : "dashboard";
-      const [nextRecords, nextInstitutions] = await Promise.all([
+      const [nextRecords, nextInstitutions, nextAwardSummary] = await Promise.all([
         requestRecords(requestedScope),
         requestInstitutionRegistry(),
+        requestDashboardAwardSummary().catch(() => null),
       ]);
       setRecords(nextRecords);
       setInstitutionRegistry(nextInstitutions);
+      if (nextAwardSummary) setDashboardAwardSummary(nextAwardSummary);
       recordsLastRefreshedAtRef.current = Date.now();
       if (requestedScope === "full") {
         recordsFullyLoadedRef.current = true;
@@ -6904,8 +6933,12 @@ export default function CrmApp({
         if (nextSession.member.status === "approved") {
           // The dashboard needs only its compact record scope. Manager-only data and
           // the full activity history are loaded when their screens are opened.
-          const nextRecords = await requestRecords("dashboard");
+          const [nextRecords, nextAwardSummary] = await Promise.all([
+            requestRecords("dashboard"),
+            requestDashboardAwardSummary().catch(() => null),
+          ]);
           if (!active) return;
+          if (nextAwardSummary) setDashboardAwardSummary(nextAwardSummary);
           if (!recordsFullyLoadedRef.current) {
             setRecords(nextRecords);
             recordsLastRefreshedAtRef.current = Date.now();
@@ -7285,10 +7318,15 @@ export default function CrmApp({
       const nextFollowupDueSoonOnly = Boolean(
         state?.whizzupFollowupDueSoonOnly && nextView === "followup",
       );
+      const nextAwardFilter =
+        nextView === "awards" && state?.whizzupAwardFilter === "위즈업 수주"
+          ? "위즈업 수주"
+          : "전체 수주";
 
       setRecordDateScope(nextRecordDateScope);
       setActiveAwardsOnly(nextActiveAwardsOnly);
       setFollowupDueSoonOnly(nextFollowupDueSoonOnly);
+      setAwardFilter(nextAwardFilter);
       setView(nextView);
       setMobileNav(false);
       if (
@@ -7318,6 +7356,7 @@ export default function CrmApp({
             whizzupRecordDateScope: nextRecordDateScope,
             whizzupActiveAwardsOnly: nextActiveAwardsOnly,
             whizzupFollowupDueSoonOnly: nextFollowupDueSoonOnly,
+            whizzupAwardFilter: nextAwardFilter,
           },
           "",
           nextView === "dashboard" || nextView === "owner-performance"
@@ -8948,7 +8987,7 @@ export default function CrmApp({
       completed,
     };
   }, [latestInstitutionRows]);
-  const dashboardAwardCounts = useMemo(() => {
+  const fallbackDashboardAwardCounts = useMemo(() => {
     const whizzupAwards = latestAwardRecords.filter(
       (record) => record.awardStatus === "위즈업 수주",
     );
@@ -8961,6 +9000,8 @@ export default function CrmApp({
       completed,
     };
   }, [latestAwardRecords]);
+  const dashboardAwardCounts =
+    dashboardAwardSummary ?? fallbackDashboardAwardCounts;
 
   const progressSchedules = useMemo(() => {
     const scheduleMap = new Map<string, ProgressScheduleItem[]>();
@@ -11999,6 +12040,7 @@ export default function CrmApp({
       recordDateScope?: "all" | "recent";
       activeAwardsOnly?: boolean;
       followupDueSoonOnly?: boolean;
+      awardFilter?: string;
       replace?: boolean;
     } = {},
   ) {
@@ -12009,10 +12051,14 @@ export default function CrmApp({
     const nextFollowupDueSoonOnly = Boolean(
       options.followupDueSoonOnly && nextView === "followup",
     );
+    const nextAwardFilter =
+      nextView === "awards" && options.awardFilter === "위즈업 수주"
+        ? "위즈업 수주"
+        : "전체 수주";
     setSearch("");
     setTypeFilter("전체 유형");
     setStatusFilter("전체 상태");
-    setAwardFilter("전체 수주");
+    setAwardFilter(nextAwardFilter);
     setAwardExecutionFilter("전체 사업방식");
     setAwardManagerFilter("전체 담당자");
     setBudgetGroupFilter("all");
@@ -12035,6 +12081,7 @@ export default function CrmApp({
       whizzupRecordDateScope: nextRecordDateScope,
       whizzupActiveAwardsOnly: nextActiveAwardsOnly,
       whizzupFollowupDueSoonOnly: nextFollowupDueSoonOnly,
+      whizzupAwardFilter: nextAwardFilter,
     };
     const baseUrl = `${window.location.pathname}${window.location.search}`;
     const nextUrl =
@@ -12045,7 +12092,8 @@ export default function CrmApp({
       view === nextView &&
       recordDateScope === nextRecordDateScope &&
       activeAwardsOnly === nextActiveAwardsOnly &&
-      followupDueSoonOnly === nextFollowupDueSoonOnly;
+      followupDueSoonOnly === nextFollowupDueSoonOnly &&
+      awardFilter === nextAwardFilter;
     window.history[
       options.replace || sameView ? "replaceState" : "pushState"
     ](historyState, "", nextUrl);
@@ -12053,7 +12101,10 @@ export default function CrmApp({
 
   async function selectView(
     nextView: View,
-    options: { accountingTab?: AccountingWorkspaceTab } = {},
+    options: {
+      accountingTab?: AccountingWorkspaceTab;
+      awardFilter?: string;
+    } = {},
   ) {
     if (nextView === "trash") {
       navigateTo("backup", { replace: true });
@@ -12089,7 +12140,7 @@ export default function CrmApp({
     if (nextView === "budget-institutions") {
       setBudgetWorkspaceSection("institutions");
     }
-    navigateTo(nextView);
+    navigateTo(nextView, { awardFilter: options.awardFilter });
     setMobileNav(false);
     if (nextView === "records") {
       await loadActivityReviewAssignees();
@@ -14405,22 +14456,16 @@ export default function CrmApp({
       setSelectedAwardIds([]);
       setAwardBulkOpen(false);
       resetAwardBulkEditor();
-      setAwardChangeHistoryOpen(true);
-      await loadAwardChangeHistory(false);
       setToast(
-        `${updatedIds.size.toLocaleString()}건의 수주 정보를 변경했습니다. 변경 이력에서 되돌릴 수 있습니다.`,
+        `${updatedIds.size.toLocaleString()}건의 수주 정보를 변경했습니다. 복구·변경 이력에서 되돌릴 수 있습니다.`,
       );
     } catch (caught) {
       await loadRecords("full");
-      if (updatedIds.size) {
-        setAwardChangeHistoryOpen(true);
-        await loadAwardChangeHistory(false);
-      }
       setToast(
         caught instanceof Error
           ? `${caught.message}${
               updatedIds.size
-                ? " 변경 이력에서 적용된 기록을 되돌릴 수 있습니다."
+                ? " 복구·변경 이력에서 적용된 기록을 되돌릴 수 있습니다."
                 : ""
             }`
           : "수주 정보를 일괄 변경하지 못했습니다.",
@@ -15998,7 +16043,9 @@ export default function CrmApp({
               <button
                 type="button"
                 className="dashboard-status-card awards"
-                onClick={() => void selectView("awards")}
+                onClick={() =>
+                  void selectView("awards", { awardFilter: "위즈업 수주" })
+                }
               >
                 <span>수주·계약 현황</span>
                 <small>위즈업 수주·계약만</small>
@@ -19318,7 +19365,9 @@ export default function CrmApp({
                     {view === "awards"
                       ? activeAwardsOnly
                         ? "진행 중 수주 목록"
-                        : "기관별 관리(수주 후) 현황"
+                        : awardFilter === "위즈업 수주"
+                          ? "위즈업 수주·계약 현황"
+                          : "기관별 관리(수주 후) 현황"
                       : view === "dashboard"
                         ? isOwner && dashboardActivityScope === "all"
                           ? "전체 최근 활동 이력"

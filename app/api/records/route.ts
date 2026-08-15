@@ -101,6 +101,7 @@ import {
 import { chunkValues } from "../../../lib/d1-bulk";
 import { serializeActivityBudgets } from "../../../lib/activity-budgets";
 import { mergeActivityProgressSchedule } from "../../../lib/organization-schedules";
+import { summarizeWhizzupAwards } from "../../../lib/award-dashboard-summary";
 
 export const dynamic = "force-dynamic";
 
@@ -385,6 +386,20 @@ export async function GET(request: Request) {
       ensureRecordsReady(),
       ensureJointProjectsReady(),
     ]);
+    if (searchParams.get("scope") === "award-summary") {
+      const result = await d1
+        .prepare(
+          `SELECT id, organization, business_round, award_status, award_stage, activity_date
+           FROM activities
+           WHERE TRIM(COALESCE(organization, '')) <> ''
+             AND COALESCE(award_status, '미정') <> '미정'
+           ORDER BY activity_date DESC, id DESC`,
+        )
+        .all<Record<string, unknown>>();
+      return Response.json({
+        awardCounts: summarizeWhizzupAwards(result.results),
+      });
+    }
     const dashboardManagerName = dashboardScope
       ? canonicalProgressManagerName(
           member.displayName,
