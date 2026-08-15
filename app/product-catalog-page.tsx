@@ -367,8 +367,8 @@ export default function ProductCatalogPage({
     const requested = new URLSearchParams(window.location.search).get("productTab");
     return requested === "products" || requested === "vendors" ? requested : "quotations";
   });
-  const [quotationCount, setQuotationCount] = useState(0);
-  const [vendorCount, setVendorCount] = useState(0);
+  const [quotationCount, setQuotationCount] = useState<number | null>(null);
+  const [vendorCount, setVendorCount] = useState<number | null>(null);
   const updateQuotationCount = useCallback(
     ({ active }: { active: number; trash: number }) => setQuotationCount(active),
     [],
@@ -1255,13 +1255,13 @@ export default function ProductCatalogPage({
     <>
       <nav className="product-workspace-tabs" aria-label="제품·견적·협력사 관리 화면">
         <button type="button" className={workspaceTab === "quotations" ? "active" : ""} onClick={() => setWorkspaceTab("quotations")}>
-          <span>견적서 관리</span><b>{quotationCount.toLocaleString()}</b>
+          <span>견적서 관리</span><b>{quotationCount === null ? "…" : quotationCount.toLocaleString()}</b>
         </button>
         <button type="button" className={workspaceTab === "products" ? "active" : ""} onClick={() => setWorkspaceTab("products")}>
           <span>제품 기준정보</span><b>{products.length.toLocaleString()}</b>
         </button>
         <button type="button" className={workspaceTab === "vendors" ? "active" : ""} onClick={() => setWorkspaceTab("vendors")}>
-          <span>협력사 관리</span><b>{vendorCount.toLocaleString()}</b>
+          <span>협력사 관리</span><b>{vendorCount === null ? "…" : vendorCount.toLocaleString()}</b>
         </button>
       </nav>
 

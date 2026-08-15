@@ -798,8 +798,9 @@ export default function QuotationManagementPage({
   useEffect(() => { setQuotationPage(1); }, [query, scope?.businessRound, scope?.organization]);
   useEffect(() => { setQuotationPage((current) => Math.min(current, quotationPageCount)); }, [quotationPageCount]);
   useEffect(() => {
+    if (loading) return;
     onCountChange?.({ active: currentQuotes.length, trash: trashedQuotes.length });
-  }, [currentQuotes.length, onCountChange, trashedQuotes.length]);
+  }, [currentQuotes.length, loading, onCountChange, trashedQuotes.length]);
 
   const filteredProducts = useMemo(() => {
     const key = productQuery.trim().toLocaleLowerCase("ko-KR").replace(/\s/g, "");

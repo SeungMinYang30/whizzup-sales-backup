@@ -28,6 +28,7 @@ export default function AwardVendorPage({
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState<DocumentType | null>(null);
   const [message, setMessage] = useState("");
+  const [hasLoadedVendors, setHasLoadedVendors] = useState(false);
   const selected = vendors.find((vendor) => vendor.id === selectedId) ?? null;
   const filtered = useMemo(() => vendors.filter((vendor) => `${vendor.companyName} ${vendor.businessNumber} ${vendor.contactName} ${vendor.phone}`.toLowerCase().includes(search.trim().toLowerCase())), [vendors, search]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / VENDOR_PAGE_SIZE));
@@ -46,9 +47,12 @@ export default function AwardVendorPage({
     const vendor = next.find((item) => item.id === id) ?? null;
     setSelectedId(vendor?.id ?? null);
     setDraft(vendor ? { ...emptyDraft, ...vendor } : emptyDraft);
+    setHasLoadedVendors(true);
   }
   useEffect(() => { void load().catch((error) => setMessage(error.message)); }, []);
-  useEffect(() => { onCountChange?.(vendors.length); }, [onCountChange, vendors.length]);
+  useEffect(() => {
+    if (hasLoadedVendors) onCountChange?.(vendors.length);
+  }, [hasLoadedVendors, onCountChange, vendors.length]);
   useEffect(() => { setPage(1); }, [search]);
   useEffect(() => { setPage((current) => Math.min(current, pageCount)); }, [pageCount]);
   function choose(vendor: Vendor) { setSelectedId(vendor.id); setDraft({ ...emptyDraft, ...vendor }); setMessage(""); }
