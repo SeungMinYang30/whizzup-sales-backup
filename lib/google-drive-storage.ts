@@ -765,6 +765,57 @@ export async function removeEmptyQuotationFolderChain(startFolderId: string) {
   return removed;
 }
 
+async function findAppFoldersByName(rawName: string) {
+  const name = safeDriveFolderName(rawName);
+  const url = new URL(`${DRIVE_API}/files`);
+  url.searchParams.set("q", [
+    `name = '${escapeQueryValue(name)}'`,
+    `mimeType = '${FOLDER_MIME_TYPE}'`,
+    "trashed = false",
+    "appProperties has { key='whizzup' and value='1' }",
+  ].join(" and "));
+  url.searchParams.set("fields", "files(id,name,mimeType,parents,appProperties)");
+  url.searchParams.set("pageSize", "1000");
+  url.searchParams.set("supportsAllDrives", "true");
+  url.searchParams.set("includeItemsFromAllDrives", "true");
+  const response = await driveFetch(url.toString());
+  const payload = (await response.json().catch(() => ({}))) as {
+    files?: DriveFile[];
+    error?: { message?: string };
+  };
+  if (!response.ok) {
+    throw new Error(payload.error?.message || "기존 견적서 폴더를 찾지 못했습니다.");
+  }
+  return payload.files ?? [];
+}
+
+async function removeEmptyQuotationTree(folderId: string, depth = 0): Promise<number> {
+  if (depth > 4) return 0;
+  let removed = 0;
+  const children = await listDriveChildren(folderId);
+  for (const child of children) {
+    if (isDriveFolder(child) && REMOVABLE_QUOTATION_FOLDER.test(String(child.name || ""))) {
+      removed += await removeEmptyQuotationTree(child.id, depth + 1);
+    }
+  }
+  if ((await listDriveChildren(folderId)).length) return removed;
+  const metadata = await getDriveFileMetadata(folderId).catch(() => null);
+  if (!metadata || !REMOVABLE_QUOTATION_FOLDER.test(String(metadata.name || ""))) return removed;
+  const response = await driveFetch(
+    `${DRIVE_API}/files/${encodeURIComponent(folderId)}?supportsAllDrives=true`,
+    { method: "DELETE" },
+  );
+  return response.ok || response.status === 404 ? removed + 1 : removed;
+}
+
+export async function removeEmptyLegacyQuotationFolders() {
+  let removed = 0;
+  for (const folder of await findAppFoldersByName("견적서")) {
+    removed += await removeEmptyQuotationTree(folder.id);
+  }
+  return removed;
+}
+
 export async function rollbackDriveMoves(snapshots: DriveMoveSnapshot[]) {
   const failures: string[] = [];
   for (const snapshot of [...snapshots].reverse()) {

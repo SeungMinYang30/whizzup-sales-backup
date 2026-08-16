@@ -7,6 +7,7 @@ import {
   getDriveFileMetadata,
   isGoogleDriveConfigured,
   organizeDriveFile,
+  removeEmptyLegacyQuotationFolders,
   removeEmptyQuotationFolderChain,
 } from "../../../../../lib/google-drive-storage";
 import {
@@ -135,16 +136,20 @@ export async function POST(request: Request) {
       }
     }
 
+    const nextAfterId = rows.results.length
+      ? Number(rows.results[rows.results.length - 1]?.id) || afterId
+      : afterId;
+    const done = rows.results.length < BATCH_SIZE;
     let removedFolders = 0;
     if (!dryRun) {
       for (const folderId of oldParentIds) {
         removedFolders += await removeEmptyQuotationFolderChain(folderId).catch(() => 0);
       }
+      if (done) {
+        removedFolders += await removeEmptyLegacyQuotationFolders().catch(() => 0);
+      }
     }
 
-    const nextAfterId = rows.results.length
-      ? Number(rows.results[rows.results.length - 1]?.id) || afterId
-      : afterId;
     return Response.json({
       dryRun,
       quotations: rows.results.length,
@@ -155,7 +160,7 @@ export async function POST(request: Request) {
       failures,
       folder: QUOTATION_LIBRARY_FOLDER,
       nextAfterId,
-      done: rows.results.length < BATCH_SIZE,
+      done,
     }, { status: failures.length ? 207 : 200 });
   } catch (error) {
     return accessErrorResponse(error);
