@@ -132,4 +132,8 @@ test("mobile quotation cards stay compact and the equipment picker uses the view
   assert.match(quotation, /if \(opensEquipmentEditor\) \{[\s\S]*setProductResultsOpen\(false\);/);
   assert.match(quotation, /function closeEquipmentKitEditor\(\)[\s\S]*restoreProductResultsAfterEquipment\(\);/);
   assert.match(quotation, /setDraft\([\s\S]*closeEquipmentKitEditor\(\);/);
+  assert.match(mobileEditors, /\.equipment-kit-editor>header p\{[\s\S]*display:none;/);
+  assert.match(mobileEditors, /\.equipment-kit-guide\{[\s\S]*display:none;/);
+  assert.match(mobileEditors, /\.equipment-kit-toolbar>div\{[\s\S]*display:contents;/);
+  assert.match(mobileEditors, /\.equipment-kit-table-wrap\{[\s\S]*min-height:180px;/);
 });
