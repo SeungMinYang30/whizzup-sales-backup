@@ -96,3 +96,21 @@ test("pre-award institution cards remove desktop cell heights and group mobile i
   assert.match(finalMobile, /-webkit-line-clamp: 2/);
   assert.match(crm, /institution-mobile-selection-bar/);
 });
+
+test("mobile quotation tools share one row and modal content stays above fixed actions", async () => {
+  const [styles, quotation] = await Promise.all([
+    read("../app/globals.css"),
+    read("../app/quotation-management-page.tsx"),
+  ]);
+  const compactEditors = styles.slice(styles.indexOf("/* Keep mobile quotation editors compact"));
+  assert.match(styles, /\.quotation-item-toolbar-actions > button:first-child \{ grid-column: auto; \}/);
+  assert.match(compactEditors, /\.equipment-kit-table-wrap\{[\s\S]*flex:1 1 auto;/);
+  assert.match(
+    compactEditors,
+    /\.equipment-kit-toolbar>div\{[\s\S]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\);/,
+  );
+  assert.match(quotation, /className="quote-internal-report-body"/);
+  assert.match(compactEditors, /\.quote-internal-report-body\{[\s\S]*overflow-y:auto;/);
+  assert.match(compactEditors, /\.quote-internal-report-formula\{[\s\S]*display:none;/);
+  assert.match(compactEditors, /\.quote-internal-report-dialog>footer\{[\s\S]*position:static;/);
+});

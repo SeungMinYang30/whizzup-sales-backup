@@ -13678,7 +13678,7 @@ button:is(
   .quotation-product-search { flex: 1 1 100%; min-width: 0; }
   .quotation-item-toolbar-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .quotation-item-toolbar-actions > button { padding: 0 9px; white-space: normal; }
-  .quotation-item-toolbar-actions > button:first-child { grid-column: 1 / -1; }
+  .quotation-item-toolbar-actions > button:first-child { grid-column: auto; }
   .quotation-import-backdrop { align-items: stretch; padding: 8px; }
   .quotation-import-dialog { max-height: calc(100dvh - 16px); border-radius: 14px; }
   .quotation-import-dialog > header, .quotation-import-dialog > footer { padding: 13px; }
@@ -14477,3 +14477,195 @@ button:is(
 
 .quotation-file-status.processing { color: #9a6700; }
 .quotation-file-status.error { color: #c53a32; }
+
+/* Keep mobile quotation editors compact without changing quote calculations. */
+.equipment-kit-table-wrap{
+  min-height:120px;
+  flex:1 1 auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+}
+
+.quote-internal-report-dialog{
+  grid-template-rows:auto minmax(0,1fr) auto;
+}
+
+.quote-internal-report-body{
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+}
+
+.quote-internal-report-body .quote-internal-report-items{
+  overflow:visible;
+}
+
+@media(max-width:700px){
+  .quotation-item-toolbar-actions>button{
+    min-width:0;
+    padding:0 8px;
+    font-size:11px;
+    white-space:nowrap;
+  }
+
+  .equipment-kit-editor{
+    height:100dvh;
+  }
+
+  .equipment-kit-editor>header,
+  .equipment-kit-plan,
+  .equipment-kit-plan-actions,
+  .equipment-kit-guide,
+  .equipment-kit-toolbar,
+  .equipment-kit-total,
+  .equipment-kit-editor>footer{
+    flex:0 0 auto;
+  }
+
+  .equipment-kit-editor>header{
+    padding-top:12px;
+    padding-bottom:11px;
+  }
+
+  .equipment-kit-editor>header h3{
+    font-size:19px;
+  }
+
+  .equipment-kit-editor>header p{
+    margin-top:3px;
+    font-size:10px;
+    line-height:1.4;
+  }
+
+  .equipment-kit-plan{
+    gap:6px;
+    padding-top:9px;
+    padding-bottom:9px;
+  }
+
+  .equipment-kit-plan>div{
+    min-width:0;
+    overflow-x:auto;
+  }
+
+  .equipment-kit-plan button{
+    min-height:32px;
+    padding:0 10px;
+    white-space:nowrap;
+  }
+
+  .equipment-kit-plan span,
+  .equipment-kit-plan-actions>span{
+    display:none;
+  }
+
+  .equipment-kit-plan-actions{
+    gap:6px;
+    padding-top:8px;
+    padding-bottom:8px;
+  }
+
+  .equipment-kit-guide{
+    margin-top:8px;
+    padding:7px 9px;
+    line-height:1.4;
+  }
+
+  .equipment-kit-toolbar{
+    gap:7px;
+    padding-top:9px;
+    padding-bottom:8px;
+  }
+
+  .equipment-kit-toolbar>div{
+    display:grid;
+    width:100%;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    align-items:center;
+    gap:7px;
+  }
+
+  .equipment-kit-toolbar label{
+    grid-column:1/-1;
+  }
+
+  .equipment-kit-toolbar button{
+    width:100%;
+    min-width:0;
+    padding:0 5px;
+    font-size:10px;
+    white-space:nowrap;
+  }
+
+  .equipment-kit-table-wrap{
+    margin-top:0;
+    min-height:140px;
+  }
+
+  .equipment-kit-total{
+    margin-top:8px;
+    padding:9px 10px;
+  }
+
+  .equipment-kit-total strong{
+    font-size:16px;
+  }
+
+  .equipment-kit-editor>footer{
+    padding-top:9px;
+    padding-bottom:max(10px,env(safe-area-inset-bottom));
+  }
+
+  .quote-internal-report-dialog{
+    overflow:hidden;
+  }
+
+  .quote-internal-report-dialog>header{
+    position:static;
+    padding:12px 14px 10px;
+  }
+
+  .quote-internal-report-dialog h3{
+    margin-top:3px;
+    font-size:19px;
+  }
+
+  .quote-internal-report-body{
+    flex:1 1 auto;
+  }
+
+  .quote-internal-report-summary{
+    gap:6px;
+    padding:9px 12px;
+  }
+
+  .quote-internal-report-summary span{
+    min-height:48px;
+    gap:3px;
+    padding:8px 9px;
+  }
+
+  .quote-internal-report-summary b{
+    font-size:14px;
+  }
+
+  .quote-internal-report-formula{
+    display:none;
+  }
+
+  .quote-internal-report-items{
+    gap:8px;
+    padding:10px 12px 12px;
+  }
+
+  .quote-internal-report-items summary{
+    min-height:62px;
+    padding:9px 10px;
+  }
+
+  .quote-internal-report-dialog>footer{
+    position:static;
+    padding-top:9px;
+  }
+}

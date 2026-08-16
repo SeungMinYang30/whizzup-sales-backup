@@ -3004,6 +3004,7 @@ export default function QuotationManagementPage({
         {internalReportOpen && <div className="quote-internal-report-shell no-print" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setInternalReportOpen(false); }}>
           <section className="quote-internal-report-dialog" role="dialog" aria-modal="true" aria-labelledby="internal-profit-report-title">
             <header><div><span className="section-kicker">INTERNAL PROFIT REPORT</span><h3 id="internal-profit-report-title">내부 수익표</h3><p>{draft.organization} · {draft.projectTitle || `${draft.businessRound}차 사업`} · {draft.quoteNumber || "저장 전"}</p></div><button type="button" aria-label="닫기" onClick={() => setInternalReportOpen(false)}>×</button></header>
+            <div className="quote-internal-report-body">
             <div className="quote-internal-report-summary">
               <span>견적금액<b>{won.format(numbers.total)}원</b></span><span>예상 수익<b>{won.format(numbers.earning)}원</b></span><span>컨소 지급<b>{numbers.consortium ? `-${won.format(numbers.consortium)}원` : "0원"}</b></span><span>내부 원가<b>{numbers.internalCost ? `-${won.format(numbers.internalCost)}원` : "0원"}</b></span><span className="result">최종 총이익<b>{won.format(numbers.margin)}원</b></span><span>마진율<b>{(numbers.marginRate * 100).toFixed(1)}%</b></span>
             </div>
@@ -3016,6 +3017,7 @@ export default function QuotationManagementPage({
               <h4>내부 비용·지원·콘텐츠 대체 상세</h4>
               <ul>{internalCostDetails.map((detail, index) => <li key={`${detail.label}-${detail.itemName}-${index}`}><span><strong>{detail.label}</strong><small>{detail.itemName}{detail.note ? ` · ${detail.note}` : ""}</small></span><b>-{won.format(detail.amount)}원</b></li>)}</ul>
             </section>}
+            </div>
             <footer><button type="button" onClick={downloadInternalProfitExcel}>Excel 다운로드</button><button type="button" onClick={() => void openInternalProfitPdf()}>PDF 보기·인쇄</button><button className="primary" type="button" onClick={() => setInternalReportOpen(false)}>닫기</button></footer>
           </section>
         </div>}
