@@ -12,6 +12,7 @@ import {
   isGoogleDriveConfigured,
   organizeDriveFile,
   removeDriveFile,
+  replaceDriveFile,
   syncDriveFileCopyFromSource,
   upsertDriveFileByContext,
   uploadDriveFile,
@@ -115,6 +116,7 @@ export async function POST(request: Request) {
   let id = 0;
   let replaceExisting = false;
   let syncToken = "";
+  let originalUpdatedAt = "";
   try {
     await requireApprovedMember();
     if (!isGoogleDriveConfigured()) {
@@ -164,6 +166,7 @@ export async function POST(request: Request) {
     const existingPdfId = String(row.drive_pdf_file_id ?? "");
     const existingXlsxId = String(row.drive_xlsx_file_id ?? "");
     const existingSourceId = String(row.source_file_id ?? "");
+    originalUpdatedAt = String(row.updated_at ?? "");
     syncToken = requestedSyncToken;
     if (replaceExisting) {
       syncToken = crypto.randomUUID();
@@ -211,15 +214,50 @@ export async function POST(request: Request) {
       uploadedFileIds.push(stored.fileId);
       return stored;
     }
+    async function validateStagedFile(fileId: string, kind: "pdf" | "xlsx", expectedSize: number) {
+      const response = await downloadDriveFile(fileId);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const validSignature = kind === "pdf"
+        ? new TextDecoder().decode(bytes.slice(0, 5)) === "%PDF-"
+        : bytes[0] === 0x50 && bytes[1] === 0x4b;
+      if (!validSignature || bytes.length !== expectedSize) {
+        throw new Error(`${kind === "pdf" ? "PDF" : "Excel"} 교체 파일의 Google Drive 검증에 실패했습니다.`);
+      }
+    }
+    async function removeStagedFile(fileId: string) {
+      await removeDriveFile(fileId);
+      const index = uploadedFileIds.indexOf(fileId);
+      if (index >= 0) uploadedFileIds.splice(index, 1);
+    }
+    const pdfFile = new File([pdf], pdfName, { type: pdf.type || "application/pdf" });
+    const xlsxFile = new File([xlsx], xlsxName, { type: xlsx.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const [stagedPdf, stagedXlsx] = replaceExisting ? await Promise.all([
+      existingPdfId ? storeFile({ file: pdfFile, contextType: "authored-quotation-pdf-replacement-temp" }) : null,
+      existingXlsxId ? storeFile({ file: xlsxFile, contextType: "authored-quotation-xlsx-replacement-temp" }) : null,
+    ]) : [null, null];
+    await Promise.all([
+      stagedPdf ? validateStagedFile(stagedPdf.fileId, "pdf", pdfFile.size) : Promise.resolve(),
+      stagedXlsx ? validateStagedFile(stagedXlsx.fileId, "xlsx", xlsxFile.size) : Promise.resolve(),
+    ]);
     const [storedPdf, storedXlsx] = await Promise.all([
-      storeFile({
-        file: new File([pdf], pdfName, { type: pdf.type || "application/pdf" }),
+      replaceExisting && existingPdfId ? replaceDriveFile({
+        fileId: existingPdfId,
+        file: pdfFile,
+        folderSegments,
         contextType: "authored-quotation-pdf",
-      }),
-      storeFile({
-        file: new File([xlsx], xlsxName, { type: xlsx.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        contextId,
+      }) : storeFile({ file: pdfFile, contextType: "authored-quotation-pdf" }),
+      replaceExisting && existingXlsxId ? replaceDriveFile({
+        fileId: existingXlsxId,
+        file: xlsxFile,
+        folderSegments,
         contextType: "authored-quotation-xlsx",
-      }),
+        contextId,
+      }) : storeFile({ file: xlsxFile, contextType: "authored-quotation-xlsx" }),
+    ]);
+    await Promise.all([
+      stagedPdf ? removeStagedFile(stagedPdf.fileId) : Promise.resolve(),
+      stagedXlsx ? removeStagedFile(stagedXlsx.fileId) : Promise.resolve(),
     ]);
     const desiredSourceName = sourceFile
       ? sourceName
@@ -257,6 +295,11 @@ export async function POST(request: Request) {
       .run();
     if (Number(finalize.meta.changes) !== 1) {
       throw new Error("더 최신 견적 저장 작업이 시작되어 이전 파일 반영을 중단했습니다.");
+    }
+    if (replaceExisting && originalUpdatedAt) {
+      await d1.prepare("UPDATE authored_quotations SET updated_at=? WHERE id=? AND drive_sync_token=?")
+        .bind(originalUpdatedAt, id, syncToken)
+        .run();
     }
     uploadedFileIds.length = 0;
     if (!sourceFile && existingSourceId && desiredSourceName) {
@@ -296,7 +339,16 @@ export async function POST(request: Request) {
     if (id) {
       const message = cleanError(error);
       await ensureAuthoredQuotationsReady()
-        .then((d1) => d1.prepare("UPDATE authored_quotations SET drive_sync_status='error', drive_sync_error=? WHERE id=? AND (?='' OR drive_sync_token=?)").bind(message, id, syncToken, syncToken).run())
+        .then(async (d1) => {
+          await d1.prepare("UPDATE authored_quotations SET drive_sync_status='error', drive_sync_error=? WHERE id=? AND (?='' OR drive_sync_token=?)")
+            .bind(message, id, syncToken, syncToken)
+            .run();
+          if (replaceExisting && originalUpdatedAt) {
+            await d1.prepare("UPDATE authored_quotations SET updated_at=? WHERE id=? AND (?='' OR drive_sync_token=?)")
+              .bind(originalUpdatedAt, id, syncToken, syncToken)
+              .run();
+          }
+        })
         .catch(() => undefined);
     }
     if (replaceExisting) {

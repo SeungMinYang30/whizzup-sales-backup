@@ -567,6 +567,7 @@ export default function QuotationManagementPage({
   const [trashOpen, setTrashOpen] = useState(false);
   const [quotationActionId, setQuotationActionId] = useState(0);
   const [quotationFileJobVersion, setQuotationFileJobVersion] = useState(0);
+  const [bulkFileRefresh, setBulkFileRefresh] = useState({ running: false, completed: 0, total: 0, failed: 0 });
   const [equipmentKitEditor, setEquipmentKitEditor] = useState<EquipmentKitEditor | null>(null);
   const [equipmentKitPlans, setEquipmentKitPlans] = useState<AirpassEquipmentKitPlan[]>(defaultAirpassEquipmentKitPlans());
   const [canManageEquipmentKitPlans, setCanManageEquipmentKitPlans] = useState(false);
@@ -2214,6 +2215,34 @@ export default function QuotationManagementPage({
     }
   }
 
+  async function refreshAllQuotationFiles() {
+    if (bulkFileRefresh.running) return;
+    const targets = quotes.filter((quote) => quote.status === "final" && quote.items.length > 0);
+    if (!targets.length) {
+      setMessage("갱신할 최종 견적서가 없습니다.");
+      return;
+    }
+    if (!window.confirm(`최종 견적서 ${targets.length}건의 PDF·Excel을 현재 양식으로 다시 생성합니다. Google Drive 파일 ID와 공유 링크, 견적 수정일은 유지됩니다. 계속할까요?`)) return;
+    setBulkFileRefresh({ running: true, completed: 0, total: targets.length, failed: 0 });
+    setMessage(`기존 견적서 ${targets.length}건의 PDF·Excel을 갱신하고 있습니다.`);
+    let completed = 0;
+    let failed = 0;
+    for (const quote of targets) {
+      try {
+        await storeQuotationFiles(quote, { replaceExisting: true });
+      } catch (error) {
+        failed += 1;
+        console.error("Quotation file backfill failed", { quotationId: quote.id, error });
+      }
+      completed += 1;
+      setBulkFileRefresh({ running: true, completed, total: targets.length, failed });
+    }
+    setBulkFileRefresh({ running: false, completed, total: targets.length, failed });
+    setMessage(failed
+      ? `PDF·Excel 갱신을 마쳤습니다. 성공 ${completed - failed}건 · 실패 ${failed}건입니다. 실패 건은 버튼을 다시 눌러 재시도할 수 있습니다.`
+      : `기존 견적서 ${completed}건의 PDF·Excel을 모두 현재 양식으로 교체했습니다.`);
+  }
+
   async function viewSavedPdf(quote: AuthoredQuotation) {
     if (!quote.pdfUrl) {
       setMessage("저장된 PDF 파일이 없습니다. 견적 수정에서 최종 저장하면 현재 PDF가 생성됩니다.");
@@ -2530,6 +2559,9 @@ export default function QuotationManagementPage({
           : "제품 기준정보로 견적서를 만들고 최종 PDF·Excel을 Google Drive에 함께 보관합니다."}</p>
       </div>
       <div className="quotation-workspace-header-actions">
+        {!embedded && quotes.some((quote) => quote.canPurge) && <button className="app-button app-button-secondary" type="button" onClick={() => void refreshAllQuotationFiles()} disabled={bulkFileRefresh.running}>
+          {bulkFileRefresh.running ? `PDF·Excel 갱신 ${bulkFileRefresh.completed}/${bulkFileRefresh.total}` : "기존 PDF·Excel 일괄 갱신"}
+        </button>}
         {scope && <button className="app-button app-button-primary" type="button" onClick={() => void startFromInstitutionItems()} disabled={equipmentLoading}>
           {equipmentLoading ? "품목 불러오는 중…" : "등록 품목으로 견적 만들기"}
         </button>}
@@ -2851,7 +2883,7 @@ export default function QuotationManagementPage({
                 <label>할인 <span className="quotation-money-input"><FormattedMoneyInput value={draft.discountAmount} onChange={(discountAmount) => setDraft({ ...draft, discountAmount })} label="할인 금액" /><b>원</b></span></label>
                 <label>추가 <span className="quotation-money-input"><FormattedMoneyInput value={draft.extraAmount} onChange={(extraAmount) => setDraft({ ...draft, extraAmount })} label="추가비용" /><b>원</b></span></label>
               </div>
-              <dl><dt>품목 합계 (VAT 포함)</dt><dd>{won.format(numbers.subtotal)}원</dd>{numbers.procurementFee > 0 && <><dt>조달 수수료</dt><dd>{won.format(numbers.procurementFee)}원</dd></>}<dt>공급가액</dt><dd>{won.format(numbers.supply)}원</dd><dt>부가가치세</dt><dd>{won.format(numbers.tax)}원</dd><dt>최종 합계</dt><dd>{won.format(numbers.total)}원</dd></dl>
+              <dl><dt>품목금액 (VAT 포함)</dt><dd>{won.format(numbers.subtotal)}원</dd>{numbers.procurementFee > 0 && <><dt>조달수수료 (별도)</dt><dd>{won.format(numbers.procurementFee)}원</dd></>}<dt>최종 합계</dt><dd>{won.format(numbers.total)}원</dd><dt>세액 참고 (품목금액 기준)</dt><dd>공급가액 {won.format(numbers.supply)}원 · 부가세 {won.format(numbers.tax)}원</dd></dl>
             </section>
             <label className="quotation-memo">특기사항 / 메모<textarea value={draft.memo} onChange={(event) => setDraft({ ...draft, memo: event.target.value })} placeholder="견적 관련 특기사항이나 메모를 입력해 주세요." /></label>
           </main>
@@ -3065,7 +3097,7 @@ export default function QuotationManagementPage({
               {isLastPage ? <div className="quotation-print-closing">
                 <div className="quotation-print-bottom">
                   <section><h2>견적 조건 및 특이사항</h2><dl><dt>견적 유효기간</dt><dd>{draft.validUntil ? `${draft.validUntil}까지` : "견적일로부터 30일"}</dd><dt>납품 및 설치</dt><dd>발주기관과 일정 협의 후 진행</dd><dt>대금 지급</dt><dd>발주기관의 지급 조건에 따름</dd><dt>하자보증</dt><dd>납품 완료일로부터 1년</dd><dt>비고</dt><dd>표시 단가는 VAT·일반 수수료 포함, 조달수수료는 합계에 별도 반영</dd><dt>담당</dt><dd>위즈업 영업팀</dd><dt>안내</dt><dd>{draft.memo || "본 견적서는 관공서 제출용입니다."}</dd></dl></section>
-                  <section><h2>금액 요약</h2><dl><dt>품목 합계 (VAT 포함)</dt><dd>{won.format(numbers.subtotal)}원</dd><dt>조달수수료</dt><dd>{won.format(numbers.procurementFee)}원</dd><dt>할인</dt><dd>{draft.discountAmount ? `${won.format(draft.discountAmount)}원` : "-"}</dd><dt>추가비용</dt><dd>{draft.extraAmount ? `${won.format(draft.extraAmount)}원` : "-"}</dd><dt>공급가액</dt><dd>{won.format(numbers.supply)}원</dd><dt>부가가치세</dt><dd>{won.format(numbers.tax)}원</dd><dt>최종 합계</dt><dd>{won.format(numbers.total)}원</dd></dl></section>
+                  <section><h2>금액 요약</h2><dl><dt>품목금액 (VAT 포함)</dt><dd>{won.format(numbers.subtotal)}원</dd><dt>조달수수료 (별도)</dt><dd>{won.format(numbers.procurementFee)}원</dd><dt>할인</dt><dd>{draft.discountAmount ? `${won.format(draft.discountAmount)}원` : "-"}</dd><dt>추가비용</dt><dd>{draft.extraAmount ? `${won.format(draft.extraAmount)}원` : "-"}</dd><dt>최종 합계</dt><dd>{won.format(numbers.total)}원</dd><dt>세액 참고 (품목금액 기준)</dt><dd>공급가액 {won.format(numbers.supply)}원 · 부가세 {won.format(numbers.tax)}원</dd></dl></section>
                 </div>
                 <footer className="quotation-print-signature"><div>위와 같이 견적합니다.<br /><b>{draft.quoteDate.replace(/-(0?\d+)-(0?\d+)$/, "년 $1월 $2일")}</b></div><div><strong>주식회사 위즈업<br />대표이사&nbsp;&nbsp;박 원 석</strong>{draft.includeStamp && <img src="/whizzup-seal.png" alt="위즈업 직인" />}</div></footer>
               </div> : <footer className="quotation-print-page-more">다음 페이지에 품목이 계속됩니다.</footer>}

@@ -30,6 +30,8 @@ test("관공서 견적서는 VAT 포함 금액, 조달 수수료, 세로 한 페
   const book = strFromU8(files["xl/workbook.xml"]);
   assert.match(sheet, /orientation="portrait" fitToWidth="1" fitToHeight="0"/);
   assert.match(sheet, /조달\s*수수료/);
+  assert.match(sheet, /품목금액 \(VAT 포함\)/);
+  assert.match(sheet, /조달수수료 \(별도\)/);
   assert.match(sheet, /G2B · 26172954/);
   assert.match(sheet, /S2B · 2025071433792973/);
   assert.match(sheet, /학교장터/);
@@ -37,7 +39,9 @@ test("관공서 견적서는 VAT 포함 금액, 조달 수수료, 세로 한 페
   assert.match(sheet, /식별번호/);
   assert.match(sheet, /<c r="K19" s="0"><v>0<\/v><\/c>/);
   assert.doesNotMatch(sheet, /0\.54%/);
-  assert.match(sheet, /부가가치세/);
+  assert.match(sheet, /공급가액 \(품목금액 기준\)/);
+  assert.match(sheet, /부가가치세 \(품목금액 기준\)/);
+  assert.ok(sheet.indexOf("최종 합계") < sheet.indexOf("공급가액 (품목금액 기준)"));
   assert.match(book, /_xlnm\.Print_Area/);
   assert.ok(files["xl/media/logo.png"]);
   assert.ok(files["xl/media/seal.png"]);

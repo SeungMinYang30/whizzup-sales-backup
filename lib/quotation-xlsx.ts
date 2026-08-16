@@ -127,8 +127,9 @@ function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
   const lastItemRow = firstItemRow + itemCount - 1;
   const bottomHeaderRow = lastItemRow + 2;
   const conditionStartRow = bottomHeaderRow + 1;
-  const finalSummaryRow = conditionStartRow + 6;
-  const signatureStartRow = finalSummaryRow + 2;
+  const finalSummaryRow = conditionStartRow + 4;
+  const summaryEndRow = conditionStartRow + 6;
+  const signatureStartRow = summaryEndRow + 2;
   const signatureEndRow = signatureStartRow + 2;
   const validText = input.validUntil ? `${input.validUntil}까지` : "견적일로부터 30일";
 
@@ -171,19 +172,19 @@ function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
     ["안내", input.memo || "본 견적서는 관공서 제출용입니다."],
   ];
   const summary = [
-    ["품목 합계 (VAT 포함)", calc.itemTotal, `SUM(I${firstItemRow}:I${lastItemRow})`],
-    ["조달수수료", calc.procurementFee, `SUM(K${firstItemRow}:K${lastItemRow})`],
+    ["품목금액 (VAT 포함)", calc.itemTotal, `SUM(I${firstItemRow}:I${lastItemRow})`],
+    ["조달수수료 (별도)", calc.procurementFee, `SUM(K${firstItemRow}:K${lastItemRow})`],
     ["할인", calc.discount, ""],
     ["추가비용", calc.extra, ""],
-    ["공급가액", calc.supply, `ROUND((I${conditionStartRow}-I${conditionStartRow + 2}+I${conditionStartRow + 3})/1.1,0)`],
-    ["부가가치세", calc.vat, `I${conditionStartRow}-I${conditionStartRow + 2}+I${conditionStartRow + 3}-I${conditionStartRow + 4}`],
     ["최종 합계", calc.total, `I${conditionStartRow}+I${conditionStartRow + 1}-I${conditionStartRow + 2}+I${conditionStartRow + 3}`],
+    ["공급가액 (품목금액 기준)", calc.supply, `ROUND((I${conditionStartRow}-I${conditionStartRow + 2}+I${conditionStartRow + 3})/1.1,0)`],
+    ["부가가치세 (품목금액 기준)", calc.vat, `I${conditionStartRow}-I${conditionStartRow + 2}+I${conditionStartRow + 3}-I${conditionStartRow + 5}`],
   ] as const;
 
   const bottomRows = conditions.map((condition, index) => {
     const row = conditionStartRow + index;
     const [label, value, expression] = summary[index];
-    const final = index === summary.length - 1;
+    const final = label === "최종 합계";
     const amountCell = expression
       ? formula(`I${row}`, expression, value, final ? 17 : 15)
       : numeric(`I${row}`, value, final ? 17 : 15);

@@ -103,6 +103,25 @@ test("existing Drive quotation files are renamed and moved in place", () => {
   assert.doesNotMatch(reorganizeRoute, /removeDriveFile/);
 });
 
+test("retroactive quotation refresh validates replacements and preserves Drive file ids", () => {
+  assert.match(page, /기존 PDF·Excel 일괄 갱신/);
+  assert.match(page, /storeQuotationFiles\(quote, \{ replaceExisting: true \}\)/);
+  assert.match(page, /Google Drive 파일 ID와 공유 링크, 견적 수정일은 유지됩니다/);
+  assert.match(filesRoute, /replaceDriveFile/);
+  assert.match(filesRoute, /authored-quotation-pdf-replacement-temp/);
+  assert.match(filesRoute, /authored-quotation-xlsx-replacement-temp/);
+  assert.match(filesRoute, /validateStagedFile/);
+  assert.match(filesRoute, /bytes\.length !== expectedSize/);
+  assert.match(filesRoute, /SET updated_at=\? WHERE id=\? AND drive_sync_token=\?/);
+});
+
+test("quotation outputs separate procurement fees from the product VAT reference", () => {
+  assert.match(page, /품목금액 \(VAT 포함\)/);
+  assert.match(page, /조달수수료 \(별도\)/);
+  assert.match(page, /세액 참고 \(품목금액 기준\)/);
+  assert.match(pdf, /품목금액 기준 · 공급가액/);
+});
+
 test("institution detail keeps final quotations once and shows only legacy external reference files below", () => {
   assert.match(crm, /<OrganizationQuotationHistory[\s\S]*?readOnly/);
   assert.match(crm, /canManageExternalQuotations=\{false\}/);

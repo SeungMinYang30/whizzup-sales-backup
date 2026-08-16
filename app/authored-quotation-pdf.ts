@@ -335,17 +335,16 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
         drawCell(context, entry[1], 222, y, 440, 42, { align: "center", maxLines: 2, fontSize: 14 });
       });
       const summary = [
-        ["품목 합계", `${won.format(total.subtotal)}원`],
-        ["조달수수료", `${won.format(total.procurementFee)}원`],
+        ["품목금액 (VAT 포함)", `${won.format(total.subtotal)}원`],
+        ["조달수수료 (별도)", `${won.format(total.procurementFee)}원`],
         ["할인 / 추가", `${quote.discountAmount ? `-${won.format(quote.discountAmount)}` : "-"} / ${quote.extraAmount ? `+${won.format(quote.extraAmount)}` : "-"}`],
-        ["공급가액", `${won.format(total.supply)}원`],
-        ["부가가치세", `${won.format(total.tax)}원`],
+        ["세액 참고", `품목금액 기준 · 공급가액 ${won.format(total.supply)}원 · 부가세 ${won.format(total.tax)}원`],
       ];
       summary.forEach((entry, index) => {
-        const y = bottomY + 40 + index * 35;
-        context.fillStyle = "#f1f4fa"; context.fillRect(684, y, 176, 35);
-        drawCell(context, entry[0], 684, y, 176, 35, { bold: true, align: "center", maxLines: 1, fontSize: 14 });
-        drawCell(context, entry[1], 860, y, 308, 35, { align: "right", maxLines: 1, fontSize: 14 });
+        const y = bottomY + 40 + index * 42;
+        context.fillStyle = "#f1f4fa"; context.fillRect(684, y, 176, 42);
+        drawCell(context, entry[0], 684, y, 176, 42, { bold: true, align: "center", maxLines: 1, fontSize: 14 });
+        drawCell(context, entry[1], 860, y, 308, 42, { align: "right", maxLines: index === 3 ? 2 : 1, fontSize: index === 3 ? 11 : 14 });
       });
       context.fillStyle = "#eaf0ff"; context.fillRect(684, bottomY + 215, 484, 45);
       drawCell(context, "최종 합계", 684, bottomY + 215, 176, 45, { bold: true, align: "center", maxLines: 1, fontSize: 17 });
