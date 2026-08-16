@@ -11,7 +11,11 @@ import {
   saveAuthoredQuotation,
   trashAuthoredQuotation,
 } from "../../../lib/authored-quotations";
-import { removeDriveFile } from "../../../lib/google-drive-storage";
+import {
+  removeDriveFile,
+  removeDriveFilesByContext,
+} from "../../../lib/google-drive-storage";
+import { QUOTATION_LIBRARY_FOLDER_SEGMENTS } from "../../../lib/quotation-file-name";
 
 export const dynamic = "force-dynamic";
 
@@ -189,6 +193,16 @@ export async function PATCH(request: Request) {
       for (const fileId of [row.drive_pdf_file_id, row.drive_xlsx_file_id, row.source_file_id].map(String).filter(Boolean)) {
         await removeDriveFile(fileId);
       }
+      const contextId = `${String(row.organization ?? "")}|${Math.max(1, Number(row.business_round) || 1)}|${id}`;
+      await removeDriveFilesByContext({
+        folderSegments: [...QUOTATION_LIBRARY_FOLDER_SEGMENTS],
+        contextTypes: [
+          "authored-quotation-pdf-mirror",
+          "authored-quotation-xlsx-mirror",
+          "authored-quotation-source-mirror",
+        ],
+        contextId,
+      });
       await d1.prepare("DELETE FROM authored_quotations WHERE id=? AND deleted_at <> ''").bind(id).run();
       return Response.json({ ok: true });
     }

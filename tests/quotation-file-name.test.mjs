@@ -7,6 +7,7 @@ const {
   QUOTATION_LIBRARY_PATH,
   quotationDownloadName,
   quotationFileStem,
+  quotationInstitutionFolderSegments,
   quotationSourceFileName,
 } = await import("../lib/quotation-file-name.ts");
 
@@ -21,8 +22,9 @@ test("quotation filenames sort by institution, project, round, number and file k
     revisionNumber: 0,
   };
   assert.equal(QUOTATION_LIBRARY_FOLDER, "견적서");
-  assert.deepEqual(QUOTATION_LIBRARY_FOLDER_SEGMENTS, ["01_기관자료", "견적서"]);
-  assert.equal(QUOTATION_LIBRARY_PATH, "01_기관자료/견적서");
+  assert.deepEqual(QUOTATION_LIBRARY_FOLDER_SEGMENTS, ["견적서 전체"]);
+  assert.equal(QUOTATION_LIBRARY_PATH, "견적서 전체");
+  assert.deepEqual(quotationInstitutionFolderSegments(quote), ["01_기관자료", "경남 남해", "남해군 꿈나눔센터", "견적서", "2026"]);
   assert.equal(quotationFileStem(quote), "[경남-남해] 남해군 꿈나눔센터_가상현실스포츠실_1차_WZ-001");
   assert.equal(quotationDownloadName(quote, "xlsx"), "[경남-남해] 남해군 꿈나눔센터_가상현실스포츠실_1차_WZ-001_02_위즈업견적.xlsx");
   assert.equal(quotationDownloadName(quote, "pdf"), "[경남-남해] 남해군 꿈나눔센터_가상현실스포츠실_1차_WZ-001_03_위즈업견적.pdf");

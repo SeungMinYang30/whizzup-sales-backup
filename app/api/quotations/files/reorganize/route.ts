@@ -9,11 +9,13 @@ import {
   organizeDriveFile,
   removeEmptyLegacyQuotationFolders,
   removeEmptyQuotationFolderChain,
+  syncDriveFileCopyFromSource,
 } from "../../../../../lib/google-drive-storage";
 import {
   QUOTATION_LIBRARY_FOLDER_SEGMENTS,
   QUOTATION_LIBRARY_PATH,
   quotationDownloadName,
+  quotationInstitutionFolderSegments,
   quotationSourceFileName,
 } from "../../../../../lib/quotation-file-name";
 
@@ -71,11 +73,14 @@ export async function POST(request: Request) {
     const failures: Array<{ quotationId: number; kind: string; error: string }> = [];
     let moved = 0;
     let renamed = 0;
+    let mirrored = 0;
 
     for (const row of rows.results) {
       const quotationId = Number(row.id);
       const region = await regionFor(d1, row);
       const input = nameInput(row, region);
+      const institutionFolder = quotationInstitutionFolderSegments(input);
+      const contextId = `${String(row.organization ?? "")}|${Math.max(1, Number(row.business_round) || 1)}|${quotationId}`;
       const files = [
         {
           kind: "pdf",
@@ -113,12 +118,20 @@ export async function POST(request: Request) {
           }
           const organized = await organizeDriveFile(
             file.id,
-            [...QUOTATION_LIBRARY_FOLDER_SEGMENTS],
+            institutionFolder,
             file.desiredName,
           );
           if (!organized.previousParents.includes(organized.destinationFolderId)) moved += 1;
           if (organized.previousName !== organized.name) renamed += 1;
           savedNames[file.kind as keyof typeof savedNames] = organized.name;
+          await syncDriveFileCopyFromSource({
+            sourceFileId: file.id,
+            name: organized.name,
+            folderSegments: [...QUOTATION_LIBRARY_FOLDER_SEGMENTS],
+            contextType: `authored-quotation-${file.kind}-mirror`,
+            contextId,
+          });
+          mirrored += 1;
         } catch (error) {
           failures.push({
             quotationId,
@@ -157,6 +170,7 @@ export async function POST(request: Request) {
       files: rows.results.reduce((sum, row) => sum + [row.drive_pdf_file_id, row.drive_xlsx_file_id, row.source_file_id].filter(Boolean).length, 0),
       moved,
       renamed,
+      mirrored,
       removedFolders,
       failures,
       folder: QUOTATION_LIBRARY_PATH,

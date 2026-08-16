@@ -9,7 +9,7 @@ export type QuotationFileNameInput = {
 };
 
 export const QUOTATION_LIBRARY_FOLDER = "견적서";
-export const QUOTATION_LIBRARY_FOLDER_SEGMENTS = ["01_기관자료", QUOTATION_LIBRARY_FOLDER] as const;
+export const QUOTATION_LIBRARY_FOLDER_SEGMENTS = ["견적서 전체"] as const;
 export const QUOTATION_LIBRARY_PATH = QUOTATION_LIBRARY_FOLDER_SEGMENTS.join("/");
 
 function safeFilePart(value: unknown, maxLength = 80) {
@@ -44,6 +44,17 @@ function withExtension(stem: string, extension: string) {
   const suffix = `.${extension}`;
   const maxStemLength = Math.max(1, 240 - suffix.length);
   return `${stem.slice(0, maxStemLength).replace(/[. ]+$/g, "")}${suffix}`;
+}
+
+export function quotationInstitutionFolderSegments(quote: QuotationFileNameInput) {
+  const yearMatch = safeFilePart(quote.quoteDate, 20).match(/^(\d{4})/u);
+  return [
+    "01_기관자료",
+    safeFilePart(quote.region, 60) || "지역 미분류",
+    safeFilePart(quote.organization, 90) || "기관 미지정",
+    QUOTATION_LIBRARY_FOLDER,
+    yearMatch?.[1] || String(new Date().getFullYear()),
+  ];
 }
 
 export function quotationIdentityStem(quote: QuotationFileNameInput) {

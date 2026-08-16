@@ -451,6 +451,62 @@ export async function replaceDriveFile(input: {
   };
 }
 
+export async function upsertDriveFileByContext(input: {
+  file: File;
+  folderSegments: string[];
+  contextType: string;
+  contextId: string;
+}) {
+  const folderId = await ensureDrivePath(input.folderSegments);
+  const matches = (await listDriveChildren(folderId)).filter((item) =>
+    !isDriveFolder(item)
+    && item.appProperties?.contextType === input.contextType
+    && item.appProperties?.contextId === input.contextId
+  );
+  const stored = matches[0]
+    ? await replaceDriveFile({ ...input, fileId: matches[0].id })
+    : await uploadDriveFile(input);
+  for (const duplicate of matches.slice(1)) {
+    await removeDriveFile(duplicate.id).catch(() => undefined);
+  }
+  return stored;
+}
+
+export async function syncDriveFileCopyFromSource(input: {
+  sourceFileId: string;
+  name: string;
+  folderSegments: string[];
+  contextType: string;
+  contextId: string;
+}) {
+  const metadata = await getDriveFileMetadata(input.sourceFileId);
+  const downloaded = await downloadDriveFile(input.sourceFileId);
+  const contentType = metadata.mimeType || downloaded.headers.get("content-type") || "application/octet-stream";
+  const file = new File([await downloaded.arrayBuffer()], input.name, { type: contentType });
+  return upsertDriveFileByContext({
+    file,
+    folderSegments: input.folderSegments,
+    contextType: input.contextType,
+    contextId: input.contextId,
+  });
+}
+
+export async function removeDriveFilesByContext(input: {
+  folderSegments: string[];
+  contextTypes: string[];
+  contextId: string;
+}) {
+  const folderId = await ensureDrivePath(input.folderSegments);
+  const types = new Set(input.contextTypes);
+  const matches = (await listDriveChildren(folderId)).filter((item) =>
+    !isDriveFolder(item)
+    && types.has(String(item.appProperties?.contextType || ""))
+    && item.appProperties?.contextId === input.contextId
+  );
+  for (const file of matches) await removeDriveFile(file.id);
+  return matches.length;
+}
+
 export async function createDriveResumableUpload(input: {
   fileName: string;
   mimeType: string;

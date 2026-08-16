@@ -60,7 +60,8 @@ test("final save creates PDF and Excel before Drive-backed finalization", () => 
   assert.match(filesRoute, /replaceDriveFile/);
   assert.match(filesRoute, /uploadDriveFile/);
   assert.match(filesRoute, /QUOTATION_LIBRARY_FOLDER/);
-  assert.doesNotMatch(filesRoute, /"01_기관자료"/);
+  assert.match(filesRoute, /quotationInstitutionFolderSegments/);
+  assert.match(filesRoute, /upsertDriveFileByContext/);
   assert.match(filesRoute, /SET status='final'/);
   assert.match(filesRoute, /kind === "pdf" \? "inline" : "attachment"/);
   assert.match(backup, /"revision_root_id"/);
@@ -82,6 +83,8 @@ test("existing Drive quotation files are renamed and moved in place", () => {
   assert.match(reorganizeRoute, /requireAdminMember/);
   assert.match(reorganizeRoute, /organizeDriveFile/);
   assert.match(reorganizeRoute, /QUOTATION_LIBRARY_FOLDER/);
+  assert.match(reorganizeRoute, /quotationInstitutionFolderSegments/);
+  assert.match(reorganizeRoute, /syncDriveFileCopyFromSource/);
   assert.match(reorganizeRoute, /removeEmptyQuotationFolderChain/);
   assert.doesNotMatch(reorganizeRoute, /removeDriveFile/);
 });

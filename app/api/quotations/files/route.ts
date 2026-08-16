@@ -12,10 +12,13 @@ import {
   isGoogleDriveConfigured,
   replaceDriveFile,
   removeDriveFile,
+  syncDriveFileCopyFromSource,
+  upsertDriveFileByContext,
   uploadDriveFile,
 } from "../../../../lib/google-drive-storage";
 import {
   QUOTATION_LIBRARY_FOLDER_SEGMENTS,
+  quotationInstitutionFolderSegments,
   quotationDownloadName,
   quotationSourceFileName,
 } from "../../../../lib/quotation-file-name";
@@ -187,8 +190,8 @@ export async function POST(request: Request) {
     const nameInput = namingInput(row, region);
     const pdfName = quotationDownloadName(nameInput, "pdf");
     const xlsxName = quotationDownloadName(nameInput, "xlsx");
-    const sourceName = sourceFile ? quotationSourceFileName(nameInput, sourceFile.name) : "";
-    const folderSegments = [...QUOTATION_LIBRARY_FOLDER_SEGMENTS];
+  const sourceName = sourceFile ? quotationSourceFileName(nameInput, sourceFile.name) : "";
+    const folderSegments = quotationInstitutionFolderSegments(nameInput);
     const contextId = `${String(row.organization ?? "")}|${Math.max(1, Number(row.business_round) || 1)}|${id}`;
     async function storeFile(input: {
       existingId: string;
@@ -223,11 +226,53 @@ export async function POST(request: Request) {
       file: new File([xlsx], xlsxName, { type: xlsx.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
       contextType: "authored-quotation-xlsx",
     });
+    const desiredSourceName = sourceFile
+      ? sourceName
+      : existingSourceId
+        ? quotationSourceFileName(nameInput, row.source_file_name || "원본.xlsx")
+        : "";
     const storedSource = sourceFile ? await storeFile({
       existingId: existingSourceId,
       file: new File([sourceFile], sourceName, { type: sourceFile.type || "application/octet-stream" }),
       contextType: "authored-quotation-source",
-    }) : null;
+    }) : existingSourceId
+      ? await replaceDriveFile({
+        fileId: existingSourceId,
+        file: new File(
+          [await (await downloadDriveFile(existingSourceId)).arrayBuffer()],
+          desiredSourceName,
+          { type: String(row.source_file_type ?? "") || "application/octet-stream" },
+        ),
+        folderSegments,
+        contextType: "authored-quotation-source",
+        contextId,
+      })
+      : null;
+    const mirrorInputs = [
+      { file: new File([pdf], pdfName, { type: pdf.type || "application/pdf" }), contextType: "authored-quotation-pdf-mirror" },
+      { file: new File([xlsx], xlsxName, { type: xlsx.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), contextType: "authored-quotation-xlsx-mirror" },
+      ...(sourceFile ? [{
+        file: new File([sourceFile], sourceName, { type: sourceFile.type || "application/octet-stream" }),
+        contextType: "authored-quotation-source-mirror",
+      }] : []),
+    ];
+    for (const mirror of mirrorInputs) {
+      await upsertDriveFileByContext({
+        file: mirror.file,
+        folderSegments: [...QUOTATION_LIBRARY_FOLDER_SEGMENTS],
+        contextType: mirror.contextType,
+        contextId,
+      });
+    }
+    if (storedSource && !sourceFile) {
+      await syncDriveFileCopyFromSource({
+        sourceFileId: storedSource.fileId,
+        name: desiredSourceName,
+        folderSegments: [...QUOTATION_LIBRARY_FOLDER_SEGMENTS],
+        contextType: "authored-quotation-source-mirror",
+        contextId,
+      });
+    }
 
     await d1.prepare(`UPDATE authored_quotations
       SET status='final', drive_pdf_file_id=?, drive_pdf_name=?,
@@ -240,7 +285,7 @@ export async function POST(request: Request) {
         storedXlsx.fileId,
         xlsxName,
         storedSource?.fileId || existingSourceId,
-        sourceName || String(row.source_file_name ?? ""),
+        desiredSourceName || String(row.source_file_name ?? ""),
         sourceFile?.type || String(row.source_file_type ?? ""),
         id,
       )
