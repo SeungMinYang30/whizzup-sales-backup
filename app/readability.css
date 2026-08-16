@@ -2085,6 +2085,89 @@
   .manager-inspection-table,
   .team-work-table { min-width: 0; }
 
+  /* Keep pre-award institution browsing dense while preserving the tap target. */
+  .followup-management > .records-heading {
+    min-height: 0;
+    padding: 12px 14px;
+    gap: 7px;
+  }
+  .followup-management .records-heading-actions { display: none !important; }
+  .followup-management .institution-mobile-header-actions {
+    display: flex;
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .followup-management .institution-mobile-header-actions .record-count {
+    min-height: 0;
+    padding: 5px 8px;
+  }
+  .followup-management .filter-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    padding: 9px 10px;
+  }
+  .followup-management .filter-row .inline-search { grid-column: 1 / -1; }
+  .followup-management .filter-row input,
+  .followup-management .filter-row select,
+  .followup-management .filter-row .reset-filter {
+    width: 100%;
+    min-width: 0 !important;
+    min-height: 40px;
+    height: 40px;
+  }
+  .followup-table tr {
+    grid-template-columns: 32px minmax(0, 1fr) minmax(92px, auto);
+    grid-auto-rows: auto;
+    align-items: start;
+    gap: 6px 9px;
+    margin: 7px 8px;
+    padding: 10px 11px;
+  }
+  .followup-table td {
+    width: auto !important;
+    height: auto !important;
+    min-height: 0;
+    align-self: start;
+  }
+  .followup-table td:nth-child(1) { grid-column: 1; grid-row: 1; }
+  .followup-table td:nth-child(3) {
+    grid-column: 3;
+    grid-row: 1;
+    text-align: right;
+  }
+  .followup-table td:nth-child(5) { grid-column: 2; grid-row: 1; }
+  .followup-table td:nth-child(8) {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    padding: 7px 9px;
+    border: 1px solid #e3e8f4;
+    border-radius: 9px;
+    background: #f8faff;
+  }
+  .followup-table td:nth-child(9) {
+    grid-column: 2 / -1;
+    grid-row: 3;
+    max-height: none;
+    padding-top: 1px;
+  }
+  .followup-table td:nth-child(3) small { margin-top: 2px; }
+  .followup-table .org-name { font-size: 14px; line-height: 1.35; }
+  .followup-table .budget-summary-name { font-size: 11px; }
+  .followup-table .budget-amount { font-size: 12px; }
+  .followup-table .followup-summary {
+    display: -webkit-box;
+    overflow: hidden;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .followup-table td:nth-child(9) small {
+    margin-top: 2px;
+    font-size: 10px;
+  }
+
   /* Post-award records stay compact: no desktop column widths or auto-created blank rows. */
   .awards-table tr {
     grid-template-columns: 32px minmax(0, 1fr) minmax(92px, .55fr);

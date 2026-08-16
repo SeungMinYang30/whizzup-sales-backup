@@ -47,3 +47,29 @@ test("post-award cards and modal action bars are compact and fully visible", asy
   assert.match(calendar, /data-mobile-label="삭제"/);
   assert.match(quotation, /quote-topbar-cancel/);
 });
+
+test("pre-award institution cards remove desktop cell heights and group mobile information", async () => {
+  const [styles, crm] = await Promise.all([
+    read("../app/readability.css"),
+    read("../app/crm-app.tsx"),
+  ]);
+  const finalMobile = styles.slice(styles.lastIndexOf("@media (max-width: 760px)"));
+  assert.match(
+    finalMobile,
+    /\.followup-management \.records-heading-actions \{ display: none !important; \}/,
+  );
+  assert.match(
+    finalMobile,
+    /\.followup-table td \{[\s\S]*height: auto !important;[\s\S]*min-height: 0;/,
+  );
+  assert.match(
+    finalMobile,
+    /\.followup-table td:nth-child\(5\) \{ grid-column: 2; grid-row: 1; \}/,
+  );
+  assert.match(
+    finalMobile,
+    /\.followup-table td:nth-child\(8\) \{[\s\S]*grid-row: 2;[\s\S]*background: #f8faff;/,
+  );
+  assert.match(finalMobile, /-webkit-line-clamp: 2/);
+  assert.match(crm, /institution-mobile-selection-bar/);
+});
