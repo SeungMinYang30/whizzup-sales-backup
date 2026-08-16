@@ -45,6 +45,33 @@ function fitText(context: CanvasRenderingContext2D, value: string, maxWidth: num
   return `${result}…`;
 }
 
+function wrapText(
+  context: CanvasRenderingContext2D,
+  value: string,
+  maxWidth: number,
+  maxLines = 4,
+) {
+  const source = String(value ?? "");
+  const lines: string[] = [];
+  for (const paragraph of source.split(/\r?\n/u)) {
+    let line = "";
+    for (const character of Array.from(paragraph)) {
+      const next = line + character;
+      if (!line || context.measureText(next).width <= maxWidth) {
+        line = next;
+      } else {
+        lines.push(line);
+        line = character;
+        if (lines.length >= maxLines) break;
+      }
+    }
+    if (line && lines.length < maxLines) lines.push(line);
+    if (lines.length >= maxLines) break;
+  }
+  if (!lines.length) return [""];
+  return lines;
+}
+
 function cell(
   context: CanvasRenderingContext2D,
   x: number,
@@ -52,7 +79,7 @@ function cell(
   width: number,
   height: number,
   value: string,
-  options: { fill?: string; color?: string; align?: CanvasTextAlign; bold?: boolean; size?: number } = {},
+  options: { fill?: string; color?: string; align?: CanvasTextAlign; bold?: boolean; size?: number; maxLines?: number } = {},
 ) {
   context.fillStyle = options.fill ?? "#ffffff";
   context.fillRect(x, y, width, height);
@@ -65,7 +92,7 @@ function cell(
   context.textBaseline = "middle";
   const padding = 10;
   const tx = options.align === "right" ? x + width - padding : options.align === "center" ? x + width / 2 : x + padding;
-  const lines = String(value ?? "").split(/\r?\n/u).slice(0, 2);
+  const lines = wrapText(context, value, width - padding * 2, options.maxLines ?? 4);
   const lineHeight = (options.size ?? 15) + 4;
   const firstY = y + height / 2 - ((lines.length - 1) * lineHeight) / 2;
   lines.forEach((line, index) => context.fillText(fitText(context, line, width - padding * 2), tx, firstY + index * lineHeight));
@@ -149,7 +176,7 @@ function drawRows(context: CanvasRenderingContext2D, rows: PdfRow[], startY: num
   const widths = [58, 320, 165, 205, 145, 203];
   for (const row of rows) {
     if (row.kind === "section") { y = sectionRow(context, y + 8, row.values[0]); continue; }
-    const height = row.kind === "header" ? 36 : row.kind === "item" && row.values[1].includes("\n") ? 52 : 39;
+    const height = measuredSettlementRowHeight(context, row, widths);
     let x = 72;
     row.values.forEach((value, index) => {
       const header = row.kind === "header";
@@ -166,6 +193,72 @@ function drawRows(context: CanvasRenderingContext2D, rows: PdfRow[], startY: num
     y += height;
   }
   return y;
+}
+
+function measuredSettlementRowHeight(
+  context: CanvasRenderingContext2D,
+  row: PdfRow,
+  widths = [58, 320, 165, 205, 145, 203],
+) {
+  if (row.kind === "header") return 42;
+  const fontSize = 14;
+  context.font = `500 ${fontSize}px "Malgun Gothic", sans-serif`;
+  const lines = row.values.map((value, index) =>
+    wrapText(context, value, Math.max(1, widths[index] - 20), 4).length,
+  );
+  return Math.max(39, 14 + Math.max(1, ...lines) * (fontSize + 4));
+}
+
+function settlementRowBlockHeight(
+  context: CanvasRenderingContext2D,
+  row: PdfRow,
+) {
+  return row.kind === "section"
+    ? 46
+    : measuredSettlementRowHeight(context, row);
+}
+
+function paginateSettlementRows(
+  context: CanvasRenderingContext2D,
+  rows: PdfRow[],
+) {
+  const chunks: PdfRow[][] = [];
+  let cursor = 0;
+  while (cursor < rows.length) {
+    const first = chunks.length === 0;
+    const startY = first ? 292 : 145;
+    const finalCapacity = PAGE_HEIGHT - 72 - startY - 450;
+    const continuationCapacity = PAGE_HEIGHT - 72 - startY;
+    const remainingHeight = rows
+      .slice(cursor)
+      .reduce((sum, row) => sum + settlementRowBlockHeight(context, row), 0);
+    const isFinalPage = remainingHeight <= finalCapacity;
+    const capacity = isFinalPage ? finalCapacity : continuationCapacity;
+    const pageRows: PdfRow[] = [];
+    let used = 0;
+    while (cursor + pageRows.length < rows.length) {
+      const rowIndex = cursor + pageRows.length;
+      const row = rows[rowIndex];
+      const height = settlementRowBlockHeight(context, row);
+      // Keep a real final page whose capacity already reserves the summary,
+      // company name and complete stamp block.
+      if (!isFinalPage && rowIndex === rows.length - 1 && pageRows.length) break;
+      const keepWithNext = row.kind === "section"
+        ? rows.slice(rowIndex, rowIndex + 3).reduce(
+            (sum, candidate) => sum + settlementRowBlockHeight(context, candidate),
+            0,
+          )
+        : height;
+      if (pageRows.length && used + keepWithNext > capacity) break;
+      if (pageRows.length && used + height > capacity) break;
+      pageRows.push(row);
+      used += height;
+    }
+    if (!pageRows.length) pageRows.push(rows[cursor]);
+    chunks.push(pageRows);
+    cursor += pageRows.length;
+  }
+  return chunks.length ? chunks : [[]];
 }
 
 function drawSummary(
@@ -257,9 +350,12 @@ export async function createConsortiumSettlementPdf(input: ConsortiumSettlementW
     input.includeStamp ? loadImage("/whizzup-seal.png") : Promise.resolve(null),
   ]);
   const rows = buildRows(input);
-  const chunks: PdfRow[][] = [];
-  for (let index = 0; index < rows.length; index += 22) chunks.push(rows.slice(index, index + 22));
-  if (!chunks.length) chunks.push([]);
+  const measurementCanvas = document.createElement("canvas");
+  const measurementContext = measurementCanvas.getContext("2d");
+  if (!measurementContext) throw new Error("정산서 행 높이를 계산하지 못했습니다.");
+  const chunks = paginateSettlementRows(measurementContext, rows);
+  measurementCanvas.width = 1;
+  measurementCanvas.height = 1;
   const pages: Array<{ blob: Blob; width: number; height: number }> = [];
   for (let pageIndex = 0; pageIndex < chunks.length; pageIndex += 1) {
     const canvas = document.createElement("canvas");

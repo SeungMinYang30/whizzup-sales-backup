@@ -108,33 +108,50 @@ function amounts(quote: AuthoredQuotationPdfInput) {
   return { subtotal, procurementFee, supply, tax: adjusted - supply, total: adjusted + procurementFee };
 }
 
-function estimatedItemRowHeight(item: AuthoredQuotationPdfItem) {
-  const nameLines = Math.max(1, Math.ceil(item.name.trim().length / 17));
-  const specificationLines = Math.max(1, Math.ceil(item.specification.trim().length / 29));
-  const identifierLines = Math.max(1, Math.ceil(identifier(item).length / 14));
-  const noteLines = Math.max(1, Math.ceil(outputNote(item).length / 10));
-  const lines = Math.min(4, Math.max(nameLines, specificationLines, identifierLines, noteLines));
-  return Math.min(112, 64 + (lines - 1) * 15);
+function measuredItemRowHeight(
+  context: CanvasRenderingContext2D,
+  item: AuthoredQuotationPdfItem,
+) {
+  const measurements = [
+    [formatQuotationItemNameForOutput(item.name), 188, 3, 15],
+    [item.specification, 224, 4, 15],
+    [identifier(item), 128, 3, 15],
+    [outputNote(item), 65, 3, 15],
+  ] as const;
+  const lineCounts = measurements.map(([value, width, maxLines, fontSize]) => {
+    context.font = `400 ${fontSize}px "Malgun Gothic", "Noto Sans KR", sans-serif`;
+    return splitText(context, value, width, maxLines).length;
+  });
+  const lines = Math.max(1, ...lineCounts);
+  return Math.min(132, Math.max(64, 22 + lines * 20));
 }
 
-function paginateItems(items: AuthoredQuotationPdfItem[]) {
+function paginateItems(
+  context: CanvasRenderingContext2D,
+  items: AuthoredQuotationPdfItem[],
+) {
   if (!items.length) return [{ items: [] as AuthoredQuotationPdfItem[], heights: [] as number[], startIndex: 0 }];
   const pages: Array<{ items: AuthoredQuotationPdfItem[]; heights: number[]; startIndex: number }> = [];
   let cursor = 0;
   while (cursor < items.length) {
     const isFirstPage = pages.length === 0;
-    const finalCapacity = isFirstPage ? 650 : 950;
-    const continuationCapacity = isFirstPage ? 925 : 1370;
+    // 마지막 페이지는 조건표와 서명·회사명·도장 블록 전체가 들어갈
+    // 공간을 먼저 확보합니다. 행 수가 아니라 실제 캔버스 측정 높이로 나눕니다.
+    const finalCapacity = isFirstPage ? 600 : 930;
+    const continuationCapacity = isFirstPage ? 1_045 : 1_380;
     const remaining = items.slice(cursor);
-    const remainingHeights = remaining.map(estimatedItemRowHeight);
-    const capacity = remainingHeights.reduce((sum, height) => sum + height, 0) <= finalCapacity
-      ? finalCapacity
-      : continuationCapacity;
+    const remainingHeights = remaining.map((item) => measuredItemRowHeight(context, item));
+    const remainingHeight = remainingHeights.reduce((sum, height) => sum + height, 0);
+    const isFinalPage = remainingHeight <= finalCapacity;
+    const capacity = isFinalPage ? finalCapacity : continuationCapacity;
     const pageItems: AuthoredQuotationPdfItem[] = [];
     const pageHeights: number[] = [];
     let used = 0;
     for (let index = cursor; index < items.length; index += 1) {
-      const height = estimatedItemRowHeight(items[index]);
+      const height = measuredItemRowHeight(context, items[index]);
+      // A continuation page must never consume the final row and accidentally
+      // become the signature page without the reserved signature capacity.
+      if (!isFinalPage && index === items.length - 1 && pageItems.length) break;
       if (pageItems.length && used + height > capacity) break;
       pageItems.push(items[index]);
       pageHeights.push(height);
@@ -211,7 +228,12 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
     quote.includeStamp ? loadImage("/whizzup-seal.png") : Promise.resolve(null),
     quote.items.some((item) => item.equipmentKit) ? loadImage("/airpass-seal.png") : Promise.resolve(null),
   ]);
-  const itemPages = paginateItems(quote.items);
+  const measurementCanvas = document.createElement("canvas");
+  const measurementContext = measurementCanvas.getContext("2d");
+  if (!measurementContext) throw new Error("견적서 행 높이를 계산하지 못했습니다.");
+  const itemPages = paginateItems(measurementContext, quote.items);
+  measurementCanvas.width = 1;
+  measurementCanvas.height = 1;
   const pageCount = itemPages.length;
   const total = amounts(quote);
   const pages: Array<{ blob: Blob; width: number; height: number }> = [];

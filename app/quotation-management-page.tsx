@@ -420,6 +420,14 @@ function downloadBlob(blob: Blob, name: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
+function openPdfBlobInNewTab(file: Blob) {
+  const url = URL.createObjectURL(file);
+  const tab = window.open(url, "_blank");
+  if (tab) tab.opener = null;
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return Boolean(tab);
+}
+
 async function renderGeneratedPdfPages(file: File) {
   const { GlobalWorkerOptions, getDocument } = await import("pdfjs-dist");
   GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
@@ -684,43 +692,27 @@ export default function QuotationManagementPage({
     };
   }, []);
 
-  function printQuotation() {
+  async function printQuotation() {
     if (!draft?.items.length) return;
-    const portal = document.querySelector<HTMLElement>(".quotation-print-portal");
-    const popup = window.open("", "whizzup-quotation-print", "popup=yes,width=1100,height=900");
-    if (!portal || !popup) {
-      popup?.close();
-      window.print();
-      setMessage("팝업이 차단되어 현재 창에서 인쇄 화면을 열었습니다.");
-      return;
-    }
-    const styles = Array.from(document.head.querySelectorAll<HTMLLinkElement | HTMLStyleElement>('link[rel="stylesheet"], style'))
-      .map((node) => node.outerHTML)
-      .join("");
-    let printStarted = false;
-    const startPrint = () => {
-      if (printStarted || popup.closed) return;
-      printStarted = true;
-      popup.focus();
-      try {
-        popup.print();
-      } finally {
-        window.setTimeout(() => {
-          if (!popup.closed) popup.close();
-        }, 250);
+    try {
+      const pdf = await createAuthoredQuotationPdf({
+        ...draft,
+        quoteNumber: draft.quoteNumber || "저장 전",
+        items: draft.items.map((item) => ({
+          ...item,
+          procurementFee: appliesProcurementFee(item)
+            ? Math.floor(item.quantity * item.unitPrice * item.procurementFeeRate / 10) * 10
+            : 0,
+        })),
+      });
+      if (!openPdfBlobInNewTab(pdf)) {
+        setMessage("새 탭이 차단되었습니다. 브라우저의 팝업 및 리디렉션 허용 후 PDF 보기·인쇄를 다시 눌러 주세요.");
+        return;
       }
-    };
-    popup.addEventListener("afterprint", () => popup.close(), { once: true });
-    const printTitle = quotationDownloadName({
-      ...draft,
-      region: quotationRegion(draft),
-    }, "pdf").replace(/\.pdf$/iu, "");
-    popup.document.open();
-    popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><base href="${window.location.origin}/"><title>${printTitle}</title>${styles}</head><body class="quotation-printing">${portal.outerHTML}</body></html>`);
-    popup.document.close();
-    popup.addEventListener("load", () => window.setTimeout(startPrint, 250), { once: true });
-    window.setTimeout(startPrint, 800);
-    setMessage("견적서 인쇄 전용 창을 열었습니다. 닫아도 영업관리 화면은 유지됩니다.");
+      setMessage("완성된 견적서 PDF를 새 탭에서 열었습니다. 새 탭의 PDF 도구에서 인쇄하거나 저장하세요.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "견적서 PDF를 만들지 못했습니다.");
+    }
   }
 
   function startQuotation() {
@@ -1106,19 +1098,14 @@ export default function QuotationManagementPage({
   async function openInternalProfitPdf() {
     const input = internalProfitExportInput();
     if (!input) return;
-    const popup = window.open("", "_blank");
     try {
       const file = await createInternalProfitReportPdf(input);
-      const url = URL.createObjectURL(file);
-      if (popup) {
-        popup.location.replace(url);
-        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      } else {
-        downloadBlob(file, file.name);
-        setMessage("팝업이 차단되어 내부 수익표 PDF를 내려받았습니다.");
+      if (!openPdfBlobInNewTab(file)) {
+        setMessage("새 탭이 차단되었습니다. 브라우저의 팝업 및 리디렉션 허용 후 PDF 보기·인쇄를 다시 눌러 주세요.");
+        return;
       }
+      setMessage("완성된 내부 수익표 PDF를 새 탭에서 열었습니다.");
     } catch (error) {
-      popup?.close();
       setMessage(error instanceof Error ? error.message : "내부 수익표 PDF를 만들지 못했습니다.");
     }
   }
@@ -2254,8 +2241,9 @@ export default function QuotationManagementPage({
       setMessage("저장된 PDF 파일이 없습니다. 견적 수정에서 최종 저장하면 현재 PDF가 생성됩니다.");
       return;
     }
-    const popup = window.open(quote.pdfUrl, "_blank", "noopener,noreferrer");
-    if (!popup) setMessage("팝업이 차단되었습니다. PDF 보기를 다시 눌러 주세요.");
+    const tab = window.open(quote.pdfUrl, "_blank");
+    if (tab) tab.opener = null;
+    if (!tab) setMessage("새 탭이 차단되었습니다. 브라우저의 팝업 및 리디렉션 허용 후 PDF 보기를 다시 눌러 주세요.");
   }
 
   async function downloadSavedExcel(quote: AuthoredQuotation) {
@@ -2523,13 +2511,11 @@ export default function QuotationManagementPage({
     setSettlementPrintPreparing(true);
     try {
       const pdf = await createConsortiumSettlementPdf(output);
-      const pageUrls = await renderGeneratedPdfPages(pdf);
-      setSettlementPrintPages(pageUrls);
-      setSettlementPrintPreparing(false);
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-      document.body.classList.add("settlement-printing");
-      window.print();
-      setMessage("업체 정산서 인쇄 창을 열었습니다. 프린터 출력 또는 PDF로 저장할 수 있습니다.");
+      if (!openPdfBlobInNewTab(pdf)) {
+        setMessage("새 탭이 차단되었습니다. 브라우저의 팝업 및 리디렉션 허용 후 PDF 보기·인쇄를 다시 눌러 주세요.");
+        return;
+      }
+      setMessage("완성된 정산서 PDF를 새 탭에서 열었습니다. 새 탭의 PDF 도구에서 인쇄하거나 저장하세요.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "정산서 PDF를 만들지 못했습니다.");
     } finally {
