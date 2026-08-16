@@ -25,5 +25,6 @@ test("같은 견적번호를 직접 수정한 경우 내용 수정일을 표시�
 test("파일 동기화 시간과 별도로 내용 수정일을 기록한다", () => {
   const store = fs.readFileSync(new URL("../lib/authored-quotations.ts", import.meta.url), "utf8");
   assert.match(store, /initial_quote_date TEXT NOT NULL DEFAULT ''/u);
+  assert.match(store, /initial_quote_date=CASE WHEN initial_quote_date='' THEN quote_date ELSE initial_quote_date END/u);
   assert.match(store, /content_updated_at=CASE WHEN status='final' THEN CURRENT_TIMESTAMP ELSE content_updated_at END/u);
 });
