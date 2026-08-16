@@ -662,3 +662,11 @@ test("PDF·엑셀·직접 등록은 활성 표준 예산 선택만 허용한다"
   );
   assert.match(route, /관리자가 등록한 활성 표준 예산명을 선택해 주세요/);
 });
+
+test("예산별 기관 표는 예산명과 기관별 금액을 데스크톱·모바일에서 함께 표시한다", async () => {
+  const map = await source("../app/sales-map.tsx");
+
+  assert.equal((map.match(/기관별 예산·금액/g) || []).length, 2);
+  assert.equal((map.match(/className="budget-amount-name"/g) || []).length, 2);
+  assert.match(map, /activeCampaign\.budgetType \|\| "예산명 확인 필요"/);
+});

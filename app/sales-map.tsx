@@ -5142,7 +5142,7 @@ export default function SalesMapPage({
                     <tr>
                       {isOwner && <th>선택</th>}
                       <th>기관</th>
-                      <th>기관별 금액</th>
+                      <th>기관별 예산·금액</th>
                       <th>진행 상태</th>
                       <th>진행 담당자</th>
                       <th>기관 담당자</th>
@@ -5212,6 +5212,9 @@ export default function SalesMapPage({
                         </td>
                         <td>
                           <div className="budget-amount-with-source">
+                            <span className="budget-amount-name">
+                              {activeCampaign.budgetType || "예산명 확인 필요"}
+                            </span>
                             <strong>{group.projectId
                               ? formatWon(
                                 group.members
@@ -5374,9 +5377,12 @@ export default function SalesMapPage({
                     </header>
                     <dl>
                       <div>
-                        <dt>기관별 금액</dt>
+                        <dt>기관별 예산·금액</dt>
                         <dd>
                           <span className="budget-amount-with-source">
+                            <span className="budget-amount-name">
+                              {activeCampaign.budgetType || "예산명 확인 필요"}
+                            </span>
                             <strong>{group.projectId
                               ? formatWon(
                                 group.members
