@@ -11,6 +11,8 @@ type Result = {
   removedFolders: number;
   failures: Array<{ quotationId: number; kind: string; error: string }>;
   folder: string;
+  nextAfterId?: number;
+  done?: boolean;
   error?: string;
 };
 
@@ -22,16 +24,41 @@ export default function QuotationDriveReorganizePage() {
     setRunning(dryRun ? "dry" : "apply");
     setResult(null);
     try {
-      const response = await fetch("/api/quotations/files/reorganize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dryRun }),
-      });
-      const payload = await response.json().catch(() => ({})) as Result;
-      if (!response.ok && response.status !== 207) {
-        throw new Error(payload.error || "견적서 파일 정리를 완료하지 못했습니다.");
+      const total: Result = {
+        dryRun,
+        quotations: 0,
+        files: 0,
+        moved: 0,
+        renamed: 0,
+        removedFolders: 0,
+        failures: [],
+        folder: "",
+      };
+      let afterId = 0;
+      for (let batch = 0; batch < 1_000; batch += 1) {
+        const response = await fetch("/api/quotations/files/reorganize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dryRun, afterId }),
+        });
+        const payload = await response.json().catch(() => ({})) as Result;
+        if (!response.ok && response.status !== 207) {
+          throw new Error(payload.error || "견적서 파일 정리를 완료하지 못했습니다.");
+        }
+        total.quotations += payload.quotations || 0;
+        total.files += payload.files || 0;
+        total.moved += payload.moved || 0;
+        total.renamed += payload.renamed || 0;
+        total.removedFolders += payload.removedFolders || 0;
+        total.failures.push(...(payload.failures || []));
+        total.folder = payload.folder || total.folder;
+        setResult({ ...total });
+        if (payload.done) break;
+        const nextAfterId = Math.max(0, Number(payload.nextAfterId) || 0);
+        if (nextAfterId <= afterId) throw new Error("견적서 파일 정리 위치를 이어가지 못했습니다.");
+        afterId = nextAfterId;
       }
-      setResult(payload);
+      setResult({ ...total });
     } catch (error) {
       setResult({
         dryRun,

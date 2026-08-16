@@ -19,6 +19,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 type QuotationRow = Record<string, unknown>;
+const BATCH_SIZE = 5;
 
 async function regionFor(
   d1: Awaited<ReturnType<typeof ensureAuthoredQuotationsReady>>,
@@ -51,14 +52,18 @@ export async function POST(request: Request) {
     if (!isGoogleDriveConfigured()) {
       return Response.json({ error: "Google Drive 자료실 연결 정보가 등록되지 않았습니다." }, { status: 503 });
     }
-    const payload = await request.json().catch(() => ({})) as { dryRun?: boolean };
+    const payload = await request.json().catch(() => ({})) as { dryRun?: boolean; afterId?: number };
     const dryRun = payload.dryRun === true;
+    const afterId = Math.max(0, Number(payload.afterId) || 0);
     const d1 = await ensureAuthoredQuotationsReady();
     const rows = await d1
       .prepare(`SELECT * FROM authored_quotations
         WHERE deleted_at = ''
+          AND id > ?
           AND (drive_pdf_file_id <> '' OR drive_xlsx_file_id <> '' OR source_file_id <> '')
-        ORDER BY id`)
+        ORDER BY id
+        LIMIT ?`)
+      .bind(afterId, BATCH_SIZE)
       .all<QuotationRow>();
     const oldParentIds = new Set<string>();
     const failures: Array<{ quotationId: number; kind: string; error: string }> = [];
@@ -137,6 +142,9 @@ export async function POST(request: Request) {
       }
     }
 
+    const nextAfterId = rows.results.length
+      ? Number(rows.results[rows.results.length - 1]?.id) || afterId
+      : afterId;
     return Response.json({
       dryRun,
       quotations: rows.results.length,
@@ -146,6 +154,8 @@ export async function POST(request: Request) {
       removedFolders,
       failures,
       folder: QUOTATION_LIBRARY_FOLDER,
+      nextAfterId,
+      done: rows.results.length < BATCH_SIZE,
     }, { status: failures.length ? 207 : 200 });
   } catch (error) {
     return accessErrorResponse(error);
