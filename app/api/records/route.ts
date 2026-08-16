@@ -786,8 +786,8 @@ async function saveInstitutionBudgetsWithoutActivity(
          FROM equipment_projects
          WHERE organization = ? AND business_round = ?
            AND (
-             (? IS NOT NULL AND budget_request_id = ?)
-             OR (? IS NOT NULL AND budget_group_id = ?)
+             (CAST(? AS text) IS NOT NULL AND budget_request_id = ?)
+             OR (CAST(? AS bigint) IS NOT NULL AND budget_group_id = ?)
              OR name = ? OR budget_original_name = ?
            )
          ORDER BY CASE WHEN budget_request_id = ? THEN 0

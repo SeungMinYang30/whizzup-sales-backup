@@ -23,6 +23,8 @@ test("master-only institutions save budgets without creating a contact activity"
   assert.match(records, /RETURNING id[\s\S]*\.first<\{ id: number \}>\(\)/);
   assert.match(records, /budget_request_id = \?/);
   assert.match(records, /budget_group_id = \?/);
+  assert.match(records, /CAST\(\? AS text\) IS NOT NULL/);
+  assert.match(records, /CAST\(\? AS bigint\) IS NOT NULL/);
   assert.match(institutions, /WHERE activity_id IS NULL/);
   assert.match(institutions, /budgetsJson: serializeActivityBudgets/);
   assert.match(vercelSchema, /202608160001_institution_business_budgets/);
