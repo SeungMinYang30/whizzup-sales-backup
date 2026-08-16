@@ -11,7 +11,8 @@ import {
   removeEmptyQuotationFolderChain,
 } from "../../../../../lib/google-drive-storage";
 import {
-  QUOTATION_LIBRARY_FOLDER,
+  QUOTATION_LIBRARY_FOLDER_SEGMENTS,
+  QUOTATION_LIBRARY_PATH,
   quotationDownloadName,
   quotationSourceFileName,
 } from "../../../../../lib/quotation-file-name";
@@ -112,7 +113,7 @@ export async function POST(request: Request) {
           }
           const organized = await organizeDriveFile(
             file.id,
-            [QUOTATION_LIBRARY_FOLDER],
+            [...QUOTATION_LIBRARY_FOLDER_SEGMENTS],
             file.desiredName,
           );
           if (!organized.previousParents.includes(organized.destinationFolderId)) moved += 1;
@@ -158,7 +159,7 @@ export async function POST(request: Request) {
       renamed,
       removedFolders,
       failures,
-      folder: QUOTATION_LIBRARY_FOLDER,
+      folder: QUOTATION_LIBRARY_PATH,
       nextAfterId,
       done,
     }, { status: failures.length ? 207 : 200 });

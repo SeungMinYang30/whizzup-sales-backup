@@ -79,7 +79,7 @@ export default function QuotationDriveReorganizePage() {
   return (
     <main style={{ maxWidth: 760, margin: "48px auto", padding: 24, fontFamily: "sans-serif" }}>
       <h1>견적서 Drive 정리</h1>
-      <p>기존 파일 ID를 유지한 채 기관자료 보기_견적서 폴더로 이동하고 표준 파일명으로 바꿉니다.</p>
+      <p>기존 파일 ID를 유지한 채 01_기관자료/견적서 폴더로 이동하고 표준 파일명으로 바꿉니다.</p>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", margin: "24px 0" }}>
         <button disabled={Boolean(running)} onClick={() => void run(true)}>
           {running === "dry" ? "확인 중…" : "변경 대상 미리보기"}

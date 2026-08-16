@@ -15,7 +15,7 @@ import {
   uploadDriveFile,
 } from "../../../../lib/google-drive-storage";
 import {
-  QUOTATION_LIBRARY_FOLDER,
+  QUOTATION_LIBRARY_FOLDER_SEGMENTS,
   quotationDownloadName,
   quotationSourceFileName,
 } from "../../../../lib/quotation-file-name";
@@ -188,7 +188,7 @@ export async function POST(request: Request) {
     const pdfName = quotationDownloadName(nameInput, "pdf");
     const xlsxName = quotationDownloadName(nameInput, "xlsx");
     const sourceName = sourceFile ? quotationSourceFileName(nameInput, sourceFile.name) : "";
-    const folderSegments = [QUOTATION_LIBRARY_FOLDER];
+    const folderSegments = [...QUOTATION_LIBRARY_FOLDER_SEGMENTS];
     const contextId = `${String(row.organization ?? "")}|${Math.max(1, Number(row.business_round) || 1)}|${id}`;
     async function storeFile(input: {
       existingId: string;

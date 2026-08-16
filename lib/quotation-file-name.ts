@@ -8,7 +8,9 @@ export type QuotationFileNameInput = {
   revisionNumber?: unknown;
 };
 
-export const QUOTATION_LIBRARY_FOLDER = "기관자료 보기_견적서";
+export const QUOTATION_LIBRARY_FOLDER = "견적서";
+export const QUOTATION_LIBRARY_FOLDER_SEGMENTS = ["01_기관자료", QUOTATION_LIBRARY_FOLDER] as const;
+export const QUOTATION_LIBRARY_PATH = QUOTATION_LIBRARY_FOLDER_SEGMENTS.join("/");
 
 function safeFilePart(value: unknown, maxLength = 80) {
   return String(value ?? "")

@@ -744,7 +744,7 @@ export async function organizeDriveFile(fileId: string, folderSegments: string[]
   }
 }
 
-const REMOVABLE_QUOTATION_FOLDER = /^(?:견적서|참고 원본|\d{4})$/u;
+const REMOVABLE_QUOTATION_FOLDER = /^(?:기관자료 보기_견적서|견적서|참고 원본|\d{4})$/u;
 
 export async function removeEmptyQuotationFolderChain(startFolderId: string) {
   let folderId = startFolderId;
