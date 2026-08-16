@@ -705,24 +705,60 @@ export async function listReadOnlyGoogleCalendarRange(start: string, end: string
   if (!feed.connected || !feed.events.length) return feed;
 
   const linked = await getD1().prepare(
-    `SELECT google_event_id
+    `SELECT organization, label, scheduled_date, start_time, end_time, google_event_id
      FROM organization_schedules
      WHERE TRIM(COALESCE(deleted_at, '')) = ''
        AND TRIM(COALESCE(google_event_id, '')) <> ''
        AND scheduled_date <= ?
        AND COALESCE(NULLIF(end_date, ''), scheduled_date) >= ?`,
-  ).bind(end, start).all<{ google_event_id: string }>();
+  ).bind(end, start).all<{
+    organization: string;
+    label: string;
+    scheduled_date: string;
+    start_time: string;
+    end_time: string;
+    google_event_id: string;
+  }>();
   const linkedEventIds = new Set(
     linked.results
       .map((row: { google_event_id: string }) => normalizeGoogleCalendarEventId(row.google_event_id || ""))
       .filter(Boolean),
   );
+  const normalizeIdentityPart = (value: string) =>
+    value.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
+  const scheduleSignature = (
+    organization: string,
+    label: string,
+    scheduledDate: string,
+    startTime: string,
+    endTime: string,
+  ) => [
+    normalizeIdentityPart(organization),
+    scheduledDate,
+    startTime || "",
+    endTime || "",
+    normalizeScheduleSemanticLabel(organization, label),
+  ].join("\u001f");
+  const linkedScheduleSignatures = new Set(linked.results.map((row) => scheduleSignature(
+    row.organization || "",
+    row.label || "",
+    row.scheduled_date || "",
+    row.start_time || "",
+    row.end_time || "",
+  )));
 
   return {
     ...feed,
-    events: feed.events.filter((event) =>
-      !linkedEventIds.has(normalizeGoogleCalendarEventId(event.googleEventId || "")),
-    ),
+    events: feed.events.filter((event) => {
+      if (linkedEventIds.has(normalizeGoogleCalendarEventId(event.googleEventId || ""))) return false;
+      return !linkedScheduleSignatures.has(scheduleSignature(
+        event.organization || "",
+        event.label || "",
+        event.scheduledDate || "",
+        event.startTime || "",
+        event.endTime || "",
+      ));
+    }),
   };
 }
 

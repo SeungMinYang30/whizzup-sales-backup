@@ -20,8 +20,10 @@ test("read-only Sites reconciliation excludes Google events already linked in re
     readFile(new URL("../lib/google-calendar-sync.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/google-calendar-feed.ts", import.meta.url), "utf8"),
   ]);
-  assert.match(sync, /SELECT google_event_id[\s\S]*?organization_schedules/);
+  assert.match(sync, /SELECT organization, label, scheduled_date, start_time, end_time, google_event_id[\s\S]*?organization_schedules/);
   assert.match(sync, /linkedEventIds\.has\(normalizeGoogleCalendarEventId\(event\.googleEventId/);
+  assert.match(sync, /linkedScheduleSignatures\.has\(scheduleSignature/);
+  assert.match(sync, /event\.scheduledDate[\s\S]*?event\.startTime[\s\S]*?event\.endTime/);
   assert.match(feed, /replace\(\/@google\\\.com\$\/i, ""\)/);
 });
 
