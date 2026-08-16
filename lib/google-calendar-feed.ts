@@ -19,6 +19,7 @@ export type GoogleCalendarSchedule = {
   updatedAt: string;
   updatedByName: string;
   conflict: false;
+  googleEventId: string;
 };
 
 type ParsedDate = {
@@ -125,6 +126,10 @@ function eventLink(summary: string) {
   return `https://calendar.google.com/calendar/u/0/r/search?q=${encodeURIComponent(summary)}`;
 }
 
+export function normalizeGoogleCalendarEventId(value: string) {
+  return value.trim().toLowerCase().replace(/@google\.com$/i, "");
+}
+
 function scheduleFromEvent(event: CalendarEvent, startDate: string, endDate: string): GoogleCalendarSchedule {
   return {
     id: `google:${event.uid}:${startDate}`,
@@ -145,6 +150,7 @@ function scheduleFromEvent(event: CalendarEvent, startDate: string, endDate: str
     updatedAt: "",
     updatedByName: "Google Calendar",
     conflict: false,
+    googleEventId: normalizeGoogleCalendarEventId(event.uid),
   };
 }
 

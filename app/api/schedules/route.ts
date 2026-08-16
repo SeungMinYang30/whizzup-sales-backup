@@ -30,6 +30,7 @@ import {
   deleteUnlinkedGoogleCalendarSchedule,
   linkGoogleCalendarSchedule,
   listCalendarSyncIssues,
+  listReadOnlyGoogleCalendarRange,
   reconcileGoogleCalendarRange,
   retryGoogleCalendarSync,
 } from "../../../lib/google-calendar-sync";
@@ -111,7 +112,7 @@ export async function GET(request: Request) {
           listScheduleCalendarForMember(member, start, end),
           listCalendarSyncIssues(),
           directSitesStandby
-            ? listGoogleCalendarSchedules(start, end)
+            ? listReadOnlyGoogleCalendarRange(start, end)
             : Promise.resolve({ configured: false, connected: false, events: [] }),
         ]);
         return Response.json({

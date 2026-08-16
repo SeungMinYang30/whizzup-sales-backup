@@ -15,6 +15,10 @@ import {
 } from "./google-calendar-api";
 import { googleCalendarTitle, removeOriginalGoogleTitleNote } from "./google-calendar-title";
 import {
+  listGoogleCalendarSchedules,
+  normalizeGoogleCalendarEventId,
+} from "./google-calendar-feed";
+import {
   CONSTRUCTION_STAGES,
   isValidConstructionStage,
 } from "./construction-stages";
@@ -693,6 +697,33 @@ async function localSiteScheduleIds() {
     `SELECT id FROM organization_schedules WHERE TRIM(COALESCE(deleted_at, '')) = ''`,
   ).all<{ id: number }>();
   return new Set(result.results.map((row: { id: number }) => Number(row.id)));
+}
+
+export async function listReadOnlyGoogleCalendarRange(start: string, end: string) {
+  await ensureOrganizationSchedulesReady();
+  const feed = await listGoogleCalendarSchedules(start, end);
+  if (!feed.connected || !feed.events.length) return feed;
+
+  const linked = await getD1().prepare(
+    `SELECT google_event_id
+     FROM organization_schedules
+     WHERE TRIM(COALESCE(deleted_at, '')) = ''
+       AND TRIM(COALESCE(google_event_id, '')) <> ''
+       AND scheduled_date <= ?
+       AND COALESCE(NULLIF(end_date, ''), scheduled_date) >= ?`,
+  ).bind(end, start).all<{ google_event_id: string }>();
+  const linkedEventIds = new Set(
+    linked.results
+      .map((row: { google_event_id: string }) => normalizeGoogleCalendarEventId(row.google_event_id || ""))
+      .filter(Boolean),
+  );
+
+  return {
+    ...feed,
+    events: feed.events.filter((event) =>
+      !linkedEventIds.has(normalizeGoogleCalendarEventId(event.googleEventId || "")),
+    ),
+  };
 }
 
 async function repairDeletedConstructionCalendarEvents(
