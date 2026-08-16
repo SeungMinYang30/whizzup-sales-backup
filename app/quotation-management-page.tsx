@@ -2951,7 +2951,7 @@ export default function QuotationManagementPage({
                 <label>할인 <span className="quotation-money-input"><FormattedMoneyInput value={draft.discountAmount} onChange={(discountAmount) => setDraft({ ...draft, discountAmount })} label="할인 금액" /><b>원</b></span></label>
                 <label>추가 <span className="quotation-money-input"><FormattedMoneyInput value={draft.extraAmount} onChange={(extraAmount) => setDraft({ ...draft, extraAmount })} label="추가비용" /><b>원</b></span></label>
               </div>
-              <dl><dt>품목금액 (VAT 포함)</dt><dd>{won.format(numbers.subtotal)}원</dd>{numbers.procurementFee > 0 && <><dt>조달수수료 (별도)</dt><dd>{won.format(numbers.procurementFee)}원</dd></>}<dt>최종 합계</dt><dd>{won.format(numbers.total)}원</dd><dt>세액 참고 (품목금액 기준)</dt><dd className="quote-tax-reference"><span>공급가액 {won.format(numbers.supply)}원</span><span>부가세 {won.format(numbers.tax)}원</span></dd></dl>
+              <dl><dt>품목금액 (VAT 포함)</dt><dd>{won.format(numbers.subtotal)}원</dd>{numbers.procurementFee > 0 && <><dt>조달수수료 (별도)</dt><dd>{won.format(numbers.procurementFee)}원</dd></>}<dt>최종 합계</dt><dd>{won.format(numbers.total)}원</dd><dt className="quote-tax-reference-label">공급가액<small>세액 참고 · 품목금액 기준</small></dt><dd className="quote-tax-reference-value">{won.format(numbers.supply)}원</dd><dt className="quote-tax-reference-label">부가세</dt><dd className="quote-tax-reference-value">{won.format(numbers.tax)}원</dd></dl>
             </section>
             <label className="quotation-memo">특기사항 / 메모<textarea value={draft.memo} onChange={(event) => setDraft({ ...draft, memo: event.target.value })} placeholder="견적 관련 특기사항이나 메모를 입력해 주세요." /></label>
           </main>
