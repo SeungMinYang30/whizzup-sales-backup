@@ -41,7 +41,26 @@ test("post-award cards and modal action bars are compact and fully visible", asy
     read("../app/quotation-management-page.tsx"),
   ]);
   const finalMobile = styles.slice(styles.lastIndexOf("@media (max-width: 760px)"));
-  assert.match(finalMobile, /\.awards-table td:nth-child\(12\)[\s\S]*grid-row: 6/);
+  assert.match(
+    finalMobile,
+    /\.records-panel:has\(\.awards-table\) \.filter-row \{[\s\S]*grid-template-columns: repeat\(3/,
+  );
+  assert.match(
+    finalMobile,
+    /\.records-panel:has\(\.awards-table\) \.records-heading-actions > button:disabled \{[\s\S]*display: none;/,
+  );
+  assert.match(
+    finalMobile,
+    /\.awards-table td \{[\s\S]*height: auto !important;[\s\S]*min-height: 0;/,
+  );
+  assert.match(
+    finalMobile,
+    /\.awards-table td:nth-child\(9\) \{[\s\S]*display: block;[\s\S]*grid-row: 3;/,
+  );
+  assert.match(
+    finalMobile,
+    /\.awards-table td:nth-child\(10\),[\s\S]*\.awards-table td:nth-child\(12\) \{ display: none; \}/,
+  );
   assert.match(finalMobile, /\.schedule-editor-actions[\s\S]*grid-template-columns: repeat\(2/);
   assert.match(finalMobile, /\.quote-studio-topbar nav[\s\S]*grid-template-columns: repeat\(4/);
   assert.match(calendar, /data-mobile-label="삭제"/);
