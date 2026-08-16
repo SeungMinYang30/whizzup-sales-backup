@@ -8550,7 +8550,18 @@ export default function CrmApp({
       groupJointProjectRows(followupRows),
       keyword
         ? (record) =>
-            recordSearchIndex.get(record.id)?.includes(keyword) ?? false
+            recordSearchIndex.get(record.id)?.includes(keyword) ??
+            [
+              record.organization,
+              record.region,
+              record.contactName,
+              record.contactPhone,
+              record.contactEmail,
+              record.progressManager,
+            ]
+              .join(" ")
+              .toLocaleLowerCase("ko-KR")
+              .includes(keyword)
         : undefined,
     );
   }, [deferredSearch, followupRows, recordSearchIndex]);
@@ -16078,9 +16089,30 @@ export default function CrmApp({
           <button className="menu-button" onClick={() => setMobileNav(true)} aria-label="메뉴 열기">
             ☰
           </button>
-          <GlobalInstitutionSearch onOpen={(organization, businessRound) => {
-            setDetailBusinessRound(businessRound);
-            setDetailOrganization(organization);
+          <GlobalInstitutionSearch onOpen={(institution) => {
+            const now = new Date().toISOString();
+            setInstitutionRegistry((current) => {
+              const key = institutionAliasKey(institution.organization);
+              if (
+                current.some(
+                  (item) => institutionAliasKey(item.organization) === key,
+                )
+              ) {
+                return current;
+              }
+              return [
+                ...current,
+                {
+                  organization: institution.organization,
+                  region: institution.region,
+                  createdByName: "기관 마스터",
+                  createdAt: now,
+                  updatedAt: now,
+                },
+              ];
+            });
+            setDetailBusinessRound(institution.businessRound);
+            setDetailOrganization(institution.organization);
           }} />
           <nav className="dashboard-status-strip" aria-label="업무 현황 바로가기">
               <button

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type Institution = {
+export type GlobalInstitutionSearchItem = {
   id: number;
   organization: string;
   businessRound: number;
@@ -15,7 +15,7 @@ type Institution = {
 };
 
 type CachedInstitutionSearch = {
-  items: Institution[];
+  items: GlobalInstitutionSearchItem[];
   cachedAt: number;
 };
 
@@ -24,10 +24,10 @@ const SEARCH_CACHE_TTL_MS = 30_000;
 export default function GlobalInstitutionSearch({
   onOpen,
 }: {
-  onOpen: (organization: string, businessRound: number) => void;
+  onOpen: (institution: GlobalInstitutionSearchItem) => void;
 }) {
   const [query, setQuery] = useState("");
-  const [items, setItems] = useState<Institution[]>([]);
+  const [items, setItems] = useState<GlobalInstitutionSearchItem[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
@@ -57,7 +57,7 @@ export default function GlobalInstitutionSearch({
       })
         .then(async (response) => {
           const payload = (await response.json()) as {
-            institutions?: Institution[];
+            institutions?: GlobalInstitutionSearchItem[];
           };
           if (!response.ok) throw new Error("기관 검색을 완료하지 못했습니다.");
           return payload;
@@ -113,7 +113,7 @@ export default function GlobalInstitutionSearch({
               type="button"
               key={`${item.organization}-${item.businessRound}`}
               onClick={() => {
-                onOpen(item.organization, item.businessRound);
+                onOpen(item);
                 setOpen(false);
               }}
             >
