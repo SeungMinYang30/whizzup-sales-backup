@@ -13651,6 +13651,27 @@ export default function CrmApp({
       });
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(payload.error || "삭제하지 못했습니다.");
+      setInstitutionRegistry((current) => {
+        const key = institutionAliasKey(record.organization);
+        if (
+          current.some(
+            (institution) =>
+              institutionAliasKey(institution.organization) === key,
+          )
+        ) {
+          return current;
+        }
+        return [
+          ...current,
+          {
+            organization: record.organization,
+            region: record.region,
+            createdByName: record.createdByName,
+            createdAt: record.createdAt || new Date().toISOString(),
+            updatedAt: record.updatedAt || new Date().toISOString(),
+          },
+        ];
+      });
       setRecords((current) => current.filter((item) => item.id !== record.id));
       setToast("기록을 휴지통으로 이동했습니다. 관리자가 30일 안에 복원할 수 있습니다.");
       return true;

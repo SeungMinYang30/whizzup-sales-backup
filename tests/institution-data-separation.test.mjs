@@ -45,6 +45,10 @@ test("상세 기록 삭제는 기관 마스터를 남기고 명시적 기관 삭
   assert.match(recordsRoute, /const cleanupOrganizations = organizations/);
   assert.match(
     recordsRoute,
+    /if \(ids\.length && activityRows\.length\)[\s\S]*INSERT INTO institution_registry/,
+  );
+  assert.match(
+    recordsRoute,
     /loadRows\(\s*"institution_registry",\s*"organization",\s*cleanupOrganizations/,
   );
   assert.match(
@@ -60,6 +64,10 @@ test("상세 기록 삭제는 기관 마스터를 남기고 명시적 기관 삭
   assert.match(
     trashStore,
     /entity_type = 'record'[\s\S]*tables\.activities[\s\S]*ON CONFLICT\(organization\) DO NOTHING/,
+  );
+  assert.match(
+    crm,
+    /setInstitutionRegistry\(\(current\) =>[\s\S]*setRecords\(\(current\) => current\.filter/,
   );
 });
 

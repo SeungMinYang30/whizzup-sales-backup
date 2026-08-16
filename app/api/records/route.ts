@@ -1990,6 +1990,56 @@ export async function DELETE(request: Request) {
           .filter(Boolean),
       ),
     ];
+    // A history-row deletion must never make its institution disappear. Some
+    // older databases predate institution_registry, so preserve the master
+    // from the activity snapshot before removing the final activity row.
+    if (ids.length && activityRows.length) {
+      const institutionsToPreserve = new Map<
+        string,
+        {
+          organization: string;
+          region: string;
+          createdByName: string;
+          createdAt: string;
+          updatedAt: string;
+        }
+      >();
+      activityRows.forEach((row) => {
+        const organization = clean(row.organization);
+        if (!organization) return;
+        const updatedAt = clean(row.updated_at) || clean(row.created_at);
+        const current = institutionsToPreserve.get(organization);
+        if (current && current.updatedAt > updatedAt) return;
+        institutionsToPreserve.set(organization, {
+          organization,
+          region: clean(row.region),
+          createdByName: clean(row.created_by_name),
+          createdAt: clean(row.created_at) || new Date().toISOString(),
+          updatedAt: updatedAt || new Date().toISOString(),
+        });
+      });
+      const institutions = [...institutionsToPreserve.values()];
+      for (let index = 0; index < institutions.length; index += 40) {
+        await d1.batch(
+          institutions.slice(index, index + 40).map((institution) =>
+            d1
+              .prepare(
+                `INSERT INTO institution_registry (
+                   organization, region, created_by_name, created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT(organization) DO NOTHING`,
+              )
+              .bind(
+                institution.organization,
+                institution.region,
+                institution.createdByName,
+                institution.createdAt,
+                institution.updatedAt,
+              ),
+          ),
+        );
+      }
+    }
     const selectedCountByOrganization = new Map<string, number>();
     activityRows.forEach((row) => {
       const organization = clean(row.organization);

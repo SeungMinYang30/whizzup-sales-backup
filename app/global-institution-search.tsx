@@ -14,6 +14,13 @@ type Institution = {
   contactPhone: string;
 };
 
+type CachedInstitutionSearch = {
+  items: Institution[];
+  cachedAt: number;
+};
+
+const SEARCH_CACHE_TTL_MS = 30_000;
+
 export default function GlobalInstitutionSearch({
   onOpen,
 }: {
@@ -24,7 +31,7 @@ export default function GlobalInstitutionSearch({
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
-  const cacheRef = useRef(new Map<string, Institution[]>());
+  const cacheRef = useRef(new Map<string, CachedInstitutionSearch>());
 
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -34,12 +41,13 @@ export default function GlobalInstitutionSearch({
     }
     const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
     const cached = cacheRef.current.get(normalizedQuery);
-    if (cached) {
-      setItems(cached);
+    if (cached && Date.now() - cached.cachedAt < SEARCH_CACHE_TTL_MS) {
+      setItems(cached.items);
       setLoading(false);
       setOpen(true);
       return;
     }
+    cacheRef.current.delete(normalizedQuery);
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setLoading(true);
@@ -58,7 +66,14 @@ export default function GlobalInstitutionSearch({
           const nextItems = Array.isArray(payload.institutions)
             ? payload.institutions
             : [];
-          cacheRef.current.set(normalizedQuery, nextItems);
+          if (nextItems.length) {
+            cacheRef.current.set(normalizedQuery, {
+              items: nextItems,
+              cachedAt: Date.now(),
+            });
+          } else {
+            cacheRef.current.delete(normalizedQuery);
+          }
           setItems(nextItems);
           setOpen(true);
         })

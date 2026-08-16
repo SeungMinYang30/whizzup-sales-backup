@@ -1,6 +1,9 @@
 import { accessErrorResponse, requireApprovedMember } from "../../../../lib/collaboration";
-import { getD1 } from "../../../../db";
 import { ensureRecordsReady } from "../../../../lib/records-store";
+import {
+  backfillInstitutionRegistryFromRecordTrash,
+  ensureTrashReady,
+} from "../../../../lib/trash-store";
 
 export const dynamic = "force-dynamic";
 
@@ -11,11 +14,12 @@ function clean(value: unknown) {
 export async function GET(request: Request) {
   try {
     await requireApprovedMember();
-    await ensureRecordsReady();
+    const d1 = await ensureRecordsReady();
+    await ensureTrashReady();
+    await backfillInstitutionRegistryFromRecordTrash(d1);
     const query = clean(new URL(request.url).searchParams.get("q")).slice(0, 80);
     if (query.length < 2) return Response.json({ institutions: [] });
     const like = `%${query.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
-    const d1 = getD1();
     const result = await d1.prepare(
       `WITH ranked AS (
          SELECT a.*,
@@ -26,20 +30,31 @@ export async function GET(request: Request) {
          FROM activities a
          WHERE TRIM(COALESCE(a.organization, '')) <> ''
        )
-       SELECT id, organization, business_round, region, award_status, award_stage,
-              progress_manager, contact_name, contact_phone, contact_email
-       FROM ranked
-       WHERE row_number = 1
-         AND (
-           organization LIKE ? ESCAPE '\\' COLLATE NOCASE OR
-           region LIKE ? ESCAPE '\\' COLLATE NOCASE OR
-           progress_manager LIKE ? ESCAPE '\\' COLLATE NOCASE OR
-           contact_name LIKE ? ESCAPE '\\' COLLATE NOCASE OR
-           contact_phone LIKE ? ESCAPE '\\' COLLATE NOCASE OR
-           contact_email LIKE ? ESCAPE '\\' COLLATE NOCASE
+       SELECT COALESCE(a.id, 0) AS id,
+              registry.organization AS organization,
+              COALESCE(a.business_round, 1) AS business_round,
+              COALESCE(NULLIF(a.region, ''), registry.region, '') AS region,
+              COALESCE(NULLIF(a.award_status, ''), '미정') AS award_status,
+              COALESCE(NULLIF(a.award_stage, ''), '미정') AS award_stage,
+              COALESCE(a.progress_manager, '') AS progress_manager,
+              COALESCE(a.contact_name, '') AS contact_name,
+              COALESCE(a.contact_phone, '') AS contact_phone,
+              COALESCE(a.contact_email, '') AS contact_email
+       FROM institution_registry registry
+       LEFT JOIN ranked a
+         ON a.organization = registry.organization
+        AND a.row_number = 1
+       WHERE (
+           registry.organization LIKE ? ESCAPE '\\' COLLATE NOCASE OR
+           COALESCE(NULLIF(a.region, ''), registry.region, '') LIKE ? ESCAPE '\\' COLLATE NOCASE OR
+           COALESCE(a.progress_manager, '') LIKE ? ESCAPE '\\' COLLATE NOCASE OR
+           COALESCE(a.contact_name, '') LIKE ? ESCAPE '\\' COLLATE NOCASE OR
+           COALESCE(a.contact_phone, '') LIKE ? ESCAPE '\\' COLLATE NOCASE OR
+           COALESCE(a.contact_email, '') LIKE ? ESCAPE '\\' COLLATE NOCASE
          )
-       ORDER BY CASE WHEN organization LIKE ? ESCAPE '\\' COLLATE NOCASE THEN 0 ELSE 1 END,
-                organization COLLATE NOCASE ASC, business_round DESC
+       ORDER BY CASE WHEN registry.organization LIKE ? ESCAPE '\\' COLLATE NOCASE THEN 0 ELSE 1 END,
+                registry.organization COLLATE NOCASE ASC,
+                COALESCE(a.business_round, 1) DESC
        LIMIT 30`,
     ).bind(like, like, like, like, like, like, `${query.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`)
       .all<Record<string, unknown>>();
