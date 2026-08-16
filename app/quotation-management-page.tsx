@@ -421,7 +421,7 @@ function downloadBlob(blob: Blob, name: string) {
 }
 
 function reservePdfTab() {
-  const tab = window.open("", "_blank");
+  const tab = window.open(`/pdf-opening.html?request=${Date.now()}`, "_blank");
   if (tab) tab.opener = null;
   return tab;
 }

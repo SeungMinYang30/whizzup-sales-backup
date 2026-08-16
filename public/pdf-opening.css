@@ -1,0 +1,43 @@
+:root {
+  color-scheme: light;
+  font-family: Pretendard, "Noto Sans KR", system-ui, sans-serif;
+  background: #f4f7fc;
+  color: #1d2c46;
+}
+
+body {
+  display: grid;
+  min-height: 100dvh;
+  margin: 0;
+  place-items: center;
+}
+
+main {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+}
+
+main span {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #dbe4ff;
+  border-top-color: #3157e6;
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+
+main strong {
+  font-size: 15px;
+}
+
+main small {
+  color: #73819a;
+  font-size: 11px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

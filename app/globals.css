@@ -14669,3 +14669,226 @@ button:is(
     padding-top:9px;
   }
 }
+
+/* Mobile PDF, equipment picker and quotation-card ergonomics. */
+@media(max-width:700px){
+  .equipment-kit-editor-shell{
+    align-items:flex-start;
+    padding:6px;
+    overflow:hidden;
+    overscroll-behavior:none;
+  }
+
+  .equipment-kit-editor{
+    width:100%;
+    height:calc(100dvh - 12px);
+    border-radius:14px;
+  }
+
+  .equipment-kit-editor>footer{
+    display:grid;
+    grid-template-columns:minmax(84px,.45fr) minmax(0,1fr);
+  }
+
+  .equipment-kit-editor>footer button{
+    width:100%;
+    min-width:0;
+    padding:0 8px;
+  }
+
+  .quotation-item-card-section{
+    margin:6px;
+    border-radius:10px;
+  }
+
+  .quotation-item-card-section>header{
+    gap:7px;
+    padding:10px;
+  }
+
+  .quotation-item-card-section>header p{
+    display:none;
+  }
+
+  .quotation-item-toolbar,
+  .quotation-product-search,
+  .quotation-item-toolbar-actions{
+    gap:6px;
+  }
+
+  .quote-studio .quotation-item-toolbar input,
+  .quotation-item-toolbar-actions>button{
+    min-height:36px;
+  }
+
+  .quotation-product-filters button{
+    min-height:28px;
+  }
+
+  .quotation-item-card-guide{
+    margin:6px 8px 0;
+    padding:6px 8px;
+    font-size:10px;
+    line-height:1.35;
+  }
+
+  .quotation-item-cards{
+    gap:7px;
+    padding:8px;
+  }
+
+  .quotation-item-card{
+    border-radius:9px;
+  }
+
+  .quotation-item-card>header{
+    gap:6px;
+    padding:8px;
+  }
+
+  .quotation-item-card>header>em{
+    display:none;
+  }
+
+  .quotation-item-card-title{
+    gap:4px;
+  }
+
+  .quote-studio .quotation-item-card-title input,
+  .quote-studio .quotation-item-card-summary input,
+  .quote-studio .quotation-item-card-controls input,
+  .quote-studio .quotation-item-card-controls select,
+  .quote-studio .quotation-item-card-note input{
+    min-height:34px;
+  }
+
+  .quotation-item-card-title input{
+    padding-top:4px;
+    padding-bottom:4px;
+  }
+
+  .quotation-equipment-kit-summary{
+    gap:8px;
+    padding:8px;
+  }
+
+  .quotation-equipment-kit-summary button{
+    min-height:34px;
+    padding:0 8px;
+  }
+
+  .quotation-item-card-summary{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+
+  .quotation-item-card-summary>label,
+  .quotation-item-card-summary>div{
+    padding:7px 8px;
+  }
+
+  .quotation-item-card-summary>*:nth-child(odd){
+    border-right:1px solid #dce4ef!important;
+  }
+
+  .quotation-item-card-summary>*:nth-child(even){
+    border-right:0!important;
+  }
+
+  .quotation-item-card-summary span,
+  .quotation-item-card-controls label>span,
+  .quotation-item-margin>span{
+    margin-bottom:3px;
+  }
+
+  .quotation-item-card-summary label>div{
+    gap:4px;
+    flex-wrap:nowrap;
+  }
+
+  .quotation-item-card-summary label:first-child input:first-child{
+    width:58px;
+  }
+
+  .quotation-item-card-summary label:first-child input:last-child{
+    width:44px;
+  }
+
+  .quotation-item-card-summary label:nth-child(2)>div{
+    display:grid;
+    grid-template-columns:minmax(0,1fr);
+  }
+
+  .quotation-item-card-summary label:nth-child(2) strong{
+    margin-left:0;
+    font-size:11px;
+  }
+
+  .quotation-item-card-controls{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+
+  .quotation-item-card-controls>*{
+    border-right:1px solid #edd9bb;
+  }
+
+  .quotation-item-card-controls>*:nth-child(even){
+    border-right:0;
+  }
+
+  .quotation-contract-type{
+    grid-column:1/-1;
+    padding:7px 8px;
+    border-right:0;
+  }
+
+  .quotation-contract-type button{
+    min-height:34px;
+  }
+
+  .quotation-item-card-controls>label,
+  .quotation-item-margin{
+    padding:7px 8px;
+  }
+
+  .quotation-item-margin strong{
+    font-size:14px;
+  }
+
+  .quotation-item-margin small{
+    font-size:10px;
+    line-height:1.35;
+  }
+
+  .quotation-item-internal-cost{
+    grid-column:1/-1;
+    gap:7px;
+    padding:8px;
+    border-right:0;
+  }
+
+  .quotation-item-internal-cost:not(:has(>label:first-child input:checked))>:not(label:first-child){
+    display:none;
+  }
+
+  .quotation-teaching-aid-support{
+    grid-column:1/-1;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:7px;
+    padding:8px;
+    border-right:0;
+  }
+
+  .quotation-teaching-aid-support>.quotation-complimentary-toggle{
+    grid-column:1/-1;
+  }
+
+  .quotation-teaching-aid-support>small{
+    display:none;
+  }
+
+  .quotation-item-card-note{
+    grid-template-columns:42px minmax(0,1fr);
+    gap:6px;
+    padding:7px 8px;
+  }
+}

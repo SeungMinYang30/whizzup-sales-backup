@@ -55,9 +55,13 @@ test("quotation and settlement PDFs paginate by measured height and reserve the 
   assert.doesNotMatch(settlementPdf, /index < rows\.length; index \+= 22/);
 });
 
-test("all generated PDF view and print actions open the finished blob in a browser tab", () => {
+test("all generated PDF view and print actions open the finished blob in a browser tab", async () => {
+  const [openingPage, openingScript] = await Promise.all([
+    read("../public/pdf-opening.html"),
+    read("../public/pdf-opening.js"),
+  ]);
   assert.match(quotationPage, /function reservePdfTab/);
-  assert.match(quotationPage, /window\.open\("", "_blank"\)/);
+  assert.match(quotationPage, /window\.open\(`\/pdf-opening\.html\?request=\$\{Date\.now\(\)\}`, "_blank"\)/);
   assert.match(quotationPage, /function openPdfBlobInReservedTab/);
   assert.match(quotationPage, /tab\.location\.replace\(url\)/);
   assert.match(quotationPage, /async function printQuotation[\s\S]*?const pdfTab = reservePdfTab\(\)[\s\S]*?await createAuthoredQuotationPdf/);
@@ -68,4 +72,8 @@ test("all generated PDF view and print actions open the finished blob in a brows
   assert.match(quotationPage, /새 탭이 차단되었습니다/);
   assert.doesNotMatch(quotationPage, /window\.print\(\)/);
   assert.doesNotMatch(quotationPage, /popup=yes/);
+  assert.match(openingPage, /PDF를 준비하고 있습니다/);
+  assert.match(openingScript, /pagehide/);
+  assert.match(openingScript, /pageshow/);
+  assert.match(openingScript, /window\.close\(\)/);
 });
