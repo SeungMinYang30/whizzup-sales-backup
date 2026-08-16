@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [records, institutions, crm, budgetNames, activityBudgets, quotePdf, settlementPdf, quotationPage] = await Promise.all([
+const [records, institutions, crm, budgetNames, activityBudgets, quotePdf, settlementPdf, quotationPage, vercelSchema] = await Promise.all([
   read("../app/api/records/route.ts"),
   read("../app/api/institutions/route.ts"),
   read("../app/crm-app.tsx"),
@@ -12,6 +12,7 @@ const [records, institutions, crm, budgetNames, activityBudgets, quotePdf, settl
   read("../app/authored-quotation-pdf.ts"),
   read("../app/consortium-settlement-pdf.ts"),
   read("../app/quotation-management-page.tsx"),
+  read("../db/vercel-schema.ts"),
 ]);
 
 test("master-only institutions save budgets without creating a contact activity", () => {
@@ -23,6 +24,8 @@ test("master-only institutions save budgets without creating a contact activity"
   assert.match(records, /budget_group_id = \?/);
   assert.match(institutions, /WHERE activity_id IS NULL/);
   assert.match(institutions, /budgetsJson: serializeActivityBudgets/);
+  assert.match(vercelSchema, /202608160001_institution_business_budgets/);
+  assert.match(vercelSchema, /ADD COLUMN IF NOT EXISTS budget_amount_source text NOT NULL DEFAULT 'missing'/);
 });
 
 test("request retries are reused and approvals only affect the selected request id", () => {
