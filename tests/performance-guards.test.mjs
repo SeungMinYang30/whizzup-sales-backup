@@ -42,6 +42,10 @@ const globalSearchSource = await readFile(
   new URL("../app/global-institution-search.tsx", import.meta.url),
   "utf8",
 );
+const rootPageSource = await readFile(
+  new URL("../app/page.tsx", import.meta.url),
+  "utf8",
+);
 
 test("관리자 초기 로딩은 대시보드와 전체 기록을 중복 조회하지 않는다", () => {
   assert.doesNotMatch(
@@ -52,6 +56,33 @@ test("관리자 초기 로딩은 대시보드와 전체 기록을 중복 조회�
     crmSource,
     /const dashboardRecordsRequest = requestRecords\("dashboard"\)/,
   );
+});
+
+test("첫 화면은 기록을 먼저 표시하고 전체 집계는 뒤에서 갱신한다", () => {
+  assert.match(
+    crmSource,
+    /const prefetchedRecords = await dashboardRecordsRequest;[\s\S]*setRecords\(nextRecords\);[\s\S]*backgroundTimer = window\.setTimeout\(\(\) => \{[\s\S]*requestDashboardAwardSummary\(\)[\s\S]*requestDashboardSalesSummary\(\)/,
+  );
+  assert.doesNotMatch(
+    crmSource,
+    /Promise\.all\(\[\s*requestRecords\("dashboard"\),\s*requestDashboardAwardSummary\(\)/,
+  );
+});
+
+test("독립 화면은 전체 영업 기록을 불필요하게 요청하지 않는다", () => {
+  assert.match(
+    crmSource,
+    /const standaloneViewsWithoutFullRecords = new Set<View>\(\[[\s\S]*"resources"[\s\S]*"backup"[\s\S]*"accounting"[\s\S]*"inventory"[\s\S]*"integration"[\s\S]*\]\)/,
+  );
+  assert.match(
+    crmSource,
+    /view === "dashboard" \|\|\s*!viewRequiresFullRecords\(view\) \|\|\s*recordsFullyLoaded/,
+  );
+});
+
+test("첫 페이지와 세션 API가 접속 시간을 중복 갱신하지 않는다", () => {
+  assert.match(rootPageSource, /await getOrCreateMember\(identity\);/);
+  assert.doesNotMatch(rootPageSource, /getOrCreateMember\(identity, true\)/);
 });
 
 test("전용 화면은 필요할 때만 내려받고 지도는 다른 메뉴에서 유지하지 않는다", () => {

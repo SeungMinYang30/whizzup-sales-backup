@@ -131,7 +131,6 @@ import { resilientFetch } from "./resilient-fetch";
 const DataBackupPage = lazy(() => import("./data-backup-page"));
 const HoldemLounge = lazy(() => import("./holdem-lounge"));
 const ProductCatalogPage = lazy(() => import("./product-catalog-page"));
-const QuotationManagementPage = lazy(() => import("./quotation-management-page"));
 const OrganizationQuotationHistory = lazy(() => import("./organization-quotation-history"));
 const AccountingPage = lazy(() => import("./accounting-page"));
 const AnalyticsPage = lazy(() => import("./analytics-page"));
@@ -1107,6 +1106,23 @@ type View =
   | "installation-schedule"
   | "quotations"
   | "integration";
+
+// These screens own their data requests and do not read the shared activity list.
+// Keep this as an explicit opt-out so newly added screens continue to load the full
+// record set until their dependencies have been reviewed.
+const standaloneViewsWithoutFullRecords = new Set<View>([
+  "resources",
+  "lounge",
+  "team",
+  "backup",
+  "accounting",
+  "inventory",
+  "integration",
+]);
+
+function viewRequiresFullRecords(view: View) {
+  return view !== "dashboard" && !standaloneViewsWithoutFullRecords.has(view);
+}
 
 type AccountingActivityStatus = {
   activityId: number;
@@ -6788,7 +6804,9 @@ export default function CrmApp({
       setLoading(true);
       const requestedScope =
         scope ??
-        (recordsFullyLoaded || view !== "dashboard" ? "full" : "dashboard");
+        (recordsFullyLoaded || viewRequiresFullRecords(view)
+          ? "full"
+          : "dashboard");
       const [nextRecords, nextInstitutions, nextAwardSummary, nextSalesSummary] = await Promise.all([
         requestRecords(requestedScope),
         requestInstitutionRegistry(),
@@ -6817,7 +6835,9 @@ export default function CrmApp({
     recordsRefreshLoadingRef.current = true;
     try {
       const requestedScope =
-        recordsFullyLoaded || view !== "dashboard" ? "full" : "dashboard";
+        recordsFullyLoaded || viewRequiresFullRecords(view)
+          ? "full"
+          : "dashboard";
       const [nextRecords, nextInstitutions, nextAwardSummary, nextSalesSummary] = await Promise.all([
         requestRecords(requestedScope),
         requestInstitutionRegistry(),
@@ -6974,6 +6994,13 @@ export default function CrmApp({
   useEffect(() => {
     let active = true;
     let backgroundTimer: number | null = null;
+    // Returning approved users can fetch their compact dashboard rows while the
+    // session endpoint confirms permissions. A first-time or pending user is
+    // handled safely because the early request is caught and retried only after
+    // the session confirms approval.
+    const dashboardRecordsRequest = requestRecords("dashboard")
+      .then((records) => ({ records, error: null as unknown }))
+      .catch((error: unknown) => ({ records: [] as Activity[], error }));
     void requestSession()
       .then(async (nextSession) => {
         if (!active) return;
@@ -6982,14 +7009,11 @@ export default function CrmApp({
         if (nextSession.member.status === "approved") {
           // The dashboard needs only its compact record scope. Manager-only data and
           // the full activity history are loaded when their screens are opened.
-          const [nextRecords, nextAwardSummary, nextSalesSummary] = await Promise.all([
-            requestRecords("dashboard"),
-            requestDashboardAwardSummary().catch(() => null),
-            requestDashboardSalesSummary().catch(() => null),
-          ]);
+          const prefetchedRecords = await dashboardRecordsRequest;
+          const nextRecords = prefetchedRecords.error
+            ? await requestRecords("dashboard")
+            : prefetchedRecords.records;
           if (!active) return;
-          if (nextAwardSummary) setDashboardAwardSummary(nextAwardSummary);
-          if (nextSalesSummary) setDashboardSalesSummary(nextSalesSummary);
           if (!recordsFullyLoadedRef.current) {
             setRecords(nextRecords);
             recordsLastRefreshedAtRef.current = Date.now();
@@ -7000,6 +7024,16 @@ export default function CrmApp({
           // instead of competing with login/session and record requests.
           backgroundTimer = window.setTimeout(() => {
             if (!active) return;
+            void requestDashboardAwardSummary()
+              .then((summary) => {
+                if (active) setDashboardAwardSummary(summary);
+              })
+              .catch(() => undefined);
+            void requestDashboardSalesSummary()
+              .then((summary) => {
+                if (active) setDashboardSalesSummary(summary);
+              })
+              .catch(() => undefined);
             void ensureBudgetReviewCatalog();
             void loadProtectionReviews();
             void loadActivityReviews();
@@ -7213,6 +7247,7 @@ export default function CrmApp({
     if (
       sessionStatus !== "approved" ||
       view === "dashboard" ||
+      !viewRequiresFullRecords(view) ||
       recordsFullyLoaded ||
       fullRecordsLoadingRef.current
     ) {

@@ -9,7 +9,9 @@ export default async function Home() {
   try {
     const identity = await getApplicationIdentity();
     if (!identity) return <LoginPage />;
-    await getOrCreateMember(identity, true);
+    // The client session request refreshes last_seen_at immediately after mount.
+    // Avoid issuing the same database write twice during the initial navigation.
+    await getOrCreateMember(identity);
     if (identity.source === "chatgpt") {
       return <LoginPage />;
     }
