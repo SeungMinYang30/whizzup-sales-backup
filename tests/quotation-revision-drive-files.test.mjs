@@ -84,6 +84,9 @@ test("final save queues PDF and Excel while Drive finalization protects the newe
   assert.match(filesRoute, /quotationInstitutionFolderSegments/);
   assert.match(filesRoute, /upsertDriveFileByContext/);
   assert.match(filesRoute, /SET status='final'/);
+  assert.match(store, /authoredQuotationFromRowForMember/);
+  assert.match(filesRoute, /authoredQuotationFromRowForMember\(saved, member\)/);
+  assert.match(filesRoute, /authoredQuotationFromRowForMember\(latest, member\)/);
   assert.match(filesRoute, /kind === "pdf" \? "inline" : "attachment"/);
   assert.match(backup, /"revision_root_id"/);
   assert.match(backup, /"drive_pdf_file_id"/);

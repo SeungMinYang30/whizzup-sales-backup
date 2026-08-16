@@ -479,6 +479,17 @@ export function authoredQuotationFromRow(row: Record<string, unknown>): Authored
   };
 }
 
+export function authoredQuotationFromRowForMember(
+  row: Record<string, unknown>,
+  member: Pick<Member, "id" | "role">,
+) {
+  return authoredQuotationFromRow({
+    ...row,
+    can_delete: member.role === "admin" || Number(row.created_by) === member.id ? 1 : 0,
+    can_purge: member.role === "admin" ? 1 : 0,
+  });
+}
+
 function normalized(value: Record<string, unknown>) {
   const organization = text(value.organization, 300);
   const quoteDate = date(value.quoteDate);
@@ -578,11 +589,9 @@ export async function listAuthoredQuotations(
     .prepare(`${quotationWithPeopleSelect}${where} ORDER BY q.quote_date DESC, q.id DESC LIMIT 500`)
     .bind(...bindings)
     .all<Record<string, unknown>>();
-  return result.results.map((row: Record<string, unknown>) => authoredQuotationFromRow({
-    ...row,
-    can_delete: options.member && (options.member.role === "admin" || Number(row.created_by) === options.member.id) ? 1 : 0,
-    can_purge: options.member?.role === "admin" ? 1 : 0,
-  }));
+  return result.results.map((row: Record<string, unknown>) => options.member
+    ? authoredQuotationFromRowForMember(row, options.member)
+    : authoredQuotationFromRow(row));
 }
 
 function quotationNumber(now = new Date()) {
@@ -590,7 +599,7 @@ function quotationNumber(now = new Date()) {
   return `WZ-${stamp}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
 }
 
-export async function saveAuthoredQuotation(value: Record<string, unknown>, member: Pick<Member, "id" | "displayName" | "jobTitle">) {
+export async function saveAuthoredQuotation(value: Record<string, unknown>, member: Pick<Member, "id" | "role" | "displayName" | "jobTitle">) {
   const data = normalized(value);
   const d1 = await ensureAuthoredQuotationsReady();
   const id = Number(value.id);
@@ -611,7 +620,7 @@ export async function saveAuthoredQuotation(value: Record<string, unknown>, memb
     await d1.prepare(`UPDATE authored_quotations SET initial_quote_date=CASE WHEN initial_quote_date='' THEN quote_date ELSE initial_quote_date END, organization=?, business_round=?, project_title=?, quote_date=?, valid_until=?, status=?, execution_type=?, consortium_company=?, consortium_rate=?, discount_amount=?, extra_amount=?, additional_internal_construction_cost=?, subtotal_amount=?, supply_amount=?, tax_amount=?, total_amount=?, expected_earning=?, consortium_payment=?, margin_amount=?, margin_rate=?, include_stamp=?, memo=?, items_json=?, budgets_json=?, settlement_adjustments_json=?, drive_sync_status=?, drive_sync_error='', drive_sync_token=?, updated_by=?, updated_by_name=?, content_updated_at=${contentUpdatedAtSql}, updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(...params.slice(0, 25), data.status === "final" ? "queued" : "none", driveSyncToken, ...params.slice(25), id).run();
     const row = await quotationRowById(d1, id);
     if (!row) throw new Error("저장한 견적서를 찾지 못했습니다.");
-    return authoredQuotationFromRow(row);
+    return authoredQuotationFromRowForMember(row, member);
   }
   const revisionSourceId = Number(value.revisionSourceId);
   let revisionRootId = 0;
@@ -656,7 +665,7 @@ export async function saveAuthoredQuotation(value: Record<string, unknown>, memb
   }
   const row = await quotationRowById(d1, insertedId);
   if (!row) throw new Error("저장한 견적서를 찾지 못했습니다.");
-  return authoredQuotationFromRow(row);
+  return authoredQuotationFromRowForMember(row, member);
 }
 
 export async function getAuthoredQuotationById(id: number) {

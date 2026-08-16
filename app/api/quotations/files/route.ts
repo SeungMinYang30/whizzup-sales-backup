@@ -4,7 +4,7 @@ import {
   requireApprovedMember,
 } from "../../../../lib/collaboration";
 import {
-  authoredQuotationFromRow,
+  authoredQuotationFromRowForMember,
   ensureAuthoredQuotationsReady,
 } from "../../../../lib/authored-quotations";
 import {
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
   let syncToken = "";
   let originalUpdatedAt = "";
   try {
-    await requireApprovedMember();
+    const member = await requireApprovedMember();
     if (!isGoogleDriveConfigured()) {
       return Response.json({ error: "Google Drive 자료실 연결 정보가 등록되지 않았습니다." }, { status: 503 });
     }
@@ -189,7 +189,7 @@ export async function POST(request: Request) {
         .bind(id)
         .first<Record<string, unknown>>();
       if (latest?.drive_sync_token === syncToken && latest.drive_sync_status === "ready") {
-        return Response.json({ quotation: authoredQuotationFromRow(latest) });
+        return Response.json({ quotation: authoredQuotationFromRowForMember(latest, member) });
       }
       return Response.json(
         { error: "같은 견적서 파일을 이미 저장하고 있습니다. 잠시 후 목록을 새로고침해 주세요." },
@@ -333,7 +333,7 @@ export async function POST(request: Request) {
       .bind(id)
       .first<Record<string, unknown>>();
     if (!saved) throw new Error("저장한 견적서를 다시 불러오지 못했습니다.");
-    return Response.json({ quotation: authoredQuotationFromRow(saved) });
+    return Response.json({ quotation: authoredQuotationFromRowForMember(saved, member) });
   } catch (error) {
     for (const fileId of uploadedFileIds) await removeDriveFile(fileId).catch(() => undefined);
     if (id) {
