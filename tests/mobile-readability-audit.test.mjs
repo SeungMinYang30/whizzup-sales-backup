@@ -70,6 +70,10 @@ test("pre-award institution cards remove desktop cell heights and group mobile i
     finalMobile,
     /\.followup-table td:nth-child\(8\) \{[\s\S]*grid-row: 2;[\s\S]*background: #f8faff;/,
   );
+  assert.match(
+    finalMobile,
+    /\.followup-table td:nth-child\(10\),[\s\S]*\.followup-table td:nth-child\(11\) \{ display: none; \}/,
+  );
   assert.match(finalMobile, /-webkit-line-clamp: 2/);
   assert.match(crm, /institution-mobile-selection-bar/);
 });

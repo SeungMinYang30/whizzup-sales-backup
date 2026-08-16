@@ -2150,6 +2150,8 @@
     max-height: none;
     padding-top: 1px;
   }
+  .followup-table td:nth-child(10),
+  .followup-table td:nth-child(11) { display: none; }
   .followup-table td:nth-child(3) small { margin-top: 2px; }
   .followup-table .org-name { font-size: 14px; line-height: 1.35; }
   .followup-table .budget-summary-name { font-size: 11px; }
