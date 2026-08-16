@@ -18,7 +18,8 @@ import { createConsortiumSettlementWorkbook, type ConsortiumSettlementWorkbookIn
 import { createInternalProfitReportWorkbook, type InternalProfitReportWorkbookInput } from "../lib/internal-profit-report-xlsx";
 import { createConsortiumSettlementPdf, createInternalProfitReportPdf } from "./consortium-settlement-pdf";
 import { hasProcurementSignal, procurementNumbersFromText } from "../lib/procurement-product";
-import { createAuthoredQuotationPdf, quotationFileStem } from "./authored-quotation-pdf";
+import { createAuthoredQuotationPdf } from "./authored-quotation-pdf";
+import { quotationDownloadName } from "../lib/quotation-file-name";
 import {
   contentSubstitutionBaseEarningRate,
   contentSubstitutionMargin,
@@ -584,6 +585,13 @@ export default function QuotationManagementPage({
   const productSearchRef = useRef<HTMLDivElement | null>(null);
   const productSearchResultsRef = useRef<HTMLDivElement | null>(null);
 
+  function quotationRegion(quote: Pick<Draft, "organization" | "businessRound">) {
+    return institutions.find((item) =>
+      normalizedInstitutionName(item.organization) === normalizedInstitutionName(quote.organization)
+      && item.businessRound === quote.businessRound
+    )?.region || newInstitution.region || "";
+  }
+
   useEffect(() => { draftRef.current = draft; }, [draft]);
 
   useEffect(() => () => settlementPrintPages.forEach((url) => URL.revokeObjectURL(url)), [settlementPrintPages]);
@@ -693,8 +701,12 @@ export default function QuotationManagementPage({
       popup.print();
     };
     popup.addEventListener("afterprint", () => popup.close(), { once: true });
+    const printTitle = quotationDownloadName({
+      ...draft,
+      region: quotationRegion(draft),
+    }, "pdf").replace(/\.pdf$/iu, "");
     popup.document.open();
-    popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><base href="${window.location.origin}/"><title>견적서 인쇄</title>${styles}</head><body class="quotation-printing">${portal.outerHTML}</body></html>`);
+    popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><base href="${window.location.origin}/"><title>${printTitle}</title>${styles}</head><body class="quotation-printing">${portal.outerHTML}</body></html>`);
     popup.document.close();
     popup.addEventListener("load", () => window.setTimeout(startPrint, 250), { once: true });
     window.setTimeout(startPrint, 800);
@@ -2123,7 +2135,10 @@ export default function QuotationManagementPage({
       })),
     });
     const workbookBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    return new File([workbookBuffer], `${quotationFileStem(quote)}.xlsx`, {
+    return new File([workbookBuffer], quotationDownloadName({
+      ...quote,
+      region: quotationRegion(quote),
+    }, "xlsx"), {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
   }
@@ -2175,7 +2190,10 @@ export default function QuotationManagementPage({
       const url = URL.createObjectURL(await response.blob());
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `${quotationFileStem(quote)}.xlsx`;
+      anchor.download = quote.driveXlsxName || quotationDownloadName({
+        ...quote,
+        region: quotationRegion(quote),
+      }, "xlsx");
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -2193,7 +2211,10 @@ export default function QuotationManagementPage({
     try {
       const response = await fetch(quote.pdfUrl, { cache: "no-store" });
       if (!response.ok) throw new Error("저장된 PDF를 내려받지 못했습니다.");
-      downloadBlob(await response.blob(), `${quotationFileStem(quote)}.pdf`);
+      downloadBlob(await response.blob(), quote.drivePdfName || quotationDownloadName({
+        ...quote,
+        region: quotationRegion(quote),
+      }, "pdf"));
       setMessage("견적서 PDF를 다운로드했습니다.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장된 PDF를 내려받지 못했습니다.");
@@ -2376,7 +2397,10 @@ export default function QuotationManagementPage({
         complimentary: Boolean(item.complimentary),
       })),
     });
-    downloadBytes(bytes, `견적서_${safeFileName(draft.organization)}_${draft.quoteDate}.xlsx`);
+    downloadBytes(bytes, quotationDownloadName({
+      ...draft,
+      region: quotationRegion(draft),
+    }, "xlsx"));
   }
 
   function consortiumSettlementOutputInput(): ConsortiumSettlementWorkbookInput | null {

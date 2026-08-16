@@ -1,6 +1,6 @@
 import type { AuthoredQuotation, AuthoredQuotationItem } from "../lib/authored-quotations";
 import { airpassEquipmentKitOutputLines, airpassEquipmentKitTotal } from "../lib/airpass-equipment-kit";
-import { quotationFileStem } from "../lib/quotation-file-name";
+import { quotationDownloadName, quotationFileStem } from "../lib/quotation-file-name";
 import { AIRPASS_COMPANY, AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "../lib/airpass-company";
 import { formatQuotationItemNameForOutput } from "../lib/quotation-output-text";
 
@@ -531,5 +531,5 @@ async function jpegPagesToPdf(pages: Array<{ blob: Blob; width: number; height: 
 
 export async function createAuthoredQuotationPdf(quote: AuthoredQuotationPdfInput) {
   const blob = await jpegPagesToPdf(await renderPages(quote));
-  return new File([blob], `${quotationFileStem(quote)}.pdf`, { type: "application/pdf" });
+  return new File([blob], quotationDownloadName(quote, "pdf"), { type: "application/pdf" });
 }

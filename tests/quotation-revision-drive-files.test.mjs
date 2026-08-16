@@ -5,6 +5,7 @@ import test from "node:test";
 const page = await readFile(new URL("../app/quotation-management-page.tsx", import.meta.url), "utf8");
 const store = await readFile(new URL("../lib/authored-quotations.ts", import.meta.url), "utf8");
 const filesRoute = await readFile(new URL("../app/api/quotations/files/route.ts", import.meta.url), "utf8");
+const reorganizeRoute = await readFile(new URL("../app/api/quotations/files/reorganize/route.ts", import.meta.url), "utf8");
 const pdf = await readFile(new URL("../app/authored-quotation-pdf.ts", import.meta.url), "utf8");
 const crm = await readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8");
 const documents = await readFile(new URL("../app/quotation-documents.tsx", import.meta.url), "utf8");
@@ -56,9 +57,10 @@ test("final save creates PDF and Excel before Drive-backed finalization", () => 
   assert.match(page, /formData\.set\("xlsx", xlsx\)/);
   assert.match(page, /견적은 임시 저장했지만 최종 파일 보관을 완료하지 못했습니다/);
   assert.match(page, /whizzup:quotation-files-updated/);
+  assert.match(filesRoute, /replaceDriveFile/);
   assert.match(filesRoute, /uploadDriveFile/);
-  assert.match(filesRoute, /"01_기관자료"/);
-  assert.match(filesRoute, /"견적서"/);
+  assert.match(filesRoute, /QUOTATION_LIBRARY_FOLDER/);
+  assert.doesNotMatch(filesRoute, /"01_기관자료"/);
   assert.match(filesRoute, /SET status='final'/);
   assert.match(filesRoute, /kind === "pdf" \? "inline" : "attachment"/);
   assert.match(backup, /"revision_root_id"/);
@@ -66,14 +68,22 @@ test("final save creates PDF and Excel before Drive-backed finalization", () => 
   assert.match(backup, /"drive_xlsx_file_id"/);
 });
 
-test("generated Drive file names and PDF preserve each quotation version", () => {
-  assert.match(pdf, /quotationFileStem/);
+test("generated Drive file names and PDF use one canonical quotation name", () => {
+  assert.match(pdf, /quotationDownloadName/);
   assert.match(pdf, /PDF_RENDER_SCALE = 2/);
   assert.match(pdf, /context\.scale\(PDF_RENDER_SCALE, PDF_RENDER_SCALE\)/);
   assert.match(pdf, /%PDF-1\.4/);
   assert.match(pdf, /식별번호/);
   assert.match(pdf, /견적 조건 및 특이사항/);
   assert.match(pdf, /금액 요약/);
+});
+
+test("existing Drive quotation files are renamed and moved in place", () => {
+  assert.match(reorganizeRoute, /requireAdminMember/);
+  assert.match(reorganizeRoute, /organizeDriveFile/);
+  assert.match(reorganizeRoute, /QUOTATION_LIBRARY_FOLDER/);
+  assert.match(reorganizeRoute, /removeEmptyQuotationFolderChain/);
+  assert.doesNotMatch(reorganizeRoute, /removeDriveFile/);
 });
 
 test("institution detail keeps final quotations once and shows only legacy external reference files below", () => {

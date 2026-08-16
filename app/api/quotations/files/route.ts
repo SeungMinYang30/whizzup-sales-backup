@@ -10,11 +10,15 @@ import {
 import {
   downloadDriveFile,
   isGoogleDriveConfigured,
+  replaceDriveFile,
   removeDriveFile,
-  safeDriveFolderName,
   uploadDriveFile,
 } from "../../../../lib/google-drive-storage";
-import { quotationDownloadName } from "../../../../lib/quotation-file-name";
+import {
+  QUOTATION_LIBRARY_FOLDER,
+  quotationDownloadName,
+  quotationSourceFileName,
+} from "../../../../lib/quotation-file-name";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +42,31 @@ async function findRow(id: number) {
   return { d1, row };
 }
 
+async function quotationRegion(
+  d1: Awaited<ReturnType<typeof ensureAuthoredQuotationsReady>>,
+  row: Record<string, unknown>,
+) {
+  const match = await d1
+    .prepare(`SELECT region FROM activities
+      WHERE organization = ? AND business_round = ? AND TRIM(region) <> ''
+      ORDER BY updated_at DESC, id DESC LIMIT 1`)
+    .bind(String(row.organization ?? ""), Math.max(1, Number(row.business_round) || 1))
+    .first<{ region: string }>();
+  return String(match?.region || "");
+}
+
+function namingInput(row: Record<string, unknown>, region: string) {
+  return {
+    region,
+    organization: row.organization,
+    businessRound: row.business_round,
+    projectTitle: row.project_title,
+    quoteDate: row.quote_date,
+    quoteNumber: row.quote_number,
+    revisionNumber: row.revision_number,
+  };
+}
+
 export async function GET(request: Request) {
   try {
     await requireApprovedMember();
@@ -46,20 +75,16 @@ export async function GET(request: Request) {
     const requestedKind = params.get("kind");
     const kind = requestedKind === "xlsx" || requestedKind === "source" ? requestedKind : "pdf";
     if (!id) return Response.json({ error: "올바른 견적서 ID가 필요합니다." }, { status: 400 });
-    const { row } = await findRow(id);
+    const { d1, row } = await findRow(id);
     if (!row) return Response.json({ error: "견적서를 찾지 못했습니다." }, { status: 404 });
     const idColumn = kind === "pdf" ? "drive_pdf_file_id" : kind === "xlsx" ? "drive_xlsx_file_id" : "source_file_id";
     const nameColumn = kind === "pdf" ? "drive_pdf_name" : kind === "xlsx" ? "drive_xlsx_name" : "source_file_name";
     const fileId = String(row[idColumn] ?? "");
-    const storedFileName = String(row[nameColumn] ?? "")
-      || `${String(row.quote_number ?? "견적서")}.${kind === "pdf" ? "pdf" : "xlsx"}`;
-    const fileName = kind === "source" ? storedFileName : quotationDownloadName({
-      organization: row.organization,
-      projectTitle: row.project_title,
-      quoteDate: row.quote_date,
-      quoteNumber: row.quote_number,
-      revisionNumber: row.revision_number,
-    }, kind);
+    const storedFileName = String(row[nameColumn] ?? "");
+    const region = await quotationRegion(d1, row);
+    const fileName = kind === "source"
+      ? quotationSourceFileName(namingInput(row, region), storedFileName || "원본.xlsx")
+      : quotationDownloadName(namingInput(row, region), kind);
     if (!fileId) return Response.json({ error: "Google Drive에 저장된 견적서 파일이 없습니다." }, { status: 404 });
     const stored = await downloadDriveFile(fileId);
     const contentType = kind === "pdf"
@@ -158,41 +183,51 @@ export async function POST(request: Request) {
       );
     }
 
-    const regionRow = await d1
-      .prepare(`SELECT region FROM activities
-        WHERE organization = ? AND business_round = ? AND TRIM(region) <> ''
-        ORDER BY updated_at DESC, id DESC LIMIT 1`)
-      .bind(String(row.organization ?? ""), Math.max(1, Number(row.business_round) || 1))
-      .first<{ region: string }>();
-    const folderSegments = [
-      "01_기관자료",
-      safeDriveFolderName(regionRow?.region, "지역 미분류"),
-      safeDriveFolderName(row.organization, "기관 미분류"),
-      "견적서",
-      String(row.quote_date ?? new Date().getFullYear()).slice(0, 4),
-    ];
+    const region = await quotationRegion(d1, row);
+    const nameInput = namingInput(row, region);
+    const pdfName = quotationDownloadName(nameInput, "pdf");
+    const xlsxName = quotationDownloadName(nameInput, "xlsx");
+    const sourceName = sourceFile ? quotationSourceFileName(nameInput, sourceFile.name) : "";
+    const folderSegments = [QUOTATION_LIBRARY_FOLDER];
     const contextId = `${String(row.organization ?? "")}|${Math.max(1, Number(row.business_round) || 1)}|${id}`;
-    const storedPdf = await uploadDriveFile({
-      file: pdf,
-      folderSegments,
+    async function storeFile(input: {
+      existingId: string;
+      file: File;
+      contextType: string;
+    }) {
+      if (input.existingId) {
+        return replaceDriveFile({
+          fileId: input.existingId,
+          file: input.file,
+          folderSegments,
+          contextType: input.contextType,
+          contextId,
+        });
+      }
+      const stored = await uploadDriveFile({
+        file: input.file,
+        folderSegments,
+        contextType: input.contextType,
+        contextId,
+      });
+      uploadedFileIds.push(stored.fileId);
+      return stored;
+    }
+    const storedPdf = await storeFile({
+      existingId: existingPdfId,
+      file: new File([pdf], pdfName, { type: pdf.type || "application/pdf" }),
       contextType: "authored-quotation-pdf",
-      contextId,
     });
-    uploadedFileIds.push(storedPdf.fileId);
-    const storedXlsx = await uploadDriveFile({
-      file: xlsx,
-      folderSegments,
+    const storedXlsx = await storeFile({
+      existingId: existingXlsxId,
+      file: new File([xlsx], xlsxName, { type: xlsx.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
       contextType: "authored-quotation-xlsx",
-      contextId,
     });
-    uploadedFileIds.push(storedXlsx.fileId);
-    const storedSource = sourceFile ? await uploadDriveFile({
-      file: sourceFile,
-      folderSegments: [...folderSegments, "참고 원본"],
+    const storedSource = sourceFile ? await storeFile({
+      existingId: existingSourceId,
+      file: new File([sourceFile], sourceName, { type: sourceFile.type || "application/octet-stream" }),
       contextType: "authored-quotation-source",
-      contextId,
     }) : null;
-    if (storedSource) uploadedFileIds.push(storedSource.fileId);
 
     await d1.prepare(`UPDATE authored_quotations
       SET status='final', drive_pdf_file_id=?, drive_pdf_name=?,
@@ -201,17 +236,21 @@ export async function POST(request: Request) {
       WHERE id=?`)
       .bind(
         storedPdf.fileId,
-        pdf.name.slice(0, 240),
+        pdfName,
         storedXlsx.fileId,
-        xlsx.name.slice(0, 240),
+        xlsxName,
         storedSource?.fileId || existingSourceId,
-        sourceFile?.name.slice(0, 240) || String(row.source_file_name ?? ""),
+        sourceName || String(row.source_file_name ?? ""),
         sourceFile?.type || String(row.source_file_type ?? ""),
         id,
       )
       .run();
-    for (const oldId of [existingPdfId, existingXlsxId, ...(storedSource ? [existingSourceId] : [])]) {
-      if (oldId && !uploadedFileIds.includes(oldId)) await removeDriveFile(oldId).catch(() => undefined);
+    for (const [oldId, currentId] of [
+      [existingPdfId, storedPdf.fileId],
+      [existingXlsxId, storedXlsx.fileId],
+      ...(storedSource ? [[existingSourceId, storedSource.fileId]] : []),
+    ]) {
+      if (oldId && oldId !== currentId) await removeDriveFile(oldId).catch(() => undefined);
     }
     uploadedFileIds.length = 0;
     const saved = await d1

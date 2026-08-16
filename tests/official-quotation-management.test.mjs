@@ -83,7 +83,7 @@ test("저장된 PDF는 원래 파일 주소로 열고 Excel은 의미 있는 이
   assert.match(page, /window\.open\(quote\.pdfUrl, "_blank", "noopener,noreferrer"\)/);
   assert.match(page, /await fetch\(quote\.excelUrl, \{ cache: "no-store" \}\)/);
   assert.match(page, /URL\.createObjectURL\(await response\.blob\(\)\)/);
-  assert.match(page, /anchor\.download = `\$\{quotationFileStem\(quote\)\}\.xlsx`/);
+  assert.match(page, /quote\.driveXlsxName \|\| quotationDownloadName/);
 });
 
 test("final quotation consortium and item details flow into institution history", () => {

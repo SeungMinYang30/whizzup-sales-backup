@@ -397,6 +397,60 @@ export async function uploadDriveFile(input: {
   };
 }
 
+export async function replaceDriveFile(input: {
+  fileId: string;
+  file: File;
+  folderSegments: string[];
+  contextType: string;
+  contextId?: string;
+}) {
+  const current = await getDriveFileMetadata(input.fileId);
+  const folderId = await ensureDrivePath(input.folderSegments);
+  const boundary = `whizzup_${crypto.randomUUID().replace(/-/g, "")}`;
+  const metadata = {
+    name: input.file.name.slice(0, 240),
+    appProperties: {
+      ...(current.appProperties ?? {}),
+      whizzup: "1",
+      contextType: input.contextType.slice(0, 60),
+      contextId: text(input.contextId).slice(0, 180),
+    },
+  };
+  const body = new Blob(
+    [
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
+      JSON.stringify(metadata),
+      `\r\n--${boundary}\r\nContent-Type: ${input.file.type || "application/octet-stream"}\r\n\r\n`,
+      input.file,
+      `\r\n--${boundary}--`,
+    ],
+    { type: `multipart/related; boundary=${boundary}` },
+  );
+  const url = new URL(`${DRIVE_UPLOAD_API}/files/${encodeURIComponent(input.fileId)}`);
+  url.searchParams.set("uploadType", "multipart");
+  url.searchParams.set("fields", "id,name,mimeType,size,parents");
+  url.searchParams.set("supportsAllDrives", "true");
+  if (!current.parents?.includes(folderId)) {
+    url.searchParams.set("addParents", folderId);
+    if (current.parents?.length) url.searchParams.set("removeParents", current.parents.join(","));
+  }
+  const response = await driveFetch(url.toString(), {
+    method: "PATCH",
+    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+    body,
+  });
+  const payload = (await response.json().catch(() => ({}))) as DriveFile & { error?: { message?: string } };
+  if (!response.ok || !payload.id) {
+    throw new Error(payload.error?.message || "Google Drive 견적 파일을 갱신하지 못했습니다.");
+  }
+  return {
+    fileId: payload.id,
+    folderId,
+    mimeType: payload.mimeType || input.file.type || "application/octet-stream",
+    sizeBytes: Number(payload.size) || input.file.size,
+  };
+}
+
 export async function createDriveResumableUpload(input: {
   fileName: string;
   mimeType: string;
@@ -626,6 +680,89 @@ export async function moveDriveFile(fileId: string, folderSegments: string[]): P
     await setDriveFileParents(fileId, [destinationFolderId], previousParents);
   }
   return { fileId, previousParents, destinationFolderId };
+}
+
+function splitFileName(value: string) {
+  const match = value.match(/^(.*?)(\.[^.]+)?$/u);
+  return { stem: match?.[1] || value, extension: match?.[2] || "" };
+}
+
+async function uniqueDriveFileName(folderId: string, requestedName: string, excludeFileId = "") {
+  const safeName = requestedName.slice(0, 240) || "file";
+  const children = await listDriveChildren(folderId);
+  const names = new Set(
+    children
+      .filter((item) => item.id !== excludeFileId && !isDriveFolder(item))
+      .map((item) => String(item.name || "")),
+  );
+  if (!names.has(safeName)) return safeName;
+  const { stem, extension } = splitFileName(safeName);
+  for (let index = 1; index < 1_000; index += 1) {
+    const suffix = `_${String(index).padStart(2, "0")}`;
+    const candidate = `${stem.slice(0, Math.max(1, 240 - extension.length - suffix.length))}${suffix}${extension}`;
+    if (!names.has(candidate)) return candidate;
+  }
+  throw new Error("Google Drive에서 중복되지 않는 파일명을 만들지 못했습니다.");
+}
+
+async function renameDriveFile(fileId: string, name: string) {
+  const response = await driveFetch(
+    `${DRIVE_API}/files/${encodeURIComponent(fileId)}?fields=id,name,parents&supportsAllDrives=true`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json; charset=UTF-8" },
+      body: JSON.stringify({ name: name.slice(0, 240) }),
+    },
+  );
+  const payload = (await response.json().catch(() => ({}))) as DriveFile & { error?: { message?: string } };
+  if (!response.ok || !payload.id) {
+    throw new Error(payload.error?.message || "Google Drive 파일명을 변경하지 못했습니다.");
+  }
+  return payload;
+}
+
+export async function organizeDriveFile(fileId: string, folderSegments: string[], requestedName: string) {
+  const metadata = await getDriveFileMetadata(fileId);
+  const previousParents = metadata.parents ?? [];
+  const previousName = String(metadata.name || "");
+  const destinationFolderId = await ensureDrivePath(folderSegments);
+  const name = await uniqueDriveFileName(destinationFolderId, requestedName, fileId);
+  try {
+    if (!previousParents.includes(destinationFolderId)) {
+      await setDriveFileParents(fileId, [destinationFolderId], previousParents);
+    }
+    if (previousName !== name) await renameDriveFile(fileId, name);
+    return { fileId, previousParents, previousName, destinationFolderId, name };
+  } catch (error) {
+    if (!previousParents.includes(destinationFolderId)) {
+      await setDriveFileParents(fileId, previousParents, [destinationFolderId]).catch(() => undefined);
+    }
+    if (previousName && previousName !== name) {
+      await renameDriveFile(fileId, previousName).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+const REMOVABLE_QUOTATION_FOLDER = /^(?:견적서|참고 원본|\d{4})$/u;
+
+export async function removeEmptyQuotationFolderChain(startFolderId: string) {
+  let folderId = startFolderId;
+  let removed = 0;
+  for (let depth = 0; depth < 3 && folderId; depth += 1) {
+    const metadata = await getDriveFileMetadata(folderId).catch(() => null);
+    if (!metadata || !isDriveFolder(metadata) || !REMOVABLE_QUOTATION_FOLDER.test(String(metadata.name || ""))) break;
+    if ((await listDriveChildren(folderId)).length) break;
+    const parentId = metadata.parents?.[0] || "";
+    const response = await driveFetch(
+      `${DRIVE_API}/files/${encodeURIComponent(folderId)}?supportsAllDrives=true`,
+      { method: "DELETE" },
+    );
+    if (!response.ok && response.status !== 404) break;
+    removed += 1;
+    folderId = parentId;
+  }
+  return removed;
 }
 
 export async function rollbackDriveMoves(snapshots: DriveMoveSnapshot[]) {
