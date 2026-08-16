@@ -20,6 +20,7 @@ import { createConsortiumSettlementPdf, createInternalProfitReportPdf } from "./
 import { hasProcurementSignal, procurementNumbersFromText } from "../lib/procurement-product";
 import { createAuthoredQuotationPdf } from "./authored-quotation-pdf";
 import { quotationDownloadName } from "../lib/quotation-file-name";
+import { originalQuotationDateByRoot, quotationListDateLabels } from "../lib/quotation-list-dates";
 import {
   contentSubstitutionBaseEarningRate,
   contentSubstitutionMargin,
@@ -807,6 +808,8 @@ export default function QuotationManagementPage({
     });
     return Array.from(latest.values()).sort((left, right) => right.quoteDate.localeCompare(left.quoteDate) || right.id - left.id);
   }, [quotes]);
+
+  const originalQuoteDates = useMemo(() => originalQuotationDateByRoot(quotes), [quotes]);
 
   function displayedBudgetsForQuote(quote: AuthoredQuotation) {
     if (quote.budgets.length) return quote.budgets;
@@ -2524,7 +2527,7 @@ export default function QuotationManagementPage({
           </div>
         </div>
         <dl className="quotation-row-facts">
-          <div><dt>견적일</dt><dd>{quote.quoteDate}</dd></div>
+          <div className="quotation-row-dates"><dt>최초 견적일</dt><dd>{quotationListDateLabels(quote, originalQuoteDates).initialDate}{quotationListDateLabels(quote, originalQuoteDates).modifiedDate && <small>수정 {quotationListDateLabels(quote, originalQuoteDates).modifiedDate}</small>}</dd></div>
           <div><dt>금액</dt><dd><strong>{won.format(quote.totalAmount)}원</strong></dd></div>
           <div className="quotation-row-authors">
             <div><dt>작성자</dt><dd>{quote.createdByName || "미등록"}</dd></div>

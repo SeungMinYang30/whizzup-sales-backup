@@ -78,6 +78,7 @@ export type AuthoredQuotation = {
   businessRound: number;
   projectTitle: string;
   quoteDate: string;
+  initialQuoteDate: string;
   validUntil: string;
   status: "draft" | "final";
   executionType: "직영" | "컨소";
@@ -115,6 +116,7 @@ export type AuthoredQuotation = {
   updatedByName: string;
   createdAt: string;
   updatedAt: string;
+  contentUpdatedAt: string;
 };
 
 const statements = [
@@ -128,6 +130,7 @@ const statements = [
     business_round INTEGER NOT NULL DEFAULT 1,
     project_title TEXT NOT NULL DEFAULT '',
     quote_date TEXT NOT NULL,
+    initial_quote_date TEXT NOT NULL DEFAULT '',
     valid_until TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'draft',
     execution_type TEXT NOT NULL DEFAULT '직영',
@@ -166,7 +169,8 @@ const statements = [
     updated_by INTEGER NOT NULL,
     updated_by_name TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    content_updated_at TEXT NOT NULL DEFAULT ''
   )`,
   `CREATE INDEX IF NOT EXISTS authored_quotations_org_date_idx
    ON authored_quotations (organization, business_round, quote_date, id)`,
@@ -180,6 +184,7 @@ const authoredQuotationColumns = [
   ["revision_root_id", "INTEGER NOT NULL DEFAULT 0"],
   ["revision_parent_id", "INTEGER NOT NULL DEFAULT 0"],
   ["revision_number", "INTEGER NOT NULL DEFAULT 0"],
+  ["initial_quote_date", "TEXT NOT NULL DEFAULT ''"],
   ["budgets_json", "TEXT NOT NULL DEFAULT '[]'"],
   ["settlement_adjustments_json", "TEXT NOT NULL DEFAULT '[]'"],
   ["additional_internal_construction_cost", "INTEGER NOT NULL DEFAULT 0"],
@@ -195,6 +200,7 @@ const authoredQuotationColumns = [
   ["deleted_at", "TEXT NOT NULL DEFAULT ''"],
   ["deleted_by", "INTEGER NOT NULL DEFAULT 0"],
   ["deleted_by_name", "TEXT NOT NULL DEFAULT ''"],
+  ["content_updated_at", "TEXT NOT NULL DEFAULT ''"],
 ] as const;
 
 let readyPromise: Promise<ReturnType<typeof getD1>> | null = null;
@@ -431,6 +437,7 @@ export function authoredQuotationFromRow(row: Record<string, unknown>): Authored
     organization: String(row.organization ?? ""),
     businessRound: Math.max(1, Number(row.business_round) || 1),
     projectTitle: String(row.project_title ?? ""), quoteDate: String(row.quote_date ?? ""),
+    initialQuoteDate: String(row.initial_quote_date ?? row.quote_date ?? ""),
     validUntil: String(row.valid_until ?? ""), status: row.status === "final" ? "final" : "draft",
     executionType: row.execution_type === "컨소" ? "컨소" : "직영",
     consortiumCompany: String(row.consortium_company ?? ""), consortiumRate: rate(row.consortium_rate),
@@ -462,6 +469,7 @@ export function authoredQuotationFromRow(row: Record<string, unknown>): Authored
       jobTitle: row.editor_job_title,
     }),
     createdAt: String(row.created_at ?? ""), updatedAt: String(row.updated_at ?? ""),
+    contentUpdatedAt: String(row.content_updated_at ?? ""),
   };
 }
 
@@ -592,7 +600,7 @@ export async function saveAuthoredQuotation(value: Record<string, unknown>, memb
       .bind(id)
       .first<{ status: string }>();
     if (!existing) throw new Error("수정할 견적서를 찾지 못했습니다.");
-    await d1.prepare(`UPDATE authored_quotations SET organization=?, business_round=?, project_title=?, quote_date=?, valid_until=?, status=?, execution_type=?, consortium_company=?, consortium_rate=?, discount_amount=?, extra_amount=?, additional_internal_construction_cost=?, subtotal_amount=?, supply_amount=?, tax_amount=?, total_amount=?, expected_earning=?, consortium_payment=?, margin_amount=?, margin_rate=?, include_stamp=?, memo=?, items_json=?, budgets_json=?, settlement_adjustments_json=?, drive_sync_status='none', drive_sync_error='', updated_by=?, updated_by_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(...params, id).run();
+    await d1.prepare(`UPDATE authored_quotations SET organization=?, business_round=?, project_title=?, quote_date=?, valid_until=?, status=?, execution_type=?, consortium_company=?, consortium_rate=?, discount_amount=?, extra_amount=?, additional_internal_construction_cost=?, subtotal_amount=?, supply_amount=?, tax_amount=?, total_amount=?, expected_earning=?, consortium_payment=?, margin_amount=?, margin_rate=?, include_stamp=?, memo=?, items_json=?, budgets_json=?, settlement_adjustments_json=?, drive_sync_status='none', drive_sync_error='', updated_by=?, updated_by_name=?, content_updated_at=CASE WHEN status='final' THEN CURRENT_TIMESTAMP ELSE content_updated_at END, updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(...params, id).run();
     const row = await quotationRowById(d1, id);
     if (!row) throw new Error("저장한 견적서를 찾지 못했습니다.");
     return authoredQuotationFromRow(row);
@@ -631,7 +639,7 @@ export async function saveAuthoredQuotation(value: Record<string, unknown>, memb
   }
   if (!revisionRootId) {
     revisionRootId = insertedId;
-    await d1.prepare("UPDATE authored_quotations SET revision_root_id=? WHERE id=?").bind(insertedId, insertedId).run();
+    await d1.prepare("UPDATE authored_quotations SET revision_root_id=?, initial_quote_date=? WHERE id=?").bind(insertedId, data.quoteDate, insertedId).run();
   }
   const row = await quotationRowById(d1, insertedId);
   if (!row) throw new Error("저장한 견적서를 찾지 못했습니다.");

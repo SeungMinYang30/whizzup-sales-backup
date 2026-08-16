@@ -14455,3 +14455,5 @@ button:is(
 .quotation-settlement-adjustments>small,.quote-consortium-settlement p{font-size:11px;line-height:1.55}
 .quotation-output-menu-settlement>summary{min-height:42px;font-size:12px}
 .quotation-output-menu-settlement .quotation-output-menu-panel>button{font-size:12px}
+.quotation-row-dates dd{display:grid;gap:3px}
+.quotation-row-dates dd>small{color:#7d8ba2;font-size:9px;font-weight:700;white-space:nowrap}
