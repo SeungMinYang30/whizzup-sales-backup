@@ -10895,6 +10895,7 @@ tr:hover .row-actions { opacity: 1; }
 .quote-bottom-row dt,.quote-bottom-row dd { margin: 0; padding: 7px 9px; border-bottom: 1px solid #d8e0ec; color: #59677f; font-size: 11px; }
 .quote-bottom-row dd { text-align: right; font-weight: 900; }
 .quote-bottom-row dt:last-of-type,.quote-bottom-row dd:last-of-type { color: #1e55dc; font-size: 14px; }
+.quote-bottom-row .quote-tax-reference { display: grid; gap: 3px; white-space: nowrap; }
 .quote-document .quotation-memo { margin: 0 16px 18px; }
 .quote-internal { top: 104px; max-height: calc(100dvh - 122px); padding: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border-radius: 12px; }
 .quote-internal > div:first-child { padding: 17px 18px; border-bottom: 1px solid #eadfd2; background: #fffaf3; }

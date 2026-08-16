@@ -144,6 +144,8 @@ test("quotation editor uses responsive item cards without exposing internal sett
   assert.match(page, /function FormattedMoneyInput/);
   assert.match(page, /inputMode="numeric"/);
   assert.match(styles, /\.quotation-item-card-summary/);
+  assert.match(page, /className="quote-tax-reference"/);
+  assert.match(styles, /\.quote-bottom-row \.quote-tax-reference \{ display: grid; gap: 3px; white-space: nowrap; \}/);
   assert.match(styles, /\.print-only\{display:none!important\}/);
 });
 
