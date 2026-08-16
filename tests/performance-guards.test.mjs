@@ -46,6 +46,10 @@ const rootPageSource = await readFile(
   new URL("../app/page.tsx", import.meta.url),
   "utf8",
 );
+const activityXlsxSource = await readFile(
+  new URL("../app/activity-xlsx.ts", import.meta.url),
+  "utf8",
+);
 
 test("관리자 초기 로딩은 대시보드와 전체 기록을 중복 조회하지 않는다", () => {
   assert.doesNotMatch(
@@ -83,6 +87,29 @@ test("독립 화면은 전체 영업 기록을 불필요하게 요청하지 않�
 test("첫 페이지와 세션 API가 접속 시간을 중복 갱신하지 않는다", () => {
   assert.match(rootPageSource, /await getOrCreateMember\(identity\);/);
   assert.doesNotMatch(rootPageSource, /getOrCreateMember\(identity, true\)/);
+});
+
+test("엑셀 압축 코드와 예산명 관리 화면은 첫 화면 번들에서 제외한다", () => {
+  assert.match(
+    crmSource,
+    /from "\.\/activity-award-utils"/,
+  );
+  assert.doesNotMatch(
+    crmSource,
+    /from "\.\/activity-xlsx"/,
+  );
+  assert.match(
+    crmSource,
+    /import\("\.\/activity-xlsx"\)/,
+  );
+  assert.match(
+    crmSource,
+    /const BudgetNameManager = lazy\(\(\) => import\("\.\/budget-name-manager"\)\)/,
+  );
+  assert.match(
+    activityXlsxSource,
+    /from "\.\/activity-award-utils"/,
+  );
 });
 
 test("전용 화면은 필요할 때만 내려받고 지도는 다른 메뉴에서 유지하지 않는다", () => {

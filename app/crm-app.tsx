@@ -21,15 +21,11 @@ import {
   applyAwardCompanyToSelectedRows,
   awardCompanyKey,
   classifyAwardCompany,
-  downloadActivityTemplate,
-  downloadAwardTemplate,
-  downloadRowsXlsx,
   mergeAwardImportRows,
-  parseActivityImportFile,
   prepareAwardImportValues,
   type ActivityImportRow,
   type ActivityImportValues,
-} from "./activity-xlsx";
+} from "./activity-award-utils";
 import {
   fetchWithInstitutionConfirmation,
   requestOfficialSchoolDecision,
@@ -41,7 +37,6 @@ import type {
 } from "./accounting-page";
 import { personDisplayLabel } from "../lib/person-label";
 import { canonicalOwnerPerformanceManagerName } from "../lib/owner-performance";
-import BudgetNameManager from "./budget-name-manager";
 import BudgetNameSelector, {
   type BudgetAmountMode,
   type BudgetKind,
@@ -129,6 +124,7 @@ import {
 import { resilientFetch } from "./resilient-fetch";
 
 const DataBackupPage = lazy(() => import("./data-backup-page"));
+const BudgetNameManager = lazy(() => import("./budget-name-manager"));
 const HoldemLounge = lazy(() => import("./holdem-lounge"));
 const ProductCatalogPage = lazy(() => import("./product-catalog-page"));
 const OrganizationQuotationHistory = lazy(() => import("./organization-quotation-history"));
@@ -11357,9 +11353,11 @@ export default function CrmApp({
     }
     try {
       const [parsedRows, catalog] = await Promise.all([
-        parseActivityImportFile(file, {
-          awardMode: creatingAward,
-        }),
+        import("./activity-xlsx").then(({ parseActivityImportFile }) =>
+          parseActivityImportFile(file, {
+            awardMode: creatingAward,
+          }),
+        ),
         ensureBudgetReviewCatalog(),
       ]);
       const consolidated = creatingAward
@@ -11379,6 +11377,17 @@ export default function CrmApp({
           ? caught.message
           : "엑셀 파일을 읽지 못했습니다.",
       );
+    }
+  }
+
+  async function downloadActivityImportTemplate() {
+    try {
+      const { downloadActivityTemplate, downloadAwardTemplate } =
+        await import("./activity-xlsx");
+      if (creatingAward) downloadAwardTemplate();
+      else downloadActivityTemplate();
+    } catch {
+      setToast("엑셀 양식을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     }
   }
 
@@ -15600,7 +15609,7 @@ export default function CrmApp({
     }
   }
 
-  function exportRecordWorkbook(
+  async function exportRecordWorkbook(
     scopeLabel: string,
     scopeRecords: Activity[],
   ) {
@@ -15656,24 +15665,29 @@ export default function CrmApp({
         record.progressSchedule.replaceAll("\t", " "),
         record.notes,
       ]);
-    downloadRowsXlsx({
-      filename: `WHIZZUP_${scopeLabel}_${new Date().toISOString().slice(0, 10)}.xlsx`,
-      sheetName: scopeLabel,
-      headers,
-      rows,
-      widths: [
-        13, 13, 24, 12, 16, 14, 16, 24, 16, 14, 13, 12, 22, 42, 34, 14,
-        12, 14, 16, 13, 15, 14, 32, 28, 28,
-      ],
-    });
-    setToast(`${scopeRecords.length}건을 엑셀 파일로 만들었습니다.`);
+    try {
+      const { downloadRowsXlsx } = await import("./activity-xlsx");
+      downloadRowsXlsx({
+        filename: `WHIZZUP_${scopeLabel}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        sheetName: scopeLabel,
+        headers,
+        rows,
+        widths: [
+          13, 13, 24, 12, 16, 14, 16, 24, 16, 14, 13, 12, 22, 42, 34, 14,
+          12, 14, 16, 13, 15, 14, 32, 28, 28,
+        ],
+      });
+      setToast(`${scopeRecords.length}건을 엑셀 파일로 만들었습니다.`);
+    } catch {
+      setToast("엑셀 파일을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    }
   }
 
   function exportInstitutionWorkbook() {
     const selectedRecords = followupRows.filter((record) =>
       selectedInstitutionIds.includes(record.id),
     );
-    exportRecordWorkbook(
+    void exportRecordWorkbook(
       "기관별관리",
       selectedRecords.length > 0 ? selectedRecords : followupRows,
     );
@@ -15683,7 +15697,7 @@ export default function CrmApp({
     const selectedRecords = displayedRecords.filter((record) =>
       selectedAwardIds.includes(record.id),
     );
-    exportRecordWorkbook(
+    void exportRecordWorkbook(
       "수주관리",
       selectedRecords.length > 0 ? selectedRecords : displayedRecords,
     );
@@ -17067,7 +17081,9 @@ export default function CrmApp({
           ) : null}
 
           {view === "budget-institutions" && budgetWorkspaceSection === "names" && canManageRecords ? (
-            <BudgetNameManager onToast={setToast} />
+            <Suspense fallback={<DeferredPageFallback />}>
+              <BudgetNameManager onToast={setToast} />
+            </Suspense>
           ) : null}
 
           {(view === "map" || (view === "budget-institutions" && budgetWorkspaceSection === "institutions")) && (
@@ -22653,7 +22669,7 @@ export default function CrmApp({
                     <button
                       type="button"
                       className="activity-template-download"
-                      onClick={creatingAward ? downloadAwardTemplate : downloadActivityTemplate}
+                      onClick={() => void downloadActivityImportTemplate()}
                     >
                       <b aria-hidden="true">↓</b>
                       <span>
