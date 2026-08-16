@@ -593,6 +593,7 @@ export default function QuotationManagementPage({
   const [equipmentKitPlansSaving, setEquipmentKitPlansSaving] = useState(false);
   const [equipmentKitHideZero, setEquipmentKitHideZero] = useState(false);
   const [equipmentKitRecoveryId, setEquipmentKitRecoveryId] = useState("");
+  const reopenProductResultsAfterEquipmentRef = useRef(false);
   const [dragOverItemId, setDragOverItemId] = useState("");
   const [importMode, setImportMode] = useState<QuotationImportMode | null>(null);
   const [importSourceFile, setImportSourceFile] = useState<File | null>(null);
@@ -657,6 +658,7 @@ export default function QuotationManagementPage({
     setLoadedInstitutionKey("");
     setEquipmentKitEditor(null);
     setEquipmentKitHideZero(false);
+    reopenProductResultsAfterEquipmentRef.current = false;
     draggedItemIdRef.current = "";
     setDragOverItemId("");
     setImportMode(null);
@@ -1628,13 +1630,33 @@ export default function QuotationManagementPage({
     });
   }
 
+  function restoreProductResultsAfterEquipment() {
+    if (!reopenProductResultsAfterEquipmentRef.current) return;
+    reopenProductResultsAfterEquipmentRef.current = false;
+    setProductResultsOpen(true);
+  }
+
+  function closeEquipmentKitEditor() {
+    setEquipmentKitEditor(null);
+    setEquipmentKitHideZero(false);
+    restoreProductResultsAfterEquipment();
+  }
+
   function addProduct(product: ProductCatalogItem) {
     if (!draft) return;
-    setProductResultsOpen(true);
     const existing = draft.items.find((item) => item.productId === product.id);
+    const opensEquipmentEditor = Boolean(existing?.equipmentKit) || isAirpassEquipmentKitProduct(product.name);
+    if (opensEquipmentEditor) {
+      reopenProductResultsAfterEquipmentRef.current = productResultsOpen;
+      setProductResultsOpen(false);
+    } else {
+      setProductResultsOpen(true);
+    }
     if (existing) {
       if (existing.equipmentKit || isAirpassEquipmentKitProduct(existing.name)) {
-        void openEquipmentKitEditor(existing);
+        void openEquipmentKitEditor(existing).then((opened) => {
+          if (!opened) restoreProductResultsAfterEquipment();
+        });
         return;
       }
       updateItem(existing.id, { quantity: existing.quantity + 1 });
@@ -1724,9 +1746,9 @@ export default function QuotationManagementPage({
     if (!equipmentKit && savedQuote) {
       if (!savedQuote.excelUrl) {
         setMessage("이 견적에는 저장된 교구 세부내역과 Excel 파일이 없어 자동 복구할 수 없습니다. 교구 견적서 불러오기로 원본을 선택해 주세요.");
-        return;
+        return false;
       }
-      if (equipmentKitRecoveryId) return;
+      if (equipmentKitRecoveryId) return true;
       setEquipmentKitRecoveryId(item.id);
       setMessage("저장된 Excel에서 교구 세부견적을 복구하고 있습니다…");
       try {
@@ -1766,7 +1788,7 @@ export default function QuotationManagementPage({
         setMessage(error instanceof Error
           ? `${error.message} 기본 구성으로 초기화하지 않았습니다. 교구 견적서 불러오기로 원본을 선택해 주세요.`
           : "교구 세부견적을 복구하지 못했습니다. 기본 구성으로 초기화하지 않았습니다.");
-        return;
+        return false;
       } finally {
         setEquipmentKitRecoveryId("");
       }
@@ -1787,6 +1809,7 @@ export default function QuotationManagementPage({
       editingItemId: item.id,
     });
     setEquipmentKitHideZero(false);
+    return true;
   }
 
   function updateEquipmentKitLine(id: string, changes: Partial<NonNullable<DraftItem["equipmentKit"]>["lines"][number]>) {
@@ -1915,8 +1938,7 @@ export default function QuotationManagementPage({
       ? draft.items.filter((line) => !isConstructionItem(line)).map((line) => line.id === equipmentKitEditor.editingItemId ? item : line)
       : [...draft.items.filter((line) => !isConstructionItem(line)), item];
     setDraft({ ...draft, items: [...regularItems, ...(construction ? [construction] : [])] });
-    setEquipmentKitEditor(null);
-    setEquipmentKitHideZero(false);
+    closeEquipmentKitEditor();
   }
 
   function addBlankItem() {
@@ -3082,7 +3104,7 @@ export default function QuotationManagementPage({
           <section className="equipment-kit-editor" role="dialog" aria-modal="true" aria-labelledby="equipment-kit-title">
             <header>
               <div><h3 id="equipment-kit-title">교구 세트 구성</h3><p>기본안을 불러온 뒤 수량·단위·단가를 조정하고 필요한 품목을 추가합니다.</p></div>
-              <button type="button" aria-label="교구 세트 구성 닫기" onClick={() => setEquipmentKitEditor(null)}>×</button>
+              <button type="button" aria-label="교구 세트 구성 닫기" onClick={closeEquipmentKitEditor}>×</button>
             </header>
             <div className="equipment-kit-plan">
               <strong>기본 구성안</strong>
@@ -3134,7 +3156,7 @@ export default function QuotationManagementPage({
               </table>
             </div>
             <div className="equipment-kit-total"><span>견적·별첨에 포함되는 교구 합계</span><strong>{won.format(airpassEquipmentKitTotal(equipmentKitEditor.item.equipmentKit))}원</strong></div>
-            <footer><button type="button" onClick={() => setEquipmentKitEditor(null)}>취소</button><button type="button" className="primary" onClick={applyEquipmentKit}>이 구성으로 견적에 적용</button></footer>
+            <footer><button type="button" onClick={closeEquipmentKitEditor}>취소</button><button type="button" className="primary" onClick={applyEquipmentKit}>이 구성으로 견적에 적용</button></footer>
           </section>
         </div>}
 

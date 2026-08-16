@@ -116,7 +116,10 @@ test("mobile quotation tools share one row and modal content stays above fixed a
 });
 
 test("mobile quotation cards stay compact and the equipment picker uses the viewport", async () => {
-  const styles = await read("../app/globals.css");
+  const [styles, quotation] = await Promise.all([
+    read("../app/globals.css"),
+    read("../app/quotation-management-page.tsx"),
+  ]);
   const mobileEditors = styles.slice(styles.indexOf("/* Mobile PDF, equipment picker"));
   assert.match(mobileEditors, /\.equipment-kit-editor-shell\{[\s\S]*align-items:flex-start;[\s\S]*padding:6px;/);
   assert.match(mobileEditors, /\.equipment-kit-editor\{[\s\S]*height:calc\(100dvh - 12px\);/);
@@ -125,4 +128,8 @@ test("mobile quotation cards stay compact and the equipment picker uses the view
   assert.match(mobileEditors, /\.quotation-item-card-controls\{[\s\S]*grid-template-columns:repeat\(2/);
   assert.match(mobileEditors, /\.quotation-item-internal-cost:not\(:has\(>label:first-child input:checked\)\)/);
   assert.match(mobileEditors, /\.quotation-item-card-note\{[\s\S]*grid-template-columns:42px/);
+  assert.match(quotation, /reopenProductResultsAfterEquipmentRef/);
+  assert.match(quotation, /if \(opensEquipmentEditor\) \{[\s\S]*setProductResultsOpen\(false\);/);
+  assert.match(quotation, /function closeEquipmentKitEditor\(\)[\s\S]*restoreProductResultsAfterEquipment\(\);/);
+  assert.match(quotation, /setDraft\([\s\S]*closeEquipmentKitEditor\(\);/);
 });
