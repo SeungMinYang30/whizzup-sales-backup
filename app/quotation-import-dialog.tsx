@@ -6,6 +6,7 @@ import { hasProcurementSignal, procurementNumbersFromText } from "../lib/procure
 import { parseQuotationXlsxData } from "./quotation-xlsx";
 
 type DuplicateAction = "" | "merge" | "keep" | "replace";
+type DuplicateBatchAction = DuplicateAction | "exclude";
 export type QuotationImportMode = "general" | "teaching-aids";
 
 type AnalysisItem = {
@@ -159,7 +160,10 @@ export default function QuotationImportDialog({
   const [draft, setDraft] = useState<AnalysisDraft | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState("");
+  const [duplicateBatchAction, setDuplicateBatchAction] = useState<DuplicateBatchAction>("");
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const duplicateCount = useMemo(() => draft?.items.filter((item) => item.included && item.duplicateItemId).length ?? 0, [draft]);
 
   const totals = useMemo(() => {
     if (!draft) return { items: 0, adjusted: 0, procurementFee: 0, calculated: 0, difference: 0, feeOnlyDifference: false };
@@ -190,6 +194,7 @@ export default function QuotationImportDialog({
     extraAmount?: number;
     items: RawItem[];
   }) {
+    setDuplicateBatchAction("");
     let extractedConstruction = Math.max(0, Number(raw.constructionAmount) || 0);
     const usableItems = raw.items.filter((item) => {
       if (/설치(?:비|공사)|시공비|공사비/u.test(`${item.productName} ${item.specification}`)) {
@@ -275,6 +280,22 @@ export default function QuotationImportDialog({
     setDraft((current) => current ? { ...current, items: current.items.map((item) => item.id === id ? { ...item, ...patch } : item) } : current);
   }
 
+  function applyDuplicateBatch() {
+    if (!duplicateBatchAction) {
+      setError("동일 품목의 일괄 처리 방법을 선택해 주세요.");
+      return;
+    }
+    setDraft((current) => current ? {
+      ...current,
+      items: current.items.map((item) => {
+        if (!item.included || !item.duplicateItemId) return item;
+        if (duplicateBatchAction === "exclude") return { ...item, included: false, duplicateAction: "" };
+        return { ...item, duplicateAction: duplicateBatchAction };
+      }),
+    } : current);
+    setError("");
+  }
+
   function apply() {
     if (!draft || !file) return;
     const selected = draft.items.filter((item) => item.included && item.productName.trim());
@@ -310,7 +331,7 @@ export default function QuotationImportDialog({
           <input ref={inputRef} type="file" accept=".pdf,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => {
             const next = event.target.files?.[0] ?? null;
             if (next && next.size > 20 * 1024 * 1024) { setError("PDF·XLSX는 20MB 이하 파일만 불러올 수 있습니다."); setFile(null); return; }
-            setFile(next); setDraft(null); setError("");
+            setFile(next); setDraft(null); setDuplicateBatchAction(""); setError("");
           }} />
           <button type="button" onClick={() => inputRef.current?.click()}>PDF·Excel 선택</button>
           <span>{file?.name || "선택된 파일 없음"}</span>
@@ -330,6 +351,13 @@ export default function QuotationImportDialog({
           </section>
           {totals.feeOnlyDifference && <p className="quotation-import-fee-notice">원본 견적 총액에는 조달수수료가 포함되지 않은 것으로 보입니다. 불러온 견적에는 조달수수료 {won.format(totals.procurementFee)}원이 별도로 반영됩니다.</p>}
           {Boolean(totals.difference) && !totals.feeOnlyDifference && <p className="quotation-import-warning">원본 총액과 수수료 포함 계산 합계가 다릅니다. 할인·추가비용·공사비를 확인해 주세요.</p>}
+          {mode === "general" && duplicateCount > 0 && <section className="quotation-import-duplicate-batch" aria-label="동일 품목 일괄 처리">
+            <div><strong>동일 품목 {duplicateCount}건 일괄 처리</strong><span>선택한 방법을 현재 포함된 중복 품목에 한 번에 적용합니다. 품목별 선택은 아래에서 다시 바꿀 수 있습니다.</span></div>
+            <select aria-label="동일 품목 일괄 처리 방법" value={duplicateBatchAction} onChange={(event) => setDuplicateBatchAction(event.target.value as DuplicateBatchAction)}>
+              <option value="">처리 방법 선택</option><option value="merge">수량 합치기</option><option value="keep">별도 품목으로 유지</option><option value="replace">기존 품목 교체</option><option value="exclude">중복 품목 모두 제외</option>
+            </select>
+            <button type="button" onClick={applyDuplicateBatch}>일괄 적용</button>
+          </section>}
           <div className="quotation-import-items">{draft.items.map((item, index) => <article key={item.id} className={!item.included ? "excluded" : ""}>
             <header><label><input type="checkbox" checked={item.included} onChange={(event) => updateItem(item.id, { included: event.target.checked })} /> 포함</label><strong>{index + 1}번 품목</strong><em className={item.linkStatus}>{item.linkStatus === "linked" ? `제품 연결 · ${item.supplierName || "기준정보 적용"}` : "제품 연결 확인 필요"}</em><button type="button" onClick={() => setDraft({ ...draft, items: draft.items.filter((line) => line.id !== item.id) })}>삭제</button></header>
             <div className="quotation-import-grid">

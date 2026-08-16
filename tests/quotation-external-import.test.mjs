@@ -9,6 +9,8 @@ const filesRoute = await readFile(new URL("../app/api/quotations/files/route.ts"
 const store = await readFile(new URL("../lib/authored-quotations.ts", import.meta.url), "utf8");
 const equipmentKit = await readFile(new URL("../lib/airpass-equipment-kit.ts", import.meta.url), "utf8");
 const xlsx = await readFile(new URL("../app/quotation-xlsx.ts", import.meta.url), "utf8");
+const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const profitPdf = await readFile(new URL("../app/consortium-settlement-pdf.ts", import.meta.url), "utf8");
 
 test("승인된 직원은 PDF·XLSX 외부 견적을 분석하되 기관 데이터에는 쓰지 않는다", () => {
   assert.match(route, /await requireApprovedMember\(\)/);
@@ -27,6 +29,9 @@ test("분석 결과는 확인·수정·중복 선택 뒤 현재 초안에만 반
   assert.match(dialog, /수량 합치기/);
   assert.match(dialog, /별도 품목으로 유지/);
   assert.match(dialog, /기존 품목 교체/);
+  assert.match(dialog, /동일 품목 \{duplicateCount\}건 일괄 처리/);
+  assert.match(dialog, /중복 품목 모두 제외/);
+  assert.match(dialog, /function applyDuplicateBatch/);
   assert.match(dialog, /수수료 포함 최종 합계/);
   assert.match(dialog, /원본 견적 총액에는 조달수수료가 포함되지 않은 것으로 보입니다/);
   assert.match(dialog, /matched\?\.procurementFeeRate \?\? item\.procurementFeeRate \?\? 0\.0054/);
@@ -35,6 +40,20 @@ test("분석 결과는 확인·수정·중복 선택 뒤 현재 초안에만 반
   assert.match(route, /0\.54%는 0\.54/);
   assert.match(route, /normalizeExtractedProcurementFeeRate\(item\.procurementFeeRate\)/);
   assert.match(dialog, /현재 견적에 불러오기/);
+});
+
+test("견적 인쇄는 별도 창에서 열고 화면 공급자 글자만 확대한다", () => {
+  assert.match(page, /window\.open\("", "whizzup-quotation-print"/);
+  assert.match(page, /popup\.print\(\)/);
+  assert.match(page, /popup\.addEventListener\("afterprint", \(\) => popup\.close\(\)/);
+  assert.match(styles, /@media screen[\s\S]*\.quote-studio \.quote-supplier dt \{ font-size: 11px/);
+  assert.match(styles, /@media screen[\s\S]*\.quote-studio \.quote-supplier dd \{ font-size: 12px/);
+});
+
+test("내부 수익표 PDF는 품목과 비용 상세가 한 장에 들어가면 같은 페이지에 배치한다", () => {
+  assert.match(profitPdf, /firstPageCombinedHeight/);
+  assert.match(profitPdf, /combineCostsOnFirstPage/);
+  assert.match(profitPdf, /page\.costRows\?\.length/);
 });
 
 test("교구 견적은 별도 불러오기 창으로 구분하고 현재 견적에 반영한다", () => {

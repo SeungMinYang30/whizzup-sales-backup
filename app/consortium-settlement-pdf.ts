@@ -360,13 +360,21 @@ export async function createInternalProfitReportPdf(input: InternalProfitReportW
   const itemChunks: InternalProfitReportWorkbookInput["rows"][] = [];
   for (let index = 0; index < input.rows.length; index += 10) itemChunks.push(input.rows.slice(index,index+10));
   if (!itemChunks.length) itemChunks.push([]);
+  const firstPageItems = itemChunks.length === 1 ? itemChunks[0].length : 0;
+  const firstPageCombinedHeight = 282 + 104
+    + (firstPageItems ? 38 + firstPageItems * 58 : 0)
+    + (costDetails.length ? 38 + costDetails.length * 58 : 0)
+    + 68;
+  const combineCostsOnFirstPage = itemChunks.length === 1 && firstPageCombinedHeight <= 1650;
   const detailChunks: NonNullable<InternalProfitReportWorkbookInput["costDetails"]>[] = [];
-  for (let index = 0; index < costDetails.length; index += 18) detailChunks.push(costDetails.slice(index,index+18));
+  if (!combineCostsOnFirstPage) {
+    for (let index = 0; index < costDetails.length; index += 18) detailChunks.push(costDetails.slice(index,index+18));
+  }
   const pagePlan: Array<
-    | { type: "items"; rows: InternalProfitReportWorkbookInput["rows"] }
+    | { type: "items"; rows: InternalProfitReportWorkbookInput["rows"]; costRows?: NonNullable<InternalProfitReportWorkbookInput["costDetails"]> }
     | { type: "costs"; rows: NonNullable<InternalProfitReportWorkbookInput["costDetails"]> }
   > = [
-    ...itemChunks.map((rows) => ({ type: "items" as const, rows })),
+    ...itemChunks.map((rows, index) => ({ type: "items" as const, rows, costRows: combineCostsOnFirstPage && index === 0 ? costDetails : undefined })),
     ...detailChunks.map((rows) => ({ type: "costs" as const, rows })),
   ];
   const pages: Array<{ blob: Blob; width: number; height: number }> = [];
@@ -376,9 +384,12 @@ export async function createInternalProfitReportPdf(input: InternalProfitReportW
     const context = canvas.getContext("2d",{alpha:false}); if (!context) throw new Error("내부 수익표 PDF 화면을 준비하지 못했습니다."); context.scale(RENDER_SCALE,RENDER_SCALE);
     let y = drawProfitHeader(context,input,logo,pageIndex+1,pagePlan.length);
     if (pageIndex === 0) y = drawProfitSummary(context,input,y);
-    y = page.type === "items"
-      ? drawProfitItems(context,input,page.rows,y)
-      : drawProfitCostDetails(context,page.rows,y);
+    if (page.type === "items") {
+      y = drawProfitItems(context,input,page.rows,y);
+      if (page.costRows?.length) y = drawProfitCostDetails(context,page.costRows,y);
+    } else {
+      y = drawProfitCostDetails(context,page.rows,y);
+    }
     if (pageIndex === pagePlan.length-1) {
       cell(context,72,y+18,700,50,"컨소·내부 비용을 반영한 최종 예상 수익",{fill:"#eaf1ff",color:"#182842",bold:true,size:17});
       cell(context,772,y+18,396,50,`${won.format(input.margin)}원`,{fill:"#eaf1ff",color:"#2254d1",align:"right",bold:true,size:24});

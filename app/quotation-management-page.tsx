@@ -674,8 +674,31 @@ export default function QuotationManagementPage({
 
   function printQuotation() {
     if (!draft?.items.length) return;
-    window.print();
-    setMessage("견적서 인쇄 창을 열었습니다. 프린터 출력 또는 PDF로 저장할 수 있습니다.");
+    const portal = document.querySelector<HTMLElement>(".quotation-print-portal");
+    const popup = window.open("", "whizzup-quotation-print", "popup=yes,width=1100,height=900");
+    if (!portal || !popup) {
+      popup?.close();
+      window.print();
+      setMessage("팝업이 차단되어 현재 창에서 인쇄 화면을 열었습니다.");
+      return;
+    }
+    const styles = Array.from(document.head.querySelectorAll<HTMLLinkElement | HTMLStyleElement>('link[rel="stylesheet"], style'))
+      .map((node) => node.outerHTML)
+      .join("");
+    let printStarted = false;
+    const startPrint = () => {
+      if (printStarted || popup.closed) return;
+      printStarted = true;
+      popup.focus();
+      popup.print();
+    };
+    popup.addEventListener("afterprint", () => popup.close(), { once: true });
+    popup.document.open();
+    popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><base href="${window.location.origin}/"><title>견적서 인쇄</title>${styles}</head><body class="quotation-printing">${portal.outerHTML}</body></html>`);
+    popup.document.close();
+    popup.addEventListener("load", () => window.setTimeout(startPrint, 250), { once: true });
+    window.setTimeout(startPrint, 800);
+    setMessage("견적서 인쇄 전용 창을 열었습니다. 닫아도 영업관리 화면은 유지됩니다.");
   }
 
   function startQuotation() {

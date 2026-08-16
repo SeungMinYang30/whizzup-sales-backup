@@ -13439,6 +13439,12 @@ button:is(
 .quotation-import-grid input, .quotation-import-grid select, .quotation-import-duplicate select { width: 100%; min-width: 0; min-height: 40px; border: 1px solid #cfd9e9; border-radius: 9px; padding: 7px 10px; color: #1d2a42; background: #fff; font: inherit; }
 .quotation-import-duplicate { display: flex; align-items: center; gap: 12px; margin: 0 13px 13px; padding: 10px; border-radius: 10px; background: #fff5df; }
 .quotation-import-duplicate select { max-width: 240px; margin-left: auto; }
+.quotation-import-duplicate-batch { display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 250px) auto; align-items: center; gap: 12px; margin: 0 0 14px; padding: 13px 14px; border: 1px solid #f0cf8c; border-radius: 12px; background: #fff8e8; }
+.quotation-import-duplicate-batch > div { display: grid; gap: 4px; min-width: 0; }
+.quotation-import-duplicate-batch strong { color: #7b4b06; font-size: 13px; }
+.quotation-import-duplicate-batch span { color: #8b6b38; font-size: 11px; line-height: 1.45; }
+.quotation-import-duplicate-batch select { width: 100%; min-width: 0; min-height: 40px; padding: 7px 10px; border: 1px solid #d7bd83; border-radius: 9px; background: #fff; color: #263650; font: inherit; }
+.quotation-import-duplicate-batch button { min-height: 40px; padding: 0 14px; border: 1px solid #d4ae5d; border-radius: 9px; background: #fff; color: #7b4b06; font-weight: 850; cursor: pointer; }
 
 .quotation-editor-actions {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -13679,6 +13685,7 @@ button:is(
   .quotation-import-items article > header em { order: 4; width: 100%; }
   .quotation-import-duplicate { align-items: stretch; flex-direction: column; }
   .quotation-import-duplicate select { max-width: none; margin-left: 0; }
+  .quotation-import-duplicate-batch { grid-template-columns: 1fr; }
   .equipment-readonly-projects article > header { align-items: flex-start; flex-direction: column; }
 }
 
@@ -13881,6 +13888,8 @@ button:is(
 
 @media screen {
   .quote-studio { color: #243650; font-size: 14px; }
+  .quote-studio .quote-supplier dt { font-size: 11px; line-height: 1.55; }
+  .quote-studio .quote-supplier dd { font-size: 12px; line-height: 1.55; }
   .quote-studio-topbar span { font-size: 12px; }
   .quote-studio-topbar button,
   .quote-studio .app-button { font-size: 13px; }
