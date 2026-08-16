@@ -20,6 +20,7 @@ test("master-only institutions save budgets without creating a contact activity"
   assert.match(crm, /action: "save-institution-budgets"/);
   assert.match(records, /saveInstitutionBudgetsWithoutActivity/);
   assert.match(records, /activity_id, created_by\s*\) VALUES[\s\S]*NULL, \?\)/);
+  assert.match(records, /RETURNING id[\s\S]*\.first<\{ id: number \}>\(\)/);
   assert.match(records, /budget_request_id = \?/);
   assert.match(records, /budget_group_id = \?/);
   assert.match(institutions, /WHERE activity_id IS NULL/);

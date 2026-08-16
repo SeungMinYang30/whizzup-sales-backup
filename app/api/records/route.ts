@@ -851,7 +851,8 @@ async function saveInstitutionBudgetsWithoutActivity(
              budget_original_name, budget_group_id, budget_match_status,
              budget_match_method, budget_request_id, budget_kind,
              budget_amount, budget_amount_source, notes, activity_id, created_by
-           ) VALUES (?, ?, ?, '제안', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+           ) VALUES (?, ?, ?, '제안', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+           RETURNING id`,
         )
         .bind(
           organization,
@@ -869,8 +870,8 @@ async function saveInstitutionBudgetsWithoutActivity(
           "기관 예산 직접 연결",
           member.id,
         )
-        .run();
-      projectId = Number(inserted.meta.last_row_id);
+        .first<{ id: number }>();
+      projectId = Number(inserted?.id);
       changed = true;
       budgetChanged = true;
     }
