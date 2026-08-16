@@ -16,17 +16,27 @@ const store = await readFile(new URL("../lib/authored-quotations.ts", import.met
 const api = await readFile(new URL("../app/api/equipment-kit-plans/route.ts", import.meta.url), "utf8");
 const pdf = await readFile(new URL("../app/authored-quotation-pdf.ts", import.meta.url), "utf8");
 const workbook = await readFile(new URL("../lib/quotation-xlsx.ts", import.meta.url), "utf8");
+const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("teaching-aid support is stored as an internal margin deduction only", () => {
   assert.match(store, /teachingAidSupportAmount/);
   assert.match(store, /marginAmount[\s\S]*- teachingAidSupportCost/);
   assert.match(page, /교구 할인·지원 차감/);
+  assert.match(page, /teachingAidSupportLabel \|\| "교구 할인 차감"/);
   assert.match(page, /고객 견적금액과 PDF·Excel에는 반영하지 않고 내부 마진에서만 차감합니다/);
   assert.match(page, /quotation-teaching-aid-support[\s\S]*?item\.equipmentKit \? <label className=\{\`quotation-complimentary-toggle/);
   assert.equal(page.match(/quotation-complimentary-toggle/g)?.length, 1);
   assert.match(page, /교구 세트 무상 제공/);
+  assert.match(page, /const complimentaryAmount = Math\.max\(0, item\.quantity\) \* Math\.max\(0, item\.unitPrice\)/);
+  assert.match(page, /currentSupportAmount > 0 \? currentSupportAmount : complimentaryAmount/);
+  assert.match(page, /currentSupportAmount === complimentaryAmount \? 0 : currentSupportAmount/);
+  assert.match(page, /수량 × 단가는 내부 차감 금액에 자동 반영합니다/);
   assert.doesNotMatch(pdf, /teachingAidSupport/);
   assert.doesNotMatch(workbook, /teachingAidSupport/);
+});
+
+test("construction item values use the same readable type scale as quote items", () => {
+  assert.match(styles, /quotation-construction-cost-fields>label:not\(\.quotation-additional-internal-cost\)>input\{font-size:14px;font-weight:700\}/);
 });
 
 test("equipment-kit plans normalize safely and create detached quote snapshots", () => {

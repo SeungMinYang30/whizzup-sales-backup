@@ -2782,9 +2782,20 @@ export default function QuotationManagementPage({
                         <small>{internalCostDefaults.kind === "content-substitution" ? "체크 시 바이패스 100%로 표시하고, 대체 후 남은 금액에 기존 수수료율을 적용합니다. 초과 비용은 음수 마진으로 반영됩니다." : draft.executionType === "컨소" && item.internalCostBearer === "consortium" ? "컨소 정산서의 비용 내역과 최종 지급 예정액에 반영됩니다." : "위즈업 내부 비용으로 처리되며 고객 견적 금액에는 반영되지 않습니다."}</small>
                       </div>}
                       {supportsTeachingAidDiscount(item) && <div className="quotation-teaching-aid-support">
-                        <label><span>교구 할인·지원 차감</span><input value={item.teachingAidSupportLabel ?? "교구 할인 차감"} onChange={(event) => updateItem(item.id, { teachingAidSupportLabel: event.target.value })} placeholder="예: 교구 할인 차감" /></label>
+                        <label><span>교구 할인·지원 차감</span><input value={item.teachingAidSupportLabel || "교구 할인 차감"} onChange={(event) => updateItem(item.id, { teachingAidSupportLabel: event.target.value })} placeholder="교구 할인 차감" /></label>
                         <label><span>내부 차감 금액</span><span className="quotation-money-input"><FormattedMoneyInput value={item.teachingAidSupportAmount ?? 0} onChange={(teachingAidSupportAmount) => updateItem(item.id, { teachingAidSupportAmount })} label="교구 할인·지원 차감 금액" /><b>원</b></span></label>
-                        {item.equipmentKit ? <label className={`quotation-complimentary-toggle${item.complimentary ? " active" : ""}`}><input type="checkbox" checked={Boolean(item.complimentary)} onChange={(event) => updateItem(item.id, { complimentary: event.target.checked })} /><span><b>교구 세트 무상 제공</b><small>품명·규격·수량은 출력하고 금액과 수익 계산에서는 제외합니다.</small></span></label> : null}
+                        {item.equipmentKit ? <label className={`quotation-complimentary-toggle${item.complimentary ? " active" : ""}`}><input type="checkbox" checked={Boolean(item.complimentary)} onChange={(event) => {
+                          const complimentary = event.target.checked;
+                          const complimentaryAmount = Math.max(0, item.quantity) * Math.max(0, item.unitPrice);
+                          const currentSupportAmount = Math.max(0, item.teachingAidSupportAmount ?? 0);
+                          updateItem(item.id, {
+                            complimentary,
+                            teachingAidSupportLabel: item.teachingAidSupportLabel || "교구 할인 차감",
+                            teachingAidSupportAmount: complimentary
+                              ? (currentSupportAmount > 0 ? currentSupportAmount : complimentaryAmount)
+                              : (currentSupportAmount === complimentaryAmount ? 0 : currentSupportAmount),
+                          });
+                        }} /><span><b>교구 세트 무상 제공</b><small>고객 견적에서는 0원으로 처리하고, 수량 × 단가는 내부 차감 금액에 자동 반영합니다.</small></span></label> : null}
                         <small>고객 견적금액과 PDF·Excel에는 반영하지 않고 내부 마진에서만 차감합니다.</small>
                       </div>}
                     </div>
