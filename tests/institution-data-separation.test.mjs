@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [recordsStore, recordsRoute, crm, vendorStore, vendorRoute] =
+const [recordsStore, recordsRoute, institutionsRoute, trashStore, crm, vendorStore, vendorRoute] =
   await Promise.all([
     readFile(new URL("../lib/records-store.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/records/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/institutions/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/trash-store.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/award-vendors.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/award-vendors/route.ts", import.meta.url), "utf8"),
@@ -48,6 +50,16 @@ test("상세 기록 삭제는 기관 마스터를 남기고 명시적 기관 삭
   assert.match(
     recordsRoute,
     /DELETE FROM institution_registry[\s\S]*organization IN/,
+  );
+  assert.match(recordsStore, /backfillInstitutionRegistryFromActivities/);
+  assert.match(
+    recordsStore,
+    /if \(isPostgresDatabase\(\)\)[\s\S]*backfillInstitutionRegistryFromActivities\(d1\)/,
+  );
+  assert.match(institutionsRoute, /backfillInstitutionRegistryFromRecordTrash\(d1\)/);
+  assert.match(
+    trashStore,
+    /entity_type = 'record'[\s\S]*tables\.activities[\s\S]*ON CONFLICT\(organization\) DO NOTHING/,
   );
 });
 

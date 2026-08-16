@@ -566,6 +566,7 @@ export default function QuotationManagementPage({
   const [printPortalReady, setPrintPortalReady] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [quotationActionId, setQuotationActionId] = useState(0);
+  const [quotationFileJobVersion, setQuotationFileJobVersion] = useState(0);
   const [equipmentKitEditor, setEquipmentKitEditor] = useState<EquipmentKitEditor | null>(null);
   const [equipmentKitPlans, setEquipmentKitPlans] = useState<AirpassEquipmentKitPlan[]>(defaultAirpassEquipmentKitPlans());
   const [canManageEquipmentKitPlans, setCanManageEquipmentKitPlans] = useState(false);
@@ -773,7 +774,7 @@ export default function QuotationManagementPage({
       .forEach((quote) => { void processQuotationFiles(quote); });
   // File processing is resumed from durable queued rows whenever the list is refreshed.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quotes]);
+  }, [quotes, quotationFileJobVersion]);
 
   useEffect(() => {
     if (duplicateFileReconcileRef.current || !quotes.some((quote) => quote.canPurge)) return;
@@ -2198,11 +2199,18 @@ export default function QuotationManagementPage({
     } catch (error) {
       const text = error instanceof Error ? error.message : "PDF·Excel 파일 처리를 완료하지 못했습니다.";
       if (!/더 최신 견적 저장 작업/u.test(text)) {
+        setQuotes((current) => current.map((item) =>
+          item.id === quote.id && item.driveSyncToken === quote.driveSyncToken
+            ? { ...item, driveSyncStatus: "error", driveSyncError: text }
+            : item
+        ));
         setMessage(`견적 내용은 저장됐지만 PDF·Excel 처리가 필요합니다. ${text}`);
       }
     } finally {
       quotationFileJobsRef.current.delete(quote.id);
-      await load();
+      // Re-run only the durable job picker. Reloading the whole quotation page
+      // here resets the user's search, pagination and scroll position.
+      setQuotationFileJobVersion((version) => version + 1);
     }
   }
 

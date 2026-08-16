@@ -1218,23 +1218,9 @@ async function markRecordsRuntimeReady(d1: ReturnType<typeof getD1>) {
     .run();
 }
 
-async function initializeRecords() {
-  const d1 = getD1();
-  if (isPostgresDatabase()) {
-    await d1.prepare("SELECT 1").all();
-    await repairAutoBackfilledOwnerProgressManagers(d1);
-    return d1;
-  }
-  if (await isRecordsRuntimeReady(d1)) return d1;
-  await ensureCollaborationReady();
-  await d1.batch([
-    d1.prepare(createTableSql),
-    d1.prepare(createInstitutionRegistrySql),
-    d1.prepare(
-      "CREATE INDEX IF NOT EXISTS activities_follow_up_idx ON activities (follow_up_required, follow_up_date)",
-    ),
-  ]);
-
+async function backfillInstitutionRegistryFromActivities(
+  d1: ReturnType<typeof getD1>,
+) {
   await d1.prepare(`
     INSERT INTO institution_registry (
       organization, region, created_by_name, created_at, updated_at
@@ -1260,6 +1246,31 @@ async function initializeRecords() {
         ELSE excluded.updated_at
       END
   `).run();
+}
+
+async function initializeRecords() {
+  const d1 = getD1();
+  if (isPostgresDatabase()) {
+    await d1.prepare("SELECT 1").all();
+    await backfillInstitutionRegistryFromActivities(d1);
+    await repairAutoBackfilledOwnerProgressManagers(d1);
+    return d1;
+  }
+  if (await isRecordsRuntimeReady(d1)) {
+    await d1.prepare(createInstitutionRegistrySql).run();
+    await backfillInstitutionRegistryFromActivities(d1);
+    return d1;
+  }
+  await ensureCollaborationReady();
+  await d1.batch([
+    d1.prepare(createTableSql),
+    d1.prepare(createInstitutionRegistrySql),
+    d1.prepare(
+      "CREATE INDEX IF NOT EXISTS activities_follow_up_idx ON activities (follow_up_required, follow_up_date)",
+    ),
+  ]);
+
+  await backfillInstitutionRegistryFromActivities(d1);
 
   const columnInfo = await d1
     .prepare("PRAGMA table_info(activities)")

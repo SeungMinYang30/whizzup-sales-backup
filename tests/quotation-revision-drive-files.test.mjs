@@ -60,6 +60,13 @@ test("final save queues PDF and Excel while Drive finalization protects the newe
   assert.match(page, /void processQuotationFiles\(payload\.quotation, sourceFile\)/);
   assert.match(page, /driveSyncStatus === "queued"/);
   assert.match(page, /파일 재시도/);
+  assert.match(page, /setQuotationFileJobVersion\(\(version\) => version \+ 1\)/);
+  assert.match(page, /item\.driveSyncToken === quote\.driveSyncToken[\s\S]*driveSyncStatus: "error"/);
+  const processingBody = page.slice(
+    page.indexOf("async function processQuotationFiles"),
+    page.indexOf("async function viewSavedPdf"),
+  );
+  assert.doesNotMatch(processingBody, /await load\(\)/);
   assert.match(page, /whizzup:quotation-files-updated/);
   assert.match(filesRoute, /uploadDriveFile/);
   assert.match(filesRoute, /drive_sync_token=\?/);

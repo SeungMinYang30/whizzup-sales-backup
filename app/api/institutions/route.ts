@@ -3,11 +3,17 @@ import {
   requireApprovedMember,
 } from "../../../lib/collaboration";
 import { ensureRecordsReady } from "../../../lib/records-store";
+import {
+  backfillInstitutionRegistryFromRecordTrash,
+  ensureTrashReady,
+} from "../../../lib/trash-store";
 
 export async function GET() {
   try {
     await requireApprovedMember();
     const d1 = await ensureRecordsReady();
+    await ensureTrashReady();
+    await backfillInstitutionRegistryFromRecordTrash(d1);
     const result = await d1
       .prepare(`
         SELECT

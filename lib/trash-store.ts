@@ -114,6 +114,60 @@ function parseSnapshot(value: string): TrashSnapshot {
   }
 }
 
+export async function backfillInstitutionRegistryFromRecordTrash(
+  d1: ReturnType<typeof getD1>,
+) {
+  const batches = await d1
+    .prepare(
+      `SELECT snapshot_json
+       FROM deletion_batches
+       WHERE entity_type = 'record'
+         AND restored_at IS NULL
+       ORDER BY deleted_at ASC`,
+    )
+    .all<Pick<TrashBatchRow, "snapshot_json">>();
+  const institutions = new Map<string, {
+    organization: string;
+    region: string;
+    createdByName: string;
+    createdAt: string;
+    updatedAt: string;
+  }>();
+
+  batches.results.forEach((batch) => {
+    const activities = parseSnapshot(batch.snapshot_json).tables.activities || [];
+    activities.forEach((row) => {
+      const organization = String(row.organization ?? "").trim();
+      if (!organization) return;
+      const updatedAt = String(row.updated_at ?? row.created_at ?? "").trim();
+      const current = institutions.get(organization);
+      if (current && current.updatedAt > updatedAt) return;
+      institutions.set(organization, {
+        organization,
+        region: String(row.region ?? "").trim(),
+        createdByName: String(row.created_by_name ?? "").trim(),
+        createdAt: String(row.created_at ?? "").trim() || new Date().toISOString(),
+        updatedAt: updatedAt || new Date().toISOString(),
+      });
+    });
+  });
+
+  for (const chunk of chunkValues([...institutions.values()], 40)) {
+    await d1.batch(chunk.map((institution) => d1.prepare(`
+      INSERT INTO institution_registry (
+        organization, region, created_by_name, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(organization) DO NOTHING
+    `).bind(
+      institution.organization,
+      institution.region,
+      institution.createdByName,
+      institution.createdAt,
+      institution.updatedAt,
+    )));
+  }
+}
+
 export function trashSnapshotStoredBytes(snapshot: TrashSnapshot) {
   return (snapshot.tables.quotation_documents || []).reduce(
     (total, row) => total + Math.max(0, Number(row.total_size) || 0),
