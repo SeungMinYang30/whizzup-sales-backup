@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 const SAVE_FEEDBACK_EVENT = "whizzup:save-feedback";
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -16,7 +16,13 @@ const NON_SAVE_API_PREFIXES = [
   "/api/standby-sync",
 ];
 
-type SaveFeedbackDetail = { message: string };
+type SaveFeedbackDetail = {
+  message: string;
+  targetSelector?: string;
+  target?: HTMLElement;
+};
+
+type SaveFeedbackState = SaveFeedbackDetail & { id: number };
 
 function requestDetails(input: RequestInfo | URL, init?: RequestInit) {
   const method = String(init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
@@ -50,10 +56,10 @@ function fieldLabel(target: HTMLInputElement | HTMLSelectElement | HTMLTextAreaE
   return label ? `${label} 항목을 확인해 주세요.` : "필수 입력값을 확인해 주세요.";
 }
 
-export function showGlobalSaveError(message: string) {
+export function showGlobalSaveError(message: string, targetSelector?: string) {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent<SaveFeedbackDetail>(SAVE_FEEDBACK_EVENT, {
-    detail: { message },
+    detail: { message, targetSelector },
   }));
 }
 
@@ -68,25 +74,24 @@ async function responseErrorMessage(response: Response, fallback: string) {
 }
 
 export default function GlobalSaveFeedback() {
-  const [feedback, setFeedback] = useState<{ id: number; message: string } | null>(null);
-  const lastFeedbackRef = useRef({ message: "", at: 0 });
+  const [feedback, setFeedback] = useState<SaveFeedbackState | null>(null);
 
   useEffect(() => {
-    const notify = (message: string) => {
+    const notify = (message: string, targetSelector?: string, target?: HTMLElement) => {
       const normalized = message.trim();
       if (!normalized) return;
       const now = Date.now();
-      if (lastFeedbackRef.current.message === normalized && now - lastFeedbackRef.current.at < 2_000) return;
-      lastFeedbackRef.current = { message: normalized, at: now };
-      setFeedback({ id: now, message: normalized });
+      setFeedback({ id: now, message: normalized, targetSelector, target });
     };
     const handleFeedback = (event: Event) => {
-      notify((event as CustomEvent<SaveFeedbackDetail>).detail?.message || "저장 내용을 확인해 주세요.");
+      const detail = (event as CustomEvent<SaveFeedbackDetail>).detail;
+      notify(detail?.message || "저장 내용을 확인해 주세요.", detail?.targetSelector, detail?.target);
     };
     const handleInvalid = (event: Event) => {
       const target = event.target;
       if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement) {
-        notify(fieldLabel(target));
+        event.preventDefault();
+        notify(fieldLabel(target), undefined, target);
       }
     };
     const originalFetch = window.fetch.bind(window);
@@ -116,15 +121,24 @@ export default function GlobalSaveFeedback() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!feedback) return;
-    const timer = window.setTimeout(() => setFeedback(null), 8_000);
-    return () => window.clearTimeout(timer);
-  }, [feedback]);
-
   if (!feedback) return null;
-  return <div className="global-save-feedback" role="alert" aria-live="assertive">
-    <div><strong>입력·저장 내용을 확인해 주세요</strong><span>{feedback.message}</span></div>
-    <button type="button" aria-label="알림 닫기" onClick={() => setFeedback(null)}>×</button>
+  const hasTarget = Boolean(feedback.target || feedback.targetSelector);
+  const moveToTarget = () => {
+    const target = feedback.target
+      || (feedback.targetSelector ? document.querySelector<HTMLElement>(feedback.targetSelector) : null);
+    setFeedback(null);
+    if (!target) return;
+    window.requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.add("save-feedback-target");
+      window.setTimeout(() => target.classList.remove("save-feedback-target"), 2_000);
+    });
+  };
+  return <div className="global-save-feedback" role="presentation">
+    <section className="global-save-feedback-dialog" role="alertdialog" aria-modal="true" aria-labelledby="global-save-feedback-title" aria-describedby="global-save-feedback-message">
+      <header><strong id="global-save-feedback-title">입력·저장 내용을 확인해 주세요</strong><button type="button" aria-label="알림 닫기" onClick={() => setFeedback(null)}>×</button></header>
+      <p id="global-save-feedback-message">{feedback.message}</p>
+      <footer>{hasTarget && <button type="button" onClick={moveToTarget}>누락 항목 보기</button>}<button className="primary" type="button" onClick={() => setFeedback(null)}>확인</button></footer>
+    </section>
   </div>;
 }

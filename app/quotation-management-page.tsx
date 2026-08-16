@@ -581,7 +581,6 @@ export default function QuotationManagementPage({
   const [equipmentLoading, setEquipmentLoading] = useState(false);
   const [loadedInstitutionKey, setLoadedInstitutionKey] = useState("");
   const [message, setMessage] = useState("");
-  const [saveError, setSaveError] = useState("");
   const [institutionQuery, setInstitutionQuery] = useState("");
   const [newInstitution, setNewInstitution] = useState({ region: "", contactName: "", contactPhone: "", contactEmail: "" });
   const [printPortalReady, setPrintPortalReady] = useState(false);
@@ -649,12 +648,10 @@ export default function QuotationManagementPage({
       editorHistoryActiveRef.current = true;
     }
     collaborationTouchedRef.current = Boolean(nextDraft.id);
-    setSaveError("");
     setDraft(nextDraft);
   }
 
   function clearEditorState() {
-    setSaveError("");
     setDraft(null);
     setProductQuery("");
     setProductListMode(null);
@@ -2462,13 +2459,7 @@ export default function QuotationManagementPage({
     if (blankItemIndex >= 0) missingFields.push({ message: `${blankItemIndex + 1}번 품목의 품명`, selector: `[data-save-item-id="${draft.items[blankItemIndex].id}"]` });
     if (missingFields.length) {
       const errorMessage = `저장할 수 없습니다. ${missingFields.map((field) => field.message).join(", ")}을(를) 확인해 주세요.`;
-      setSaveError(errorMessage);
-      showGlobalSaveError(errorMessage);
-      window.requestAnimationFrame(() => {
-        const target = document.querySelector<HTMLElement>(missingFields[0].selector);
-        target?.scrollIntoView({ behavior: "smooth", block: "center" });
-        target?.focus({ preventScroll: true });
-      });
+      showGlobalSaveError(errorMessage, missingFields[0].selector);
       return;
     }
     if (
@@ -2478,7 +2469,6 @@ export default function QuotationManagementPage({
       && !window.confirm("현재 견적을 같은 견적번호로 수정할까요? 기존 PDF·Excel도 새 내용으로 교체됩니다.")
     ) return;
     setSaving(true);
-    setSaveError("");
     setMessage("");
     try {
       const exactInstitution = institutionRounds.find((item) => item.businessRound === draft.businessRound);
@@ -2522,7 +2512,6 @@ export default function QuotationManagementPage({
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "견적서를 저장하지 못했습니다.";
-      setSaveError(errorMessage);
       setMessage(errorMessage);
       showGlobalSaveError(errorMessage);
     } finally {
@@ -2778,7 +2767,6 @@ export default function QuotationManagementPage({
                 : <button className="app-button app-button-primary" type="button" onClick={() => void save("final")} disabled={saving}>{saving ? "저장 중…" : "견적서 저장"}</button>}
             </div>
           </nav>
-          {saveError && <div className="quote-save-error" role="alert"><strong>저장할 수 없습니다.</strong><span>{saveError}</span></div>}
         </header>
 
         <div className="quotation-editor-layout quote-studio-layout">

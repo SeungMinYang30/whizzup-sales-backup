@@ -15,15 +15,19 @@ test("root layout installs one common save failure notifier", async () => {
   assert.match(feedback, /NON_SAVE_API_PREFIXES/);
   assert.match(feedback, /\/api\/standby-sync/);
   assert.match(feedback, /document\.addEventListener\("invalid", handleInvalid, true\)/);
-  assert.match(feedback, /role="alert" aria-live="assertive"/);
+  assert.match(feedback, /role="alertdialog" aria-modal="true"/);
+  assert.match(feedback, /누락 항목 보기/);
+  assert.match(feedback, /event\.preventDefault\(\)/);
+  assert.match(feedback, /target\.scrollIntoView/);
+  assert.doesNotMatch(feedback, /target\.focus/);
 });
 
-test("quotation save reports missing fields in the open editor and focuses the first one", async () => {
+test("quotation save opens one common dialog without focusing an input or duplicating an inline warning", async () => {
   const quotation = await read("../app/quotation-management-page.tsx");
-  assert.match(quotation, /const \[saveError, setSaveError\] = useState\(""\)/);
   assert.match(quotation, /missingFields\.map\(\(field\) => field\.message\)/);
-  assert.match(quotation, /scrollIntoView\(\{ behavior: "smooth", block: "center" \}\)/);
-  assert.match(quotation, /className="quote-save-error" role="alert"/);
+  assert.match(quotation, /showGlobalSaveError\(errorMessage, missingFields\[0\]\.selector\)/);
+  assert.doesNotMatch(quotation, /className="quote-save-error"/);
+  assert.doesNotMatch(quotation, /target\?\.focus/);
   assert.match(quotation, /data-save-field="organization"/);
   assert.match(quotation, /data-save-item-id=\{item\.id\}/);
 });
