@@ -96,6 +96,7 @@ export async function GET(request: Request) {
       const start = url.searchParams.get("start") ?? "";
       const end = url.searchParams.get("end") ?? "";
       const refreshGoogle = url.searchParams.get("refreshGoogle") !== "0";
+      const directSitesStandby = url.hostname.endsWith(".chatgpt.site");
       if (!validCalendarDate(start) || !validCalendarDate(end) || start > end) {
         throw new Error("달력 조회 기간을 확인해 주세요.");
       }
@@ -106,17 +107,28 @@ export async function GET(request: Request) {
       );
       if (span > 62) throw new Error("달력은 한 번에 두 달까지만 조회할 수 있습니다.");
       if (!refreshGoogle) {
-        const [siteSchedules, syncIssues] = await Promise.all([
+        const [siteSchedules, syncIssues, standbyGoogle] = await Promise.all([
           listScheduleCalendarForMember(member, start, end),
           listCalendarSyncIssues(),
+          directSitesStandby
+            ? listGoogleCalendarSchedules(start, end)
+            : Promise.resolve({ configured: false, connected: false, events: [] }),
         ]);
         return Response.json({
           schedules: mergeCalendarSchedules(
             siteSchedules as unknown as Array<Record<string, unknown>>,
+            standbyGoogle.events as unknown as Array<Record<string, unknown>>,
           ),
           currentMember: { id: member.id, displayName: member.displayName, role: member.role },
           syncIssues,
-          googleRefreshPending: true,
+          googleCalendarConfigured: standbyGoogle.configured,
+          googleCalendarConnected: standbyGoogle.connected,
+          googleCalendarWritable: false,
+          googleCalendarError:
+            standbyGoogle.configured && !standbyGoogle.connected
+              ? "Google 캘린더 읽기 전용 피드를 불러오지 못했습니다."
+              : "",
+          googleRefreshPending: !directSitesStandby,
         });
       }
       try {
