@@ -845,6 +845,7 @@ export const BACKUP_TABLES = [
       "source_file_type",
       "drive_sync_status",
       "drive_sync_error",
+      "drive_sync_token",
       "deleted_at",
       "deleted_by",
       "deleted_by_name",

@@ -203,6 +203,8 @@ ALTER TABLE public.authored_quotations
 ALTER TABLE public.authored_quotations
   ADD COLUMN IF NOT EXISTS drive_sync_status text NOT NULL DEFAULT 'none';
 ALTER TABLE public.authored_quotations
+  ADD COLUMN IF NOT EXISTS drive_sync_token text NOT NULL DEFAULT '';
+ALTER TABLE public.authored_quotations
   ADD COLUMN IF NOT EXISTS drive_sync_error text NOT NULL DEFAULT '';
 ALTER TABLE public.authored_quotations
   ADD COLUMN IF NOT EXISTS deleted_at text NOT NULL DEFAULT '';

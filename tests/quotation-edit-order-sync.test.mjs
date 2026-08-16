@@ -24,7 +24,8 @@ test("최종 견적은 같은 번호로 직접 수정하고 기존 출력 파일
   assert.match(page, /견적 수정 저장/);
   assert.match(page, /기존 PDF·Excel도 새 내용으로 교체됩니다/);
   assert.doesNotMatch(store, /최종 견적서는 덮어쓸 수 없습니다/);
-  assert.match(store, /drive_sync_status='none', drive_sync_error=''/);
+  assert.match(store, /data\.status === "final" \? "queued" : "none"/);
+  assert.match(store, /crypto\.randomUUID\(\)/);
 });
 
 test("견적 저장은 기관 상세 품목을 직접 변경하지 않는다", async () => {
@@ -34,5 +35,7 @@ test("견적 저장은 기관 상세 품목을 직접 변경하지 않는다", a
   const saveBody = page.slice(saveStart, exportStart);
   assert.doesNotMatch(saveBody, /\/api\/equipment/);
   assert.doesNotMatch(saveBody, /syncQuotationItems|syncConstructionCost/);
-  assert.match(saveBody, /storeQuotationFiles/);
+  assert.match(saveBody, /void processQuotationFiles\(payload\.quotation, sourceFile\)/);
+  assert.match(saveBody, /closeEditor\(\)/);
+  assert.doesNotMatch(saveBody, /await storeQuotationFiles/);
 });

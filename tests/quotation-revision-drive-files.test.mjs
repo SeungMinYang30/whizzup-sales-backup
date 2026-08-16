@@ -45,20 +45,26 @@ test("legacy revision lineage stays readable while current direct edits refresh 
   assert.match(store, /revision_number/);
   assert.match(store, /COALESCE\(MAX\(revision_number\), 0\)/);
   assert.match(store, /revisionNumber > 0 \? `수정\$\{revisionNumber\}` : "원본"/);
-  assert.match(store, /drive_sync_status='none', drive_sync_error=''/);
+  assert.match(store, /drive_sync_status=\?/);
+  assert.match(store, /drive_sync_token=\?/);
   assert.doesNotMatch(store, /최종 견적서는 덮어쓸 수 없습니다/);
   assert.match(migration, /authored_quotations_revision_idx/);
 });
 
-test("final save creates PDF and Excel before Drive-backed finalization", () => {
+test("final save queues PDF and Excel while Drive finalization protects the newest edit", () => {
   assert.match(page, /createAuthoredQuotationPdf/);
   assert.match(page, /quotationWorkbookFile/);
   assert.match(page, /formData\.set\("pdf", pdf\)/);
   assert.match(page, /formData\.set\("xlsx", xlsx\)/);
-  assert.match(page, /견적은 임시 저장했지만 최종 파일 보관을 완료하지 못했습니다/);
+  assert.match(page, /견적 내용은 저장됐습니다\. PDF·Excel을 안전하게 처리하고 있습니다/);
+  assert.match(page, /void processQuotationFiles\(payload\.quotation, sourceFile\)/);
+  assert.match(page, /driveSyncStatus === "queued"/);
+  assert.match(page, /파일 재시도/);
   assert.match(page, /whizzup:quotation-files-updated/);
-  assert.match(filesRoute, /replaceDriveFile/);
   assert.match(filesRoute, /uploadDriveFile/);
+  assert.match(filesRoute, /drive_sync_token=\?/);
+  assert.match(filesRoute, /WHERE id=\? AND drive_sync_token=\?/);
+  assert.match(filesRoute, /Promise\.all/);
   assert.match(filesRoute, /QUOTATION_LIBRARY_FOLDER/);
   assert.match(filesRoute, /quotationInstitutionFolderSegments/);
   assert.match(filesRoute, /upsertDriveFileByContext/);
@@ -67,6 +73,7 @@ test("final save creates PDF and Excel before Drive-backed finalization", () => 
   assert.match(backup, /"revision_root_id"/);
   assert.match(backup, /"drive_pdf_file_id"/);
   assert.match(backup, /"drive_xlsx_file_id"/);
+  assert.match(backup, /"drive_sync_token"/);
 });
 
 test("generated Drive file names and PDF use one canonical quotation name", () => {

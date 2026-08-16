@@ -104,7 +104,8 @@ export type AuthoredQuotation = {
   drivePdfName: string;
   driveXlsxName: string;
   sourceOriginalName: string;
-  driveSyncStatus: "none" | "ready" | "error";
+  driveSyncStatus: "none" | "queued" | "uploading" | "ready" | "error";
+  driveSyncToken: string;
   driveSyncError: string;
   deletedAt: string;
   canDelete: boolean;
@@ -161,6 +162,7 @@ const statements = [
     source_file_type TEXT NOT NULL DEFAULT '',
     drive_sync_status TEXT NOT NULL DEFAULT 'none',
     drive_sync_error TEXT NOT NULL DEFAULT '',
+    drive_sync_token TEXT NOT NULL DEFAULT '',
     deleted_at TEXT NOT NULL DEFAULT '',
     deleted_by INTEGER NOT NULL DEFAULT 0,
     deleted_by_name TEXT NOT NULL DEFAULT '',
@@ -197,6 +199,7 @@ const authoredQuotationColumns = [
   ["source_file_type", "TEXT NOT NULL DEFAULT ''"],
   ["drive_sync_status", "TEXT NOT NULL DEFAULT 'none'"],
   ["drive_sync_error", "TEXT NOT NULL DEFAULT ''"],
+  ["drive_sync_token", "TEXT NOT NULL DEFAULT ''"],
   ["deleted_at", "TEXT NOT NULL DEFAULT ''"],
   ["deleted_by", "INTEGER NOT NULL DEFAULT 0"],
   ["deleted_by_name", "TEXT NOT NULL DEFAULT ''"],
@@ -423,11 +426,13 @@ export function authoredQuotationFromRow(row: Record<string, unknown>): Authored
   const drivePdfFileId = String(row.drive_pdf_file_id ?? "");
   const driveXlsxFileId = String(row.drive_xlsx_file_id ?? "");
   const sourceFileId = String(row.source_file_id ?? "");
-  const driveSyncStatus = row.drive_sync_status === "ready"
-    ? "ready" as const
-    : row.drive_sync_status === "error"
-      ? "error" as const
-      : "none" as const;
+  const rawDriveSyncStatus = String(row.drive_sync_status ?? "none");
+  const driveSyncStatus = rawDriveSyncStatus === "ready"
+    || rawDriveSyncStatus === "queued"
+    || rawDriveSyncStatus === "uploading"
+    || rawDriveSyncStatus === "error"
+    ? rawDriveSyncStatus
+    : "none";
   return {
     id, quoteNumber: String(row.quote_number ?? ""),
     revisionRootId: Math.max(1, Number(row.revision_root_id) || id),
@@ -453,6 +458,7 @@ export function authoredQuotationFromRow(row: Record<string, unknown>): Authored
     driveXlsxName: String(row.drive_xlsx_name ?? ""),
     sourceOriginalName: String(row.source_file_name ?? ""),
     driveSyncStatus,
+    driveSyncToken: String(row.drive_sync_token ?? ""),
     driveSyncError: String(row.drive_sync_error ?? ""),
     deletedAt: String(row.deleted_at ?? ""),
     canDelete: Number(row.can_delete) === 1,
@@ -507,7 +513,7 @@ function normalized(value: Record<string, unknown>) {
   return {
     organization, businessRound: Math.max(1, Number(value.businessRound) || 1),
     projectTitle: text(value.projectTitle, 500), quoteDate,
-    validUntil: date(value.validUntil), status: value.status === "final" ? "final" as const : "draft" as const,
+    validUntil: date(value.validUntil), status: value.status === "final" || value.validateFinal === true ? "final" as const : "draft" as const,
     executionType, consortiumCompany: executionType === "컨소" ? text(value.consortiumCompany, 300) : "",
     consortiumRate, discountAmount, extraAmount, additionalInternalConstructionCost, subtotalAmount, supplyAmount,
     taxAmount, totalAmount, procurementFeeAmount, expectedEarning, consortiumPayment, marginAmount,
@@ -589,6 +595,7 @@ export async function saveAuthoredQuotation(value: Record<string, unknown>, memb
   const d1 = await ensureAuthoredQuotationsReady();
   const id = Number(value.id);
   const memberName = personDisplayLabel(member);
+  const driveSyncToken = data.status === "final" ? crypto.randomUUID() : "";
   const params = [data.organization, data.businessRound, data.projectTitle, data.quoteDate, data.validUntil,
     data.status, data.executionType, data.consortiumCompany, String(data.consortiumRate), data.discountAmount,
     data.extraAmount, data.additionalInternalConstructionCost, data.subtotalAmount, data.supplyAmount, data.taxAmount, data.totalAmount,
@@ -600,7 +607,8 @@ export async function saveAuthoredQuotation(value: Record<string, unknown>, memb
       .bind(id)
       .first<{ status: string }>();
     if (!existing) throw new Error("수정할 견적서를 찾지 못했습니다.");
-    await d1.prepare(`UPDATE authored_quotations SET initial_quote_date=CASE WHEN initial_quote_date='' THEN quote_date ELSE initial_quote_date END, organization=?, business_round=?, project_title=?, quote_date=?, valid_until=?, status=?, execution_type=?, consortium_company=?, consortium_rate=?, discount_amount=?, extra_amount=?, additional_internal_construction_cost=?, subtotal_amount=?, supply_amount=?, tax_amount=?, total_amount=?, expected_earning=?, consortium_payment=?, margin_amount=?, margin_rate=?, include_stamp=?, memo=?, items_json=?, budgets_json=?, settlement_adjustments_json=?, drive_sync_status='none', drive_sync_error='', updated_by=?, updated_by_name=?, content_updated_at=CASE WHEN status='final' THEN CAST(CURRENT_TIMESTAMP AS TEXT) ELSE content_updated_at END, updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(...params, id).run();
+    const contentUpdatedAtSql = data.status === "final" ? "CAST(CURRENT_TIMESTAMP AS TEXT)" : "content_updated_at";
+    await d1.prepare(`UPDATE authored_quotations SET initial_quote_date=CASE WHEN initial_quote_date='' THEN quote_date ELSE initial_quote_date END, organization=?, business_round=?, project_title=?, quote_date=?, valid_until=?, status=?, execution_type=?, consortium_company=?, consortium_rate=?, discount_amount=?, extra_amount=?, additional_internal_construction_cost=?, subtotal_amount=?, supply_amount=?, tax_amount=?, total_amount=?, expected_earning=?, consortium_payment=?, margin_amount=?, margin_rate=?, include_stamp=?, memo=?, items_json=?, budgets_json=?, settlement_adjustments_json=?, drive_sync_status=?, drive_sync_error='', drive_sync_token=?, updated_by=?, updated_by_name=?, content_updated_at=${contentUpdatedAtSql}, updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(...params.slice(0, 25), data.status === "final" ? "queued" : "none", driveSyncToken, ...params.slice(25), id).run();
     const row = await quotationRowById(d1, id);
     if (!row) throw new Error("저장한 견적서를 찾지 못했습니다.");
     return authoredQuotationFromRow(row);
@@ -640,6 +648,11 @@ export async function saveAuthoredQuotation(value: Record<string, unknown>, memb
   if (!revisionRootId) {
     revisionRootId = insertedId;
     await d1.prepare("UPDATE authored_quotations SET revision_root_id=?, initial_quote_date=? WHERE id=?").bind(insertedId, data.quoteDate, insertedId).run();
+  }
+  if (data.status === "final") {
+    await d1.prepare("UPDATE authored_quotations SET drive_sync_status='queued', drive_sync_error='', drive_sync_token=? WHERE id=?")
+      .bind(driveSyncToken, insertedId)
+      .run();
   }
   const row = await quotationRowById(d1, insertedId);
   if (!row) throw new Error("저장한 견적서를 찾지 못했습니다.");

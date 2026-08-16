@@ -10,7 +10,7 @@ import {
 import {
   downloadDriveFile,
   isGoogleDriveConfigured,
-  replaceDriveFile,
+  organizeDriveFile,
   removeDriveFile,
   syncDriveFileCopyFromSource,
   upsertDriveFileByContext,
@@ -114,6 +114,7 @@ export async function POST(request: Request) {
   const uploadedFileIds: string[] = [];
   let id = 0;
   let replaceExisting = false;
+  let syncToken = "";
   try {
     await requireApprovedMember();
     if (!isGoogleDriveConfigured()) {
@@ -125,6 +126,7 @@ export async function POST(request: Request) {
     const xlsx = formData.get("xlsx");
     const sourceCandidate = formData.get("sourceFile");
     const sourceFile = sourceCandidate instanceof File && sourceCandidate.size > 0 ? sourceCandidate : null;
+    const requestedSyncToken = String(formData.get("syncToken") ?? "").trim();
     replaceExisting = formData.get("replaceExisting") === "true";
     if (replaceExisting) await requireAdminMember();
     if (!id) return Response.json({ error: "올바른 견적서 ID가 필요합니다." }, { status: 400 });
@@ -162,22 +164,28 @@ export async function POST(request: Request) {
     const existingPdfId = String(row.drive_pdf_file_id ?? "");
     const existingXlsxId = String(row.drive_xlsx_file_id ?? "");
     const existingSourceId = String(row.source_file_id ?? "");
-    if (!replaceExisting && row.status === "final" && existingPdfId && existingXlsxId && !sourceFile) {
-      return Response.json({ quotation: authoredQuotationFromRow(row) });
+    syncToken = requestedSyncToken;
+    if (replaceExisting) {
+      syncToken = crypto.randomUUID();
+      await d1.prepare("UPDATE authored_quotations SET drive_sync_status='queued', drive_sync_error='', drive_sync_token=? WHERE id=?")
+        .bind(syncToken, id)
+        .run();
+    } else if (!syncToken || syncToken !== String(row.drive_sync_token ?? "")) {
+      return Response.json({ error: "더 최신 견적 저장 작업이 있어 이전 파일 작업을 중단했습니다." }, { status: 409 });
     }
     const staleUploadBefore = new Date(Date.now() - 10 * 60_000).toISOString();
     const lock = await d1.prepare(`UPDATE authored_quotations
       SET drive_sync_status='uploading', drive_sync_error='', updated_at=CURRENT_TIMESTAMP
-      WHERE id=?
-        AND (drive_sync_status <> 'uploading' OR updated_at < ?)`)
-      .bind(id, staleUploadBefore)
+      WHERE id=? AND drive_sync_token=?
+        AND (drive_sync_status IN ('queued', 'error') OR (drive_sync_status='uploading' AND updated_at < ?))`)
+      .bind(id, syncToken, staleUploadBefore)
       .run();
     if (Number(lock.meta.changes) !== 1) {
       const latest = await d1
         .prepare("SELECT * FROM authored_quotations WHERE id=?")
         .bind(id)
         .first<Record<string, unknown>>();
-      if (latest?.status === "final" && latest.drive_pdf_file_id && latest.drive_xlsx_file_id) {
+      if (latest?.drive_sync_token === syncToken && latest.drive_sync_status === "ready") {
         return Response.json({ quotation: authoredQuotationFromRow(latest) });
       }
       return Response.json(
@@ -190,23 +198,10 @@ export async function POST(request: Request) {
     const nameInput = namingInput(row, region);
     const pdfName = quotationDownloadName(nameInput, "pdf");
     const xlsxName = quotationDownloadName(nameInput, "xlsx");
-  const sourceName = sourceFile ? quotationSourceFileName(nameInput, sourceFile.name) : "";
+    const sourceName = sourceFile ? quotationSourceFileName(nameInput, sourceFile.name) : "";
     const folderSegments = quotationInstitutionFolderSegments(nameInput);
     const contextId = `${String(row.organization ?? "")}|${Math.max(1, Number(row.business_round) || 1)}|${id}`;
-    async function storeFile(input: {
-      existingId: string;
-      file: File;
-      contextType: string;
-    }) {
-      if (input.existingId) {
-        return replaceDriveFile({
-          fileId: input.existingId,
-          file: input.file,
-          folderSegments,
-          contextType: input.contextType,
-          contextId,
-        });
-      }
+    async function storeFile(input: { file: File; contextType: string }) {
       const stored = await uploadDriveFile({
         file: input.file,
         folderSegments,
@@ -216,38 +211,25 @@ export async function POST(request: Request) {
       uploadedFileIds.push(stored.fileId);
       return stored;
     }
-    const storedPdf = await storeFile({
-      existingId: existingPdfId,
-      file: new File([pdf], pdfName, { type: pdf.type || "application/pdf" }),
-      contextType: "authored-quotation-pdf",
-    });
-    const storedXlsx = await storeFile({
-      existingId: existingXlsxId,
-      file: new File([xlsx], xlsxName, { type: xlsx.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-      contextType: "authored-quotation-xlsx",
-    });
+    const [storedPdf, storedXlsx] = await Promise.all([
+      storeFile({
+        file: new File([pdf], pdfName, { type: pdf.type || "application/pdf" }),
+        contextType: "authored-quotation-pdf",
+      }),
+      storeFile({
+        file: new File([xlsx], xlsxName, { type: xlsx.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        contextType: "authored-quotation-xlsx",
+      }),
+    ]);
     const desiredSourceName = sourceFile
       ? sourceName
       : existingSourceId
         ? quotationSourceFileName(nameInput, row.source_file_name || "원본.xlsx")
         : "";
     const storedSource = sourceFile ? await storeFile({
-      existingId: existingSourceId,
       file: new File([sourceFile], sourceName, { type: sourceFile.type || "application/octet-stream" }),
       contextType: "authored-quotation-source",
-    }) : existingSourceId
-      ? await replaceDriveFile({
-        fileId: existingSourceId,
-        file: new File(
-          [await (await downloadDriveFile(existingSourceId)).arrayBuffer()],
-          desiredSourceName,
-          { type: String(row.source_file_type ?? "") || "application/octet-stream" },
-        ),
-        folderSegments,
-        contextType: "authored-quotation-source",
-        contextId,
-      })
-      : null;
+    }) : null;
     const mirrorInputs = [
       { file: new File([pdf], pdfName, { type: pdf.type || "application/pdf" }), contextType: "authored-quotation-pdf-mirror" },
       { file: new File([xlsx], xlsxName, { type: xlsx.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), contextType: "authored-quotation-xlsx-mirror" },
@@ -256,29 +238,11 @@ export async function POST(request: Request) {
         contextType: "authored-quotation-source-mirror",
       }] : []),
     ];
-    for (const mirror of mirrorInputs) {
-      await upsertDriveFileByContext({
-        file: mirror.file,
-        folderSegments: [...QUOTATION_LIBRARY_FOLDER_SEGMENTS],
-        contextType: mirror.contextType,
-        contextId,
-      });
-    }
-    if (storedSource && !sourceFile) {
-      await syncDriveFileCopyFromSource({
-        sourceFileId: storedSource.fileId,
-        name: desiredSourceName,
-        folderSegments: [...QUOTATION_LIBRARY_FOLDER_SEGMENTS],
-        contextType: "authored-quotation-source-mirror",
-        contextId,
-      });
-    }
-
-    await d1.prepare(`UPDATE authored_quotations
+    const finalize = await d1.prepare(`UPDATE authored_quotations
       SET status='final', drive_pdf_file_id=?, drive_pdf_name=?,
           drive_xlsx_file_id=?, drive_xlsx_name=?, source_file_id=?, source_file_name=?, source_file_type=?, drive_sync_status='ready',
           drive_sync_error='', updated_at=CURRENT_TIMESTAMP
-      WHERE id=?`)
+      WHERE id=? AND drive_sync_token=?`)
       .bind(
         storedPdf.fileId,
         pdfName,
@@ -288,8 +252,31 @@ export async function POST(request: Request) {
         desiredSourceName || String(row.source_file_name ?? ""),
         sourceFile?.type || String(row.source_file_type ?? ""),
         id,
+        syncToken,
       )
       .run();
+    if (Number(finalize.meta.changes) !== 1) {
+      throw new Error("더 최신 견적 저장 작업이 시작되어 이전 파일 반영을 중단했습니다.");
+    }
+    uploadedFileIds.length = 0;
+    if (!sourceFile && existingSourceId && desiredSourceName) {
+      await organizeDriveFile(existingSourceId, folderSegments, desiredSourceName);
+    }
+    await Promise.all(mirrorInputs.map((mirror) => upsertDriveFileByContext({
+      file: mirror.file,
+      folderSegments: [...QUOTATION_LIBRARY_FOLDER_SEGMENTS],
+      contextType: mirror.contextType,
+      contextId,
+    })));
+    if (existingSourceId && !sourceFile) {
+      await syncDriveFileCopyFromSource({
+        sourceFileId: existingSourceId,
+        name: desiredSourceName,
+        folderSegments: [...QUOTATION_LIBRARY_FOLDER_SEGMENTS],
+        contextType: "authored-quotation-source-mirror",
+        contextId,
+      });
+    }
     for (const [oldId, currentId] of [
       [existingPdfId, storedPdf.fileId],
       [existingXlsxId, storedXlsx.fileId],
@@ -309,7 +296,7 @@ export async function POST(request: Request) {
     if (id) {
       const message = cleanError(error);
       await ensureAuthoredQuotationsReady()
-        .then((d1) => d1.prepare("UPDATE authored_quotations SET drive_sync_status='error', drive_sync_error=? WHERE id=?").bind(message, id).run())
+        .then((d1) => d1.prepare("UPDATE authored_quotations SET drive_sync_status='error', drive_sync_error=? WHERE id=? AND (?='' OR drive_sync_token=?)").bind(message, id, syncToken, syncToken).run())
         .catch(() => undefined);
     }
     if (replaceExisting) {

@@ -1423,6 +1423,7 @@ export const authoredQuotations = sqliteTable(
     driveXlsxName: text("drive_xlsx_name").notNull().default(""),
     driveSyncStatus: text("drive_sync_status").notNull().default("none"),
     driveSyncError: text("drive_sync_error").notNull().default(""),
+    driveSyncToken: text("drive_sync_token").notNull().default(""),
     deletedAt: text("deleted_at").notNull().default(""),
     deletedBy: integer("deleted_by").notNull().default(0),
     deletedByName: text("deleted_by_name").notNull().default(""),

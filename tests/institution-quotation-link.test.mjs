@@ -85,6 +85,7 @@ test("final quotations use same-number editing without a separate revision actio
   assert.doesNotMatch(page, /mode === "revision"/);
   assert.doesNotMatch(page, /revisionSourceId/);
   assert.match(store, /revision_number/);
-  assert.match(store, /drive_sync_status='none', drive_sync_error=''/);
+  assert.match(store, /drive_sync_status=\?/);
+  assert.match(store, /drive_sync_token=\?/);
   assert.doesNotMatch(store, /최종 견적서는 덮어쓸 수 없습니다/);
 });

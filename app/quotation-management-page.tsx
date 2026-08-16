@@ -583,6 +583,7 @@ export default function QuotationManagementPage({
   const draggedItemIdRef = useRef("");
   const editorHistoryActiveRef = useRef(false);
   const duplicateFileReconcileRef = useRef(false);
+  const quotationFileJobsRef = useRef(new Set<number>());
   const productSearchRef = useRef<HTMLDivElement | null>(null);
   const productSearchResultsRef = useRef<HTMLDivElement | null>(null);
 
@@ -765,6 +766,14 @@ export default function QuotationManagementPage({
   }
 
   useEffect(() => { void load(); }, [scope?.businessRound, scope?.organization, equipmentRefreshVersion]);
+
+  useEffect(() => {
+    quotes
+      .filter((quote) => quote.driveSyncStatus === "queued" && !quotationFileJobsRef.current.has(quote.id))
+      .forEach((quote) => { void processQuotationFiles(quote); });
+  // File processing is resumed from durable queued rows whenever the list is refreshed.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quotes]);
 
   useEffect(() => {
     if (duplicateFileReconcileRef.current || !quotes.some((quote) => quote.canPurge)) return;
@@ -2146,18 +2155,20 @@ export default function QuotationManagementPage({
     });
   }
 
-  async function storeQuotationFiles(quote: AuthoredQuotation, options: { replaceExisting?: boolean } = {}) {
-    if (!options.replaceExisting && quote.pdfUrl && quote.excelUrl && quote.driveSyncStatus === "ready" && !importSourceFile) return quote;
+  async function storeQuotationFiles(quote: AuthoredQuotation, options: { replaceExisting?: boolean; sourceFile?: File | null } = {}) {
+    const sourceFile = options.sourceFile ?? null;
+    if (!options.replaceExisting && quote.pdfUrl && quote.excelUrl && quote.driveSyncStatus === "ready" && !sourceFile) return quote;
     const [pdf, xlsx] = await Promise.all([
       createAuthoredQuotationPdf(quote),
       quotationWorkbookFile(quote),
     ]);
     const formData = new FormData();
     formData.set("quotationId", String(quote.id));
+    if (quote.driveSyncToken) formData.set("syncToken", quote.driveSyncToken);
     formData.set("pdf", pdf);
     formData.set("xlsx", xlsx);
     if (options.replaceExisting) formData.set("replaceExisting", "true");
-    if (!options.replaceExisting && importSourceFile) formData.set("sourceFile", importSourceFile);
+    if (!options.replaceExisting && sourceFile) formData.set("sourceFile", sourceFile);
     const response = await fetch("/api/quotations/files", { method: "POST", body: formData });
     const payload = await response.json() as { quotation?: AuthoredQuotation; error?: string };
     if (!response.ok || !payload.quotation) {
@@ -2171,6 +2182,28 @@ export default function QuotationManagementPage({
       },
     }));
     return payload.quotation;
+  }
+
+  async function processQuotationFiles(quote: AuthoredQuotation, sourceFile: File | null = null) {
+    if (quotationFileJobsRef.current.has(quote.id)) return;
+    quotationFileJobsRef.current.add(quote.id);
+    try {
+      const saved = await storeQuotationFiles(quote, { sourceFile });
+      setMessage(sourceFile
+        ? "견적 내용과 PDF·Excel, 외부 참고 원본 저장을 완료했습니다."
+        : "견적 내용과 PDF·Excel 저장을 완료했습니다.");
+      window.dispatchEvent(new CustomEvent("whizzup:quotation-files-updated", {
+        detail: { organization: saved.organization, businessRound: saved.businessRound },
+      }));
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "PDF·Excel 파일 처리를 완료하지 못했습니다.";
+      if (!/더 최신 견적 저장 작업/u.test(text)) {
+        setMessage(`견적 내용은 저장됐지만 PDF·Excel 처리가 필요합니다. ${text}`);
+      }
+    } finally {
+      quotationFileJobsRef.current.delete(quote.id);
+      await load();
+    }
   }
 
   async function viewSavedPdf(quote: AuthoredQuotation) {
@@ -2331,27 +2364,17 @@ export default function QuotationManagementPage({
       const payload = await response.json() as { quotation?: AuthoredQuotation; error?: string };
       if (!response.ok || !payload.quotation) throw new Error(payload.error || "견적서를 저장하지 못했습니다.");
       if (status === "final") {
-        let finalizedQuotation: AuthoredQuotation;
-        try {
-          finalizedQuotation = await storeQuotationFiles(payload.quotation);
-        } catch (fileError) {
-          const recoveredDraft = draftFromQuotation(payload.quotation);
-          setDraft({ ...recoveredDraft, items: applyCatalogSuppliers(recoveredDraft.items, products) });
-          throw new Error(`견적은 임시 저장했지만 최종 파일 보관을 완료하지 못했습니다. ${fileError instanceof Error ? fileError.message : "다시 최종 저장해 주세요."}`);
-        }
-        setMessage(importSourceFile
-          ? "최종 견적서와 PDF·Excel, 외부 참고 원본을 연결해 저장했습니다."
-          : "최종 견적서와 PDF·Excel을 Google Drive에 저장했습니다.");
+        const sourceFile = importSourceFile;
+        setQuotes((current) => [payload.quotation!, ...current.filter((quote) => quote.id !== payload.quotation!.id)]);
+        setMessage("견적 내용은 저장됐습니다. PDF·Excel을 안전하게 처리하고 있습니다.");
+        closeEditor();
+        void processQuotationFiles(payload.quotation, sourceFile);
       } else {
         setMessage("임시 저장했습니다.");
-      }
-      if (status === "final") {
-        closeEditor();
-      } else {
         const savedDraft = draftFromQuotation(payload.quotation);
         setDraft({ ...savedDraft, items: applyCatalogSuppliers(savedDraft.items, products) });
+        await load();
       }
-      await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "견적서를 저장하지 못했습니다.");
     } finally {
@@ -2533,18 +2556,19 @@ export default function QuotationManagementPage({
             <div><dt>작성자</dt><dd>{quote.createdByName || "미등록"}</dd></div>
             <div><dt>수정자</dt><dd>{quote.updatedByName || quote.createdByName || "미등록"}</dd></div>
           </div>
-          <div><dt>상태</dt><dd><b className={`quotation-status ${quote.status}`}>{quote.status === "final" ? "최종" : "임시"}</b></dd></div>
+          <div><dt>상태</dt><dd><b className={`quotation-status ${quote.status}`}>{quote.status === "final" ? "최종" : "임시"}</b>{quote.driveSyncStatus === "queued" || quote.driveSyncStatus === "uploading" ? <small className="quotation-file-status processing">PDF·Excel 처리 중</small> : quote.driveSyncStatus === "error" ? <small className="quotation-file-status error">파일 처리 확인 필요</small> : null}</dd></div>
         </dl>
         <div className="quotation-row-actions">
           {quote.status === "final" ? <>
             {!embedded && <details className="quotation-output-menu">
               <summary>PDF</summary>
               <div className="quotation-output-menu-panel">
-                <button type="button" disabled={!quote.pdfUrl} onClick={() => void viewSavedPdf(quote)}>보기</button>
-                <button type="button" disabled={!quote.pdfUrl} onClick={() => void downloadSavedPdf(quote)}>다운로드</button>
+                <button type="button" disabled={!quote.pdfUrl || quote.driveSyncStatus !== "ready"} onClick={() => void viewSavedPdf(quote)}>보기</button>
+                <button type="button" disabled={!quote.pdfUrl || quote.driveSyncStatus !== "ready"} onClick={() => void downloadSavedPdf(quote)}>다운로드</button>
               </div>
             </details>}
-            {!embedded && <button className="app-button app-button-secondary app-button-small" type="button" disabled={!quote.excelUrl} onClick={() => void downloadSavedExcel(quote)}>Excel 다운로드</button>}
+            {!embedded && <button className="app-button app-button-secondary app-button-small" type="button" disabled={!quote.excelUrl || quote.driveSyncStatus !== "ready"} onClick={() => void downloadSavedExcel(quote)}>Excel 다운로드</button>}
+            {quote.driveSyncStatus === "error" && <button className="app-button app-button-secondary app-button-small" type="button" disabled={quotationFileJobsRef.current.has(quote.id)} onClick={() => void processQuotationFiles(quote)}>파일 재시도</button>}
             <button className="app-button app-button-primary app-button-small" type="button" onClick={() => openQuotation(quote)}>견적 수정</button>
           </> : <button className="app-button app-button-primary app-button-small" type="button" onClick={() => openQuotation(quote)}>이어서 작성</button>}
           {quote.canDelete && <button className="app-button app-button-danger app-button-small" type="button" disabled={quotationActionId === quote.id} onClick={() => void deleteQuotation(quote)}>{quotationActionId === quote.id ? "처리 중…" : "삭제"}</button>}

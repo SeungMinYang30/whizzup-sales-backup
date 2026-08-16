@@ -14458,3 +14458,14 @@ button:is(
 .quotation-output-menu-settlement .quotation-output-menu-panel>button{font-size:12px}
 .quotation-row-dates dd{display:grid;gap:3px}
 .quotation-row-dates dd>small{color:#7d8ba2;font-size:9px;font-weight:700;white-space:nowrap}
+.quotation-file-status {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.quotation-file-status.processing { color: #9a6700; }
+.quotation-file-status.error { color: #c53a32; }
