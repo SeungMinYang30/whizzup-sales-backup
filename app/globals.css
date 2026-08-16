@@ -270,6 +270,68 @@
   background-color: #f7f9fc;
 }
 
+/* Common feedback for failed save, update, registration, and delete requests. */
+.global-save-feedback{
+  position:fixed;
+  z-index:10000;
+  top:max(14px,env(safe-area-inset-top));
+  left:50%;
+  width:min(520px,calc(100vw - 24px));
+  transform:translateX(-50%);
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  padding:13px 14px;
+  border:1px solid #efaaa2;
+  border-radius:12px;
+  background:#fff4f2;
+  color:#992f27;
+  box-shadow:0 16px 42px rgba(80,22,16,.24);
+}
+
+.global-save-feedback>div{display:grid;gap:3px}
+.global-save-feedback strong{font-size:13px}
+.global-save-feedback span{font-size:12px;line-height:1.55}
+.global-save-feedback button{
+  flex:none;
+  width:30px;
+  height:30px;
+  border:0;
+  border-radius:7px;
+  background:#ffe2de;
+  color:#9d352c;
+  font-size:20px;
+}
+
+.quote-studio-topbar{flex-wrap:wrap}
+.quote-save-error{
+  flex:0 0 100%;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:9px 11px;
+  border:1px solid #efb0a9;
+  border-radius:8px;
+  background:#fff4f2;
+  color:#9d332a;
+  font-size:12px;
+}
+.quote-save-error strong{white-space:nowrap}
+
+@media(max-width:700px){
+  .global-save-feedback{
+    top:max(8px,env(safe-area-inset-top));
+    width:calc(100vw - 16px);
+    padding:11px 12px;
+  }
+  .quote-save-error{
+    align-items:flex-start;
+    flex-direction:column;
+    gap:2px;
+  }
+}
+
 .construction-row-days > span.past:not(.today) .construction-event {
   opacity: .72;
 }

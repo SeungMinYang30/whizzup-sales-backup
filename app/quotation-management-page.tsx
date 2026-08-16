@@ -43,6 +43,7 @@ import QuotationImportDialog, {
   type ExternalQuotationImportResult,
   type QuotationImportMode,
 } from "./quotation-import-dialog";
+import { showGlobalSaveError } from "./global-save-feedback";
 import { parseQuotationXlsxData } from "./quotation-xlsx";
 
 export type QuotationInstitutionOption = {
@@ -580,6 +581,7 @@ export default function QuotationManagementPage({
   const [equipmentLoading, setEquipmentLoading] = useState(false);
   const [loadedInstitutionKey, setLoadedInstitutionKey] = useState("");
   const [message, setMessage] = useState("");
+  const [saveError, setSaveError] = useState("");
   const [institutionQuery, setInstitutionQuery] = useState("");
   const [newInstitution, setNewInstitution] = useState({ region: "", contactName: "", contactPhone: "", contactEmail: "" });
   const [printPortalReady, setPrintPortalReady] = useState(false);
@@ -647,10 +649,12 @@ export default function QuotationManagementPage({
       editorHistoryActiveRef.current = true;
     }
     collaborationTouchedRef.current = Boolean(nextDraft.id);
+    setSaveError("");
     setDraft(nextDraft);
   }
 
   function clearEditorState() {
+    setSaveError("");
     setDraft(null);
     setProductQuery("");
     setProductListMode(null);
@@ -2450,6 +2454,23 @@ export default function QuotationManagementPage({
 
   async function save(status: "draft" | "final") {
     if (!draft || saving) return;
+    const missingFields: Array<{ message: string; selector: string }> = [];
+    if (!draft.organization.trim()) missingFields.push({ message: "수신 기관명", selector: '[data-save-field="organization"]' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.quoteDate)) missingFields.push({ message: "견적일자", selector: '[data-save-field="quote-date"]' });
+    if (!draft.items.length) missingFields.push({ message: "견적 품목 1개 이상", selector: '[data-save-field="product-search"]' });
+    const blankItemIndex = draft.items.findIndex((item) => !item.name.trim());
+    if (blankItemIndex >= 0) missingFields.push({ message: `${blankItemIndex + 1}번 품목의 품명`, selector: `[data-save-item-id="${draft.items[blankItemIndex].id}"]` });
+    if (missingFields.length) {
+      const errorMessage = `저장할 수 없습니다. ${missingFields.map((field) => field.message).join(", ")}을(를) 확인해 주세요.`;
+      setSaveError(errorMessage);
+      showGlobalSaveError(errorMessage);
+      window.requestAnimationFrame(() => {
+        const target = document.querySelector<HTMLElement>(missingFields[0].selector);
+        target?.scrollIntoView({ behavior: "smooth", block: "center" });
+        target?.focus({ preventScroll: true });
+      });
+      return;
+    }
     if (
       status === "final"
       && draft.id
@@ -2457,6 +2478,7 @@ export default function QuotationManagementPage({
       && !window.confirm("현재 견적을 같은 견적번호로 수정할까요? 기존 PDF·Excel도 새 내용으로 교체됩니다.")
     ) return;
     setSaving(true);
+    setSaveError("");
     setMessage("");
     try {
       const exactInstitution = institutionRounds.find((item) => item.businessRound === draft.businessRound);
@@ -2499,7 +2521,10 @@ export default function QuotationManagementPage({
         await load();
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "견적서를 저장하지 못했습니다.");
+      const errorMessage = error instanceof Error ? error.message : "견적서를 저장하지 못했습니다.";
+      setSaveError(errorMessage);
+      setMessage(errorMessage);
+      showGlobalSaveError(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -2753,6 +2778,7 @@ export default function QuotationManagementPage({
                 : <button className="app-button app-button-primary" type="button" onClick={() => void save("final")} disabled={saving}>{saving ? "저장 중…" : "견적서 저장"}</button>}
             </div>
           </nav>
+          {saveError && <div className="quote-save-error" role="alert"><strong>저장할 수 없습니다.</strong><span>{saveError}</span></div>}
         </header>
 
         <div className="quotation-editor-layout quote-studio-layout">
@@ -2761,8 +2787,8 @@ export default function QuotationManagementPage({
             <section className="quote-document-info">
               <div className="quote-recipient">
                 <h4>견 적 정 보</h4>
-                <label><span>견적일자</span><input type="date" value={draft.quoteDate} onChange={(event) => setDraft({ ...draft, quoteDate: event.target.value })} /></label>
-                <label><span>수신 기관명 *</span><input readOnly={Boolean(scope)} value={scope ? draft.organization : institutionQuery} onChange={(event) => { setInstitutionQuery(event.target.value); setDraft({ ...draft, organization: event.target.value }); }} placeholder="기관명 또는 지역 검색" /></label>
+                <label><span>견적일자</span><input data-save-field="quote-date" type="date" value={draft.quoteDate} onChange={(event) => setDraft({ ...draft, quoteDate: event.target.value })} /></label>
+                <label><span>수신 기관명 *</span><input data-save-field="organization" readOnly={Boolean(scope)} value={scope ? draft.organization : institutionQuery} onChange={(event) => { setInstitutionQuery(event.target.value); setDraft({ ...draft, organization: event.target.value }); }} placeholder="기관명 또는 지역 검색" /></label>
                 {!scope && institutionQuery.trim().length >= 2 && <div className="quotation-institution-results no-print">{institutionOptions.filter((item) => `${item.organization} ${item.region || ""}`.includes(institutionQuery.trim())).slice(0, 8).map((item) => <button type="button" key={normalizedInstitutionName(item.organization)} disabled={equipmentLoading} onClick={() => void selectInstitution(item)}><b>{item.organization}</b><small>{item.region || "지역 미입력"} · 기관 선택 후 사업 차수 선택</small></button>)}{!institutions.some((item) => normalizedInstitutionName(item.organization) === normalizedInstitutionName(institutionQuery)) && <div className="quotation-new-institution"><strong>새 기관으로 등록 후 견적 연결</strong><input value={newInstitution.region} onChange={(event) => setNewInstitution({ ...newInstitution, region: event.target.value })} placeholder="지역 (선택)" /><input value={newInstitution.contactName} onChange={(event) => setNewInstitution({ ...newInstitution, contactName: event.target.value })} placeholder="담당자 (선택)" /></div>}</div>}
                 <label><span>사업 차수 *</span><select disabled={Boolean(scope) || equipmentLoading} value={draft.businessRound} onChange={(event) => void selectBusinessRound(Math.max(1, Number(event.target.value) || 1))}>
                   {institutionRounds.map((item) => <option key={item.businessRound} value={item.businessRound}>{item.businessRound}차</option>)}
@@ -2801,7 +2827,7 @@ export default function QuotationManagementPage({
                 <div><h4>견적 품목 {draft.items.length}개</h4><p>제품 DB의 조달정보와 품목별 수수료율을 자동 적용합니다.</p></div>
                 <div className="quotation-item-toolbar">
                   <div className="quotation-product-search" ref={productSearchRef}>
-                    <input value={productQuery} onFocus={() => { if (productQuery) setProductResultsOpen(true); }} onChange={(event) => { setProductQuery(event.target.value); setProductResultsOpen(Boolean(event.target.value)); }} placeholder={`물품 검색 (${favoriteProductsOnly ? favoriteProductIds.length : products.length}개)`} aria-label="견적에 추가할 물품 검색" />
+                    <input data-save-field="product-search" value={productQuery} onFocus={() => { if (productQuery) setProductResultsOpen(true); }} onChange={(event) => { setProductQuery(event.target.value); setProductResultsOpen(Boolean(event.target.value)); }} placeholder={`물품 검색 (${favoriteProductsOnly ? favoriteProductIds.length : products.length}개)`} aria-label="견적에 추가할 물품 검색" />
                     <div className="quotation-product-filters" role="group" aria-label="견적 제품 표시 범위">
                       <button className={productListMode === "all" ? "active" : ""} type="button" aria-pressed={productListMode === "all"} onClick={() => toggleProductList("all")}>전체 제품</button>
                       <button className={productListMode === "favorites" ? "active" : ""} type="button" aria-pressed={productListMode === "favorites"} onClick={() => toggleProductList("favorites")}>★ 즐겨찾기 {favoriteProductIds.length}</button>
@@ -2874,7 +2900,7 @@ export default function QuotationManagementPage({
                         <button type="button" disabled={index === 0} aria-label={`${item.name || `${index + 1}번 품목`} 위로 이동`} onClick={() => moveItem(item.id, -1)}>↑</button>
                         <button type="button" disabled={index === regularDraftItems.length - 1} aria-label={`${item.name || `${index + 1}번 품목`} 아래로 이동`} onClick={() => moveItem(item.id, 1)}>↓</button>
                       </div>
-                      <div className="quotation-item-card-title"><input value={item.name} onChange={(event) => updateItem(item.id, { name: event.target.value })} placeholder="품명" /><input value={item.specification} onChange={(event) => updateItem(item.id, { specification: event.target.value })} placeholder="규격/모델명" /></div>
+                      <div className="quotation-item-card-title"><input data-save-item-id={item.id} value={item.name} onChange={(event) => updateItem(item.id, { name: event.target.value })} placeholder="품명" /><input value={item.specification} onChange={(event) => updateItem(item.id, { specification: event.target.value })} placeholder="규격/모델명" /></div>
                       <em className={item.procurement ? "" : "general"}>{contractLabel(item)}{item.procurementNumber ? ` · ${item.procurementNumber}` : ""}</em>
                       <button type="button" aria-label={`${item.name || `${index + 1}번 품목`} 삭제`} onClick={() => setDraft({ ...draft, items: draft.items.filter((line) => line.id !== item.id) })}>×</button>
                     </header>
