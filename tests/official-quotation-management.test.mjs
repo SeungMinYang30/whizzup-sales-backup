@@ -72,6 +72,11 @@ test("제품·견적 화면은 견적서·제품·협력사를 탭으로 나누�
 
 test("내부 수익 보고는 복사·Excel·PDF를 제공하고 고객 출력과 분리된다", () => {
   assert.match(page, /수익 보고 복사/);
+  assert.match(page, /내부 비용 상세:/);
+  assert.match(page, /내부 원가 합계:/);
+  assert.match(page, /마진%:/);
+  assert.match(page, /costDetailLines = internalCostDetails\.map/);
+  assert.match(page, /numbers\.consortium === 0[\s\S]*?"0원"/);
   assert.match(page, /내부 수익표 보기/);
   assert.match(page, /downloadInternalProfitExcel/);
   assert.match(page, /openInternalProfitPdf/);

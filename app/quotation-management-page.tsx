@@ -784,6 +784,41 @@ export default function QuotationManagementPage({
 
   useEffect(() => { void load(); }, [scope?.businessRound, scope?.organization, equipmentRefreshVersion]);
 
+  const pendingQuotationFileSignature = quotes
+    .filter((quote) => quote.driveSyncStatus === "queued" || quote.driveSyncStatus === "uploading")
+    .map((quote) => `${quote.id}:${quote.driveSyncToken}:${quote.driveSyncStatus}`)
+    .join("|");
+
+  useEffect(() => {
+    if (!pendingQuotationFileSignature) return;
+    let disposed = false;
+    const refreshPendingQuotationRows = async () => {
+      try {
+        const params = new URLSearchParams();
+        if (scope?.organization) {
+          params.set("organization", scope.organization);
+          params.set("businessRound", String(scope.businessRound));
+        }
+        const response = await fetch(`/api/quotations${params.size ? `?${params}` : ""}`, { cache: "no-store" });
+        const payload = await response.json() as { quotations?: AuthoredQuotation[] };
+        if (!response.ok || disposed) return;
+        const latestById = new Map((payload.quotations ?? []).map((quote) => [quote.id, quote]));
+        setQuotes((current) => current.map((quote) => {
+          if (quote.driveSyncStatus !== "queued" && quote.driveSyncStatus !== "uploading") return quote;
+          return latestById.get(quote.id) ?? quote;
+        }));
+      } catch {
+        // The active upload reports its own error. Keep the current list and retry silently.
+      }
+    };
+    void refreshPendingQuotationRows();
+    const timer = window.setInterval(() => { void refreshPendingQuotationRows(); }, 2_000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [pendingQuotationFileSignature, scope?.businessRound, scope?.organization]);
+
   useEffect(() => {
     quotes
       .filter((quote) => quote.driveSyncStatus === "queued" && !quotationFileJobsRef.current.has(quote.id))
@@ -1051,15 +1086,27 @@ export default function QuotationManagementPage({
 
   function internalProfitReportText() {
     if (!draft) return "";
+    const consortiumText = numbers.consortium === 0
+      ? "0원"
+      : numbers.consortium > 0
+        ? `-${won.format(numbers.consortium)}원`
+        : `+${won.format(Math.abs(numbers.consortium))}원 (상계)`;
+    const internalCostText = numbers.internalCost > 0 ? `-${won.format(numbers.internalCost)}원` : "0원";
+    const costDetailLines = internalCostDetails.map((detail) =>
+      `- ${detail.label} · ${detail.itemName}${detail.note ? ` · ${detail.note}` : ""}: -${won.format(detail.amount)}원`
+    );
     return [
       `[위즈업 내부 수익 보고] ${draft.organization || "기관 미지정"} · ${draft.projectTitle || `${draft.businessRound}차 사업`}`,
       `견적번호: ${draft.quoteNumber || "저장 전"}`,
+      `견적일: ${draft.quoteDate}`,
       `견적금액: ${won.format(numbers.total)}원`,
       `협업 구분: ${draft.executionType}${draft.executionType === "컨소" && draft.consortiumCompany ? ` · ${draft.consortiumCompany}` : ""}`,
       `예상 수익: ${won.format(numbers.earning)}원`,
-      `컨소 지급: ${numbers.consortium < 0 ? "+" : "-"}${won.format(Math.abs(numbers.consortium))}원`,
-      `내부 원가: -${won.format(numbers.internalCost)}원`,
-      `최종 총이익: ${won.format(numbers.margin)}원 (${(numbers.marginRate * 100).toFixed(1)}%)`,
+      `컨소 지급: ${consortiumText}`,
+      ...(costDetailLines.length ? ["내부 비용 상세:", ...costDetailLines] : []),
+      `내부 원가 합계: ${internalCostText}`,
+      `최종 총이익: ${won.format(numbers.margin)}원`,
+      `마진%: ${(numbers.marginRate * 100).toFixed(1)}%`,
     ].join("\n");
   }
 

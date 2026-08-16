@@ -68,6 +68,14 @@ test("final save queues PDF and Excel while Drive finalization protects the newe
   );
   assert.doesNotMatch(processingBody, /await load\(\)/);
   assert.match(page, /whizzup:quotation-files-updated/);
+  assert.match(page, /pendingQuotationFileSignature/);
+  assert.match(page, /refreshPendingQuotationRows/);
+  assert.match(page, /window\.setInterval\(\(\) => \{ void refreshPendingQuotationRows\(\); \}, 2_000\)/);
+  const pendingRefreshBody = page.slice(
+    page.indexOf("const pendingQuotationFileSignature"),
+    page.indexOf("quotes\n      .filter", page.indexOf("const pendingQuotationFileSignature")),
+  );
+  assert.doesNotMatch(pendingRefreshBody, /setLoading|setQuery|setQuotationPage|await load\(\)/);
   assert.match(filesRoute, /uploadDriveFile/);
   assert.match(filesRoute, /drive_sync_token=\?/);
   assert.match(filesRoute, /WHERE id=\? AND drive_sync_token=\?/);
