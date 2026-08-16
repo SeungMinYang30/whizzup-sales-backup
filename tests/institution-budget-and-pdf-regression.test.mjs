@@ -56,8 +56,13 @@ test("quotation and settlement PDFs paginate by measured height and reserve the 
 });
 
 test("all generated PDF view and print actions open the finished blob in a browser tab", () => {
-  assert.match(quotationPage, /function openPdfBlobInNewTab/);
-  assert.match(quotationPage, /window\.open\(url, "_blank"\)/);
+  assert.match(quotationPage, /function reservePdfTab/);
+  assert.match(quotationPage, /window\.open\("", "_blank"\)/);
+  assert.match(quotationPage, /function openPdfBlobInReservedTab/);
+  assert.match(quotationPage, /tab\.location\.replace\(url\)/);
+  assert.match(quotationPage, /async function printQuotation[\s\S]*?const pdfTab = reservePdfTab\(\)[\s\S]*?await createAuthoredQuotationPdf/);
+  assert.match(quotationPage, /async function openInternalProfitPdf[\s\S]*?const pdfTab = reservePdfTab\(\)[\s\S]*?await createInternalProfitReportPdf/);
+  assert.match(quotationPage, /async function exportConsortiumSettlementPdf[\s\S]*?const pdfTab = reservePdfTab\(\)[\s\S]*?await createConsortiumSettlementPdf/);
   assert.match(quotationPage, /완성된 견적서 PDF를 새 탭/);
   assert.match(quotationPage, /완성된 정산서 PDF를 새 탭/);
   assert.match(quotationPage, /새 탭이 차단되었습니다/);

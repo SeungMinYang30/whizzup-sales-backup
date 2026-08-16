@@ -420,12 +420,23 @@ function downloadBlob(blob: Blob, name: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
-function openPdfBlobInNewTab(file: Blob) {
-  const url = URL.createObjectURL(file);
-  const tab = window.open(url, "_blank");
+function reservePdfTab() {
+  const tab = window.open("", "_blank");
   if (tab) tab.opener = null;
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  return Boolean(tab);
+  return tab;
+}
+
+function openPdfBlobInReservedTab(file: Blob, tab: Window) {
+  const url = URL.createObjectURL(file);
+  try {
+    tab.location.replace(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return true;
+  } catch {
+    URL.revokeObjectURL(url);
+    tab.close();
+    return false;
+  }
 }
 
 async function renderGeneratedPdfPages(file: File) {
@@ -694,6 +705,11 @@ export default function QuotationManagementPage({
 
   async function printQuotation() {
     if (!draft?.items.length) return;
+    const pdfTab = reservePdfTab();
+    if (!pdfTab) {
+      setMessage("새 탭이 차단되었습니다. 브라우저의 팝업 및 리디렉션 허용 후 PDF 보기·인쇄를 다시 눌러 주세요.");
+      return;
+    }
     try {
       const pdf = await createAuthoredQuotationPdf({
         ...draft,
@@ -705,12 +721,13 @@ export default function QuotationManagementPage({
             : 0,
         })),
       });
-      if (!openPdfBlobInNewTab(pdf)) {
+      if (!openPdfBlobInReservedTab(pdf, pdfTab)) {
         setMessage("새 탭이 차단되었습니다. 브라우저의 팝업 및 리디렉션 허용 후 PDF 보기·인쇄를 다시 눌러 주세요.");
         return;
       }
       setMessage("완성된 견적서 PDF를 새 탭에서 열었습니다. 새 탭의 PDF 도구에서 인쇄하거나 저장하세요.");
     } catch (error) {
+      pdfTab.close();
       setMessage(error instanceof Error ? error.message : "견적서 PDF를 만들지 못했습니다.");
     }
   }
@@ -1098,14 +1115,20 @@ export default function QuotationManagementPage({
   async function openInternalProfitPdf() {
     const input = internalProfitExportInput();
     if (!input) return;
+    const pdfTab = reservePdfTab();
+    if (!pdfTab) {
+      setMessage("새 탭이 차단되었습니다. 브라우저의 팝업 및 리디렉션 허용 후 PDF 보기·인쇄를 다시 눌러 주세요.");
+      return;
+    }
     try {
       const file = await createInternalProfitReportPdf(input);
-      if (!openPdfBlobInNewTab(file)) {
+      if (!openPdfBlobInReservedTab(file, pdfTab)) {
         setMessage("새 탭이 차단되었습니다. 브라우저의 팝업 및 리디렉션 허용 후 PDF 보기·인쇄를 다시 눌러 주세요.");
         return;
       }
       setMessage("완성된 내부 수익표 PDF를 새 탭에서 열었습니다.");
     } catch (error) {
+      pdfTab.close();
       setMessage(error instanceof Error ? error.message : "내부 수익표 PDF를 만들지 못했습니다.");
     }
   }
@@ -2508,15 +2531,21 @@ export default function QuotationManagementPage({
   async function exportConsortiumSettlementPdf() {
     const output = consortiumSettlementOutputInput();
     if (!output) return;
+    const pdfTab = reservePdfTab();
+    if (!pdfTab) {
+      setMessage("새 탭이 차단되었습니다. 브라우저의 팝업 및 리디렉션 허용 후 PDF 보기·인쇄를 다시 눌러 주세요.");
+      return;
+    }
     setSettlementPrintPreparing(true);
     try {
       const pdf = await createConsortiumSettlementPdf(output);
-      if (!openPdfBlobInNewTab(pdf)) {
+      if (!openPdfBlobInReservedTab(pdf, pdfTab)) {
         setMessage("새 탭이 차단되었습니다. 브라우저의 팝업 및 리디렉션 허용 후 PDF 보기·인쇄를 다시 눌러 주세요.");
         return;
       }
       setMessage("완성된 정산서 PDF를 새 탭에서 열었습니다. 새 탭의 PDF 도구에서 인쇄하거나 저장하세요.");
     } catch (error) {
+      pdfTab.close();
       setMessage(error instanceof Error ? error.message : "정산서 PDF를 만들지 못했습니다.");
     } finally {
       setSettlementPrintPreparing(false);
