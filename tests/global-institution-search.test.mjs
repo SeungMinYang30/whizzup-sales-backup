@@ -34,13 +34,36 @@ test("빈 검색 결과는 고정 캐시하지 않고 기존 결과도 짧게만
   assert.match(componentSource, /cacheRef\.current\.delete\(normalizedQuery\)/);
 });
 
-test("히스토리 없는 검색 결과도 현재 기관 마스터에 반영한 뒤 즉시 연다", () => {
+test("히스토리 없는 검색 결과는 목록을 위조하지 않고 상세보기 전용 fallback으로 즉시 연다", () => {
   assert.match(componentSource, /onOpen\(item\)/);
   assert.match(
     crmSource,
-    /<GlobalInstitutionSearch onOpen=\{\(institution\) => \{[\s\S]*setInstitutionRegistry\(\(current\) =>/,
+    /<GlobalInstitutionSearch onOpen=\{\(institution\) => \{[\s\S]*setDetailInstitutionFallback\(\{/,
   );
+  const handler = crmSource.match(
+    /<GlobalInstitutionSearch onOpen=\{\(institution\) => \{([\s\S]*?)setDetailOrganization\(institution\.organization\);/,
+  );
+  assert.ok(handler);
+  assert.doesNotMatch(handler[1], /setInstitutionRegistry/);
   assert.match(crmSource, /setDetailOrganization\(institution\.organization\)/);
+  assert.match(
+    crmSource,
+    /detailInstitutionFallback[\s\S]*institutionMasterActivity\(detailInstitutionFallback, 0\)/,
+  );
+});
+
+test("새로고침과 수주 전 화면 진입은 전체 기록과 기관 마스터를 함께 다시 읽는다", () => {
+  assert.match(
+    crmSource,
+    /view === "dashboard"[\s\S]*void Promise\.all\(\[requestRecords\("full"\), requestInstitutionRegistry\(\)\]\)[\s\S]*setInstitutionRegistry\(nextInstitutions\)/,
+  );
+});
+
+test("히스토리 삭제 후 기관 마스터를 서버에서 다시 확인한다", () => {
+  assert.match(
+    crmSource,
+    /async function removeRecord\(record: Activity\)[\s\S]*void requestInstitutionRegistry\(\)[\s\S]*\.then\(setInstitutionRegistry\)/,
+  );
 });
 
 test("수주 전 검색은 활동 색인이 없는 기관 마스터도 기관명과 지역으로 찾는다", () => {

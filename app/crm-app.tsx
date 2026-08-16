@@ -6520,6 +6520,8 @@ export default function CrmApp({
   const [detailOrganization, setDetailOrganization] = useState<string | null>(
     null,
   );
+  const [detailInstitutionFallback, setDetailInstitutionFallback] =
+    useState<InstitutionRegistryEntry | null>(null);
   const [selectedActivityDetail, setSelectedActivityDetail] =
     useState<Activity | null>(null);
   const [detailBusinessRound, setDetailBusinessRound] = useState(1);
@@ -7195,9 +7197,10 @@ export default function CrmApp({
     }
     fullRecordsLoadingRef.current = true;
     setLoading(true);
-    void requestRecords("full")
-      .then((nextRecords) => {
+    void Promise.all([requestRecords("full"), requestInstitutionRegistry()])
+      .then(([nextRecords, nextInstitutions]) => {
         setRecords(nextRecords);
+        setInstitutionRegistry(nextInstitutions);
         recordsLastRefreshedAtRef.current = Date.now();
         recordsFullyLoadedRef.current = true;
         setRecordsFullyLoaded(true);
@@ -8732,13 +8735,18 @@ export default function CrmApp({
   );
   const detailRegistryRecord = useMemo(() => {
     const detailOrganizationKey = institutionAliasKey(detailOrganization);
-    return detailOrganizationKey
-      ? institutionMasterRows.find(
+    if (!detailOrganizationKey) return null;
+    const registered = institutionMasterRows.find(
           (record) =>
             institutionAliasKey(record.organization) === detailOrganizationKey,
-        ) ?? null
+        );
+    if (registered) return registered;
+    return detailInstitutionFallback &&
+      institutionAliasKey(detailInstitutionFallback.organization) ===
+        detailOrganizationKey
+      ? institutionMasterActivity(detailInstitutionFallback, 0)
       : null;
-  }, [detailOrganization, institutionMasterRows]);
+  }, [detailInstitutionFallback, detailOrganization, institutionMasterRows]);
   const detailBaseRecord =
     detailLatest ?? detailCampaignRegistration ?? detailRegistryRecord;
   const detailQuoteSummary = detailBaseRecord
@@ -13684,6 +13692,14 @@ export default function CrmApp({
         ];
       });
       setRecords((current) => current.filter((item) => item.id !== record.id));
+      void requestInstitutionRegistry()
+        .then(setInstitutionRegistry)
+        .catch(() => {
+          setToast(
+            "기록은 삭제했습니다. 기관 목록 확인이 늦어져 잠시 후 자동으로 다시 확인합니다.",
+          );
+          window.setTimeout(() => void refreshRecordsInBackground(), 1_200);
+        });
       setToast("기록을 휴지통으로 이동했습니다. 관리자가 30일 안에 복원할 수 있습니다.");
       return true;
     } catch (caught) {
@@ -16091,25 +16107,12 @@ export default function CrmApp({
           </button>
           <GlobalInstitutionSearch onOpen={(institution) => {
             const now = new Date().toISOString();
-            setInstitutionRegistry((current) => {
-              const key = institutionAliasKey(institution.organization);
-              if (
-                current.some(
-                  (item) => institutionAliasKey(item.organization) === key,
-                )
-              ) {
-                return current;
-              }
-              return [
-                ...current,
-                {
-                  organization: institution.organization,
-                  region: institution.region,
-                  createdByName: "기관 마스터",
-                  createdAt: now,
-                  updatedAt: now,
-                },
-              ];
+            setDetailInstitutionFallback({
+              organization: institution.organization,
+              region: institution.region,
+              createdByName: "기관 마스터",
+              createdAt: now,
+              updatedAt: now,
             });
             setDetailBusinessRound(institution.businessRound);
             setDetailOrganization(institution.organization);
