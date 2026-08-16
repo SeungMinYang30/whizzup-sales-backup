@@ -850,6 +850,8 @@ export const equipmentProjects = sqliteTable(
     budgetMatchMethod: text("budget_match_method").notNull().default("legacy"),
     budgetRequestId: text("budget_request_id"),
     budgetKind: text("budget_kind").notNull().default("unclassified"),
+    budgetAmount: text("budget_amount"),
+    budgetAmountSource: text("budget_amount_source").notNull().default("missing"),
     notes: text("notes").notNull().default(""),
     constructionAmount: integer("construction_amount"),
     actualConstructionCost: integer("actual_construction_cost"),

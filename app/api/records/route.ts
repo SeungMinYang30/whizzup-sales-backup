@@ -75,6 +75,7 @@ import {
   linkBudgetRequestRecord,
   linkBudgetNameEntity,
   normalizeBudgetNameKey,
+  recordBudgetSelectionEvent,
   resolveCanonicalBudgetName,
   resolveBudgetRecordMetadata,
 } from "../../../lib/budget-names";
@@ -742,6 +743,183 @@ function calendarInstitutionBusinessRound(value: unknown) {
     : 1;
 }
 
+async function saveInstitutionBudgetsWithoutActivity(
+  payload: Record<string, unknown>,
+  member: Awaited<ReturnType<typeof requireApprovedMember>>,
+) {
+  const d1 = await ensureEquipmentReady();
+  await ensureBudgetNamesReady();
+  const organization = clean(payload.organization).slice(0, 120);
+  if (!organization) throw new Error("기관명은 필수입니다.");
+  const businessRound = calendarInstitutionBusinessRound(payload.businessRound);
+  const registered = await d1
+    .prepare("SELECT organization FROM institution_registry WHERE organization = ? LIMIT 1")
+    .bind(organization)
+    .first<{ organization: string }>();
+  if (!registered) throw new Error("등록된 기관을 찾을 수 없습니다.");
+  const budgets = await resolveActivityBudgetAllocations(d1, payload, "미정");
+  if (!budgets.length) throw new Error("저장할 예산을 선택해 주세요.");
+
+  const projectIds: number[] = [];
+  let changed = false;
+  for (const budget of budgets) {
+    let budgetChanged = false;
+    const budgetName = clean(budget.budgetType || budget.budgetOriginalName).slice(0, 120);
+    if (!budgetName) continue;
+    const originalName = clean(budget.budgetOriginalName || budgetName).slice(0, 120);
+    const requestId = clean(budget.budgetRequestId) || null;
+    const groupId = Number.isInteger(Number(budget.budgetGroupId)) && Number(budget.budgetGroupId) > 0
+      ? Number(budget.budgetGroupId)
+      : null;
+    const amountText = clean(
+      budget.budgetAmountOverride ||
+        budget.budgetInstitutionAmount ||
+        budget.budgetAmount,
+    );
+    const amount = amountText === "" ? null : amountText;
+    const amountSource = amount === null ? "missing" : clean(budget.budgetAmountSource) || "manual";
+    const existing = await d1
+      .prepare(
+        `SELECT id, budget_type AS "budgetType", budget_original_name AS "originalName",
+                budget_group_id AS "groupId", budget_request_id AS "requestId",
+                budget_amount AS "budgetAmount", budget_amount_source AS "amountSource"
+         FROM equipment_projects
+         WHERE organization = ? AND business_round = ?
+           AND (
+             (? IS NOT NULL AND budget_request_id = ?)
+             OR (? IS NOT NULL AND budget_group_id = ?)
+             OR name = ? OR budget_original_name = ?
+           )
+         ORDER BY CASE WHEN budget_request_id = ? THEN 0
+                       WHEN budget_group_id = ? THEN 1 ELSE 2 END,
+                  updated_at DESC, id DESC
+         LIMIT 1`,
+      )
+      .bind(
+        organization,
+        businessRound,
+        requestId,
+        requestId,
+        groupId,
+        groupId,
+        budgetName,
+        originalName,
+        requestId,
+        groupId,
+      )
+      .first<Record<string, unknown>>();
+    let projectId = Number(existing?.id);
+    if (existing) {
+      const same =
+        clean(existing.budgetType) === budgetName &&
+        clean(existing.originalName) === originalName &&
+        (Number(existing.groupId) || null) === groupId &&
+        (clean(existing.requestId) || null) === requestId &&
+        (existing.budgetAmount === null ? null : clean(existing.budgetAmount)) === amount &&
+        clean(existing.amountSource) === amountSource;
+      if (!same) {
+        await d1
+          .prepare(
+            `UPDATE equipment_projects
+             SET budget_type = ?, budget_original_name = ?, budget_group_id = ?,
+                 budget_match_status = ?, budget_match_method = ?,
+                 budget_request_id = ?, budget_kind = ?, budget_amount = ?,
+                 budget_amount_source = ?, updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+          )
+          .bind(
+            budgetName,
+            originalName,
+            groupId,
+            budget.budgetMatchStatus || "unclassified",
+            budget.budgetMatchMethod || "institution_budget",
+            requestId,
+            budget.budgetKind || "unclassified",
+            amount,
+            amountSource,
+            projectId,
+          )
+          .run();
+        changed = true;
+        budgetChanged = true;
+      }
+    } else {
+      const inserted = await d1
+        .prepare(
+          `INSERT INTO equipment_projects (
+             organization, business_round, name, status, budget_type,
+             budget_original_name, budget_group_id, budget_match_status,
+             budget_match_method, budget_request_id, budget_kind,
+             budget_amount, budget_amount_source, notes, activity_id, created_by
+           ) VALUES (?, ?, ?, '제안', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+        )
+        .bind(
+          organization,
+          businessRound,
+          budgetName,
+          budgetName,
+          originalName,
+          groupId,
+          budget.budgetMatchStatus || "unclassified",
+          budget.budgetMatchMethod || "institution_budget",
+          requestId,
+          budget.budgetKind || "unclassified",
+          amount,
+          amountSource,
+          "기관 예산 직접 연결",
+          member.id,
+        )
+        .run();
+      projectId = Number(inserted.meta.last_row_id);
+      changed = true;
+      budgetChanged = true;
+    }
+    if (!Number.isSafeInteger(projectId) || projectId < 1) {
+      throw new Error("기관 예산 연결을 저장하지 못했습니다.");
+    }
+    await linkBudgetNameEntity(d1, {
+      entityType: "equipment_project",
+      entityId: projectId,
+      groupId,
+      originalName,
+      aliasKey: normalizeBudgetNameKey(originalName),
+    });
+    if (requestId) {
+      await linkBudgetRequestRecord(d1, {
+        requestId,
+        entityType: "equipment_project",
+        entityId: projectId,
+        originalName,
+        organization,
+      });
+    }
+    projectIds.push(projectId);
+    if (budgetChanged) {
+      await recordBudgetSelectionEvent(member, {
+        action:
+          budget.budgetMatchStatus === "unknown"
+            ? "select-unknown"
+            : requestId
+              ? "link-pending-request"
+              : "save-institution-budget",
+        groupId,
+        requestId,
+        snapshot: {
+          organization,
+          businessRound,
+          projectId,
+          budgetName,
+          originalName,
+          amount,
+          amountSource,
+          summary: `${organization} ${businessRound}차 사업 예산 저장`,
+        },
+      });
+    }
+  }
+  return { organization, businessRound, projectIds, changed };
+}
+
 async function findCalendarInstitutionRecord(
   d1: Awaited<ReturnType<typeof ensureRecordsReady>>,
   organization: string,
@@ -762,6 +940,10 @@ export async function POST(request: Request) {
   try {
     const member = await requireApprovedMember();
     const payload = (await request.json()) as Record<string, unknown>;
+    if (payload.action === "save-institution-budgets") {
+      const result = await saveInstitutionBudgetsWithoutActivity(payload, member);
+      return Response.json({ result }, { status: result.changed ? 201 : 200 });
+    }
     if (payload.reuseExistingInstitution === true) {
       const d1 = await ensureRecordsReady();
       const organization = await resolveInstitutionName(d1, payload);

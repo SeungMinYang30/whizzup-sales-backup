@@ -1007,6 +1007,8 @@ export const BACKUP_TABLES = [
       "budget_match_method",
       "budget_request_id",
       "budget_kind",
+      "budget_amount",
+      "budget_amount_source",
       "notes",
       "construction_amount",
       "actual_construction_cost",

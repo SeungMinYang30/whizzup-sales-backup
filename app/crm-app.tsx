@@ -218,6 +218,16 @@ type InstitutionRegistryEntry = {
   createdByName: string;
   createdAt: string;
   updatedAt: string;
+  budgetType?: string;
+  budgetAmount?: string;
+  budgetOriginalName?: string;
+  budgetGroupId?: number | null;
+  budgetMatchStatus?: string;
+  budgetMatchMethod?: string;
+  budgetRequestId?: string | null;
+  budgetKind?: string;
+  budgetAmountSource?: string;
+  budgetsJson?: string;
 };
 
 type ActivityDetailLevel = "compact" | "standard" | "detailed";
@@ -2039,6 +2049,16 @@ function institutionMasterActivity(
     region: institution.region,
     organization: institution.organization,
     business_round: 1,
+    budget_type: institution.budgetType ?? "",
+    budget_amount: institution.budgetAmount ?? "",
+    budget_original_name: institution.budgetOriginalName ?? "",
+    budget_group_id: institution.budgetGroupId ?? null,
+    budget_match_status: institution.budgetMatchStatus ?? "unclassified",
+    budget_match_method: institution.budgetMatchMethod ?? "institution_budget",
+    budget_request_id: institution.budgetRequestId ?? null,
+    budget_kind: institution.budgetKind ?? "unclassified",
+    budget_amount_source: institution.budgetAmountSource ?? "missing",
+    budgets_json: institution.budgetsJson ?? "[]",
     award_status: "미정",
     award_stage: "미정",
     source_chat: "기관 마스터",
@@ -2861,6 +2881,9 @@ function parseSignedMoneyAmount(value: string) {
 function formatBudgetDisplay(value: string) {
   const input = value.trim();
   if (!input) return "";
+  if (/^[+-]?0+(?:\.0+)?(?:원|만원)?$/u.test(input.replace(/[\s,]/g, ""))) {
+    return "0원";
+  }
   const rawNumber = Number(input.replace(/[^\d.]/g, ""));
   const explicitKoreanUnit = /억|만/.test(input);
   const explicitWonUnit = /원/.test(input) && !explicitKoreanUnit;
@@ -7772,6 +7795,25 @@ export default function CrmApp({
       title: names.join(" + "),
     };
   };
+  const institutionBudgetLinesForRecord = (record: Activity) => {
+    const budgets = record.budgets.length > 0 ? record.budgets : activityBudgetsFromRecord(record as unknown as Record<string, unknown>);
+    return budgets.map((budget, index) => {
+      const rawAmount =
+        budget.budgetAmountOverride ||
+        budget.budgetInstitutionAmount ||
+        budget.budgetAmount;
+      const amountEntered =
+        budget.budgetAmountSource !== "missing" &&
+        String(rawAmount ?? "").trim() !== "";
+      return {
+        key: `${budget.budgetRequestId || budget.budgetGroupId || budget.budgetOriginalName || budget.budgetType || index}`,
+        name: budget.budgetType || budget.budgetOriginalName || "예산명 미확인",
+        amount: amountEntered
+          ? formatBudgetDisplay(String(rawAmount)) || `${String(rawAmount)}원`
+          : "금액 미입력",
+      };
+    });
+  };
   const activityDetailFactValueForRecord = (
     record: Activity,
     fact: ActivityDetailFact,
@@ -10526,11 +10568,14 @@ export default function CrmApp({
           field === "budget"
             ? formWithActivityBudgets(nextForm, nextForm.budgets)
             : nextForm;
+        const savesMasterInstitutionBudget = field === "budget" && record.id < 1;
         const response = await fetch("/api/records", {
-          method: "PUT",
+          method: savesMasterInstitutionBudget ? "POST" : "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            id: record.id,
+            ...(savesMasterInstitutionBudget
+              ? { action: "save-institution-budgets" }
+              : { id: record.id }),
             ...synchronizedNextForm,
             awardStageManual: editsAward ? true : undefined,
             syncBusinessRoundBudgets: field === "budget",
@@ -10538,15 +10583,29 @@ export default function CrmApp({
         });
         const payload = (await response.json()) as {
           record?: Record<string, unknown>;
+          result?: { projectIds?: number[] };
           error?: string;
         };
-        if (!response.ok || !payload.record) {
+        if (
+          !response.ok ||
+          (savesMasterInstitutionBudget ? !payload.result : !payload.record)
+        ) {
           throw new Error(payload.error || "기관 정보를 수정하지 못했습니다.");
         }
         payloadRecord = payload.record;
+        if (savesMasterInstitutionBudget) {
+          const [nextRecords, nextInstitutions] = await Promise.all([
+            requestRecords("full"),
+            requestInstitutionRegistry(),
+          ]);
+          setRecords(nextRecords);
+          setInstitutionRegistry(nextInstitutions);
+        }
       }
-      const savedRecord = normalizeUpdatedActivity(payloadRecord, record);
-      setRecords((current) => upsertActivity(current, savedRecord));
+      if (payloadRecord) {
+        const savedRecord = normalizeUpdatedActivity(payloadRecord, record);
+        setRecords((current) => upsertActivity(current, savedRecord));
+      }
       if (field === "budget" || Boolean(record.jointProjectId)) {
         void refreshRecordsInBackground();
       }
@@ -19045,15 +19104,21 @@ export default function CrmApp({
                           </span>
                         </td>
                         <td className="budget-summary-cell">
-                          <span
-                            className="budget-cell budget-summary-name"
-                            title={compactBudgetDisplayForRecord(record).title}
-                          >
-                            {compactBudgetDisplayForRecord(record).name}
-                          </span>
-                          <strong className="budget-amount">
-                            {compactBudgetDisplayForRecord(record).amount}
-                          </strong>
+                          {institutionBudgetLinesForRecord(record).length > 0 ? (
+                            <div className="institution-budget-lines">
+                              {institutionBudgetLinesForRecord(record).map((budget) => (
+                                <div className="institution-budget-line" key={budget.key}>
+                                  <span className="budget-cell budget-summary-name">{budget.name}</span>
+                                  <strong className="budget-amount">{budget.amount}</strong>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="institution-budget-line empty">
+                              <span className="budget-cell budget-summary-name">예산 미등록</span>
+                              <strong className="budget-amount">금액 미입력</strong>
+                            </div>
+                          )}
                           {record.budgetMatchStatus &&
                             !["auto", "approved", "excluded"].includes(
                               record.budgetMatchStatus,
@@ -19066,11 +19131,6 @@ export default function CrmApp({
                                 )}
                               </small>
                             )}
-                          {compactBudgetDisplayForRecord(record).detail && (
-                            <small className="budget-amount-source">
-                              {compactBudgetDisplayForRecord(record).detail}
-                            </small>
-                          )}
                         </td>
                         <td>
                           <strong className="followup-summary">
@@ -20487,7 +20547,6 @@ export default function CrmApp({
                                       )
                                     }
                                     onToast={setToast}
-                                    standardOnly
                                   />
                                 </div>
                                 <div className="budget-form-field budget-amount-field">
@@ -23125,7 +23184,6 @@ export default function CrmApp({
                                   updateBudgetSelection(selection, index)
                                 }
                                 onToast={setToast}
-                                standardOnly
                               />
                             </div>
                             <div className="budget-form-field budget-amount-field">

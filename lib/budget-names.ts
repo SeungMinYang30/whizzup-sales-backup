@@ -1545,6 +1545,26 @@ async function writeBudgetEvent(
     .run();
 }
 
+export async function recordBudgetSelectionEvent(
+  member: Member,
+  input: {
+    action: "select-unknown" | "link-pending-request" | "save-institution-budget";
+    groupId?: number | null;
+    requestId?: string | null;
+    snapshot: unknown;
+  },
+) {
+  const d1 = await ensureBudgetNamesReady();
+  await writeBudgetEvent(
+    d1,
+    member,
+    input.action,
+    input.groupId ?? null,
+    input.snapshot,
+    { requestId: input.requestId ?? null },
+  );
+}
+
 function placeholders(count: number) {
   return Array.from({ length: count }, () => "?").join(", ");
 }
@@ -3262,6 +3282,49 @@ export async function submitBudgetNameRequest(
       );
     }
   }
+  const existingRequest = await d1
+    .prepare(
+      `SELECT id, requested_name AS requestedName,
+              expected_budget_kind AS expectedKind, reason, created_at AS createdAt
+       FROM budget_name_requests
+       WHERE requested_key = ? AND requester_member_id = ?
+         AND organization = ? AND status IN ('pending', 'hold')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+    )
+    .bind(requestedKey, member.id, organization)
+    .first<{
+      id: string;
+      requestedName: string;
+      expectedKind: string;
+      reason: string;
+      createdAt: string;
+    }>();
+  if (existingRequest) {
+    if (Number.isInteger(activityId) && activityId > 0) {
+      await linkBudgetRequestRecord(d1, {
+        requestId: existingRequest.id,
+        entityType: "activity",
+        entityId: activityId,
+        originalName: existingRequest.requestedName,
+        organization,
+      });
+    }
+    return {
+      request: {
+        id: existingRequest.id,
+        requestedName: existingRequest.requestedName,
+        expectedKind: existingRequest.expectedKind,
+        reason: existingRequest.reason,
+        status: "pending",
+        decisionReason: "",
+        canonicalName: "",
+        createdAt: existingRequest.createdAt,
+      },
+      suggestions,
+      reused: true,
+    };
+  }
   const requestId = crypto.randomUUID();
   await d1
     .prepare(
@@ -3378,14 +3441,9 @@ export async function processBudgetNameRequest(
   if (request.status === "approved" || request.status === "rejected") {
     throw new Error("이미 최종 처리된 신청입니다.");
   }
-  const duplicates = await d1
-    .prepare(
-      `SELECT id FROM budget_name_requests
-       WHERE requested_key = ? AND status IN ('pending', 'hold')`,
-    )
-    .bind(request.requestedKey)
-    .all<{ id: string }>();
-  const requestIds = duplicates.results.map((row) => String(row.id));
+  // 신청 문자열이 같아도 기관별 신청은 독립적으로 처리합니다. 승인·별칭 연결은
+  // 반드시 선택한 신청 ID에 직접 연결된 기관·사업에만 적용해야 합니다.
+  const requestIds = [request.id];
   if (decision === "reject" && !reason) {
     throw new Error("반려 사유를 입력해 주세요.");
   }

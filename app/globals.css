@@ -2800,6 +2800,10 @@ tr:hover .row-actions { opacity: 1; }
 .budget-summary-cell { min-width: 0; }
 .budget-summary-name { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .budget-summary-cell .budget-amount { margin-top: 5px; color: #203b7c; font-weight: 850; }
+.institution-budget-lines { display: grid; gap: 5px; }
+.institution-budget-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 8px; }
+.institution-budget-line .budget-amount { margin-top: 0; text-align: right; }
+.institution-budget-line.empty { color: #8792a6; }
 .quote-missing,
 .quote-partial { color: #c2413b !important; }
 .quote-loading,

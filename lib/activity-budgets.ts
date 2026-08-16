@@ -261,12 +261,17 @@ export function summarizeActivityBudgets(
   let enteredAmountCount = 0;
 
   for (const budget of budgets) {
-    const amount = parseBudgetMoney(
+    const storedAmount = text(
       budget.budgetAmountOverride ||
         budget.budgetInstitutionAmount ||
         budget.budgetAmount,
     );
-    if (amount > 0) {
+    const amountEntered =
+      storedAmount !== "" && budget.budgetAmountSource !== "missing";
+    const amount = parseBudgetMoney(
+      storedAmount,
+    );
+    if (amountEntered) {
       totalAmount += amount;
       enteredAmountCount += 1;
     }

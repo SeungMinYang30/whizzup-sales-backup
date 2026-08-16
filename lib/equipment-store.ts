@@ -33,6 +33,8 @@ const schemaStatements = [
     budget_match_method TEXT NOT NULL DEFAULT 'legacy',
     budget_request_id TEXT,
     budget_kind TEXT NOT NULL DEFAULT 'unclassified',
+    budget_amount TEXT,
+    budget_amount_source TEXT NOT NULL DEFAULT 'missing',
     notes TEXT NOT NULL DEFAULT '',
     construction_amount INTEGER,
     actual_construction_cost INTEGER,
@@ -514,6 +516,8 @@ async function initializeEquipment() {
     projectColumns.results.map((column) => column.name),
   );
   const projectUpgrades = [
+    ["budget_amount", "ALTER TABLE equipment_projects ADD COLUMN budget_amount TEXT"],
+    ["budget_amount_source", "ALTER TABLE equipment_projects ADD COLUMN budget_amount_source TEXT NOT NULL DEFAULT 'missing'"],
     ["construction_amount", "ALTER TABLE equipment_projects ADD COLUMN construction_amount INTEGER"],
     ["actual_construction_cost", "ALTER TABLE equipment_projects ADD COLUMN actual_construction_cost INTEGER"],
     ["activity_id", "ALTER TABLE equipment_projects ADD COLUMN activity_id INTEGER"],
