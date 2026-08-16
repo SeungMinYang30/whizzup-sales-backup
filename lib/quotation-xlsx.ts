@@ -127,7 +127,12 @@ function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
   const lastItemRow = firstItemRow + itemCount - 1;
   const bottomHeaderRow = lastItemRow + 2;
   const conditionStartRow = bottomHeaderRow + 1;
-  const finalSummaryRow = conditionStartRow + 4;
+  const showDiscount = calc.discount > 0;
+  const showExtra = calc.extra > 0;
+  const discountSummaryRow = showDiscount ? conditionStartRow + 2 : 0;
+  const extraSummaryRow = showExtra ? conditionStartRow + 2 + (showDiscount ? 1 : 0) : 0;
+  const finalSummaryRow = conditionStartRow + 2 + (showDiscount ? 1 : 0) + (showExtra ? 1 : 0);
+  const supplySummaryRow = finalSummaryRow + 1;
   const summaryEndRow = conditionStartRow + 6;
   const signatureStartRow = summaryEndRow + 2;
   const signatureEndRow = signatureStartRow + 2;
@@ -171,26 +176,31 @@ function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
     ["담당", "위즈업 영업팀"],
     ["안내", input.memo || "본 견적서는 관공서 제출용입니다."],
   ];
+  const adjustedExpression = `I${conditionStartRow}${showDiscount ? `-I${discountSummaryRow}` : ""}${showExtra ? `+I${extraSummaryRow}` : ""}`;
   const summary = [
-    ["품목금액 (VAT 포함)", calc.itemTotal, `SUM(I${firstItemRow}:I${lastItemRow})`],
-    ["조달수수료 (별도)", calc.procurementFee, `SUM(K${firstItemRow}:K${lastItemRow})`],
-    ["할인", calc.discount, ""],
-    ["추가비용", calc.extra, ""],
-    ["최종 합계", calc.total, `I${conditionStartRow}+I${conditionStartRow + 1}-I${conditionStartRow + 2}+I${conditionStartRow + 3}`],
-    ["공급가액 (품목금액 기준)", calc.supply, `ROUND((I${conditionStartRow}-I${conditionStartRow + 2}+I${conditionStartRow + 3})/1.1,0)`],
-    ["부가가치세 (품목금액 기준)", calc.vat, `I${conditionStartRow}-I${conditionStartRow + 2}+I${conditionStartRow + 3}-I${conditionStartRow + 5}`],
-  ] as const;
+    { label: "품목금액", qualifier: "VAT 포함", value: calc.itemTotal, expression: `SUM(I${firstItemRow}:I${lastItemRow})` },
+    { label: "조달수수료", qualifier: "별도", value: calc.procurementFee, expression: `SUM(K${firstItemRow}:K${lastItemRow})` },
+    ...(showDiscount ? [{ label: "할인", qualifier: "", value: calc.discount, expression: "" }] : []),
+    ...(showExtra ? [{ label: "추가비용", qualifier: "", value: calc.extra, expression: "" }] : []),
+    { label: "최종 합계", qualifier: "", value: calc.total, expression: `${adjustedExpression}+I${conditionStartRow + 1}` },
+    { label: "공급가액", qualifier: "품목금액 기준", value: calc.supply, expression: `ROUND((${adjustedExpression})/1.1,0)` },
+    { label: "부가가치세", qualifier: "품목금액 기준", value: calc.vat, expression: `${adjustedExpression}-I${supplySummaryRow}` },
+  ];
 
   const bottomRows = conditions.map((condition, index) => {
     const row = conditionStartRow + index;
-    const [label, value, expression] = summary[index];
+    const summaryEntry = summary[index];
+    if (!summaryEntry) {
+      return `<row r="${row}" ht="23" customHeight="1">${inline(`A${row}`, condition[0], 14)}${inline(`B${row}`, "", 14)}${inline(`C${row}`, condition[1], 4)}${styledBlanks(row, ["D", "E", "F"], 4)}</row>`;
+    }
+    const { label, qualifier, value, expression } = summaryEntry;
     const final = label === "최종 합계";
     const amountCell = expression
       ? formula(`I${row}`, expression, value, final ? 17 : 15)
       : numeric(`I${row}`, value, final ? 17 : 15);
     const labelStyle = final ? 16 : 14;
     const amountStyle = final ? 17 : 15;
-    return `<row r="${row}" ht="${final ? 29 : 23}" customHeight="1">${inline(`A${row}`, condition[0], 14)}${inline(`B${row}`, "", 14)}${inline(`C${row}`, condition[1], 4)}${styledBlanks(row, ["D", "E", "F"], 4)}${inline(`G${row}`, label, labelStyle)}${inline(`H${row}`, "", labelStyle)}${amountCell}${inline(`J${row}`, "", amountStyle)}</row>`;
+    return `<row r="${row}" ht="${final ? 29 : 23}" customHeight="1">${inline(`A${row}`, condition[0], 14)}${inline(`B${row}`, "", 14)}${inline(`C${row}`, condition[1], 4)}${styledBlanks(row, ["D", "E", "F"], 4)}${inline(`G${row}`, label, labelStyle)}${inline(`H${row}`, qualifier, final ? 16 : 20)}${amountCell}${inline(`J${row}`, "", amountStyle)}</row>`;
   }).join("");
 
   const merges = [
@@ -202,7 +212,7 @@ function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
     `A${bottomHeaderRow}:F${bottomHeaderRow}`, `G${bottomHeaderRow}:J${bottomHeaderRow}`,
     ...conditions.flatMap((_, index) => {
       const row = conditionStartRow + index;
-      return [`A${row}:B${row}`, `C${row}:F${row}`, `G${row}:H${row}`, `I${row}:J${row}`];
+      return [`A${row}:B${row}`, `C${row}:F${row}`, `I${row}:J${row}`];
     }),
     `A${signatureStartRow}:F${signatureEndRow}`, `G${signatureStartRow}:I${signatureEndRow}`, `J${signatureStartRow}:J${signatureEndRow}`,
   ];
@@ -220,7 +230,7 @@ function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
     <col min="4" max="4" width="21" customWidth="1"/>
     <col min="5" max="5" width="15" customWidth="1"/>
     <col min="6" max="6" width="7" customWidth="1"/>
-    <col min="7" max="7" width="7" customWidth="1"/>
+    <col min="7" max="7" width="12" customWidth="1"/>
     <col min="8" max="8" width="13" customWidth="1"/>
     <col min="9" max="9" width="15" customWidth="1"/>
     <col min="10" max="10" width="13" customWidth="1"/>
@@ -349,7 +359,7 @@ const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <border><left/><right/><top/><bottom style="thin"><color rgb="FFD7E0EC"/></bottom><diagonal/></border>
   </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="20">
+  <cellXfs count="21">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
@@ -370,6 +380,7 @@ const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <xf numFmtId="164" fontId="4" fillId="4" borderId="3" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
     <xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
     <xf numFmtId="0" fontId="0" fillId="5" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="0" fillId="3" borderId="3" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" shrinkToFit="1"/></xf>
   </cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;

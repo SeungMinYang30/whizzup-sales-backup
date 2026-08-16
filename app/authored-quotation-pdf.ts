@@ -123,7 +123,7 @@ function paginateItems(items: AuthoredQuotationPdfItem[]) {
   let cursor = 0;
   while (cursor < items.length) {
     const isFirstPage = pages.length === 0;
-    const finalCapacity = isFirstPage ? 650 : 1040;
+    const finalCapacity = isFirstPage ? 650 : 950;
     const continuationCapacity = isFirstPage ? 925 : 1370;
     const remaining = items.slice(cursor);
     const remainingHeights = remaining.map(estimatedItemRowHeight);
@@ -174,7 +174,7 @@ function drawCell(
   y: number,
   width: number,
   height: number,
-  options: { bold?: boolean; align?: CanvasTextAlign; maxLines?: number; fontSize?: number } = {},
+  options: { bold?: boolean; align?: CanvasTextAlign; maxLines?: number; fontSize?: number; fitSingleLine?: boolean; minFontSize?: number } = {},
 ) {
   context.save();
   context.beginPath();
@@ -182,10 +182,17 @@ function drawCell(
   context.clip();
   context.fillStyle = "#17233f";
   context.textAlign = options.align ?? "left";
-  const fontSize = options.fontSize ?? 17;
+  let fontSize = options.fontSize ?? 17;
   context.font = `${options.bold ? 700 : 400} ${fontSize}px "Malgun Gothic", "Noto Sans KR", sans-serif`;
+  if (options.fitSingleLine) {
+    const minFontSize = options.minFontSize ?? Math.min(12, fontSize);
+    while (fontSize > minFontSize && context.measureText(value).width > Math.max(1, width - 18)) {
+      fontSize -= 1;
+      context.font = `${options.bold ? 700 : 400} ${fontSize}px "Malgun Gothic", "Noto Sans KR", sans-serif`;
+    }
+  }
   const textX = options.align === "right" ? x + width - 9 : options.align === "center" ? x + width / 2 : x + 9;
-  const lines = splitText(context, value, Math.max(1, width - 18), options.maxLines ?? 2);
+  const lines = options.fitSingleLine ? [value] : splitText(context, value, Math.max(1, width - 18), options.maxLines ?? 2);
   const lineHeight = fontSize + 5;
   const firstY = y + Math.max(fontSize + 7, (height - lines.length * lineHeight) / 2 + fontSize);
   lines.forEach((line, index) => context.fillText(line, textX, firstY + index * lineHeight));
@@ -312,7 +319,17 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
     const isLastPage = pageIndex === pageCount - 1;
     if (isLastPage) {
       const bottomY = tableTop + 48 + rowsHeight + 22;
-      const bottomHeight = 250;
+      const summary = [
+        { label: "품목금액", qualifier: "VAT 포함", value: `${won.format(total.subtotal)}원` },
+        { label: "조달수수료", qualifier: "별도", value: `${won.format(total.procurementFee)}원` },
+        ...(quote.discountAmount > 0 ? [{ label: "할인", qualifier: "", value: `-${won.format(quote.discountAmount)}원` }] : []),
+        ...(quote.extraAmount > 0 ? [{ label: "추가비용", qualifier: "", value: `+${won.format(quote.extraAmount)}원` }] : []),
+        { label: "최종 합계", qualifier: "", value: `${won.format(total.total)}원`, total: true },
+        { label: "공급가액", qualifier: "품목금액 기준", value: `${won.format(total.supply)}원` },
+        { label: "부가가치세", qualifier: "품목금액 기준", value: `${won.format(total.tax)}원` },
+      ];
+      const summaryRowHeight = 36;
+      const bottomHeight = 40 + Math.max(7 * 42, summary.length * summaryRowHeight);
       context.fillStyle = "#17233f";
       context.fillRect(72, bottomY, 1096, 40);
       context.fillStyle = "#fff";
@@ -326,6 +343,8 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
         ["납품 및 설치", "발주기관과 일정 협의 후 진행"],
         ["대금 지급", "발주기관의 지급 조건에 따름"],
         ["하자보증", "납품 완료일로부터 1년"],
+        ["비고", "표시 단가는 VAT·일반 수수료 포함, 조달수수료는 합계에 별도 반영"],
+        ["담당", "위즈업 영업팀"],
         ["안내", quote.memo || "본 견적서는 관공서 제출용입니다."],
       ];
       conditions.forEach((entry, index) => {
@@ -334,21 +353,17 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
         drawCell(context, entry[0], 72, y, 150, 42, { bold: true, align: "center", maxLines: 1, fontSize: 14 });
         drawCell(context, entry[1], 222, y, 440, 42, { align: "center", maxLines: 2, fontSize: 14 });
       });
-      const summary = [
-        ["품목금액 (VAT 포함)", `${won.format(total.subtotal)}원`],
-        ["조달수수료 (별도)", `${won.format(total.procurementFee)}원`],
-        ["할인 / 추가", `${quote.discountAmount ? `-${won.format(quote.discountAmount)}` : "-"} / ${quote.extraAmount ? `+${won.format(quote.extraAmount)}` : "-"}`],
-        ["세액 참고", `품목금액 기준 · 공급가액 ${won.format(total.supply)}원 · 부가세 ${won.format(total.tax)}원`],
-      ];
       summary.forEach((entry, index) => {
-        const y = bottomY + 40 + index * 42;
-        context.fillStyle = "#f1f4fa"; context.fillRect(684, y, 176, 42);
-        drawCell(context, entry[0], 684, y, 176, 42, { bold: true, align: "center", maxLines: 1, fontSize: 14 });
-        drawCell(context, entry[1], 860, y, 308, 42, { align: "right", maxLines: index === 3 ? 2 : 1, fontSize: index === 3 ? 11 : 14 });
+        const y = bottomY + 40 + index * summaryRowHeight;
+        context.fillStyle = entry.total ? "#eaf0ff" : "#f1f4fa";
+        context.fillRect(684, y, 250, summaryRowHeight);
+        if (entry.total) context.fillRect(934, y, 234, summaryRowHeight);
+        drawCell(context, entry.label, 684, y, 130, summaryRowHeight, { bold: true, align: "center", maxLines: 1, fontSize: entry.total ? 16 : 14 });
+        drawCell(context, entry.qualifier, 814, y, 120, summaryRowHeight, { align: "center", maxLines: 1, fontSize: 12 });
+        drawCell(context, entry.value, 934, y, 234, summaryRowHeight, {
+          bold: Boolean(entry.total), align: "right", maxLines: 1, fontSize: entry.total ? 20 : 14, fitSingleLine: true, minFontSize: 12,
+        });
       });
-      context.fillStyle = "#eaf0ff"; context.fillRect(684, bottomY + 215, 484, 45);
-      drawCell(context, "최종 합계", 684, bottomY + 215, 176, 45, { bold: true, align: "center", maxLines: 1, fontSize: 17 });
-      drawCell(context, `${won.format(total.total)}원`, 860, bottomY + 215, 308, 45, { bold: true, align: "right", maxLines: 1, fontSize: 22 });
       const signatureY = bottomY + bottomHeight + 50;
       context.fillStyle = "#17233f";
       context.font = '500 17px "Malgun Gothic", sans-serif';

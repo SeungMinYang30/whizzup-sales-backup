@@ -116,10 +116,14 @@ test("retroactive quotation refresh validates replacements and preserves Drive f
 });
 
 test("quotation outputs separate procurement fees from the product VAT reference", () => {
-  assert.match(page, /품목금액 \(VAT 포함\)/);
-  assert.match(page, /조달수수료 \(별도\)/);
-  assert.match(page, /세액 참고 \(품목금액 기준\)/);
-  assert.match(pdf, /품목금액 기준 · 공급가액/);
+  assert.match(page, /<dt>품목금액<\/dt><dd>VAT 포함<\/dd>/);
+  assert.match(page, /<dt>조달수수료<\/dt><dd>별도<\/dd>/);
+  assert.match(page, /<dt>공급가액<\/dt><dd>품목금액 기준<\/dd>/);
+  assert.match(page, /<dt>부가가치세<\/dt><dd>품목금액 기준<\/dd>/);
+  assert.match(pdf, /label: "공급가액", qualifier: "품목금액 기준"/);
+  assert.match(pdf, /label: "부가가치세", qualifier: "품목금액 기준"/);
+  assert.match(pdf, /표시 단가는 VAT·일반 수수료 포함, 조달수수료는 합계에 별도 반영/);
+  assert.match(pdf, /\["담당", "위즈업 영업팀"\]/);
 });
 
 test("institution detail keeps final quotations once and shows only legacy external reference files below", () => {

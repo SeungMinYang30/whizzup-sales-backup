@@ -30,8 +30,10 @@ test("관공서 견적서는 VAT 포함 금액, 조달 수수료, 세로 한 페
   const book = strFromU8(files["xl/workbook.xml"]);
   assert.match(sheet, /orientation="portrait" fitToWidth="1" fitToHeight="0"/);
   assert.match(sheet, /조달\s*수수료/);
-  assert.match(sheet, /품목금액 \(VAT 포함\)/);
-  assert.match(sheet, /조달수수료 \(별도\)/);
+  assert.match(sheet, />품목금액</);
+  assert.match(sheet, />VAT 포함</);
+  assert.match(sheet, />조달수수료</);
+  assert.match(sheet, />별도</);
   assert.match(sheet, /G2B · 26172954/);
   assert.match(sheet, /S2B · 2025071433792973/);
   assert.match(sheet, /학교장터/);
@@ -39,9 +41,12 @@ test("관공서 견적서는 VAT 포함 금액, 조달 수수료, 세로 한 페
   assert.match(sheet, /식별번호/);
   assert.match(sheet, /<c r="K19" s="0"><v>0<\/v><\/c>/);
   assert.doesNotMatch(sheet, /0\.54%/);
-  assert.match(sheet, /공급가액 \(품목금액 기준\)/);
-  assert.match(sheet, /부가가치세 \(품목금액 기준\)/);
-  assert.ok(sheet.indexOf("최종 합계") < sheet.indexOf("공급가액 (품목금액 기준)"));
+  assert.match(sheet, />공급가액</);
+  assert.match(sheet, />부가가치세</);
+  assert.match(sheet, />품목금액 기준</);
+  assert.ok(sheet.indexOf("최종 합계") < sheet.indexOf("공급가액"));
+  assert.doesNotMatch(sheet, />할인</);
+  assert.doesNotMatch(sheet, />추가비용</);
   assert.match(book, /_xlnm\.Print_Area/);
   assert.ok(files["xl/media/logo.png"]);
   assert.ok(files["xl/media/seal.png"]);
@@ -64,6 +69,23 @@ test("출력 빈 행은 요청한 수만큼만 Excel 품목표에 추가한다",
   assert.match(sheet, /<row r="19" ht="34"/);
   assert.match(sheet, /<row r="20" ht="34"/);
   assert.doesNotMatch(sheet, /<row r="21" ht="34"/);
+});
+
+test("할인과 추가비용은 금액이 입력된 견적에만 표시한다", () => {
+  const workbook = createQuotationWorkbook({
+    customerName: "테스트 기관",
+    quoteDate: "2026-08-16",
+    projectTitle: "조건부 금액 요약",
+    discountAmount: 100_000,
+    extraAmount: 50_000,
+    lines: [{ name: "테스트 제품", specification: "규격", quantity: 1, unit: "대", unitPrice: 1_000_000, note: "" }],
+  });
+  const sheet = strFromU8(unzipSync(workbook)["xl/worksheets/sheet1.xml"]);
+  assert.match(sheet, />할인</);
+  assert.match(sheet, />추가비용</);
+  assert.match(sheet, />VAT 포함</);
+  assert.match(sheet, />품목금액 기준</);
+  assert.doesNotMatch(sheet, /<mergeCell ref="G\d+:H\d+"\/>/);
 });
 
 test("교구 견적은 에어패스 공급자 정보와 직인을 사용하고 금액 다음에 비고가 바로 온다", async () => {
