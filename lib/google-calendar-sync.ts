@@ -708,7 +708,6 @@ export async function listReadOnlyGoogleCalendarRange(start: string, end: string
     `SELECT organization, label, scheduled_date, start_time, end_time, google_event_id
      FROM organization_schedules
      WHERE TRIM(COALESCE(deleted_at, '')) = ''
-       AND TRIM(COALESCE(google_event_id, '')) <> ''
        AND scheduled_date <= ?
        AND COALESCE(NULLIF(end_date, ''), scheduled_date) >= ?`,
   ).bind(end, start).all<{
