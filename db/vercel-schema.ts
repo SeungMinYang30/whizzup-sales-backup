@@ -1,7 +1,7 @@
 export const VERCEL_SCHEMA_VERSION =
-  "202608170001_construction_schedule_duplicate_archive";
+  "202608170002_construction_schedule_duplicate_archive_link_gap";
 export const VERCEL_PREVIOUS_SCHEMA_VERSION =
-  "202608160001_institution_business_budgets";
+  "202608170001_construction_schedule_duplicate_archive";
 export const VERCEL_BASE_SCHEMA_VERSION = "202608060007_full_backup_columns";
 
 const CONSTRUCTION_SCHEDULE_DUPLICATE_ARCHIVE_SQL = `
@@ -38,7 +38,10 @@ WHERE LOWER(BTRIM(COALESCE(sales.category, 'general'))) IN ('general', 'sales')
       AND (
         (
           sales.source_activity_id IS NOT NULL
-          AND construction.source_activity_id = sales.source_activity_id
+          AND (
+            construction.source_activity_id IS NULL
+            OR construction.source_activity_id = sales.source_activity_id
+          )
         )
         OR (
           sales.source_activity_id IS NULL
@@ -1640,3 +1643,4 @@ INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
 `;
+

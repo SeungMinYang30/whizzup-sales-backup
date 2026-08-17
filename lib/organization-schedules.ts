@@ -312,7 +312,10 @@ async function archiveConstructionDuplicateSalesSchedules(
            AND (
              (
                sales.source_activity_id IS NOT NULL
-               AND construction.source_activity_id = sales.source_activity_id
+               AND (
+                 construction.source_activity_id IS NULL
+                 OR construction.source_activity_id = sales.source_activity_id
+               )
              )
              OR (
                sales.source_activity_id IS NULL
@@ -1946,3 +1949,4 @@ export async function mergeActivityProgressSchedule(input: {
     );
   }
 }
+
