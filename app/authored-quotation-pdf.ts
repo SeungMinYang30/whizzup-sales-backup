@@ -1,8 +1,16 @@
 import type { AuthoredQuotation, AuthoredQuotationItem } from "../lib/authored-quotations";
 import { airpassEquipmentKitOutputLines, airpassEquipmentKitTotal } from "../lib/airpass-equipment-kit";
-import { quotationDownloadName, quotationFileStem } from "../lib/quotation-file-name";
+import { fieldInspectionDownloadName, quotationDownloadName, quotationFileStem } from "../lib/quotation-file-name";
 import { AIRPASS_COMPANY, AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "../lib/airpass-company";
 import { formatQuotationItemNameForOutput } from "../lib/quotation-output-text";
+import {
+  FIELD_INSPECTION_NOTICE,
+  FIELD_SUPPORT_COMPANY,
+  fieldInspectionEquipmentLines,
+  fieldInspectionProductLines,
+  fieldInspectionSupplierText,
+  fieldInspectionVisitorName,
+} from "../lib/quotation-inspection";
 
 export { quotationFileStem } from "../lib/quotation-file-name";
 
@@ -540,6 +548,274 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
   return pages;
 }
 
+type PdfCanvasPage = { blob: Blob; width: number; height: number };
+
+function inspectionCanvas() {
+  const canvas = document.createElement("canvas");
+  canvas.width = PAGE_WIDTH * PDF_RENDER_SCALE;
+  canvas.height = PAGE_HEIGHT * PDF_RENDER_SCALE;
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context) throw new Error("현장 검수서류 PDF 화면을 준비하지 못했습니다.");
+  context.scale(PDF_RENDER_SCALE, PDF_RENDER_SCALE);
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, PAGE_WIDTH, PAGE_HEIGHT);
+  return { canvas, context };
+}
+
+async function inspectionCanvasPage(canvas: HTMLCanvasElement): Promise<PdfCanvasPage> {
+  const page = { blob: await canvasJpeg(canvas), width: canvas.width, height: canvas.height };
+  canvas.width = 1;
+  canvas.height = 1;
+  return page;
+}
+
+function inspectionHeading(
+  context: CanvasRenderingContext2D,
+  title: string,
+  subtitle: string,
+  pageLabel: string,
+) {
+  context.fillStyle = "#17233f";
+  context.textAlign = "center";
+  context.font = '700 42px "Malgun Gothic", "Noto Sans KR", sans-serif';
+  context.fillText(title, PAGE_WIDTH / 2, 96);
+  context.fillStyle = "#78859b";
+  context.font = '400 16px "Malgun Gothic", "Noto Sans KR", sans-serif';
+  context.fillText(subtitle, PAGE_WIDTH / 2, 132);
+  context.textAlign = "right";
+  context.font = '500 14px "Malgun Gothic", "Noto Sans KR", sans-serif';
+  context.fillText(pageLabel, 1168, 1690);
+  context.textAlign = "left";
+}
+
+function inspectionSection(context: CanvasRenderingContext2D, title: string, y: number) {
+  context.fillStyle = "#17233f";
+  context.fillRect(72, y, 1096, 48);
+  context.fillStyle = "#ffffff";
+  context.font = '700 18px "Malgun Gothic", "Noto Sans KR", sans-serif';
+  context.fillText(title, 96, y + 31);
+}
+
+function inspectionBox(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  fill = "#ffffff",
+) {
+  context.fillStyle = fill;
+  context.fillRect(x, y, width, height);
+  context.strokeStyle = "#aebbd1";
+  context.lineWidth = 1;
+  context.strokeRect(x, y, width, height);
+}
+
+function inspectionField(
+  context: CanvasRenderingContext2D,
+  label: string,
+  value: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  options: { labelWidth?: number; manual?: boolean; maxLines?: number; fontSize?: number } = {},
+) {
+  const labelWidth = options.labelWidth ?? 158;
+  inspectionBox(context, x, y, labelWidth, height, "#edf2fb");
+  inspectionBox(context, x + labelWidth, y, width - labelWidth, height, options.manual ? "#fffbeb" : "#ffffff");
+  drawCell(context, label, x, y, labelWidth, height, { bold: true, align: "center", maxLines: 2, fontSize: 16 });
+  drawCell(context, value, x + labelWidth, y, width - labelWidth, height, {
+    align: options.manual ? "center" : "left",
+    maxLines: options.maxLines ?? 2,
+    fontSize: options.fontSize ?? 16,
+  });
+}
+
+async function renderFieldInspectionSummaryPage(quote: AuthoredQuotation) {
+  const { canvas, context } = inspectionCanvas();
+  inspectionHeading(context, "현장 작동·수량 확인서", "제품 작동 상태와 납품·교구 수량을 현장에서 함께 확인합니다.", "검수서류");
+  let y = 166;
+  inspectionSection(context, "기본정보", y); y += 48;
+  inspectionField(context, "기관명", quote.organization, 72, y, 1096, 64); y += 64;
+  inspectionField(context, "방문일", "20____.____.____", 72, y, 548, 62, { manual: true });
+  inspectionField(context, "견적번호", quote.quoteNumber, 620, y, 548, 62); y += 62;
+  inspectionField(context, "사업명", quote.projectTitle || "제품 공급", 72, y, 1096, 68, { maxLines: 3 }); y += 68;
+  const suppliers = fieldInspectionSupplierText(quote);
+  context.font = '400 15px "Malgun Gothic", "Noto Sans KR", sans-serif';
+  const supplierLines = splitText(context, suppliers, 920, 8);
+  const supplierHeight = Math.max(68, 28 + supplierLines.length * 21);
+  inspectionField(context, "제조·공급사", suppliers, 72, y, 1096, supplierHeight, { maxLines: 8, fontSize: 15 }); y += supplierHeight;
+  inspectionField(context, "현장 지원사", FIELD_SUPPORT_COMPANY, 72, y, 548, 64);
+  inspectionField(context, "위즈업 방문자", fieldInspectionVisitorName(quote), 620, y, 548, 64, { manual: true }); y += 76;
+
+  inspectionSection(context, "확인결과", y); y += 48;
+  const resultRows = [
+    ["제품 기본 작동", "□ 정상", "□ 이상"],
+    ["견적 제품 수량", "□ 일치", "□ 불일치"],
+    ["교구 수량", "□ 일치", "□ 부족"],
+  ];
+  resultRows.forEach(([label, left, right]) => {
+    inspectionBox(context, 72, y, 650, 62, "#ffffff");
+    inspectionBox(context, 722, y, 223, 62, "#fffbeb");
+    inspectionBox(context, 945, y, 223, 62, "#fffbeb");
+    drawCell(context, label, 72, y, 650, 62, { bold: true, fontSize: 16 });
+    drawCell(context, left, 722, y, 223, 62, { align: "center", fontSize: 16 });
+    drawCell(context, right, 945, y, 223, 62, { align: "center", fontSize: 16 });
+    y += 62;
+  });
+  y += 14;
+  inspectionSection(context, "이상·누락 및 요청사항", y); y += 48;
+  const memoHeight = Math.max(150, 1_265 - y);
+  inspectionBox(context, 72, y, 1096, memoHeight, "#fffbeb");
+  context.fillStyle = "#9aa4b4";
+  context.font = '400 14px "Malgun Gothic", sans-serif';
+  context.fillText("현장에서 확인한 이상, 누락 수량, 추가 요청사항을 작성해 주세요.", 96, y + 30);
+  y += memoHeight + 16;
+  inspectionSection(context, "확인자 서명", y); y += 48;
+  inspectionBox(context, 72, y, 548, 44, "#edf2fb");
+  inspectionBox(context, 620, y, 548, 44, "#edf2fb");
+  drawCell(context, "기관 담당자", 72, y, 548, 44, { bold: true, align: "center", fontSize: 16 });
+  drawCell(context, "위즈업 방문자", 620, y, 548, 44, { bold: true, align: "center", fontSize: 16 });
+  y += 44;
+  inspectionBox(context, 72, y, 548, 122, "#fffbeb");
+  inspectionBox(context, 620, y, 548, 122, "#fffbeb");
+  drawCell(context, "성명: ____________________\n\n서명: ____________________", 72, y, 548, 122, { align: "center", maxLines: 4, fontSize: 15 });
+  drawCell(context, "성명: ____________________\n\n서명: ____________________", 620, y, 548, 122, { align: "center", maxLines: 4, fontSize: 15 });
+  y += 138;
+  inspectionBox(context, 72, y, 1096, 62, "#f4f7fc");
+  drawCell(context, FIELD_INSPECTION_NOTICE, 86, y, 1068, 62, { align: "center", maxLines: 2, fontSize: 12 });
+  return inspectionCanvasPage(canvas);
+}
+
+function inspectionRowHeight(
+  context: CanvasRenderingContext2D,
+  values: string[],
+  widths: number[],
+) {
+  context.font = '400 15px "Malgun Gothic", "Noto Sans KR", sans-serif';
+  const lines = values.map((value, index) => splitText(context, value, Math.max(20, widths[index] - 16), 4).length);
+  return Math.max(64, 24 + Math.max(...lines) * 20);
+}
+
+function paginateInspectionRows<T>(rows: T[], heights: number[], capacity = 1_310) {
+  const pages: Array<Array<{ row: T; height: number; index: number }>> = [];
+  let current: Array<{ row: T; height: number; index: number }> = [];
+  let used = 0;
+  rows.forEach((row, index) => {
+    const height = heights[index];
+    if (current.length && used + height > capacity) {
+      pages.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push({ row, height, index });
+    used += height;
+  });
+  if (current.length || !pages.length) pages.push(current);
+  return pages;
+}
+
+async function renderProductInspectionPages(quote: AuthoredQuotation) {
+  const lines = fieldInspectionProductLines(quote);
+  const measurement = document.createElement("canvas").getContext("2d");
+  if (!measurement) throw new Error("제품 확인 목록의 행 높이를 계산하지 못했습니다.");
+  const widths = [48, 188, 228, 76, 70, 86, 160, 178, 62];
+  const heights = lines.map((line) => inspectionRowHeight(measurement, ["", line.name, line.specification, "", line.unit, "", "", "", ""], widths));
+  const chunks = paginateInspectionRows(lines, heights);
+  const pages: PdfCanvasPage[] = [];
+  for (let pageIndex = 0; pageIndex < chunks.length; pageIndex += 1) {
+    const { canvas, context } = inspectionCanvas();
+    inspectionHeading(context, "견적 제품 현장 확인 목록", `${quote.organization} · ${quote.quoteNumber}`, `제품 확인 ${pageIndex + 1} / ${chunks.length}`);
+    const columns = [72];
+    widths.forEach((width) => columns.push(columns[columns.length - 1] + width));
+    const top = 174;
+    const headings = ["No", "품명", "규격", "견적", "단위", "현장", "작동 확인", "수량 확인", "비고"];
+    context.fillStyle = "#17233f";
+    context.fillRect(72, top, 1096, 56);
+    headings.forEach((heading, index) => {
+      context.fillStyle = "#ffffff";
+      context.font = '700 14px "Malgun Gothic", sans-serif';
+      context.textAlign = "center";
+      context.fillText(heading, columns[index] + widths[index] / 2, top + 35);
+    });
+    let y = top + 56;
+    chunks[pageIndex].forEach(({ row, height, index }) => {
+      const values = [String(index + 1), row.name, row.specification, won.format(row.quantity), row.unit, "", "□ 정상  □ 이상", "□ 일치  □ 불일치", ""];
+      values.forEach((value, columnIndex) => {
+        inspectionBox(context, columns[columnIndex], y, widths[columnIndex], height, [5, 6, 7, 8].includes(columnIndex) ? "#fffbeb" : "#ffffff");
+        drawCell(context, value, columns[columnIndex], y, widths[columnIndex], height, {
+          align: [0, 3, 4, 5, 6, 7].includes(columnIndex) ? "center" : "left",
+          maxLines: columnIndex === 1 || columnIndex === 2 ? 4 : 2,
+          fontSize: columnIndex >= 6 ? 13 : 15,
+        });
+      });
+      y += height;
+    });
+    context.fillStyle = "#78859b";
+    context.font = '400 13px "Malgun Gothic", sans-serif';
+    context.textAlign = "left";
+    context.fillText("※ 최종 저장된 견적의 품목·수량이 자동 입력되며 금액·원가·마진은 표시하지 않습니다.", 72, Math.min(1645, y + 32));
+    pages.push(await inspectionCanvasPage(canvas));
+  }
+  return pages;
+}
+
+async function renderEquipmentInspectionPages(quote: AuthoredQuotation) {
+  const lines = fieldInspectionEquipmentLines(quote);
+  if (!lines.length) return [];
+  const measurement = document.createElement("canvas").getContext("2d");
+  if (!measurement) throw new Error("교구 확인 목록의 행 높이를 계산하지 못했습니다.");
+  const widths = [48, 310, 82, 86, 92, 200, 278];
+  const heights = lines.map((line) => inspectionRowHeight(measurement, ["", line.name, line.unit, "", "", "", ""], widths));
+  const chunks = paginateInspectionRows(lines, heights);
+  const pages: PdfCanvasPage[] = [];
+  for (let pageIndex = 0; pageIndex < chunks.length; pageIndex += 1) {
+    const { canvas, context } = inspectionCanvas();
+    inspectionHeading(context, "교구 현장 수량 확인 목록", `${quote.organization} · ${quote.quoteNumber}`, `교구 확인 ${pageIndex + 1} / ${chunks.length}`);
+    const columns = [72];
+    widths.forEach((width) => columns.push(columns[columns.length - 1] + width));
+    const top = 174;
+    const headings = ["No", "교구명", "단위", "견적", "현장", "확인 결과", "비고"];
+    context.fillStyle = "#17233f";
+    context.fillRect(72, top, 1096, 56);
+    headings.forEach((heading, index) => {
+      context.fillStyle = "#ffffff";
+      context.font = '700 14px "Malgun Gothic", sans-serif';
+      context.textAlign = "center";
+      context.fillText(heading, columns[index] + widths[index] / 2, top + 35);
+    });
+    let y = top + 56;
+    chunks[pageIndex].forEach(({ row, height, index }) => {
+      const values = [String(index + 1), row.name, row.unit, won.format(row.quantity), "", "□ 일치  □ 부족", ""];
+      values.forEach((value, columnIndex) => {
+        inspectionBox(context, columns[columnIndex], y, widths[columnIndex], height, [4, 5, 6].includes(columnIndex) ? "#fffbeb" : "#ffffff");
+        drawCell(context, value, columns[columnIndex], y, widths[columnIndex], height, {
+          align: [0, 2, 3, 4, 5].includes(columnIndex) ? "center" : "left",
+          maxLines: columnIndex === 1 ? 4 : 2,
+          fontSize: columnIndex === 5 ? 13 : 15,
+        });
+      });
+      y += height;
+    });
+    context.fillStyle = "#78859b";
+    context.font = '400 13px "Malgun Gothic", sans-serif';
+    context.textAlign = "left";
+    context.fillText("※ 교구 세부견적의 교구명·단위·견적수량이 자동 입력됩니다.", 72, Math.min(1645, y + 32));
+    pages.push(await inspectionCanvasPage(canvas));
+  }
+  return pages;
+}
+
+async function renderFieldInspectionPages(quote: AuthoredQuotation) {
+  const [summary, products, equipment] = await Promise.all([
+    renderFieldInspectionSummaryPage(quote),
+    renderProductInspectionPages(quote),
+    renderEquipmentInspectionPages(quote),
+  ]);
+  return [summary, ...products, ...equipment];
+}
+
 async function jpegPagesToPdf(pages: Array<{ blob: Blob; width: number; height: number }>) {
   const encoder = new TextEncoder();
   const objects: Uint8Array[] = [];
@@ -588,4 +864,13 @@ async function jpegPagesToPdf(pages: Array<{ blob: Blob; width: number; height: 
 export async function createAuthoredQuotationPdf(quote: AuthoredQuotationPdfInput) {
   const blob = await jpegPagesToPdf(await renderPages(quote));
   return new File([blob], quotationDownloadName(quote, "pdf"), { type: "application/pdf" });
+}
+
+export async function createFieldInspectionPdf(quote: AuthoredQuotation, region = "") {
+  const [quotationPages, inspectionPages] = await Promise.all([
+    renderPages(quote),
+    renderFieldInspectionPages(quote),
+  ]);
+  const blob = await jpegPagesToPdf([...quotationPages, ...inspectionPages]);
+  return new File([blob], fieldInspectionDownloadName({ ...quote, region }, "pdf"), { type: "application/pdf" });
 }

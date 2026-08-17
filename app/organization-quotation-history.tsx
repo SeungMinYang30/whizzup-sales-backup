@@ -2,11 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { AuthoredQuotation } from "../lib/authored-quotations";
+import { createFieldInspectionPdfFile, createFieldInspectionWorkbookFile } from "./field-inspection-documents";
 
 const won = new Intl.NumberFormat("ko-KR");
 
 function safeFileName(value: string) {
   return value.trim().replace(/[\\/:*?"<>|]/g, "_") || "견적서";
+}
+
+function downloadGeneratedFile(file: File) {
+  const url = URL.createObjectURL(file);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = file.name;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
 export default function OrganizationQuotationHistory({
@@ -36,6 +48,8 @@ export default function OrganizationQuotationHistory({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadVersion, setReloadVersion] = useState(0);
+  const [inspectionAction, setInspectionAction] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -130,6 +144,44 @@ export default function OrganizationQuotationHistory({
     ) : (
       <button className="quotation-history-action" type="button" disabled>{label}</button>
     );
+  const viewInspectionPdf = async (quote: AuthoredQuotation) => {
+    const tab = window.open(`/pdf-opening.html?request=${Date.now()}`, "_blank");
+    if (!tab) {
+      setActionMessage("새 탭이 차단되었습니다. 팝업 및 리디렉션을 허용한 뒤 다시 눌러 주세요.");
+      return;
+    }
+    tab.opener = null;
+    const action = `${quote.id}:view`;
+    setInspectionAction(action);
+    setActionMessage("");
+    try {
+      const file = await createFieldInspectionPdfFile(quote);
+      const url = URL.createObjectURL(file);
+      tab.location.replace(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (actionError) {
+      tab.close();
+      setActionMessage(actionError instanceof Error ? actionError.message : "현장 검수서류 PDF를 만들지 못했습니다.");
+    } finally {
+      setInspectionAction("");
+    }
+  };
+  const downloadInspectionPdf = async (quote: AuthoredQuotation) => {
+    const action = `${quote.id}:pdf`;
+    setInspectionAction(action);
+    setActionMessage("");
+    try { downloadGeneratedFile(await createFieldInspectionPdfFile(quote)); }
+    catch (actionError) { setActionMessage(actionError instanceof Error ? actionError.message : "현장 검수서류 PDF를 만들지 못했습니다."); }
+    finally { setInspectionAction(""); }
+  };
+  const downloadInspectionExcel = async (quote: AuthoredQuotation) => {
+    const action = `${quote.id}:xlsx`;
+    setInspectionAction(action);
+    setActionMessage("");
+    try { downloadGeneratedFile(await createFieldInspectionWorkbookFile(quote)); }
+    catch (actionError) { setActionMessage(actionError instanceof Error ? actionError.message : "현장 검수서류 Excel을 만들지 못했습니다."); }
+    finally { setInspectionAction(""); }
+  };
   return <>
     {readOnly && (loading || currentItems.length > 0 || constructionAmount > 0) ? <section className="equipment-section equipment-section-readonly">
       <div className="history-section-heading equipment-section-heading">
@@ -162,6 +214,7 @@ export default function OrganizationQuotationHistory({
     </section> : null}
     <section className="organization-quotation-history">
     <header><div><span className="section-kicker">QUOTATION HISTORY</span><h3>견적서 내역</h3>{readOnly && <p>최종 저장된 견적서와 PDF·Excel 파일을 확인합니다.</p>}</div><span>{visibleQuotes.length}건</span></header>
+    {actionMessage && <p className="quotation-history-action-message" role="status">{actionMessage}</p>}
     {error ? <div className="quotation-history-empty" role="alert"><p>{error}</p><button className="quotation-history-action primary" type="button" onClick={() => setReloadVersion((version) => version + 1)}>다시 불러오기</button></div> : loading ? <p>견적서를 불러오는 중입니다.</p> : visibleQuotes.length ? <div>{visibleQuotes.map((quote) => <article key={quote.id}>
       <span className="quotation-history-main"><b>{quote.quoteNumber}</b><small>{quote.quoteDate} · {quote.status === "final" ? "현재 최종본" : "작성 중"}</small>{displayedBudgets(quote).length > 0 ? <small>연결 예산 · {displayedBudgets(quote).map((budget) => `${budget.name} ${won.format(budget.allocatedAmount)}원`).join(" · ")}</small> : <small>예산 연결 필요</small>}</span>
       <div className="quotation-history-summary"><strong>{won.format(quote.totalAmount)}원</strong><small>품목 {quote.items.filter((item) => item.productId !== "__construction_cost__").length}개{quote.items.some((item) => item.productId === "__construction_cost__") ? ` · 공사비 ${won.format(quote.items.filter((item) => item.productId === "__construction_cost__").reduce((sum, item) => sum + item.amount, 0))}원` : ""}</small><em>{quote.status === "final" ? "최종" : "임시"}</em></div>
@@ -176,6 +229,14 @@ export default function OrganizationQuotationHistory({
           </div>
         </details>}
         {quote.status === "final" && fileAction(quote.excelUrl, "Excel 다운로드")}
+        {quote.status === "final" && <details className="quotation-output-menu quotation-output-menu-inspection">
+          <summary>현장 검수서류</summary>
+          <div className="quotation-output-menu-panel">
+            <button type="button" disabled={inspectionAction.startsWith(`${quote.id}:`)} onClick={() => void viewInspectionPdf(quote)}>PDF 보기·인쇄</button>
+            <button type="button" disabled={inspectionAction.startsWith(`${quote.id}:`)} onClick={() => void downloadInspectionPdf(quote)}>PDF 다운로드</button>
+            <button type="button" disabled={inspectionAction.startsWith(`${quote.id}:`)} onClick={() => void downloadInspectionExcel(quote)}>Excel 통합 다운로드</button>
+          </div>
+        </details>}
         {quote.status === "final" && quote.sourceOriginalUrl && fileAction(quote.sourceOriginalUrl, "참고 원본")}
         {onOpen && (canEdit || !readOnly) ? <button className="quotation-history-action primary" type="button" onClick={() => onOpen(quote, "edit")}>{quote.status === "draft" ? "이어서 작성" : "견적 수정"}</button> : null}
       </div>

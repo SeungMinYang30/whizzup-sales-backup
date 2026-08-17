@@ -20,6 +20,7 @@ import { createConsortiumSettlementPdf, createInternalProfitReportPdf } from "./
 import { hasProcurementSignal, procurementNumbersFromText } from "../lib/procurement-product";
 import { createAuthoredQuotationPdf } from "./authored-quotation-pdf";
 import { quotationDownloadName } from "../lib/quotation-file-name";
+import { createFieldInspectionPdfFile, createFieldInspectionWorkbookFile } from "./field-inspection-documents";
 import { originalQuotationDateByRoot, quotationListDateLabels } from "../lib/quotation-list-dates";
 import {
   contentSubstitutionBaseEarningRate,
@@ -586,6 +587,7 @@ export default function QuotationManagementPage({
   const [printPortalReady, setPrintPortalReady] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [quotationActionId, setQuotationActionId] = useState(0);
+  const [inspectionDocumentAction, setInspectionDocumentAction] = useState("");
   const [quotationFileJobVersion, setQuotationFileJobVersion] = useState(0);
   const [bulkFileRefresh, setBulkFileRefresh] = useState({ running: false, completed: 0, total: 0, failed: 0 });
   const [equipmentKitEditor, setEquipmentKitEditor] = useState<EquipmentKitEditor | null>(null);
@@ -2382,6 +2384,57 @@ export default function QuotationManagementPage({
     }
   }
 
+  async function viewFieldInspectionDocuments(quote: AuthoredQuotation) {
+    const tab = reservePdfTab();
+    if (!tab) {
+      setMessage("새 탭이 차단되었습니다. 브라우저의 팝업 및 리디렉션 허용 후 검수서류 PDF 보기를 다시 눌러 주세요.");
+      return;
+    }
+    const action = `${quote.id}:inspection-pdf-view`;
+    setInspectionDocumentAction(action);
+    setMessage("현장 검수서류 PDF를 만들고 있습니다.");
+    try {
+      const file = await createFieldInspectionPdfFile(quote, quotationRegion(quote));
+      if (!openPdfBlobInReservedTab(file, tab)) throw new Error("검수서류 PDF를 새 탭에서 열지 못했습니다.");
+      setMessage("현장 검수서류 PDF를 새 탭에서 열었습니다.");
+    } catch (error) {
+      tab.close();
+      setMessage(error instanceof Error ? error.message : "현장 검수서류 PDF를 만들지 못했습니다.");
+    } finally {
+      setInspectionDocumentAction("");
+    }
+  }
+
+  async function downloadFieldInspectionPdf(quote: AuthoredQuotation) {
+    const action = `${quote.id}:inspection-pdf-download`;
+    setInspectionDocumentAction(action);
+    setMessage("현장 검수서류 PDF를 만들고 있습니다.");
+    try {
+      const file = await createFieldInspectionPdfFile(quote, quotationRegion(quote));
+      downloadBlob(file, file.name);
+      setMessage("현장 검수서류 PDF를 다운로드했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "현장 검수서류 PDF를 만들지 못했습니다.");
+    } finally {
+      setInspectionDocumentAction("");
+    }
+  }
+
+  async function downloadFieldInspectionExcel(quote: AuthoredQuotation) {
+    const action = `${quote.id}:inspection-xlsx-download`;
+    setInspectionDocumentAction(action);
+    setMessage("현장 검수서류 Excel을 만들고 있습니다.");
+    try {
+      const file = await createFieldInspectionWorkbookFile(quote, quotationRegion(quote));
+      downloadBlob(file, file.name);
+      setMessage("현장 검수서류 Excel을 다운로드했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "현장 검수서류 Excel을 만들지 못했습니다.");
+    } finally {
+      setInspectionDocumentAction("");
+    }
+  }
+
   async function deleteQuotation(quote: AuthoredQuotation) {
     if (quotationActionId || !window.confirm(
       `${quote.quoteNumber}\n${quote.quoteDate} · ${won.format(quote.totalAmount)}원\n\n이 견적서를 휴지통으로 이동할까요?`,
@@ -2713,6 +2766,14 @@ export default function QuotationManagementPage({
               </div>
             </details>}
             {!embedded && <button className="app-button app-button-secondary app-button-small" type="button" disabled={!quote.excelUrl || quote.driveSyncStatus !== "ready"} onClick={() => void downloadSavedExcel(quote)}>Excel 다운로드</button>}
+            {!embedded && <details className="quotation-output-menu quotation-output-menu-inspection">
+              <summary>현장 검수서류</summary>
+              <div className="quotation-output-menu-panel">
+                <button type="button" disabled={inspectionDocumentAction.startsWith(`${quote.id}:`)} onClick={() => void viewFieldInspectionDocuments(quote)}>PDF 보기·인쇄</button>
+                <button type="button" disabled={inspectionDocumentAction.startsWith(`${quote.id}:`)} onClick={() => void downloadFieldInspectionPdf(quote)}>PDF 다운로드</button>
+                <button type="button" disabled={inspectionDocumentAction.startsWith(`${quote.id}:`)} onClick={() => void downloadFieldInspectionExcel(quote)}>Excel 통합 다운로드</button>
+              </div>
+            </details>}
             {quote.driveSyncStatus === "error" && <button className="app-button app-button-secondary app-button-small" type="button" disabled={quotationFileJobsRef.current.has(quote.id)} onClick={() => void processQuotationFiles(quote)}>파일 재시도</button>}
             <button className="app-button app-button-primary app-button-small" type="button" onClick={() => openQuotation(quote)}>견적 수정</button>
           </> : <button className="app-button app-button-primary app-button-small" type="button" onClick={() => openQuotation(quote)}>이어서 작성</button>}
@@ -2757,6 +2818,14 @@ export default function QuotationManagementPage({
                   <button type="button" onClick={() => { const saved = draft.id ? quotes.find((quote) => quote.id === draft.id) : undefined; if (saved) void downloadSavedPdf(saved); }} disabled={!draft.id || !quotes.some((quote) => quote.id === draft.id && Boolean(quote.pdfUrl))}>다운로드</button>
                 </div>
               </details>
+              {draft.id && draft.status === "final" && <details className="quotation-output-menu quotation-output-menu-topbar quotation-output-menu-inspection">
+                <summary>현장 검수서류</summary>
+                <div className="quotation-output-menu-panel">
+                  <button type="button" disabled={inspectionDocumentAction.startsWith(`${draft.id}:`) || !quotes.some((quote) => quote.id === draft.id)} onClick={() => { const saved = quotes.find((quote) => quote.id === draft.id); if (saved) void viewFieldInspectionDocuments(saved); }}>PDF 보기·인쇄</button>
+                  <button type="button" disabled={inspectionDocumentAction.startsWith(`${draft.id}:`) || !quotes.some((quote) => quote.id === draft.id)} onClick={() => { const saved = quotes.find((quote) => quote.id === draft.id); if (saved) void downloadFieldInspectionPdf(saved); }}>PDF 다운로드</button>
+                  <button type="button" disabled={inspectionDocumentAction.startsWith(`${draft.id}:`) || !quotes.some((quote) => quote.id === draft.id)} onClick={() => { const saved = quotes.find((quote) => quote.id === draft.id); if (saved) void downloadFieldInspectionExcel(saved); }}>Excel 통합 다운로드</button>
+                </div>
+              </details>}
             </div>
             <div className="quote-topbar-action-group quote-topbar-navigation-actions">
               {institutions.some((item) => item.organization === draft.organization && item.businessRound === draft.businessRound) && <button className="app-button app-button-secondary" type="button" onClick={() => { closeEditor(); onOpenOrganization?.(draft.organization, draft.businessRound); }}>기관 상세 보기</button>}

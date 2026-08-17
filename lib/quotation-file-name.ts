@@ -103,3 +103,10 @@ export function quotationDownloadName(
 ) {
   return quotationGeneratedFileName(quote, extension);
 }
+
+export function fieldInspectionDownloadName(
+  quote: QuotationFileNameInput,
+  extension: "pdf" | "xlsx",
+) {
+  return withExtension(`${quotationIdentityStem(quote)}_04_현장검수서류`, extension);
+}

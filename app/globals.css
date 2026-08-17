@@ -13653,6 +13653,7 @@ button:is(
 .quotation-history-summary strong { color: #223352; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .quotation-history-summary em { padding: 4px 7px; border-radius: 999px; background: #e9f7f1; color: #16805d; white-space: nowrap; }
 .quotation-history-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
+.quotation-history-action-message { margin: 0; padding: 10px 14px; border-bottom: 1px solid #dde5f1; background: #fff8e8; color: #8a5a00; font-size: 12px; font-weight: 700; }
 .quotation-output-menu { position: relative; flex: 0 0 auto; }
 .quotation-output-menu > summary {
   display: inline-flex;
