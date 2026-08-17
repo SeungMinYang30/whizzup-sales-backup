@@ -27,12 +27,25 @@ test("teaching-aid support is stored as an internal margin deduction only", () =
   assert.match(page, /quotation-teaching-aid-support[\s\S]*?item\.equipmentKit \? <label className=\{\`quotation-complimentary-toggle/);
   assert.equal(page.match(/quotation-complimentary-toggle/g)?.length, 1);
   assert.match(page, /교구 세트 무상 제공/);
+  assert.match(page, /<dt>교구 제공<\/dt>/);
+  assert.match(page, /numbers\.teachingAidSupportCost/);
+  assert.match(page, /<dt>기타 내부 원가<\/dt>/);
+  assert.match(page, /<dt>내부 원가 합계<\/dt>/);
+  assert.match(page, /item\.equipmentKit \? "교구 제공 비용"/);
   assert.match(page, /const complimentaryAmount = Math\.max\(0, item\.quantity\) \* Math\.max\(0, item\.unitPrice\)/);
   assert.match(page, /currentSupportAmount > 0 \? currentSupportAmount : complimentaryAmount/);
   assert.match(page, /currentSupportAmount === complimentaryAmount \? 0 : currentSupportAmount/);
   assert.match(page, /수량 × 단가는 내부 차감 금액에 자동 반영합니다/);
   assert.doesNotMatch(pdf, /teachingAidSupport/);
   assert.doesNotMatch(workbook, /teachingAidSupport/);
+});
+
+test("교구 세부 PDF는 긴 주소를 넓은 행에 두고 업태와 종목을 분리한다", () => {
+  assert.match(pdf, /drawCell\(context, "주소", 72, addressY, 102, 48/);
+  assert.match(pdf, /AIRPASS_COMPANY\.address, 174, addressY, 994, 48/);
+  assert.match(pdf, /drawCell\(context, "업태", 72, businessY/);
+  assert.match(pdf, /drawCell\(context, "종목", 520, businessY/);
+  assert.doesNotMatch(pdf, /"업태·종목", `\$\{AIRPASS_COMPANY\.businessType\}/);
 });
 
 test("construction item values use the same readable type scale as quote items", () => {

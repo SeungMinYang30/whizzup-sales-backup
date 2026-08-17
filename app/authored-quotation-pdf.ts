@@ -446,8 +446,8 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
         ["수신", quote.organization, "상호", AIRPASS_COMPANY.name],
         ["견적명", quote.projectTitle || "제품 공급", "사업자번호", AIRPASS_COMPANY.businessNumber],
         ["계약구분", "수의계약", "대표자", AIRPASS_COMPANY.representative],
-        ["납품조건", "발주 후 일정 협의", "주소", AIRPASS_COMPANY.address],
-        ["유효기간", quote.validUntil ? `${quote.validUntil}까지` : "견적일로부터 30일", "업태·종목", `${AIRPASS_COMPANY.businessType} / ${AIRPASS_COMPANY.businessItems}`],
+        ["납품조건", "발주 후 일정 협의", "", ""],
+        ["유효기간", quote.validUntil ? `${quote.validUntil}까지` : "견적일로부터 30일", "", ""],
       ];
       partyRows.forEach((row, index) => {
         const y = 208 + index * 40;
@@ -461,13 +461,33 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
         context.strokeStyle = "#cfd8ea";
         context.strokeRect(72, y, 1096, 40);
       });
-      const amountY = 420;
+      const addressY = 408;
+      context.fillStyle = "#f1f4fa";
+      context.fillRect(72, addressY, 102, 48);
+      drawCell(context, "주소", 72, addressY, 102, 48, { bold: true, align: "center", maxLines: 1, fontSize: 14 });
+      drawCell(context, AIRPASS_COMPANY.address, 174, addressY, 994, 48, { align: "left", maxLines: 2, fontSize: 13 });
+      context.strokeStyle = "#cfd8ea";
+      context.strokeRect(72, addressY, 1096, 48);
+      const businessY = addressY + 48;
+      context.fillStyle = "#f1f4fa";
+      context.fillRect(72, businessY, 102, 48);
+      context.fillRect(520, businessY, 102, 48);
+      drawCell(context, "업태", 72, businessY, 102, 48, { bold: true, align: "center", maxLines: 1, fontSize: 14 });
+      drawCell(context, AIRPASS_COMPANY.businessType, 174, businessY, 346, 48, { align: "center", maxLines: 2, fontSize: 13 });
+      drawCell(context, "종목", 520, businessY, 102, 48, { bold: true, align: "center", maxLines: 1, fontSize: 14 });
+      drawCell(context, AIRPASS_COMPANY.businessItems, 622, businessY, 546, 48, { align: "left", maxLines: 2, fontSize: 13 });
+      context.strokeStyle = "#cfd8ea";
+      context.strokeRect(72, businessY, 1096, 48);
+      context.beginPath(); context.moveTo(174, addressY); context.lineTo(174, businessY + 48); context.stroke();
+      context.beginPath(); context.moveTo(520, businessY); context.lineTo(520, businessY + 48); context.stroke();
+      context.beginPath(); context.moveTo(622, businessY); context.lineTo(622, businessY + 48); context.stroke();
+      const amountY = 524;
       context.fillStyle = "#eaf0ff";
       context.fillRect(72, amountY, 1096, 60);
       drawCell(context, "견적금액 (VAT 포함)", 72, amountY, 350, 60, { bold: true, align: "center", maxLines: 1, fontSize: 17 });
       drawCell(context, parentItem.complimentary ? "무상 제공" : `${won.format(airpassEquipmentKitTotal(parentItem.equipmentKit))}원`, 422, amountY, 746, 60, { bold: true, align: "right", maxLines: 1, fontSize: 27 });
 
-      const tableTop = 500;
+      const tableTop = 604;
       const columns = [72, 118, 560, 650, 730, 900, 1060, 1168];
       const headings = ["No", "품명", "수량", "단위", "단가", "금액", "비고"];
       context.fillStyle = "#eaf0ff";

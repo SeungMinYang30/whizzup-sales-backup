@@ -54,7 +54,8 @@ test("formal quotation supports catalog items, direct-consortium margin, seal an
   assert.match(page, /executionType/);
   assert.match(page, /consortiumRate/);
   assert.match(page, /whizzup-seal\.png/);
-  assert.match(page, /window\.print/);
+  assert.match(page, /reservePdfTab/);
+  assert.match(page, /openPdfBlobInReservedTab/);
   assert.match(styles, /@media print/);
   assert.match(styles, /quotation-profit-panel/);
 });
@@ -84,8 +85,9 @@ test("내부 수익 보고는 복사·Excel·PDF를 제공하고 고객 출력�
   assert.match(styles, /quote-internal-report-dialog/);
 });
 
-test("저장된 PDF는 원래 파일 주소로 열고 Excel은 의미 있는 이름으로 내려받는다", () => {
-  assert.match(page, /window\.open\(quote\.pdfUrl, "_blank", "noopener,noreferrer"\)/);
+test("저장된 PDF는 원래 파일 주소로 새 탭에서 열고 Excel은 의미 있는 이름으로 내려받는다", () => {
+  assert.match(page, /window\.open\(quote\.pdfUrl, "_blank"\)/);
+  assert.match(page, /if \(tab\) tab\.opener = null/);
   assert.match(page, /await fetch\(quote\.excelUrl, \{ cache: "no-store" \}\)/);
   assert.match(page, /URL\.createObjectURL\(await response\.blob\(\)\)/);
   assert.match(page, /quote\.driveXlsxName \|\| quotationDownloadName/);
@@ -166,7 +168,7 @@ test("government Excel export uses ten visible columns, portrait fit and bottom 
   assert.doesNotMatch(workbook, /조달 수수료율/);
 });
 
-test("PDF output uses the same saved generator and retains the print fallback", () => {
+test("PDF output uses the same generator and opens the completed file in a new tab", () => {
   assert.match(page, /quotation-print-stack quotation-print-portal print-only/);
   assert.match(page, /<th>식별번호<\/th>/);
   assert.match(page, /견적 조건 및 특이사항/);
@@ -179,11 +181,11 @@ test("PDF output uses the same saved generator and retains the print fallback", 
   assert.doesNotMatch(styles, /@media print\{body \*\{visibility:hidden!important\}/);
   assert.match(page, /createAuthoredQuotationPdf\(/);
   assert.match(page, /function printQuotation\(\)/);
-  assert.match(page.slice(page.indexOf("function printQuotation"), page.indexOf("function startQuotation")), /window\.print\(\)/);
-  assert.match(page, /프린터 출력 또는 PDF로 저장/);
+  assert.match(page.slice(page.indexOf("function printQuotation"), page.indexOf("function startQuotation")), /openPdfBlobInReservedTab/);
+  assert.match(page, /새 탭의 PDF 도구에서 인쇄하거나 저장하세요/);
   assert.match(page, /onClick=\{printQuotation\}/);
-  assert.match(page, /beforeprint/);
-  assert.match(page, /afterprint/);
+  assert.match(page, /reservePdfTab/);
+  assert.match(page, /openPdfBlobInReservedTab/);
   assert.doesNotMatch(page, /onClick=\{\(\) => window\.print\(\)\}/);
   assert.match(crm, /whizzup\.openQuotationComposer/);
   assert.match(crm, /quotation-quick-button/);
@@ -205,8 +207,8 @@ test("정산서 PDF는 조정 내역·최종 지급액·직인을 포함한다",
   assert.match(settlementPdf, /최종 지급 예정액 \(VAT 포함\)/);
   assert.match(settlementPdf, /whizzup-seal\.png/);
   assert.match(page, /정산서 PDF/);
-  assert.match(page, /업체 정산서 인쇄 창을 열었습니다/);
-  assert.match(page.slice(page.indexOf("async function exportConsortiumSettlementPdf"), page.indexOf("const regularDraftItems")), /window\.print\(\)/);
+  assert.match(page, /완성된 정산서 PDF를 새 탭에서 열었습니다/);
+  assert.match(page.slice(page.indexOf("async function exportConsortiumSettlementPdf"), page.indexOf("const regularDraftItems")), /openPdfBlobInReservedTab/);
   assert.match(page, /settlement-print-portal/);
   assert.match(styles, /body\.settlement-printing/);
   assert.match(page, /Excel 다운로드/);

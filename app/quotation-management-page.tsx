@@ -954,7 +954,7 @@ export default function QuotationManagementPage({
   const editingTargetLabel = draft?.id ? "현재 견적" : "";
 
   const numbers = useMemo(() => {
-    if (!draft) return { subtotal: 0, adjusted: 0, supply: 0, tax: 0, procurementFee: 0, total: 0, earning: 0, consortiumGross: 0, consortiumCost: 0, consortiumAdjustmentAdditions: 0, consortiumAdjustmentDeductions: 0, consortium: 0, projectorInstallationCost: 0, yogaMatServiceCost: 0, teachingAidSupportCost: 0, itemInternalCost: 0, additionalConstructionCost: 0, internalCost: 0, margin: 0, marginRate: 0 };
+    if (!draft) return { subtotal: 0, adjusted: 0, supply: 0, tax: 0, procurementFee: 0, total: 0, earning: 0, consortiumGross: 0, consortiumCost: 0, consortiumAdjustmentAdditions: 0, consortiumAdjustmentDeductions: 0, consortium: 0, projectorInstallationCost: 0, yogaMatServiceCost: 0, teachingAidSupportCost: 0, itemInternalCost: 0, additionalConstructionCost: 0, otherInternalCost: 0, internalCost: 0, margin: 0, marginRate: 0 };
     const subtotal = draft.items.reduce((sum, item) => sum + (item.complimentary ? 0 : Math.max(0, item.quantity) * Math.max(0, item.unitPrice)), 0);
     const adjusted = Math.max(0, subtotal - Math.max(0, draft.discountAmount) + Math.max(0, draft.extraAmount));
     const supply = Math.round(adjusted / 1.1);
@@ -981,8 +981,9 @@ export default function QuotationManagementPage({
     const teachingAidSupportCost = draft.items.reduce((sum, item) => sum + Math.max(0, item.teachingAidSupportAmount ?? 0), 0);
     const additionalConstructionCost = Math.max(0, draft.additionalInternalConstructionCost);
     const internalCost = itemInternalCost + teachingAidSupportCost + additionalConstructionCost;
+    const otherInternalCost = Math.max(0, internalCost - projectorInstallationCost - yogaMatServiceCost - teachingAidSupportCost - additionalConstructionCost);
     const margin = earning - consortium - internalCost;
-    return { subtotal, adjusted, supply, tax, procurementFee, total: adjusted + procurementFee, earning, consortiumGross, consortiumCost, consortiumAdjustmentAdditions: settlement.adjustmentAdditions, consortiumAdjustmentDeductions: settlement.adjustmentDeductions, consortium, projectorInstallationCost, yogaMatServiceCost, teachingAidSupportCost, itemInternalCost, additionalConstructionCost, internalCost, margin, marginRate: subtotal ? margin / subtotal : 0 };
+    return { subtotal, adjusted, supply, tax, procurementFee, total: adjusted + procurementFee, earning, consortiumGross, consortiumCost, consortiumAdjustmentAdditions: settlement.adjustmentAdditions, consortiumAdjustmentDeductions: settlement.adjustmentDeductions, consortium, projectorInstallationCost, yogaMatServiceCost, teachingAidSupportCost, itemInternalCost, additionalConstructionCost, otherInternalCost, internalCost, margin, marginRate: subtotal ? margin / subtotal : 0 };
   }, [draft]);
 
   const internalReportRows = useMemo(() => (draft?.items ?? []).map((item, index) => {
@@ -1066,7 +1067,7 @@ export default function QuotationManagementPage({
       const teachingAidSupport = Math.max(0, item.teachingAidSupportAmount ?? 0);
       if (teachingAidSupport > 0) {
         details.push({
-          label: "교구 할인·지원 차감",
+          label: item.equipmentKit ? "교구 제공 비용" : "교구 할인·지원 차감",
           itemName: item.name,
           amount: teachingAidSupport,
           note: "내부 마진 차감",
@@ -2996,7 +2997,7 @@ export default function QuotationManagementPage({
             <div><span className="section-kicker">SALES INFO</span><h4>영업 정보</h4></div>
             <label>협업 구분<select value={draft.executionType} onChange={(event) => setExecutionType(event.target.value === "컨소" ? "컨소" : "직영")}><option>직영</option><option>컨소</option></select></label>
             {draft.executionType === "컨소" && <><label>컨소 업체<input value={draft.consortiumCompany} onChange={(event) => { collaborationTouchedRef.current = true; setDraft({ ...draft, consortiumCompany: event.target.value }); }} placeholder="업체명" /></label><p>컨소 지급률은 품목마다 다르게 입력합니다. 각 품목의 지급률은 위즈업 수수료율을 넘을 수 없습니다.</p></>}
-            <section className="quote-profit-box"><header><strong>수익 분석</strong><small>내부용</small></header><dl><dt>예상 수익</dt><dd>{won.format(numbers.earning)}원</dd><dt>컨소 지급</dt><dd>{numbers.consortium === 0 ? "0원" : numbers.consortium > 0 ? `-${won.format(numbers.consortium)}원` : `+${won.format(Math.abs(numbers.consortium))}원 (상계)`}</dd>{numbers.projectorInstallationCost > 0 && <><dt>빔프로젝터 설치</dt><dd className="deduction">-{won.format(numbers.projectorInstallationCost)}원</dd></>}{numbers.yogaMatServiceCost > 0 && <><dt>요가매트 제공</dt><dd className="deduction">-{won.format(numbers.yogaMatServiceCost)}원</dd></>}{numbers.additionalConstructionCost > 0 && <><dt>추가 공사비</dt><dd className="deduction">-{won.format(numbers.additionalConstructionCost)}원</dd></>}{numbers.internalCost > 0 && <><dt>내부 원가 합계</dt><dd className="deduction">-{won.format(numbers.internalCost)}원</dd></>}<dt>최종 총이익</dt><dd>{won.format(numbers.margin)}원</dd><dt>마진%</dt><dd>{(numbers.marginRate * 100).toFixed(1)}%</dd></dl></section>
+            <section className="quote-profit-box"><header><strong>수익 분석</strong><small>내부용</small></header><dl><dt>예상 수익</dt><dd>{won.format(numbers.earning)}원</dd><dt>컨소 지급</dt><dd>{numbers.consortium === 0 ? "0원" : numbers.consortium > 0 ? `-${won.format(numbers.consortium)}원` : `+${won.format(Math.abs(numbers.consortium))}원 (상계)`}</dd>{numbers.projectorInstallationCost > 0 && <><dt>빔프로젝터 설치</dt><dd className="deduction">-{won.format(numbers.projectorInstallationCost)}원</dd></>}{numbers.yogaMatServiceCost > 0 && <><dt>요가매트 제공</dt><dd className="deduction">-{won.format(numbers.yogaMatServiceCost)}원</dd></>}{numbers.teachingAidSupportCost > 0 && <><dt>교구 제공</dt><dd className="deduction">-{won.format(numbers.teachingAidSupportCost)}원</dd></>}{numbers.additionalConstructionCost > 0 && <><dt>추가 공사비</dt><dd className="deduction">-{won.format(numbers.additionalConstructionCost)}원</dd></>}{numbers.otherInternalCost > 0 && <><dt>기타 내부 원가</dt><dd className="deduction">-{won.format(numbers.otherInternalCost)}원</dd></>}{numbers.internalCost > 0 && <><dt>내부 원가 합계</dt><dd className="deduction">-{won.format(numbers.internalCost)}원</dd></>}<dt>최종 총이익</dt><dd>{won.format(numbers.margin)}원</dd><dt>마진%</dt><dd>{(numbers.marginRate * 100).toFixed(1)}%</dd></dl></section>
             {draft.executionType === "컨소" && <section className="quote-consortium-settlement">
               <header><div><strong>정산서</strong><small>업체 공유용 · 내부 마진 제외</small></div><span>Excel · PDF</span></header>
               <dl><dt>기본 정산액</dt><dd>{won.format(numbers.consortiumGross)}원</dd><dt>정산 반영 비용</dt><dd>{numbers.consortiumCost ? `-${won.format(numbers.consortiumCost)}원` : "0원"}</dd>{numbers.consortiumAdjustmentDeductions > 0 && <><dt>추가 정산 차감</dt><dd>-{won.format(numbers.consortiumAdjustmentDeductions)}원</dd></>}{numbers.consortiumAdjustmentAdditions > 0 && <><dt>추가 지급</dt><dd>+{won.format(numbers.consortiumAdjustmentAdditions)}원</dd></>}<dt>최종 지급 예정액</dt><dd>{numbers.consortium < 0 ? `${won.format(numbers.consortium)}원 (다음 정산 상계)` : `${won.format(numbers.consortium)}원`}</dd></dl>
