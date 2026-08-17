@@ -262,6 +262,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
     let active = true;
     const controller = new AbortController();
     setLoading(true);
+    setGoogleRefreshing(shouldReconcileGoogle);
     const requestCalendar = async (refreshGoogle: boolean) => {
       const response = await resilientFetch(
         `/api/schedules?scope=calendar&start=${rangeStart}&end=${rangeEnd}&refreshGoogle=${refreshGoogle ? "1" : "0"}`,
@@ -305,12 +306,14 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
         applyPayload(await requestCalendar(false));
         if (!active) return;
         setLoading(false);
-        if (!shouldReconcileGoogle) return;
+        if (!shouldReconcileGoogle) {
+          setGoogleRefreshing(false);
+          return;
+        }
         // Give the primary dashboard request a brief head start, then reconcile
         // Google without making the calendar appear idle for several seconds.
         await new Promise((resolve) => window.setTimeout(resolve, 900));
         if (!active) return;
-        setGoogleRefreshing(true);
         try {
           applyPayload(await requestCalendar(true));
         } catch (caught) {
@@ -325,6 +328,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
           setError(caught instanceof Error ? caught.message : "일정을 불러오지 못했습니다.");
         }
         if (active) setLoading(false);
+        if (active) setGoogleRefreshing(false);
       }
     })();
     return () => { active = false; controller.abort(); };
@@ -795,7 +799,7 @@ export default function HomeCalendar({ refreshVersion, onOpenOrganization, onOpe
           {loading ? <p className="home-calendar-agenda-empty">일정을 확인하는 중입니다.</p> : selectedSchedules.length ? (
             <div className="home-calendar-agenda-list">{selectedSchedules.map((item) => (
               <button type="button" className={item.completed ? "completed" : ""} key={item.id} onClick={() => openEdit(item)}>
-                <i className={item.category} /><span><strong>{item.startTime ? `${item.startTime} ` : ""}{item.organization}</strong><small>{cleanScheduleTitle(item.label)}</small><small className="schedule-assignee">담당 {item.assigneeName || "미정"}{item.googleOrigin ? " · Google에서 연결" : ""}</small>{item.syncError === GOOGLE_EVENT_DELETED_SYNC_ERROR ? <small className="schedule-sync failed">Google에서 삭제됨 · 사이트 일정 유지 중</small> : item.syncStatus === "failed" ? <small className="schedule-sync failed">Google 동기화 실패 · 재시도 필요</small> : item.syncStatus === "pending" ? <small className="schedule-sync pending">Google 동기화 대기</small> : item.syncStatus === "local_only" ? <small className="schedule-sync local-only">사이트 전용 일정 · Google 공유 안 함</small> : item.googleEventId ? <small className="schedule-sync synced">Google 연결됨</small> : null}</span><em className={item.category}>{CATEGORY_LABEL[item.category]}</em>
+                <i className={item.category} /><span><strong>{item.startTime ? `${item.startTime} ` : ""}{item.organization}</strong><small>{cleanScheduleTitle(item.label)}</small><small className="schedule-assignee">담당 {item.assigneeName || "미정"}{item.googleOrigin ? " · Google에서 연결" : ""}</small>{item.syncError === GOOGLE_EVENT_DELETED_SYNC_ERROR ? <small className="schedule-sync failed">Google에서 삭제됨 · 사이트 일정 유지 중</small> : item.syncStatus === "failed" ? <small className="schedule-sync failed">Google 동기화 실패 · 재시도 필요</small> : item.syncStatus === "pending" ? <small className="schedule-sync pending">{googleRefreshing ? "Google 확인 중" : "Google 동기화 대기"}</small> : item.syncStatus === "local_only" ? <small className="schedule-sync local-only">사이트 전용 일정 · Google 공유 안 함</small> : item.googleEventId ? <small className="schedule-sync synced">Google 연결됨</small> : null}</span><em className={item.category}>{CATEGORY_LABEL[item.category]}</em>
               </button>
             ))}</div>
           ) : <p className="home-calendar-agenda-empty">이 날짜에 등록된 일정이 없습니다.</p>}

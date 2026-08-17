@@ -233,10 +233,16 @@ test("공유 업무만 Google로 보내고 입력 제목과 개인 일정 정책
 
 test("Google에서 삭제된 사이트 일정은 보존하고 명시적으로 다시 연결하거나 삭제한다", () => {
   assert.match(sync, /sync_error = 'google_event_deleted'/);
+  assert.match(sync, /uniqueActiveGoogleReplacement/);
+  assert.match(sync, /candidates\.length === 1 \? candidates\[0\] : null/);
+  assert.match(sync, /normalizedOrganizationIdentity/);
+  assert.match(sync, /updated_by_name = 'Google Calendar 자동 재연결'/);
+  assert.match(sync, /relinkedGoogleEventIds/);
   assert.doesNotMatch(sync, /DELETE FROM organization_schedules WHERE id = \?"\)\.bind\(siteId\)/);
   assert.match(calendar, /Google에서 삭제됨 · 사이트 일정 유지 중/);
   assert.match(calendar, /Google에 다시 연결/);
   assert.match(calendar, /사이트에서 삭제/);
+  assert.match(calendar, /googleRefreshing \? "Google 확인 중" : "Google 동기화 대기"/);
 });
 
 test("마지막 기관 일정을 삭제해도 과거 활동 문자열에서 다시 생성하지 않는다", () => {

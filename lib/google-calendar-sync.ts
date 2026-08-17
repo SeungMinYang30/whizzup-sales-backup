@@ -178,6 +178,57 @@ function eventValues(event: GoogleCalendarApiEvent) {
   };
 }
 
+type RelinkableScheduleRow = Pick<
+  SyncRow,
+  "id" | "organization" | "label" | "scheduled_date" | "start_time" | "end_time" | "end_date" | "category"
+>;
+
+function normalizedOrganizationIdentity(value: string) {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase("ko-KR")
+    .replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+function activeGoogleReplacementMatches(row: RelinkableScheduleRow, event: GoogleCalendarApiEvent) {
+  if (event.status === "cancelled" || !event.id || !event.start || row.category === "construction") return false;
+  const properties = event.extendedProperties?.private || {};
+  const linkedScheduleId = Number(properties.whizzupScheduleId);
+  if (
+    properties.whizzupSource === "site"
+    && Number.isSafeInteger(linkedScheduleId)
+    && linkedScheduleId > 0
+  ) {
+    return linkedScheduleId === Number(row.id);
+  }
+  const values = eventValues(event);
+  if (
+    values.scheduledDate !== row.scheduled_date
+    || values.startTime !== (row.start_time || "")
+    || (row.end_time && values.endTime !== row.end_time)
+    || values.endDate !== (row.end_date || row.scheduled_date)
+  ) return false;
+  const eventOrganization = (properties.whizzupOrganization || suggestedOrganization(event)).trim();
+  if (
+    !eventOrganization
+    || normalizedOrganizationIdentity(eventOrganization) !== normalizedOrganizationIdentity(row.organization)
+  ) return false;
+  const eventSemanticLabel = normalizeScheduleSemanticLabel(row.organization, event.summary || "");
+  const rowSemanticLabel = normalizeScheduleSemanticLabel(row.organization, row.label);
+  return Boolean(eventSemanticLabel && rowSemanticLabel && eventSemanticLabel === rowSemanticLabel);
+}
+
+function uniqueActiveGoogleReplacement(
+  row: RelinkableScheduleRow,
+  deletedEventId: string,
+  events: GoogleCalendarApiEvent[],
+) {
+  const candidates = events.filter((event) =>
+    event.id !== deletedEventId && activeGoogleReplacementMatches(row, event),
+  );
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
 function memoFromGoogleDescription(value: string) {
   return googleStructuredDescription(value).memo;
 }
@@ -848,16 +899,20 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
   const siteIds = await localSiteScheduleIds();
   const readonly: ReadOnlyGoogleSchedule[] = [];
   const seenReadonly = new Set<string>();
+  const relinkedGoogleEventIds = new Set<string>();
   for (const event of result.events) {
+    if (event.id && relinkedGoogleEventIds.has(event.id)) continue;
     const properties = event.extendedProperties?.private || {};
     const siteId = Number(properties.whizzupScheduleId);
     const siteOwned = properties.whizzupSource === "site" && Number.isSafeInteger(siteId) && siteId > 0;
     if (siteOwned && siteIds.has(siteId)) {
       const row = await d1.prepare(
-        `SELECT organization, business_round, label, category, sync_status, sync_operation,\n         google_event_id, google_updated_at
+        `SELECT id, organization, business_round, label, scheduled_date, start_time, end_time, end_date,
+                category, sync_status, sync_operation, google_event_id, google_updated_at
          FROM organization_schedules WHERE id = ?`,
       ).bind(siteId).first<{
-        organization: string; business_round: number; label: string; category: string; sync_status: string;
+        id: number; organization: string; business_round: number; label: string; scheduled_date: string;
+        start_time: string; end_time: string; end_date: string; category: string; sync_status: string;
         sync_operation: string; google_event_id: string; google_updated_at: string;
       }>();
 
@@ -962,6 +1017,35 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
                  sync_status = 'pending', sync_operation = 'upsert', sync_error = ''
              WHERE id = ?`,
           ).bind(siteId).run();
+        } else if (row) {
+          const replacement = uniqueActiveGoogleReplacement(row, event.id, result.events);
+          if (replacement) {
+            await d1.prepare(
+              `UPDATE organization_schedules
+               SET google_event_id = ?, google_event_etag = ?, google_updated_at = ?,
+                   sync_status = 'pending', sync_operation = 'upsert', sync_error = '',
+                   last_synced_at = CURRENT_TIMESTAMP,
+                   updated_by_name = 'Google Calendar 자동 재연결', updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+            ).bind(
+              replacement.id,
+              replacement.etag || "",
+              replacement.updated || "",
+              siteId,
+            ).run();
+            relinkedGoogleEventIds.add(replacement.id);
+            const readonlyIndex = readonly.findIndex((item) => item.googleEventId === replacement.id);
+            if (readonlyIndex >= 0) readonly.splice(readonlyIndex, 1);
+            forcedRefreshIds.add(siteId);
+          } else {
+            await d1.prepare(
+              `UPDATE organization_schedules
+               SET google_event_id = '', google_event_etag = '', google_updated_at = '',
+                   sync_status = 'local_only', sync_operation = 'upsert',
+                   sync_error = 'google_event_deleted', last_synced_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+            ).bind(siteId).run();
+          }
         } else {
           await d1.prepare(
             `UPDATE organization_schedules
