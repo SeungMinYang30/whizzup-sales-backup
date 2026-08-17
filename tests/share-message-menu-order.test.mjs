@@ -24,8 +24,8 @@ test("공유 문구 화면은 제거하고 사용자별 잠금 메뉴 순서는 
   assert.match(crm, /ArrowDown/);
   assert.match(styles, /\.menu-order-toolbar/);
   assert.match(styles, /\.nav-drag-handle/);
-  assert.match(crm, /기관별 관리\(수주 후\)/);
+  assert.match(crm, /기관별 통합 관리/);
   assert.match(crm, /협력사 관리/);
   assert.doesNotMatch(crm, />\s*현재 목록 일괄 삭제\s*</);
-  assert.match(crm, /선택 \{selectedAwardIds\.length\}건 삭제/);
+  assert.match(crm, />선택 삭제</);
 });

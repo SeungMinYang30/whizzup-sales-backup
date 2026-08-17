@@ -42,7 +42,7 @@ test("기관별 관리에 두 기관 선택·미리보기·최종 병합 화면�
   const root = new URL("../", import.meta.url);
   const crm = await readFile(new URL("app/crm-app.tsx", root), "utf8");
   assert.match(crm, /선택 기관 합치기/);
-  assert.match(crm, /selectedInstitutionIds\.length !== 2/);
+  assert.match(crm, /selectedManagementIds\.length !== 2/);
   assert.match(crm, /최종으로 사용할 기관명을 선택해 주세요/);
   assert.match(crm, /두 기관 합치기/);
   assert.match(crm, /합친 뒤 사용할 정보 확인/);

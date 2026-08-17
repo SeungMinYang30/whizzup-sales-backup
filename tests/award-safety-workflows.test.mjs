@@ -11,7 +11,7 @@ const [crm, recordsRoute, recordsStore, styles, aiOrganizer] = await Promise.all
 ]);
 
 test("admins get checked award deletion with trash recovery", () => {
-  assert.match(crm, /선택 \{selectedAwardIds\.length\}건 삭제/);
+  assert.match(crm, />선택 삭제</);
   assert.doesNotMatch(crm, /현재 목록 일괄 삭제/);
   assert.match(crm, /awardDeleteSafetyChecked/);
   assert.match(crm, /awardDeleteConfirmation\.trim\(\) !== "삭제"/);

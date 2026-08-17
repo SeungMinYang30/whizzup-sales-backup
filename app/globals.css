@@ -15302,3 +15302,142 @@ button:is(
   }
   .award-vendor-pagination { flex: 0 0 auto; }
 }
+
+/* Unified institution management */
+.institution-management-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 18px;
+  border-bottom: 1px solid #e5eaf3;
+  background: #f8faff;
+}
+.institution-management-tabs button {
+  min-height: 46px;
+  border: 1px solid #d7dfed;
+  border-radius: 10px;
+  background: #fff;
+  color: #64718a;
+  font-weight: 850;
+  cursor: pointer;
+}
+.institution-management-tabs button span { font-size: 13px; }
+.institution-management-tabs button small {
+  margin-left: 7px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #eef1f7;
+  color: #748097;
+  font-size: 10px;
+}
+.institution-management-tabs button.active {
+  border-color: #5368f2;
+  background: #eef2ff;
+  color: #3045cc;
+  box-shadow: inset 0 0 0 1px #5368f2;
+}
+.institution-management-tabs button.active small { background: #4055e8; color: #fff; }
+.management-selection-count {
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: #eef2ff;
+  color: #364cca;
+  font-size: 10px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+.management-detail-filters { position: relative; }
+.management-detail-filters > summary {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid #dfe5ee;
+  border-radius: 6px;
+  background: #fff;
+  color: #596780;
+  font-size: 10px;
+  font-weight: 800;
+  list-style: none;
+  cursor: pointer;
+}
+.management-detail-filters > summary::-webkit-details-marker { display: none; }
+.management-detail-filters[open] > div {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: 210px;
+  padding: 12px;
+  border: 1px solid #d9e1ee;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 14px 30px rgba(28, 42, 72, .16);
+}
+.management-detail-filters label { display: grid; gap: 6px; color: #5c6980; font-size: 10px; font-weight: 800; }
+.management-detail-filters select { width: 100%; }
+.unified-management-table,
+.followup-table,
+.awards-table { min-width: 1480px; table-layout: fixed; }
+.unified-management-table th:nth-child(2), .unified-management-table td:nth-child(2),
+.followup-table th:nth-child(2), .followup-table td:nth-child(2),
+.awards-table th:nth-child(2), .awards-table td:nth-child(2) { width: 52px; text-align: center; }
+.unified-management-table th:nth-child(3), .unified-management-table td:nth-child(3),
+.followup-table th:nth-child(3), .followup-table td:nth-child(3),
+.awards-table th:nth-child(3), .awards-table td:nth-child(3) { width: 110px; }
+.unified-management-table th:nth-child(4), .unified-management-table td:nth-child(4),
+.followup-table th:nth-child(4), .followup-table td:nth-child(4),
+.awards-table th:nth-child(4), .awards-table td:nth-child(4) { width: 92px; }
+.unified-management-table th:nth-child(5), .unified-management-table td:nth-child(5),
+.followup-table th:nth-child(5), .followup-table td:nth-child(5),
+.awards-table th:nth-child(5), .awards-table td:nth-child(5) { width: 190px; }
+.unified-management-table th:nth-child(6), .unified-management-table td:nth-child(6),
+.followup-table th:nth-child(6), .followup-table td:nth-child(6),
+.awards-table th:nth-child(6), .awards-table td:nth-child(6) { width: 185px; }
+.unified-management-table th:nth-child(7), .unified-management-table td:nth-child(7),
+.followup-table th:nth-child(7), .followup-table td:nth-child(7),
+.awards-table th:nth-child(7), .awards-table td:nth-child(7) { width: 190px; }
+.unified-management-table th:nth-child(8), .unified-management-table td:nth-child(8),
+.followup-table th:nth-child(8), .followup-table td:nth-child(8),
+.awards-table th:nth-child(8), .awards-table td:nth-child(8) { width: 150px; }
+.unified-management-table th:nth-child(9), .unified-management-table td:nth-child(9),
+.followup-table th:nth-child(9), .followup-table td:nth-child(9),
+.awards-table th:nth-child(9), .awards-table td:nth-child(9) { width: 230px; }
+.unified-management-table th:nth-child(10), .unified-management-table td:nth-child(10),
+.followup-table th:nth-child(10), .followup-table td:nth-child(10),
+.awards-table th:nth-child(10), .awards-table td:nth-child(10) { width: 125px; }
+.unified-management-table th:nth-child(11), .unified-management-table td:nth-child(11),
+.followup-table th:nth-child(11), .followup-table td:nth-child(11),
+.awards-table th:nth-child(11), .awards-table td:nth-child(11) { width: 130px; }
+.unified-management-table th:nth-child(12), .unified-management-table td:nth-child(12),
+.followup-table th:nth-child(12), .followup-table td:nth-child(12),
+.awards-table th:nth-child(12), .awards-table td:nth-child(12) { width: 78px; text-align: center; }
+.management-contact-cell { display: table-cell; }
+.management-contact-cell strong,
+.management-contact-cell a,
+.management-contact-cell small { display: block; margin: 2px 0; overflow-wrap: anywhere; }
+.management-contact-cell a { color: #4159bf; font-size: 10px; text-decoration: none; }
+.management-phase-tag { display: inline-flex; margin-top: 5px; padding: 3px 6px; border-radius: 999px; font-size: 9px; font-weight: 850; }
+.management-phase-tag.pre { background: #eaf2ff; color: #2563b8; }
+.management-phase-tag.post { background: #f0ebff; color: #7046c4; }
+.sales-progress-pill { display: inline-flex; padding: 5px 8px; border-radius: 999px; background: #edf3ff; color: #3457b9; font-size: 10px; font-weight: 850; }
+.management-contract-summary { display: grid; gap: 2px; margin-top: 7px; padding-top: 7px; border-top: 1px solid #e6ebf3; }
+.management-contract { display: block; margin-top: 6px; color: #536583; }
+.management-detail-button { min-height: 32px; padding: 0 10px; border: 1px solid #cdd7ea; border-radius: 7px; background: #fff; color: #4054ba; font-size: 10px; font-weight: 850; }
+.unified-management-row.phase-post { box-shadow: inset 3px 0 #7c5ce0; }
+.unified-management-row.phase-pre { box-shadow: inset 3px 0 #3d83dd; }
+
+@media (max-width: 760px) {
+  .institution-management-tabs { position: sticky; top: 0; z-index: 12; gap: 5px; padding: 8px; }
+  .institution-management-tabs button { min-height: 42px; padding: 0 7px; }
+  .institution-management-tabs button span { font-size: 12px; }
+  .institution-management-tabs button small { margin-left: 3px; font-size: 9px; }
+  .followup-management .filter-row,
+  .records-panel .filter-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .followup-management .filter-row .inline-search,
+  .records-panel .filter-row .inline-search { grid-column: 1 / -1; }
+  .followup-management .filter-row select,
+  .records-panel .filter-row select,
+  .management-detail-filters > summary { width: 100%; min-width: 0; }
+  .management-detail-filters[open] > div { position: fixed; right: 12px; bottom: 12px; left: 12px; top: auto; width: auto; }
+}

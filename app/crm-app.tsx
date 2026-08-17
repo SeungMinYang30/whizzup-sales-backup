@@ -104,6 +104,7 @@ import {
 import {
   AWARD_STAGE_OPTIONS,
   COMPLETED_AWARD_STAGE,
+  SALES_PROGRESS_OPTIONS,
   isCompletedAwardStage,
   normalizeActivityType,
   normalizeAwardStage,
@@ -1130,11 +1131,14 @@ type AccountingActivityStatus = {
 
 type ViewHistoryState = {
   whizzupView?: View;
+  whizzupInstitutionManagementTab?: InstitutionManagementTab;
   whizzupRecordDateScope?: "all" | "recent";
   whizzupActiveAwardsOnly?: boolean;
   whizzupFollowupDueSoonOnly?: boolean;
   whizzupAwardFilter?: string;
 };
+
+type InstitutionManagementTab = "all" | "pre" | "post";
 
 type DashboardAwardSummary = {
   total: number;
@@ -1609,8 +1613,7 @@ const navItems: { id: View; label: string; mark: string }[] = [
   { id: "dashboard", label: "대시보드", mark: "D" },
   { id: "budget-institutions", label: "예산별 기관", mark: "B" },
   { id: "complex-projects", label: "공간재구조화 사업 관리", mark: "X" },
-  { id: "followup", label: "기관별 관리(수주 전)", mark: "F" },
-  { id: "awards", label: "기관별 관리(수주 후)", mark: "W" },
+  { id: "followup", label: "기관별 통합 관리", mark: "F" },
   { id: "products", label: "제품·견적·협력사 관리", mark: "P" },
   { id: "resources", label: "자료실", mark: "R" },
   { id: "map", label: "영업·수주 지도", mark: "M" },
@@ -1622,10 +1625,10 @@ const presenceViewLabels: Record<View, string> = {
   "complex-projects": "공간재구조화 사업 관리",
   resources: "자료실",
   records: "영업 기록",
-  followup: "기관별 관리(수주 전)",
+  followup: "기관별 통합 관리",
   schedules: "일정",
   organizations: "관리자 영업 점검",
-  awards: "기관별 관리(수주 후)",
+  awards: "기관별 통합 관리",
   vendors: "협력사 관리",
   products: "제품·견적·협력사 관리",
   map: "영업·수주 지도",
@@ -6360,7 +6363,10 @@ export default function CrmApp({
   const [awardCompletionBusyId, setAwardCompletionBusyId] = useState<number | null>(
     null,
   );
+  const awardCompletionBusyRef = useRef(false);
   const [view, setView] = useState<View>("dashboard");
+  const [institutionManagementTab, setInstitutionManagementTab] =
+    useState<InstitutionManagementTab>("all");
   const [constructionDashboardCounts, setConstructionDashboardCounts] =
     useState<ConstructionDashboardCounts | null>(null);
   const [accountingInitialTab, setAccountingInitialTab] =
@@ -7405,11 +7411,20 @@ export default function CrmApp({
         nextView === "awards" && state?.whizzupAwardFilter === "위즈업 수주"
           ? "위즈업 수주"
           : "전체 수주";
+      const nextInstitutionManagementTab: InstitutionManagementTab =
+        nextView === "awards"
+          ? "post"
+          : nextView === "followup"
+            ? state?.whizzupInstitutionManagementTab === "pre"
+              ? "pre"
+              : "all"
+            : "all";
 
       setRecordDateScope(nextRecordDateScope);
       setActiveAwardsOnly(nextActiveAwardsOnly);
       setFollowupDueSoonOnly(nextFollowupDueSoonOnly);
       setAwardFilter(nextAwardFilter);
+      setInstitutionManagementTab(nextInstitutionManagementTab);
       setView(nextView);
       setMobileNav(false);
       if (
@@ -7440,6 +7455,7 @@ export default function CrmApp({
             whizzupActiveAwardsOnly: nextActiveAwardsOnly,
             whizzupFollowupDueSoonOnly: nextFollowupDueSoonOnly,
             whizzupAwardFilter: nextAwardFilter,
+            whizzupInstitutionManagementTab: nextInstitutionManagementTab,
           },
           "",
           nextView === "dashboard" || nextView === "owner-performance"
@@ -8266,20 +8282,32 @@ export default function CrmApp({
     () => new Set(selectedAwardIds),
     [selectedAwardIds],
   );
-  const selectedAwardOrganizations = useMemo(
+  const selectedManagementIds = useMemo(
+    () =>
+      institutionManagementTab === "all"
+        ? [...new Set([...selectedInstitutionIds, ...selectedAwardIds])]
+        : institutionManagementTab === "post"
+          ? selectedAwardIds
+          : selectedInstitutionIds,
+    [
+      institutionManagementTab,
+      selectedAwardIds,
+      selectedInstitutionIds,
+    ],
+  );
+  const selectedManagementOrganizations = useMemo(
     () => [
       ...new Set(
-        selectedAwardIds
+        selectedManagementIds
           .map((id) => records.find((record) => record.id === id)?.organization)
           .filter((organization): organization is string => Boolean(organization)),
       ),
     ],
-    [records, selectedAwardIds],
+    [records, selectedManagementIds],
   );
   const selectedJointProjectCandidates = useMemo<JointProjectCandidate[]>(() => {
     if (jointProjectSeedCandidates) return jointProjectSeedCandidates;
-    const selectedIds = view === "awards" ? selectedAwardIds : selectedInstitutionIds;
-    return selectedIds
+    return selectedManagementIds
       .map((id) => records.find((record) => record.id === id))
       .filter((record): record is Activity => Boolean(record))
       .map((record) => ({
@@ -8291,7 +8319,7 @@ export default function CrmApp({
         jointProjectId: record.jointProjectId ?? null,
         jointProjectName: record.jointProjectName ?? "",
       }));
-  }, [jointProjectSeedCandidates, records, selectedAwardIds, selectedInstitutionIds, view]);
+  }, [jointProjectSeedCandidates, records, selectedManagementIds]);
   const jointProjectSponsorOptions = useMemo<JointProjectCandidate[]>(() => {
     const latest = new Map<string, Activity>();
     [...records]
@@ -8571,6 +8599,22 @@ export default function CrmApp({
           budgetReviewCatalog,
         ),
       )
+      .filter(
+        ({ record }) =>
+          statusFilter === "전체 상태" ||
+          normalizeSalesProgress(record.status, record.awardStatus) ===
+            statusFilter,
+      )
+      .filter(
+        ({ record }) =>
+          awardExecutionFilter === "전체 사업방식" ||
+          record.executionType === awardExecutionFilter,
+      )
+      .filter(
+        ({ record }) =>
+          awardManagerFilter === "전체 담당자" ||
+          (record.progressManager.trim() || "해당 없음") === awardManagerFilter,
+      )
       .map(({ record }) => record)
       .sort((a, b) => {
         if (followupSort === "activity-desc") {
@@ -8619,7 +8663,114 @@ export default function CrmApp({
     followupSort,
     followupDueSoonOnly,
     followupAlertEndValue,
+    awardExecutionFilter,
+    awardManagerFilter,
   ]);
+
+  const unifiedManagementRows = useMemo(() => {
+    const keyword = deferredSearch.trim().toLocaleLowerCase("ko-KR");
+    const rows = [
+      ...preAwardInstitutionRows.map(({ record }) => ({
+        record,
+        phase: "pre" as const,
+      })),
+      ...latestAwardRecords.map((record) => ({
+        record,
+        phase: "post" as const,
+      })),
+    ].filter(({ record, phase }) => {
+      if (
+        !matchesStandardBudgetFilter(
+          record,
+          budgetGroupFilter,
+          budgetReviewCatalog,
+        )
+      ) {
+        return false;
+      }
+      if (
+        awardExecutionFilter !== "전체 사업방식" &&
+        record.executionType !== awardExecutionFilter
+      ) {
+        return false;
+      }
+      if (
+        awardManagerFilter !== "전체 담당자" &&
+        (record.progressManager.trim() || "해당 없음") !== awardManagerFilter
+      ) {
+        return false;
+      }
+      if (statusFilter !== "전체 상태") {
+        const category =
+          phase === "pre"
+            ? "영업 중"
+            : record.awardStatus === "타업체 수주"
+              ? "타업체 수주·종료"
+              : isCompletedAwardStage(record.awardStage)
+                ? "납품 완료"
+                : "수주 진행";
+        if (category !== statusFilter) return false;
+      }
+      return !keyword || (recordSearchIndex.get(record.id)?.includes(keyword) ?? false);
+    });
+    const latestDateByInstitution = new Map<string, string>();
+    rows.forEach(({ record }) => {
+      const key = institutionAliasKey(record.organization);
+      const current = latestDateByInstitution.get(key) ?? "";
+      if (record.activityDate > current) {
+        latestDateByInstitution.set(key, record.activityDate);
+      }
+    });
+    return rows.sort((left, right) => {
+      if (awardSort === "date-asc") {
+        const groupOrder = (latestDateByInstitution.get(institutionAliasKey(left.record.organization)) ?? "").localeCompare(latestDateByInstitution.get(institutionAliasKey(right.record.organization)) ?? "");
+        if (groupOrder) return groupOrder;
+        const institutionOrder = left.record.organization.localeCompare(right.record.organization, "ko-KR");
+        if (institutionOrder) return institutionOrder;
+        return left.record.businessRound - right.record.businessRound;
+      }
+      if (awardSort === "organization") {
+        return (
+          left.record.organization.localeCompare(
+            right.record.organization,
+            "ko-KR",
+          ) ||
+          left.record.businessRound - right.record.businessRound
+        );
+      }
+      if (awardSort === "amount-desc" || awardSort === "amount-asc") {
+        const leftAmount = parseMoneyAmount(left.record.budgetAmount);
+        const rightAmount = parseMoneyAmount(right.record.budgetAmount);
+        return awardSort === "amount-desc"
+          ? rightAmount - leftAmount
+          : leftAmount - rightAmount;
+      }
+      const groupOrder = (latestDateByInstitution.get(institutionAliasKey(right.record.organization)) ?? "").localeCompare(latestDateByInstitution.get(institutionAliasKey(left.record.organization)) ?? "");
+      if (groupOrder) return groupOrder;
+      const institutionOrder = left.record.organization.localeCompare(right.record.organization, "ko-KR");
+      if (institutionOrder) return institutionOrder;
+      return left.record.businessRound - right.record.businessRound;
+    });
+  }, [
+    awardExecutionFilter,
+    awardManagerFilter,
+    awardSort,
+    budgetGroupFilter,
+    budgetReviewCatalog,
+    deferredSearch,
+    latestAwardRecords,
+    preAwardInstitutionRows,
+    recordSearchIndex,
+    statusFilter,
+  ]);
+  const unifiedManagementPageCount = Math.max(
+    1,
+    Math.ceil(unifiedManagementRows.length / DATA_LIST_PAGE_SIZE),
+  );
+  const unifiedManagementPageRows = useMemo(() => {
+    const offset = (institutionPage - 1) * DATA_LIST_PAGE_SIZE;
+    return unifiedManagementRows.slice(offset, offset + DATA_LIST_PAGE_SIZE);
+  }, [institutionPage, unifiedManagementRows]);
   const followupDisplayGroups = useMemo(() => {
     const keyword = deferredSearch.trim().toLocaleLowerCase("ko-KR");
     return filterJointProjectGroupsByMember(
@@ -8714,8 +8865,17 @@ export default function CrmApp({
 
   useEffect(() => {
     if (view !== "followup") return;
-    setInstitutionPage((current) => Math.min(current, institutionPageCount));
-  }, [institutionPageCount, view]);
+    const pageCount =
+      institutionManagementTab === "all"
+        ? unifiedManagementPageCount
+        : institutionPageCount;
+    setInstitutionPage((current) => Math.min(current, pageCount));
+  }, [
+    institutionManagementTab,
+    institutionPageCount,
+    unifiedManagementPageCount,
+    view,
+  ]);
   const selectedInstitutionRecords = useMemo(
     () =>
       selectedInstitutionIds
@@ -12219,6 +12379,7 @@ export default function CrmApp({
       activeAwardsOnly?: boolean;
       followupDueSoonOnly?: boolean;
       awardFilter?: string;
+      institutionManagementTab?: InstitutionManagementTab;
       replace?: boolean;
     } = {},
   ) {
@@ -12233,6 +12394,12 @@ export default function CrmApp({
       nextView === "awards" && options.awardFilter === "위즈업 수주"
         ? "위즈업 수주"
         : "전체 수주";
+    const nextInstitutionManagementTab: InstitutionManagementTab =
+      nextView === "awards"
+        ? "post"
+        : nextView === "followup"
+          ? options.institutionManagementTab ?? "all"
+          : "all";
     setSearch("");
     setTypeFilter("전체 유형");
     setStatusFilter("전체 상태");
@@ -12247,6 +12414,7 @@ export default function CrmApp({
     setRecordDateScope(nextRecordDateScope);
     setActiveAwardsOnly(nextActiveAwardsOnly);
     setFollowupDueSoonOnly(nextFollowupDueSoonOnly);
+    setInstitutionManagementTab(nextInstitutionManagementTab);
     setView(nextView);
 
     const currentState =
@@ -12260,6 +12428,7 @@ export default function CrmApp({
       whizzupActiveAwardsOnly: nextActiveAwardsOnly,
       whizzupFollowupDueSoonOnly: nextFollowupDueSoonOnly,
       whizzupAwardFilter: nextAwardFilter,
+      whizzupInstitutionManagementTab: nextInstitutionManagementTab,
     };
     const baseUrl = `${window.location.pathname}${window.location.search}`;
     const nextUrl =
@@ -12271,7 +12440,8 @@ export default function CrmApp({
       recordDateScope === nextRecordDateScope &&
       activeAwardsOnly === nextActiveAwardsOnly &&
       followupDueSoonOnly === nextFollowupDueSoonOnly &&
-      awardFilter === nextAwardFilter;
+      awardFilter === nextAwardFilter &&
+      institutionManagementTab === nextInstitutionManagementTab;
     window.history[
       options.replace || sameView ? "replaceState" : "pushState"
     ](historyState, "", nextUrl);
@@ -12282,6 +12452,7 @@ export default function CrmApp({
     options: {
       accountingTab?: AccountingWorkspaceTab;
       awardFilter?: string;
+      institutionManagementTab?: InstitutionManagementTab;
     } = {},
   ) {
     if (nextView === "trash") {
@@ -12318,7 +12489,10 @@ export default function CrmApp({
     if (nextView === "budget-institutions") {
       setBudgetWorkspaceSection("institutions");
     }
-    navigateTo(nextView, { awardFilter: options.awardFilter });
+    navigateTo(nextView, {
+      awardFilter: options.awardFilter,
+      institutionManagementTab: options.institutionManagementTab,
+    });
     setMobileNav(false);
     if (nextView === "records") {
       await loadActivityReviewAssignees();
@@ -14664,21 +14838,57 @@ export default function CrmApp({
 
   async function markAwardAsCompleted(record: Activity) {
     if (
+      awardCompletionBusyRef.current ||
       awardCompletionBusyId !== null ||
       record.awardStatus === "타업체 수주" ||
       isCompletedAwardStage(record.awardStage)
     ) {
       return;
     }
+    awardCompletionBusyRef.current = true;
+    setAwardCompletionBusyId(record.id);
+    let unfinishedScheduleCount = 0;
+    try {
+      const scheduleResponse = await fetch(
+        `/api/schedules?organization=${encodeURIComponent(record.organization)}&businessRound=${record.businessRound}`,
+        { cache: "no-store" },
+      );
+      const schedulePayload = (await scheduleResponse.json()) as {
+        schedules?: OrganizationScheduleRecord[];
+        error?: string;
+      };
+      if (!scheduleResponse.ok) {
+        throw new Error(
+          schedulePayload.error || "남아 있는 시공·납품 일정을 확인하지 못했습니다.",
+        );
+      }
+      unfinishedScheduleCount = (schedulePayload.schedules ?? []).filter(
+        (schedule) => !schedule.completed,
+      ).length;
+    } catch (caught) {
+      setToast(
+        caught instanceof Error
+          ? caught.message
+          : "남아 있는 시공·납품 일정을 확인하지 못했습니다.",
+      );
+      setAwardCompletionBusyId(null);
+      awardCompletionBusyRef.current = false;
+      return;
+    }
     if (
       !window.confirm(
-        `${record.organization}의 수주 진행 단계를 납품 완료로 변경하시겠습니까?\n재연락 표시와 예정일은 자동으로 해제됩니다.`,
+        `${record.organization} · ${record.businessRound}차 사업을 납품 완료로 변경하시겠습니까?\n완료일은 오늘로 기록되고 재연락 표시와 예정일은 자동으로 해제됩니다.${
+          unfinishedScheduleCount > 0
+            ? `\n\n미완료 시공·납품 일정 ${unfinishedScheduleCount}건은 자동으로 닫지 않고 일정표에 그대로 유지됩니다.`
+            : ""
+        }`,
       )
     ) {
+      setAwardCompletionBusyId(null);
+      awardCompletionBusyRef.current = false;
       return;
     }
     try {
-      setAwardCompletionBusyId(record.id);
       const response = await fetch("/api/records", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -14716,16 +14926,13 @@ export default function CrmApp({
       );
     } finally {
       setAwardCompletionBusyId(null);
+      awardCompletionBusyRef.current = false;
     }
   }
 
   async function openInstitutionMerge() {
-    const selectedIds =
-      view === "awards" ? selectedAwardIds : selectedInstitutionIds;
-    const invalidSelectedCount =
-      view === "awards"
-        ? selectedAwardIds.length !== 2
-        : selectedInstitutionIds.length !== 2;
+    const selectedIds = selectedManagementIds;
+    const invalidSelectedCount = selectedManagementIds.length !== 2;
     const organizations = [
       ...new Set(
         selectedIds
@@ -14948,6 +15155,12 @@ export default function CrmApp({
         recordDateScope: "all",
         activeAwardsOnly: target === "active-awards",
         followupDueSoonOnly: target === "followup",
+        institutionManagementTab:
+          target === "followup"
+            ? "pre"
+            : target === "active-awards"
+              ? "post"
+              : undefined,
       },
     );
   }
@@ -15727,15 +15940,13 @@ export default function CrmApp({
           ? "팀 업무 현황"
           : `${teamPeriodLabel} 팀 업무`
         : view === "followup"
-          ? "기관별 관리(수주 전)"
+          ? "기관별 통합 관리"
           : view === "schedules"
             ? "다가오는 진행 일정"
           : view === "organizations"
             ? "관리자 영업 점검"
             : view === "awards"
-              ? activeAwardsOnly
-                ? "진행 중 수주"
-                : "기관별 관리(수주 후)"
+              ? "기관별 통합 관리"
               : view === "vendors"
                 ? "협력사 관리"
               : view === "products"
@@ -15761,6 +15972,42 @@ export default function CrmApp({
                 : view === "inventory"
                   ? "물류·재고 관리"
                   : "API 등록·관리";
+
+  const renderInstitutionManagementTabs = () => (
+    <div className="institution-management-tabs" role="tablist" aria-label="기관별 통합 관리 범위">
+      {([
+        ["all", "전체"],
+        ["pre", "수주 전"],
+        ["post", "수주 후"],
+      ] as const).map(([tab, label]) => (
+        <button
+          key={tab}
+          type="button"
+          role="tab"
+          aria-selected={institutionManagementTab === tab}
+          className={institutionManagementTab === tab ? "active" : ""}
+          onClick={() => {
+            setSelectedInstitutionIds([]);
+            setSelectedAwardIds([]);
+            setInstitutionBudgetOpen(false);
+            setAwardBulkOpen(false);
+            navigateTo(tab === "post" ? "awards" : "followup", {
+              institutionManagementTab: tab,
+            });
+          }}
+        >
+          <span>{label}</span>
+          <small>
+            {tab === "all"
+              ? preAwardInstitutionRows.length + latestAwardRecords.length
+              : tab === "pre"
+                ? preAwardInstitutionRows.length
+                : latestAwardRecords.length}
+          </small>
+        </button>
+      ))}
+    </div>
+  );
 
   if (sessionLoading) {
     return (
@@ -15962,8 +16209,13 @@ export default function CrmApp({
               }}
             >
               <button
-                className={view === item.id || (item.id === "products" && view === "vendors") ? "active" : ""}
-                onClick={() => void selectView(item.id)}
+                className={view === item.id || (item.id === "followup" && view === "awards") || (item.id === "products" && view === "vendors") ? "active" : ""}
+                onClick={() =>
+                  void selectView(item.id, {
+                    institutionManagementTab:
+                      item.id === "followup" ? "all" : undefined,
+                  })
+                }
               >
                 <span className="nav-mark">{item.mark}</span>
                 <span className="nav-label">{item.label}</span>
@@ -16229,14 +16481,18 @@ export default function CrmApp({
               <button
                 type="button"
                 className="dashboard-status-card sales"
-                onClick={() => void selectView("followup")}
+                onClick={() =>
+                  void selectView("followup", {
+                    institutionManagementTab: "all",
+                  })
+                }
               >
                 <span>영업 현황</span>
                 <small>전체 기관의 최신 영업 기록</small>
                 <dl>
                   <div><dt>전체</dt><dd>{dashboardSalesCounts.total}</dd></div>
-                  <div><dt>진행</dt><dd>{dashboardSalesCounts.active}</dd></div>
-                  <div><dt>완료</dt><dd>{dashboardSalesCounts.completed}</dd></div>
+                  <div><dt>영업 중</dt><dd>{dashboardSalesCounts.active}</dd></div>
+                  <div><dt>결과·종료</dt><dd>{dashboardSalesCounts.completed}</dd></div>
                 </dl>
               </button>
               <button
@@ -16246,12 +16502,12 @@ export default function CrmApp({
                   void selectView("awards", { awardFilter: "위즈업 수주" })
                 }
               >
-                <span>수주·계약 현황</span>
-                <small>위즈업 수주·계약만</small>
+                <span>위즈업 수주 현황</span>
+                <small>위즈업 수주 사업만</small>
                 <dl>
-                  <div><dt>전체</dt><dd>{dashboardAwardCounts.total}</dd></div>
-                  <div><dt>진행</dt><dd>{dashboardAwardCounts.active}</dd></div>
-                  <div><dt>완료</dt><dd>{dashboardAwardCounts.completed}</dd></div>
+                  <div><dt>전체 수주</dt><dd>{dashboardAwardCounts.total}</dd></div>
+                  <div><dt>진행 중</dt><dd>{dashboardAwardCounts.active}</dd></div>
+                  <div><dt>납품 완료</dt><dd>{dashboardAwardCounts.completed}</dd></div>
                 </dl>
               </button>
               <button
@@ -16259,12 +16515,12 @@ export default function CrmApp({
                 className="dashboard-status-card construction"
                 onClick={() => void selectView("installation-schedule")}
               >
-                <span>시공·납품 현황</span>
-                <small>일정표에 등록된 위즈업 수주</small>
+                <span>현재 시공·납품 일정</span>
+                <small>완료 전 일정표 등록 사업</small>
                 <dl>
+                  <div><dt>현재 대상</dt><dd>{constructionDashboardCounts ? constructionDashboardCounts.planned + constructionDashboardCounts.active : "—"}</dd></div>
                   <div><dt>예정</dt><dd>{constructionDashboardCounts?.planned ?? "—"}</dd></div>
                   <div><dt>진행</dt><dd>{constructionDashboardCounts?.active ?? "—"}</dd></div>
-                  <div><dt>완료</dt><dd>{constructionDashboardCounts?.completed ?? "—"}</dd></div>
                 </dl>
               </button>
           </nav>
@@ -16309,10 +16565,8 @@ export default function CrmApp({
                     ? "보유 장비의 현재 수량과 입고·출고·조정 이력을 한곳에서 관리합니다."
                    : view === "integration"
                      ? "사이트에서 사용할 OpenAI API 키와 모델을 안전하게 등록·교체합니다."
-                    : view === "awards"
-                      ? activeAwardsOnly
-                        ? "납품 완료 전 수주 건만 모아 확인합니다."
-                        : "위즈업 수주와 타업체 수주 결과를 함께 관리합니다."
+                    : view === "awards" || view === "followup"
+                      ? "수주 전 영업부터 계약·시공·납품 완료까지 기관과 사업 차수별로 한곳에서 관리합니다."
                       : view === "vendors"
                         ? "협력사의 사업자·정산·담당자 정보와 증빙 문서를 한곳에서 관리합니다."
                       : view === "products"
@@ -18685,13 +18939,16 @@ export default function CrmApp({
             </div>
           ) : view === "followup" ? (
             <section className="panel records-panel followup-management">
+              {renderInstitutionManagementTabs()}
               <div className="panel-header records-heading">
                 <div>
                   <span className="section-kicker">CONTACT MANAGEMENT</span>
                   <h2>
                     {followupDueSoonOnly
                       ? "2일 내 재연락 기관"
-                      : "기관별 관리(수주 전) 현황"}
+                      : institutionManagementTab === "all"
+                        ? "전체 기관·사업 현황"
+                        : "수주 전 기관·사업 현황"}
                   </h2>
                 </div>
                 <div className="records-heading-actions">
@@ -18699,24 +18956,34 @@ export default function CrmApp({
                     type="button"
                     className="institution-budget-button mobile-short-label"
                     data-mobile-label="정보 수정"
-                    disabled={selectedInstitutionIds.length === 0}
-                    onClick={toggleInstitutionBulkEditor}
+                    disabled={
+                      selectedManagementIds.length === 0 ||
+                      (selectedInstitutionIds.length > 0 &&
+                        selectedAwardIds.length > 0)
+                    }
+                    onClick={() => {
+                      if (selectedAwardIds.length > 0) {
+                        toggleAwardBulkEditor();
+                        navigateTo("awards", {
+                          institutionManagementTab: "post",
+                        });
+                      } else toggleInstitutionBulkEditor();
+                    }}
                     title="선택한 기관의 담당자·예산·재연락·다음 행동·상태를 한 번에 수정합니다."
                   >
-                    <span>{`선택 정보 수정${
-                      selectedInstitutionIds.length > 0
-                        ? ` ${selectedInstitutionIds.length}`
-                        : ""
-                    }`}</span>
+                    <span>선택 수정</span>
                   </button>
-                  {selectedInstitutionIds.length > 0 && (
+                  {selectedManagementIds.length > 0 && (
                     <button
                       type="button"
                       className="excel-export-button mobile-short-label"
                       data-mobile-label="해제"
-                      onClick={clearInstitutionSelection}
+                      onClick={() => {
+                        clearInstitutionSelection();
+                        clearAwardSelection();
+                      }}
                     >
-                      <span>선택 전체 해제</span>
+                      <span>선택 해제</span>
                     </button>
                   )}
                   {canManageRecords && (
@@ -18740,7 +19007,7 @@ export default function CrmApp({
                     className="institution-merge-button mobile-short-label"
                     data-mobile-label="기관 합치기"
                     disabled={
-                      selectedInstitutionNames.length < 2 ||
+                      selectedManagementOrganizations.length !== 2 ||
                       institutionMergeBusy
                     }
                     onClick={() => void openInstitutionMerge()}
@@ -18748,13 +19015,9 @@ export default function CrmApp({
                   >
                     <span>{institutionMergeBusy
                       ? "기관 확인 중…"
-                      : `선택 기관 합치기${
-                          selectedInstitutionIds.length > 0
-                            ? ` ${selectedInstitutionIds.length}`
-                            : ""
-                        }`}</span>
+                      : "중복 기관 합치기"}</span>
                   </button>
-                  {canDeleteRecords && (
+                  {canDeleteRecords && institutionManagementTab === "pre" && (
                     <button
                       type="button"
                       className="institution-bulk-delete-button mobile-short-label"
@@ -18775,25 +19038,40 @@ export default function CrmApp({
                           }`}</span>
                     </button>
                   )}
-                  <span className="record-count">{followupDisplayGroups.length}개 사업</span>
+                  {selectedManagementIds.length > 0 && (
+                    <span className="management-selection-count">
+                      선택 {selectedManagementIds.length}건
+                    </span>
+                  )}
+                  <span className="record-count">
+                    {institutionManagementTab === "all"
+                      ? unifiedManagementRows.length
+                      : followupDisplayGroups.length}개 사업
+                  </span>
                 </div>
                 <div className="institution-mobile-header-actions">
-                  <span className="record-count">{followupDisplayGroups.length}개 사업</span>
+                  <span className="record-count">
+                    {institutionManagementTab === "all"
+                      ? unifiedManagementRows.length
+                      : followupDisplayGroups.length}개 사업
+                  </span>
                 </div>
               </div>
-              {selectedInstitutionIds.length > 0 && (
+              {selectedManagementIds.length > 0 && (
                 <div
                   className="institution-mobile-selection-bar"
                   role="toolbar"
                   aria-label="선택 기관 작업"
                 >
                   <div className="institution-mobile-selection-summary">
-                    <strong>{selectedInstitutionIds.length}곳 선택</strong>
+                    <strong>{selectedManagementIds.length}건 선택</strong>
                     <button
                       type="button"
                       onClick={() => {
                         setSelectedInstitutionIds([]);
+                        setSelectedAwardIds([]);
                         setInstitutionBudgetOpen(false);
+                        setAwardBulkOpen(false);
                       }}
                     >
                       선택 해제
@@ -18803,7 +19081,18 @@ export default function CrmApp({
                     <button
                       type="button"
                       className="edit"
-                      onClick={toggleInstitutionBulkEditor}
+                      disabled={
+                        selectedInstitutionIds.length > 0 &&
+                        selectedAwardIds.length > 0
+                      }
+                      onClick={() => {
+                        if (selectedAwardIds.length > 0) {
+                          toggleAwardBulkEditor();
+                          navigateTo("awards", {
+                            institutionManagementTab: "post",
+                          });
+                        } else toggleInstitutionBulkEditor();
+                      }}
                     >
                       여러 기관 수정
                     </button>
@@ -18821,14 +19110,14 @@ export default function CrmApp({
                       type="button"
                       className="merge"
                       disabled={
-                        selectedInstitutionNames.length < 2 ||
+                        selectedManagementOrganizations.length !== 2 ||
                         institutionMergeBusy
                       }
                       onClick={() => void openInstitutionMerge()}
                     >
                       {institutionMergeBusy ? "확인 중…" : "선택 기관 합치기"}
                     </button>
-                    {canDeleteRecords && (
+                    {canDeleteRecords && institutionManagementTab === "pre" && (
                       <button
                         type="button"
                         className="delete"
@@ -18968,27 +19257,84 @@ export default function CrmApp({
                   <option value="unclassified">미분류 예산</option>
                 </select>
                 <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                  aria-label="현재 상태 필터"
+                >
+                  <option value="전체 상태">전체 현재 상태</option>
+                  {(institutionManagementTab === "all"
+                    ? ["영업 중", "수주 진행", "납품 완료", "타업체 수주·종료"]
+                    : [...SALES_PROGRESS_OPTIONS]
+                  ).map((status) => (
+                    <option key={status}>{status}</option>
+                  ))}
+                </select>
+                <select
+                  value={awardExecutionFilter}
+                  onChange={(event) =>
+                    setAwardExecutionFilter(event.target.value)
+                  }
+                  aria-label="사업방식 필터"
+                >
+                  <option>전체 사업방식</option>
+                  <option>직영</option>
+                  <option>컨소</option>
+                  <option>해당 없음</option>
+                </select>
+                <select
+                  value={awardManagerFilter}
+                  onChange={(event) => setAwardManagerFilter(event.target.value)}
+                  aria-label="진행 담당자 필터"
+                >
+                  <option>전체 담당자</option>
+                  <option>해당 없음</option>
+                  {registeredSalesNames.map((name) => (
+                    <option key={name}>{name}</option>
+                  ))}
+                </select>
+                <select
                   className="sort-select"
-                  value={followupSort}
-                  onChange={(event) => setFollowupSort(event.target.value)}
+                  value={
+                    institutionManagementTab === "all"
+                      ? awardSort
+                      : followupSort
+                  }
+                  onChange={(event) => {
+                    if (institutionManagementTab === "all") {
+                      setAwardSort(event.target.value);
+                    } else {
+                      setFollowupSort(event.target.value);
+                    }
+                  }}
                   aria-label="기관별 관리 정렬"
                 >
-                  <option value="activity-desc">최종 컨택 최신순</option>
-                  <option value="followup-asc">재연락 예정일 임박순</option>
-                  <option value="activity-asc">최종 컨택 오래된순</option>
+                  <option value={institutionManagementTab === "all" ? "date-desc" : "activity-desc"}>최신순</option>
+                  {institutionManagementTab === "pre" && (
+                    <option value="followup-asc">재연락 예정일 임박순</option>
+                  )}
+                  <option value={institutionManagementTab === "all" ? "date-asc" : "activity-asc"}>오래된순</option>
                   <option value="organization">기관명순</option>
                   <option value="amount-desc">금액 높은순</option>
                   <option value="amount-asc">금액 낮은순</option>
                 </select>
                 {(search ||
                   budgetGroupFilter !== "all" ||
-                  followupSort !== "activity-desc" ||
+                  statusFilter !== "전체 상태" ||
+                  awardExecutionFilter !== "전체 사업방식" ||
+                  awardManagerFilter !== "전체 담당자" ||
+                  (institutionManagementTab === "all"
+                    ? awardSort !== "date-desc"
+                    : followupSort !== "activity-desc") ||
                   followupDueSoonOnly) && (
                   <button
                     className="reset-filter"
                     onClick={() => {
                       setSearch("");
                       setBudgetGroupFilter("all");
+                      setStatusFilter("전체 상태");
+                      setAwardExecutionFilter("전체 사업방식");
+                      setAwardManagerFilter("전체 담당자");
+                      setAwardSort("date-desc");
                       setFollowupSort("activity-desc");
                       setFollowupDueSoonOnly(false);
                     }}
@@ -18997,7 +19343,7 @@ export default function CrmApp({
                   </button>
                 )}
               </div>
-              {currentInstitutionPageSelected && (
+              {institutionManagementTab === "pre" && currentInstitutionPageSelected && (
                 <div className="award-selection-banner" role="status">
                   {allFilteredInstitutionsSelected ? (
                     <>
@@ -19020,6 +19366,132 @@ export default function CrmApp({
                   )}
                 </div>
               )}
+              {institutionManagementTab === "all" ? (
+                <>
+                  <StickyTableWrap className="data-list-table">
+                    <table className="unified-management-table">
+                      <thead>
+                        <tr>
+                          <th className="selection-cell"><span className="sr-only">선택</span></th>
+                          <th>순번</th>
+                          <th>최근일</th>
+                          <th>지역</th>
+                          <th>기관·사업</th>
+                          <th>기관 담당자</th>
+                          <th>예산·금액</th>
+                          <th>현재 상태</th>
+                          <th>업무 요약</th>
+                          <th>사업방식</th>
+                          <th>진행 담당자</th>
+                          <th>상세</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {unifiedManagementPageRows.map(({ record, phase }, index) => {
+                          const selected =
+                            phase === "post"
+                              ? selectedAwardIdSet.has(record.id)
+                              : selectedInstitutionIdSet.has(record.id);
+                          const contact = primaryInstitutionContact(record.contacts);
+                          const contract =
+                            phase === "post"
+                              ? registeredContractDisplay(record)
+                              : null;
+                          return (
+                            <tr
+                              key={`${phase}-${record.id}`}
+                              className={`unified-management-row phase-${phase}`}
+                              tabIndex={0}
+                              role="button"
+                              aria-label={`${record.organization} ${record.businessRound}차 사업 상세 보기`}
+                              onClick={(event) => {
+                                if ((event.target as HTMLElement).closest("button, a, input, select, textarea")) return;
+                                setDetailBusinessRound(record.businessRound);
+                                setDetailOrganization(record.organization);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
+                                event.preventDefault();
+                                setDetailBusinessRound(record.businessRound);
+                                setDetailOrganization(record.organization);
+                              }}
+                            >
+                              <td className="selection-cell">
+                                <input
+                                  className="row-select-checkbox"
+                                  type="checkbox"
+                                  checked={selected}
+                                  aria-label={`${record.organization} ${record.businessRound}차 사업 선택`}
+                                  onClick={(event) => event.stopPropagation()}
+                                  onChange={() => {
+                                    const setter = phase === "post" ? setSelectedAwardIds : setSelectedInstitutionIds;
+                                    setter((current) => current.includes(record.id) ? current.filter((id) => id !== record.id) : [...current, record.id]);
+                                  }}
+                                />
+                              </td>
+                              <td className="sequence-cell">{(institutionPage - 1) * DATA_LIST_PAGE_SIZE + index + 1}</td>
+                              <td>
+                                <span className="date-cell">{formatDate(record.activityDate)}</span>
+                                <small className={`management-phase-tag ${phase}`}>{phase === "post" ? "수주 후" : "수주 전"}</small>
+                              </td>
+                              <td><span className="region-cell">{record.region || "—"}</span></td>
+                              <td>
+                                <strong className="org-name">{record.organization}</strong>
+                                <small>{record.businessRound}차 사업 · {record.topic || record.budgetType || "사업명 미입력"}</small>
+                              </td>
+                              <td className="management-contact-cell">
+                                <strong>{contact.name || record.contactName || "담당자 미등록"}{contact.role || record.contactRole ? ` · ${contact.role || record.contactRole}` : ""}</strong>
+                                {(contact.phone || record.contactPhone) ? <a href={`tel:${contact.phone || record.contactPhone}`}>{contact.phone || record.contactPhone}</a> : <small>전화 미등록</small>}
+                                {(contact.email || record.contactEmail) ? <a href={`mailto:${contact.email || record.contactEmail}`}>{contact.email || record.contactEmail}</a> : <small>기관 메일 미등록</small>}
+                              </td>
+                              <td className="budget-summary-cell">
+                                {institutionBudgetLinesForRecord(record).length ? (
+                                  <div className="institution-budget-lines">
+                                    {institutionBudgetLinesForRecord(record).map((budget) => (
+                                      <div className="institution-budget-line" key={budget.key}><span className="budget-summary-name">{budget.name}</span><strong className="budget-amount">{budget.amount}</strong></div>
+                                    ))}
+                                  </div>
+                                ) : <small>예산·금액 미입력</small>}
+                                {contract && <small className={`management-contract quote-${contract.status}`}>계약 {contract.amount} · {contract.detail}</small>}
+                              </td>
+                              <td>
+                                {phase === "post" ? (
+                                  <div className="award-stage-cell">
+                                    <span className={`award-stage stage-${normalizeAwardStage(record.awardStage, record.awardStatus).replaceAll(" ", "-")}`}>{normalizeAwardStage(record.awardStage, record.awardStatus)}</span>
+                                    {["위즈업 수주", "협력사 수주"].includes(record.awardStatus) && !isCompletedAwardStage(record.awardStage) && (
+                                      <button type="button" className="award-complete-action" disabled={awardCompletionBusyId !== null} onClick={(event) => { event.stopPropagation(); void markAwardAsCompleted(record); }}>{awardCompletionBusyId === record.id ? "처리 중…" : "납품 완료 처리"}</button>
+                                    )}
+                                  </div>
+                                ) : <span className="sales-progress-pill">{normalizeSalesProgress(record.status, record.awardStatus)}</span>}
+                              </td>
+                              <td>
+                                {phase === "post" ? (
+                                  <div className="award-progress-content">
+                                    <strong className="award-company">{record.awardCompany || "수주업체 미정"}</strong>
+                                    <small>{record.summary || "진행 내용 미입력"}</small>
+                                    <small>{record.awardStatus}</small>
+                                  </div>
+                                ) : (
+                                  <><strong className="followup-summary">{record.summary || record.topic || "내용 미입력"}</strong><small>{record.nextAction || "다음 행동 미지정"}</small></>
+                                )}
+                              </td>
+                              <td>
+                                <span className={`execution-pill ${record.executionType === "컨소" ? "consortium" : record.executionType === "직영" ? "direct" : "pending"}`}>{record.executionType || "미정"}</span>
+                                {record.executionType === "컨소" && <small>{record.consortiumCompany || "컨소업체 미등록"}</small>}
+                              </td>
+                              <td>{renderInlineAssigneePicker(record)}</td>
+                              <td><button type="button" className="management-detail-button" onClick={(event) => { event.stopPropagation(); setDetailBusinessRound(record.businessRound); setDetailOrganization(record.organization); }}>상세</button></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {!loading && unifiedManagementRows.length === 0 && <div className="empty-state large">조건에 맞는 기관·사업이 없습니다.</div>}
+                  </StickyTableWrap>
+                  <DataListPagination page={institutionPage} pageCount={unifiedManagementPageCount} total={unifiedManagementRows.length} label="기관별 통합 관리 페이지" onPageChange={setInstitutionPage} />
+                </>
+              ) : (
+              <>
               <StickyTableWrap className="data-list-table">
                 <table className="followup-table">
                   <thead>
@@ -19034,15 +19506,16 @@ export default function CrmApp({
                         />
                       </th>
                       <th>순번</th>
-                      <th>최종 컨택일</th>
+                      <th>최근일</th>
                       <th>지역</th>
-                      <th>기관명</th>
+                      <th>기관·사업</th>
                       <th>기관 담당자</th>
-                      <th>기관 메일</th>
-                      <th>예산 · 금액</th>
-                      <th>내용 요약</th>
+                      <th>예산·금액</th>
+                      <th>현재 상태</th>
+                      <th>업무 요약</th>
                       <th>사업방식</th>
                       <th>진행 담당자</th>
+                      <th>상세</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -19118,6 +19591,7 @@ export default function CrmApp({
                         </td>
                         <td>
                           <strong className="org-name">{group.sponsorOrganization}</strong>
+                          <small>{record.businessRound}차 사업 · {record.topic || record.budgetType || "사업명 미입력"}</small>
                           {group.projectId && (
                             <>
                               <span className="joint-project-badge sponsor" title={group.projectName}>
@@ -19148,11 +19622,9 @@ export default function CrmApp({
                               .filter(Boolean)
                               .join(" · ") || "전화 미등록"}
                           </small>
-                        </td>
-                        <td>
-                          <span className="institution-email-cell">
-                            {record.contactEmail || "미등록"}
-                          </span>
+                          <small className="institution-email-cell">
+                            {record.contactEmail || "기관 메일 미등록"}
+                          </small>
                         </td>
                         <td className="budget-summary-cell">
                           {institutionBudgetLinesForRecord(record).length > 0 ? (
@@ -19184,6 +19656,11 @@ export default function CrmApp({
                             )}
                         </td>
                         <td>
+                          <span className="sales-progress-pill">
+                            {normalizeSalesProgress(record.status, record.awardStatus)}
+                          </span>
+                        </td>
+                        <td>
                           <strong className="followup-summary">
                             {record.summary || record.topic || "내용 미입력"}
                           </strong>
@@ -19208,6 +19685,21 @@ export default function CrmApp({
                         <td>
                           {renderInlineAssigneePicker(record)}
                         </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="management-detail-button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openJointProjectGroupDetail(
+                                group,
+                                Boolean(deferredSearch.trim()),
+                              );
+                            }}
+                          >
+                            상세
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -19231,6 +19723,8 @@ export default function CrmApp({
                 label="기관별 관리 페이지"
                 onPageChange={setInstitutionPage}
               />
+              </>
+              )}
               </div>
             </section>
           ) : (
@@ -19547,6 +20041,7 @@ export default function CrmApp({
                 }`}
                 id={view === "records" ? "team-detail-panel" : undefined}
               >
+              {view === "awards" && renderInstitutionManagementTabs()}
               <div className="panel-header records-heading">
                 <div>
                   <span className="section-kicker">ACTIVITY LOG</span>
@@ -19556,7 +20051,7 @@ export default function CrmApp({
                         ? "진행 중 수주 목록"
                         : awardFilter === "위즈업 수주"
                           ? "위즈업 수주·계약 현황"
-                          : "기관별 관리(수주 후) 현황"
+                          : "수주 후 기관·사업 현황"
                       : view === "dashboard"
                         ? isOwner && dashboardActivityScope === "all"
                           ? "전체 최근 활동 이력"
@@ -19646,7 +20141,7 @@ export default function CrmApp({
                       data-mobile-label="정보 수정"
                       onClick={toggleAwardBulkEditor}
                     >
-                      <span>선택 정보 수정</span>
+                      <span>선택 수정</span>
                     </button>
                   )}
                   {view === "awards" && selectedAwardIds.length > 0 && (
@@ -19656,7 +20151,7 @@ export default function CrmApp({
                       data-mobile-label="해제"
                       onClick={clearAwardSelection}
                     >
-                      <span>선택 전체 해제</span>
+                      <span>선택 해제</span>
                     </button>
                   )}
                   {view === "awards" && canManageRecords && (
@@ -19668,11 +20163,7 @@ export default function CrmApp({
                       onClick={() => setJointProjectOpen(true)}
                       title="기관 자료를 이동하지 않고 같은 공동사업 관계로 연결합니다."
                     >
-                      <span>{`공동사업 연결${
-                        selectedJointProjectCandidates.length > 0
-                          ? ` ${selectedJointProjectCandidates.length}`
-                          : ""
-                      }`}</span>
+                      <span>공동사업 연결</span>
                     </button>
                   )}
                   {view === "awards" && (
@@ -19681,7 +20172,7 @@ export default function CrmApp({
                       className="institution-merge-button mobile-short-label"
                       data-mobile-label="기관 합치기"
                       disabled={
-                        selectedAwardOrganizations.length < 2 ||
+                        selectedManagementOrganizations.length !== 2 ||
                         institutionMergeBusy
                       }
                       onClick={() => void openInstitutionMerge()}
@@ -19689,11 +20180,7 @@ export default function CrmApp({
                     >
                       <span>{institutionMergeBusy
                         ? "기관 확인 중…"
-                        : `선택 기관 합치기${
-                            selectedAwardOrganizations.length > 0
-                              ? ` ${selectedAwardOrganizations.length}`
-                              : ""
-                          }`}</span>
+                        : "중복 기관 합치기"}</span>
                     </button>
                   )}
                   {view === "awards" && isOwner && selectedAwardIds.length > 0 && (
@@ -19703,7 +20190,7 @@ export default function CrmApp({
                       data-mobile-label="삭제"
                       onClick={() => openAwardDelete("selected")}
                     >
-                      <span>선택 {selectedAwardIds.length}건 삭제</span>
+                      <span>선택 삭제</span>
                     </button>
                   )}
                   {view === "records" && teamDetailMode !== "activity" && (
@@ -19718,6 +20205,11 @@ export default function CrmApp({
                       전체 활동 보기
                     </button>
                   )}
+                  {view === "awards" && selectedAwardIds.length > 0 && (
+                    <span className="management-selection-count">
+                      선택 {selectedAwardIds.length}건
+                    </span>
+                  )}
                   <span className="record-count">
                     {view === "dashboard"
                       ? `최신 ${dashboardRecentRecords.length}건`
@@ -19729,7 +20221,9 @@ export default function CrmApp({
                           ? `${teamOrganizationRecords.length}곳`
                         : view === "records" && teamDetailMode === "followup"
                           ? `${teamFollowUpRecords.length}건`
-                        : `${filtered.length}건`}
+                        : view === "awards"
+                          ? `${awardDisplayGroups.length}개 사업`
+                          : `${filtered.length}건`}
                   </span>
                 </div>
               </div>
@@ -19827,17 +20321,34 @@ export default function CrmApp({
                   )}
                   {view === "awards" && (
                     <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="현재 상태 필터">
-                      <option value="전체 상태">전체 수주 진행상태</option>
+                      <option value="전체 상태">전체 현재 상태</option>
                       {awardStageOptions.map((status) => <option key={status}>{status}</option>)}
                     </select>
                   )}
-                  <select value={awardFilter} onChange={(event) => setAwardFilter(event.target.value)} aria-label="수주 결과 필터">
-                    <option>전체 수주</option>
-                    <option>위즈업 수주</option>
-                    <option>협력사 수주</option>
-                    <option>타업체 수주</option>
-                    <option>미정</option>
-                  </select>
+                  {view === "awards" ? (
+                    <details className="management-detail-filters">
+                      <summary>상세 필터</summary>
+                      <div>
+                        <label>
+                          <span>수주 결과</span>
+                          <select value={awardFilter} onChange={(event) => setAwardFilter(event.target.value)} aria-label="수주 결과 필터">
+                            <option>전체 수주</option>
+                            <option>위즈업 수주</option>
+                            <option>협력사 수주</option>
+                            <option>타업체 수주</option>
+                          </select>
+                        </label>
+                      </div>
+                    </details>
+                  ) : (
+                    <select value={awardFilter} onChange={(event) => setAwardFilter(event.target.value)} aria-label="수주 결과 필터">
+                      <option>전체 수주</option>
+                      <option>위즈업 수주</option>
+                      <option>협력사 수주</option>
+                      <option>타업체 수주</option>
+                      <option>미정</option>
+                    </select>
+                  )}
                   {view === "awards" && (
                     <>
                       <select value={awardExecutionFilter} onChange={(event) => setAwardExecutionFilter(event.target.value)} aria-label="사업방식 필터">
@@ -19913,16 +20424,16 @@ export default function CrmApp({
                           />
                         </th>
                         <th>순번</th>
-                        <th>수주일</th>
+                        <th>최근일</th>
                         <th>지역</th>
-                        <th>기관</th>
-                        <th>예산 · 금액</th>
-                        <th>계약금액</th>
+                        <th>기관·사업</th>
+                        <th>기관 담당자</th>
+                        <th>예산·금액</th>
+                        <th>현재 상태</th>
+                        <th>업무 요약</th>
                         <th>사업방식</th>
-                        <th>수주업체</th>
-                        <th>컨소 업체</th>
-                        <th>수주 진행 상태</th>
                         <th>진행 담당자</th>
+                        <th>상세</th>
                       </tr>
                     ) : view === "records" ? (
                       <tr>
@@ -20024,7 +20535,7 @@ export default function CrmApp({
                               {awardPageGroupByPrimaryId.get(record.id)?.sponsorOrganization || record.organization}
                             </strong>
                             <small>
-                              {record.businessRound}차 사업
+                              {record.businessRound}차 사업 · {record.topic || record.budgetType || "사업명 미입력"}
                             </small>
                             {record.jointProjectId && (
                               <>
@@ -20052,6 +20563,11 @@ export default function CrmApp({
                               <span className="resale-active-badge">재영업 진행 중</span>
                             )}
                           </td>
+                          <td className="management-contact-cell">
+                            <strong>{record.contactName || "담당자 미등록"}{record.contactRole ? ` · ${record.contactRole}` : ""}</strong>
+                            {record.contactPhone ? <a href={`tel:${record.contactPhone}`}>{record.contactPhone}</a> : <small>전화 미등록</small>}
+                            {record.contactEmail ? <a href={`mailto:${record.contactEmail}`}>{record.contactEmail}</a> : <small>기관 메일 미등록</small>}
+                          </td>
                           <td className="budget-summary-cell">
                             <strong
                               className="award-budget-name budget-summary-name"
@@ -20070,56 +20586,24 @@ export default function CrmApp({
                                   ? `원문 ${record.budgetOriginalName} · 표준 예산 연결 필요`
                                   : "표준 예산 연결 필요"}
                             </small>
-                          </td>
-                          <td>
                             {(() => {
                               const contract = registeredContractDisplay(
                                 record,
                                 awardPageGroupByPrimaryId.get(record.id)?.members,
                               );
                               return (
-                                <>
+                                <div className="management-contract-summary">
+                                  <small>계약금액</small>
                                   <strong
                                     className={`budget-amount quote-${contract.status}`}
                                   >
                                     {contract.amount}
                                   </strong>
                                   <small>{contract.detail}</small>
-                                </>
+                                </div>
                               );
                             })()}
-                            {accountingExceptionForRecord(record) && (
-                              <span
-                                className="award-accounting-state pending"
-                                title={accountingExceptionForRecord(record)?.title}
-                              >
-                                {accountingExceptionForRecord(record)?.label}
-                              </span>
-                            )}
                           </td>
-                          <td>
-                            <span className={`execution-pill ${record.executionType === "컨소" ? "consortium" : record.executionType === "직영" ? "direct" : "pending"}`}>
-                              {record.executionType || "미정"}
-                            </span>
-                            {record.executionType === "컨소" && (
-                              <small>{record.consortiumCompany || "업체명 미입력"}</small>
-                            )}
-                          </td>
-                          <td>
-                            <strong className="award-company">{record.awardCompany || "미정"}</strong>
-                            {record.awardStatus === "타업체 수주" ? (
-                              <span className="award-pill other award-result-pill">
-                                타업체 수주
-                              </span>
-                            ) : record.awardStatus === "협력사 수주" ? (
-                              <span className="award-pill partner award-result-pill">
-                                협력사 수주
-                              </span>
-                            ) : (
-                              <small>{record.awardStatus}</small>
-                            )}
-                          </td>
-                          <td><strong className="award-company">{record.consortiumCompany || "해당 없음"}</strong></td>
                           <td>
                             <div className="award-stage-cell">
                               <span className={`award-stage stage-${normalizeAwardStage(record.awardStage, record.awardStatus).replaceAll(" ", "-")}`}>
@@ -20141,13 +20625,54 @@ export default function CrmApp({
                                   >
                                     {awardCompletionBusyId === record.id
                                       ? "처리 중…"
-                                      : "납품 완료"}
+                                      : "납품 완료 처리"}
                                   </button>
                                 )}
                             </div>
                           </td>
                           <td>
+                            <div className="award-progress-content">
+                            <strong className="award-company">{record.awardCompany || "수주업체 미정"}</strong>
+                            <small>{record.summary || "진행 내용 미입력"}</small>
+                            {record.awardStatus === "타업체 수주" ? (
+                              <span className="award-pill other award-result-pill">타업체 수주·종료</span>
+                            ) : record.awardStatus === "협력사 수주" ? (
+                              <span className="award-pill partner award-result-pill">협력사 수주</span>
+                            ) : (
+                              <small>{record.awardStatus}</small>
+                            )}
+                            {accountingExceptionForRecord(record) && (
+                              <span className="award-accounting-state pending" title={accountingExceptionForRecord(record)?.title}>{accountingExceptionForRecord(record)?.label}</span>
+                            )}
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`execution-pill ${record.executionType === "컨소" ? "consortium" : record.executionType === "직영" ? "direct" : "pending"}`}>
+                              {record.executionType || "미정"}
+                            </span>
+                            {record.executionType === "컨소" && (
+                              <small>{record.consortiumCompany || "컨소업체 미등록"}</small>
+                            )}
+                          </td>
+                          <td>
                             {renderInlineAssigneePicker(record)}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="management-detail-button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                const group = awardPageGroupByPrimaryId.get(record.id);
+                                if (group) openJointProjectGroupDetail(group, Boolean(deferredSearch.trim()));
+                                else {
+                                  setDetailBusinessRound(record.businessRound);
+                                  setDetailOrganization(record.organization);
+                                }
+                              }}
+                            >
+                              상세
+                            </button>
                           </td>
                         </tr>
                       ) : (
