@@ -20122,15 +20122,15 @@ export default function CrmApp({
                               <strong className="budget-amount">금액 미입력</strong>
                             </div>
                           )}
-                          {groupBudgetMatchStatus &&
+                          {budgetMatchStatusForGroup(group) &&
                             !["auto", "approved", "excluded"].includes(
-                              groupBudgetMatchStatus,
+                              budgetMatchStatusForGroup(group),
                             ) && (
                               <small
-                                className={`budget-match-badge ${groupBudgetMatchStatus}`}
+                                className={`budget-match-badge ${budgetMatchStatusForGroup(group)}`}
                               >
                                 {budgetMatchStatusLabel(
-                                  groupBudgetMatchStatus,
+                                  budgetMatchStatusForGroup(group),
                                 )}
                               </small>
                             )}

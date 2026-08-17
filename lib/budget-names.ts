@@ -1832,7 +1832,7 @@ export async function listBudgetNameManagement() {
                 1 AS sameBusiness,
                 CASE WHEN x.entity_id IS NULL THEN 0 ELSE 1 END AS excluded,
                 COALESCE(x.excluded_by_name, '') AS excludedByName,
-                COALESCE(x.excluded_at, '') AS excludedAt
+                COALESCE(CAST(x.excluded_at AS TEXT), '') AS excludedAt
          FROM activities a
          LEFT JOIN budget_name_review_exclusions x
            ON x.entity_type = 'activity' AND x.entity_id = a.id
@@ -1852,7 +1852,11 @@ export async function listBudgetNameManagement() {
                 p.budget_type AS name, p.organization,
                 COALESCE(a.region, '') AS region,
                 p.business_round AS businessRound,
-                COALESCE(a.activity_date, p.updated_at, p.created_at) AS recordDate,
+                COALESCE(
+                  a.activity_date,
+                  CAST(p.updated_at AS TEXT),
+                  CAST(p.created_at AS TEXT)
+                ) AS recordDate,
                 COALESCE(NULLIF(TRIM(p.notes), ''), p.name) AS recordSummary,
                 p.budget_amount AS budgetAmount,
                 p.name AS projectName, COALESCE(i.product_name, '') AS itemName,
@@ -1861,7 +1865,7 @@ export async function listBudgetNameManagement() {
                      THEN 1 ELSE 0 END AS sameBusiness,
                 CASE WHEN x.entity_id IS NULL THEN 0 ELSE 1 END AS excluded,
                 COALESCE(x.excluded_by_name, '') AS excludedByName,
-                COALESCE(x.excluded_at, '') AS excludedAt
+                COALESCE(CAST(x.excluded_at AS TEXT), '') AS excludedAt
          FROM equipment_projects p
          LEFT JOIN activities a ON a.id = p.activity_id
          LEFT JOIN equipment_items i ON i.project_id = p.id
@@ -1874,7 +1878,11 @@ export async function listBudgetNameManagement() {
            AND p.budget_group_id IS NULL
            AND COALESCE(p.budget_match_status, 'unclassified')
              IN ('review', 'unclassified', 'legacy')
-         ORDER BY COALESCE(a.activity_date, p.updated_at, p.created_at) DESC,
+         ORDER BY COALESCE(
+                    a.activity_date,
+                    CAST(p.updated_at AS TEXT),
+                    CAST(p.created_at AS TEXT)
+                  ) DESC,
                   p.id DESC, i.sort_order, i.id`,
       )
       .all<Record<string, unknown>>(),

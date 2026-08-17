@@ -53,8 +53,9 @@ test("budget manager initializes the latest D1 schema and uses PostgreSQL-safe d
   assert.match(budgets, /budget_names_runtime_ready_v76/);
   assert.match(
     budgets,
-    /ORDER BY COALESCE\(a\.activity_date, p\.updated_at, p\.created_at\) DESC/,
+    /CAST\(p\.updated_at AS TEXT\)[\s\S]*CAST\(p\.created_at AS TEXT\)/,
   );
+  assert.match(budgets, /COALESCE\(CAST\(x\.excluded_at AS TEXT\), ''\)/);
   assert.doesNotMatch(budgets, /ORDER BY recordDate DESC/);
 });
 

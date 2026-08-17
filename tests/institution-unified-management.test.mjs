@@ -69,3 +69,8 @@ test("전체 기관은 현재 상태와 분리된 단계·수주 주체 상세 �
   assert.match(crm, /전체 단계[\s\S]*수주 전[\s\S]*수주 후 전체[\s\S]*위즈업 수주[\s\S]*협력사 수주[\s\S]*타업체 수주/);
   assert.match(crm, /phase !== "post" \|\| record\.awardStatus !== institutionDetailFilter/);
 });
+
+test("수주 전 목록은 공동사업 예산 상태를 행 안에서 안전하게 계산한다", () => {
+  assert.doesNotMatch(crm, /\{groupBudgetMatchStatus &&/);
+  assert.match(crm, /budgetMatchStatusForGroup\(group\)/);
+});
