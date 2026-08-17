@@ -559,6 +559,10 @@ export default function BudgetNameManager({
   const [search, setSearch] = useState("");
   const [selectedNames, setSelectedNames] = useState<string[]>([]);
   const [targetGroupId, setTargetGroupId] = useState<number | null>(null);
+  const [targetGroupSearch, setTargetGroupSearch] = useState("");
+  const [unclassifiedAction, setUnclassifiedAction] = useState<
+    "connect" | "register" | null
+  >(null);
   const [newName, setNewName] = useState("");
   const [newKind, setNewKind] = useState<BudgetKind>("purpose");
   const [newAmountMode, setNewAmountMode] =
@@ -805,6 +809,17 @@ export default function BudgetNameManager({
         ),
     [data.groups],
   );
+  const filteredActiveGroups = useMemo(() => {
+    const keyword = targetGroupSearch.trim().toLocaleLowerCase("ko-KR");
+    return keyword
+      ? activeGroups.filter((group) =>
+          [group.canonicalName, ...group.aliases.map((alias) => alias.aliasName)]
+            .join(" ")
+            .toLocaleLowerCase("ko-KR")
+            .includes(keyword),
+        )
+      : activeGroups;
+  }, [activeGroups, targetGroupSearch]);
   const orderedGroups = useMemo(
     () =>
       [...data.groups].sort(
@@ -856,6 +871,7 @@ export default function BudgetNameManager({
       ? selectedNames.filter((item) => item !== name)
       : [...selectedNames, name];
     setSelectedNames(next);
+    if (!next.length) setUnclassifiedAction(null);
     if (!wasSelected && !clean(newName)) {
       setNewName(name);
     } else if (wasSelected && clean(newName) === clean(name)) {
@@ -909,6 +925,11 @@ export default function BudgetNameManager({
       `${selectedNames.length}개 이름을 ‘${target.canonicalName}’에 연결했습니다.`,
     );
     if (result) setSelectedNames([]);
+    if (result) {
+      setTargetGroupId(null);
+      setTargetGroupSearch("");
+      setUnclassifiedAction(null);
+    }
   }
 
   async function registerSelected() {
@@ -931,12 +952,15 @@ export default function BudgetNameManager({
         canonicalName,
         budgetKind: newKind,
         amountMode: newAmountMode,
+        defaultAmount: newDefaultAmount,
       },
       `새 표준 예산명 ‘${canonicalName}’을 등록하고 선택한 이름을 연결했습니다.`,
     );
     if (result) {
       setSelectedNames([]);
       setNewName("");
+      setNewDefaultAmount("");
+      setUnclassifiedAction(null);
       setTab("standards");
     }
   }
@@ -1123,6 +1147,136 @@ export default function BudgetNameManager({
                   {saving ? "재검증 중…" : "복구 불가 확인 후 영구 삭제"}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {unclassifiedAction && selectedNames.length > 0 && (
+        <div
+          className="institution-confirmation-overlay"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setUnclassifiedAction(null);
+          }}
+        >
+          <div
+            className="institution-confirmation-dialog budget-unclassified-action-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="budget-unclassified-action-title"
+          >
+            <span className="institution-confirmation-eyebrow">BUDGET REVIEW</span>
+            <h2 id="budget-unclassified-action-title">
+              {unclassifiedAction === "connect"
+                ? "기존 표준명에 연결"
+                : "새 표준명으로 등록"}
+            </h2>
+            <p className="institution-confirmation-description">
+              선택한 미분류 예산명 {selectedNames.length.toLocaleString()}개에 적용합니다.
+            </p>
+            {unclassifiedAction === "connect" ? (
+              <div className="budget-unclassified-modal-form">
+                <label>
+                  <span>표준 예산명 검색</span>
+                  <input
+                    autoFocus
+                    value={targetGroupSearch}
+                    onChange={(event) => setTargetGroupSearch(event.target.value)}
+                    placeholder="표준명·별칭 검색"
+                  />
+                </label>
+                <label>
+                  <span>연결할 표준 예산명</span>
+                  <select
+                    value={targetGroupId ?? ""}
+                    onChange={(event) =>
+                      setTargetGroupId(positiveInteger(event.target.value) || null)
+                    }
+                  >
+                    <option value="">표준 예산명을 선택해 주세요</option>
+                    {filteredActiveGroups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.canonicalName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : (
+              <div className="budget-unclassified-modal-form">
+                <label>
+                  <span>새 표준 예산명</span>
+                  <input
+                    autoFocus
+                    value={newName}
+                    onChange={(event) => setNewName(event.target.value)}
+                    placeholder="선택한 이름을 표준명으로 사용"
+                  />
+                </label>
+                <label>
+                  <span>예산 구분</span>
+                  <select
+                    value={newKind}
+                    onChange={(event) =>
+                      updateNewKind(normalizeKind(event.target.value) || "purpose")
+                    }
+                  >
+                    <option value="purpose">목적예산</option>
+                    <option value="self">자체예산</option>
+                  </select>
+                </label>
+                <label>
+                  <span>금액 처리</span>
+                  <select
+                    value={newAmountMode}
+                    onChange={(event) =>
+                      setNewAmountMode(
+                        normalizeMode(event.target.value) || "manual",
+                      )
+                    }
+                  >
+                    <option value="manual">금액 직접 입력</option>
+                    <option value="quote_auto">품목·견적 합계 자동 계산</option>
+                  </select>
+                </label>
+                <label>
+                  <span>기본 예산액 (선택)</span>
+                  <input
+                    inputMode="numeric"
+                    value={newDefaultAmount}
+                    onChange={(event) =>
+                      setNewDefaultAmount(moneyInput(event.target.value))
+                    }
+                    placeholder="예: 50,000,000"
+                  />
+                </label>
+              </div>
+            )}
+            <div className="institution-confirmation-actions">
+              <button type="button" onClick={() => setUnclassifiedAction(null)}>
+                취소
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={
+                  saving ||
+                  (unclassifiedAction === "connect"
+                    ? !targetGroupId
+                    : !newName.trim())
+                }
+                onClick={() =>
+                  void (unclassifiedAction === "connect"
+                    ? connectSelected()
+                    : registerSelected())
+                }
+              >
+                {saving
+                  ? "처리 중…"
+                  : unclassifiedAction === "connect"
+                    ? "선택 표준명에 연결"
+                    : "새 표준명 등록"}
+              </button>
             </div>
           </div>
         </div>
@@ -1781,40 +1935,6 @@ export default function BudgetNameManager({
               />
             </div>
             <div className="budget-unclassified-actions">
-              <select
-                value={targetGroupId ?? ""}
-                onChange={(event) =>
-                  setTargetGroupId(positiveInteger(event.target.value) || null)
-                }
-              >
-                <option value="">연결할 기존 표준 예산명</option>
-                {activeGroups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.canonicalName}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                disabled={saving || !selectedNames.length || !targetGroupId}
-                onClick={() => void connectSelected()}
-              >
-                기존 표준 예산에 연결
-              </button>
-              <button
-                type="button"
-                disabled={saving || !selectedNames.length}
-                onClick={() =>
-                  void changeReviewExclusions(
-                    data.names
-                      .filter((item) => selectedNames.includes(item.name))
-                      .flatMap((item) => item.details),
-                    true,
-                  )
-                }
-              >
-                검토 목록에서 제외
-              </button>
               <button
                 type="button"
                 onClick={() => setExcludedManagerOpen((current) => !current)}
@@ -1829,54 +1949,39 @@ export default function BudgetNameManager({
             </div>
           )}
 
-          <div className="budget-unclassified-create">
-            <input
-              value={newName}
-              onChange={(event) => setNewName(event.target.value)}
-              placeholder="선택한 예산명을 표준명으로 자동 사용"
-              title="예산명을 선택하면 해당 이름이 대표 표준 예산명으로 자동 입력됩니다."
-            />
-            <select
-              value={newKind}
-              onChange={(event) =>
-                updateNewKind(normalizeKind(event.target.value) || "purpose")
-              }
-            >
-              <option value="purpose">목적예산</option>
-              <option value="self">자체예산</option>
-            </select>
-            <select
-              value={newAmountMode}
-              onChange={(event) =>
-                setNewAmountMode(
-                  normalizeMode(event.target.value) || "manual",
-                )
-              }
-            >
-              <option value="manual">금액 직접 입력</option>
-              <option value="quote_auto">품목·견적 합계 자동 계산</option>
-            </select>
-            <button
-              type="button"
-              className="primary"
-              disabled={saving || !selectedNames.length || !newName.trim()}
-              onClick={() => void registerSelected()}
-            >
-              선택 이름을 표준 예산명으로 등록
-            </button>
-            <button
-              type="button"
-              disabled={saving || !selectedNames.length}
-              onClick={() =>
-                void runAction(
-                  { action: "keep-unclassified", selectedNames },
-                  "선택한 이름을 미분류 상태로 유지했습니다.",
-                )
-              }
-            >
-              미분류 상태 유지
-            </button>
-          </div>
+          {selectedNames.length > 0 && (
+            <div className="budget-unclassified-selection-actions" role="status">
+              <strong>{selectedNames.length.toLocaleString()}개 선택</strong>
+              <div>
+                <button type="button" onClick={() => setUnclassifiedAction("connect")}>
+                  기존 표준명에 연결
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!newName.trim()) setNewName(selectedNames[0] ?? "");
+                    setUnclassifiedAction("register");
+                  }}
+                >
+                  새 표준명으로 등록
+                </button>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() =>
+                    void changeReviewExclusions(
+                      data.names
+                        .filter((item) => selectedNames.includes(item.name))
+                        .flatMap((item) => item.details),
+                      true,
+                    )
+                  }
+                >
+                  검토 목록에서 제외
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="budget-name-grid" aria-busy={loading}>
             {filteredNames.map((item) => (

@@ -13847,6 +13847,60 @@ button:is(
   overflow: auto;
 }
 
+.budget-unclassified-action-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 32px));
+  overflow: auto;
+}
+
+.budget-unclassified-modal-form,
+.budget-unclassified-selection-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.budget-unclassified-modal-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 14px 0;
+}
+
+.budget-unclassified-modal-form label,
+.budget-unclassified-modal-form label > span {
+  display: grid;
+  gap: 6px;
+}
+
+.budget-unclassified-modal-form input,
+.budget-unclassified-modal-form select {
+  width: 100%;
+}
+
+.budget-unclassified-selection-actions {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  padding: 12px 15px;
+  border-bottom: 1px solid #e9edf3;
+  background: #f7f9ff;
+}
+
+.budget-unclassified-selection-actions > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .budget-unclassified-modal-form,
+  .budget-unclassified-selection-actions {
+    grid-template-columns: 1fr;
+  }
+  .budget-unclassified-selection-actions > div {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
+
 .budget-delete-impact-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

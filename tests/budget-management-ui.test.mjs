@@ -8,6 +8,22 @@ const [crm, selector, manager, styles] = await Promise.all([
   readFile(new URL("../app/budget-name-manager.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
 ]);
+const budgetNamesRoute = await readFile(
+  new URL("../app/api/budget-names/route.ts", import.meta.url),
+  "utf8",
+);
+
+test("미분류 예산명 작업은 선택 후 모달에서만 연결·등록·제외한다", () => {
+  assert.match(manager, /placeholder="미분류 예산명 검색"/);
+  assert.match(manager, /selectedNames\.length > 0/);
+  assert.match(manager, /기존 표준명에 연결/);
+  assert.match(manager, /새 표준명으로 등록/);
+  assert.match(manager, /placeholder="표준명·별칭 검색"/);
+  assert.match(manager, /defaultAmount: newDefaultAmount/);
+  assert.doesNotMatch(manager, /미분류 상태 유지/);
+  assert.match(budgetNamesRoute, /action === "keep-unclassified"[\s\S]*status: 410/);
+  assert.match(styles, /\.budget-unclassified-selection-actions/);
+});
 
 test("직원은 활성 표준 예산을 고르고 새 이름을 승인 대기로 저장한다", () => {
   assert.match(selector, /fetch\("\/api\/budget-catalog"/);

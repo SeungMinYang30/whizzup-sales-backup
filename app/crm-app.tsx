@@ -6447,6 +6447,8 @@ export default function CrmApp({
   const [typeFilter, setTypeFilter] = useState("전체 유형");
   const [statusFilter, setStatusFilter] = useState("전체 상태");
   const [awardFilter, setAwardFilter] = useState("전체 수주");
+  const [institutionDetailFilter, setInstitutionDetailFilter] =
+    useState("전체 단계");
   const [awardExecutionFilter, setAwardExecutionFilter] = useState("전체 사업방식");
   const [awardManagerFilter, setAwardManagerFilter] = useState("전체 담당자");
   const [budgetGroupFilter, setBudgetGroupFilter] = useState("all");
@@ -8001,13 +8003,39 @@ export default function CrmApp({
         amount:
           enteredAmounts.length === 0
             ? "금액 미입력"
-            : `${total.toLocaleString("ko-KR")}원`,
+            : formatBudgetDisplay(String(total)) || "0원",
         detail:
           missingCount > 0
             ? `설치기관 합계 · 금액 미입력 ${missingCount}곳`
             : `설치기관 ${siteMembers.length}곳 합계`,
       },
     ];
+  };
+  const hasResolvedStandardBudgetForGroup = (group: {
+    projectId: number | null;
+    primary: Activity;
+    members: Activity[];
+  }) => {
+    if (!group.projectId) return hasResolvedStandardBudget(group.primary);
+    return [group.primary, ...group.members].some(
+      (member) => Number(member.jointProjectBudgetGroupId) > 0,
+    );
+  };
+  const budgetMatchStatusForGroup = (group: {
+    projectId: number | null;
+    primary: Activity;
+    members: Activity[];
+  }) => {
+    if (hasResolvedStandardBudgetForGroup(group)) return "approved";
+    if (!group.projectId) return group.primary.budgetMatchStatus || "unclassified";
+    const statuses = [group.primary, ...group.members].map((member) =>
+      String(member.budgetMatchStatus || ""),
+    );
+    return (
+      ["pending", "review", "hold", "rejected"].find((status) =>
+        statuses.includes(status),
+      ) || group.primary.budgetMatchStatus || "unclassified"
+    );
   };
   const activityDetailFactValueForRecord = (
     record: Activity,
@@ -8379,19 +8407,21 @@ export default function CrmApp({
           b.activityDate.localeCompare(a.activityDate)
         );
       }
-      const awardOrder =
-        awardResultPriority(a.awardStatus) -
-        awardResultPriority(b.awardStatus);
-      if (awardOrder) return awardOrder;
       const aMeaningful = meaningfulActivitySortMetaForRecord(a);
       const bMeaningful = meaningfulActivitySortMetaForRecord(b);
       if (aMeaningful && bMeaningful) {
         const meaningfulDateOrder =
-          bMeaningful.activityDate.localeCompare(aMeaningful.activityDate) ||
-          bMeaningful.id - aMeaningful.id;
+          bMeaningful.activityDate.localeCompare(aMeaningful.activityDate);
         if (meaningfulDateOrder) return meaningfulDateOrder;
       } else if (aMeaningful || bMeaningful) {
         return aMeaningful ? -1 : 1;
+      }
+      const awardOrder =
+        awardResultPriority(a.awardStatus) -
+        awardResultPriority(b.awardStatus);
+      if (awardOrder) return awardOrder;
+      if (aMeaningful && bMeaningful && bMeaningful.id !== aMeaningful.id) {
+        return bMeaningful.id - aMeaningful.id;
       }
       return (
         b.activityDate.localeCompare(a.activityDate) ||
@@ -8872,6 +8902,18 @@ export default function CrmApp({
         phase: "post" as const,
       })),
     ].filter(({ record, phase }) => {
+      if (institutionDetailFilter !== "전체 단계") {
+        if (institutionDetailFilter === "수주 전" && phase !== "pre") return false;
+        if (institutionDetailFilter === "수주 후 전체" && phase !== "post") return false;
+        if (
+          ["위즈업 수주", "협력사 수주", "타업체 수주"].includes(
+            institutionDetailFilter,
+          ) &&
+          (phase !== "post" || record.awardStatus !== institutionDetailFilter)
+        ) {
+          return false;
+        }
+      }
       if (
         !matchesStandardBudgetFilter(
           record,
@@ -8969,6 +9011,7 @@ export default function CrmApp({
     budgetGroupFilter,
     budgetReviewCatalog,
     latestAwardRecords,
+    institutionDetailFilter,
     meaningfulActivitySortMetaByBusinessKey,
     preAwardInstitutionRows,
     statusFilter,
@@ -9115,6 +9158,7 @@ export default function CrmApp({
     setInstitutionBudgetOpen(false);
   }, [
     awardFilter,
+    institutionDetailFilter,
     budgetGroupFilter,
     followupDueSoonOnly,
     followupSort,
@@ -19618,6 +19662,22 @@ export default function CrmApp({
                     <option key={status}>{status}</option>
                   ))}
                 </select>
+                {institutionManagementTab === "all" && (
+                  <select
+                    value={institutionDetailFilter}
+                    onChange={(event) =>
+                      setInstitutionDetailFilter(event.target.value)
+                    }
+                    aria-label="상세 필터"
+                  >
+                    <option>전체 단계</option>
+                    <option>수주 전</option>
+                    <option>수주 후 전체</option>
+                    <option>위즈업 수주</option>
+                    <option>협력사 수주</option>
+                    <option>타업체 수주</option>
+                  </select>
+                )}
                 <select
                   value={awardExecutionFilter}
                   onChange={(event) =>
@@ -19669,6 +19729,8 @@ export default function CrmApp({
                 {(search ||
                   budgetGroupFilter !== "all" ||
                   statusFilter !== "전체 상태" ||
+                  (institutionManagementTab === "all" &&
+                    institutionDetailFilter !== "전체 단계") ||
                   awardExecutionFilter !== "전체 사업방식" ||
                   awardManagerFilter !== "전체 담당자" ||
                   (institutionManagementTab === "all"
@@ -19681,6 +19743,7 @@ export default function CrmApp({
                       setSearch("");
                       setBudgetGroupFilter("all");
                       setStatusFilter("전체 상태");
+                      setInstitutionDetailFilter("전체 단계");
                       setAwardExecutionFilter("전체 사업방식");
                       setAwardManagerFilter("전체 담당자");
                       setAwardSort("date-desc");
@@ -19757,6 +19820,8 @@ export default function CrmApp({
                           const registrationOnly =
                             phase === "pre" &&
                             isInstitutionRegistrationOnlyRecord(record);
+                          const groupBudgetMatchStatus =
+                            budgetMatchStatusForGroup(group);
                           return (
                             <tr
                               key={`${phase}-${group.key}`}
@@ -20057,15 +20122,15 @@ export default function CrmApp({
                               <strong className="budget-amount">금액 미입력</strong>
                             </div>
                           )}
-                          {record.budgetMatchStatus &&
+                          {groupBudgetMatchStatus &&
                             !["auto", "approved", "excluded"].includes(
-                              record.budgetMatchStatus,
+                              groupBudgetMatchStatus,
                             ) && (
                               <small
-                                className={`budget-match-badge ${record.budgetMatchStatus}`}
+                                className={`budget-match-badge ${groupBudgetMatchStatus}`}
                               >
                                 {budgetMatchStatusLabel(
-                                  record.budgetMatchStatus,
+                                  groupBudgetMatchStatus,
                                 )}
                               </small>
                             )}
@@ -21015,7 +21080,13 @@ export default function CrmApp({
                               )}
                             </div>
                             <small>
-                              {hasResolvedStandardBudget(record)
+                              {hasResolvedStandardBudgetForGroup(
+                                awardPageGroupByPrimaryId.get(record.id) ?? {
+                                  projectId: null,
+                                  primary: record,
+                                  members: [record],
+                                },
+                              )
                                 ? "표준 예산"
                                 : record.budgetOriginalName &&
                                     record.budgetOriginalName !== record.budgetType

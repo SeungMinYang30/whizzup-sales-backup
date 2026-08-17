@@ -141,6 +141,10 @@ test("공동사업 예산은 표준 예산명과 설치기관 합계만 표시�
   assert.match(crm, /member\.jointProjectRole !== "sponsor"/);
   assert.match(crm, /member\.jointProjectMemberBudgetAmount === null/);
   assert.match(crm, /enteredAmounts\.length === 0\s*\? "금액 미입력"/);
+  assert.match(crm, /formatBudgetDisplay\(String\(total\)\) \|\| "0원"/);
+  assert.match(crm, /hasResolvedStandardBudgetForGroup/);
+  assert.match(crm, /Number\(member\.jointProjectBudgetGroupId\) > 0/);
+  assert.match(crm, /budgetMatchStatusForGroup\(group\)/);
   assert.match(memberList, /amount === null\s*\? "금액 미입력"/);
   assert.doesNotMatch(memberList, /jointProjectMemberBudgetAmount \?\? member\.budgetAmount \?\? 0/);
   assert.match(summary, /hasEnteredAmount/);

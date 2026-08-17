@@ -11,7 +11,6 @@ import {
   createStandardBudgetName,
   deactivateStandardBudgetName,
   groupBudgetNames,
-  keepBudgetNamesUnclassified,
   listBudgetNameHistory,
   listBudgetNameManagement,
   moveBudgetMember,
@@ -84,7 +83,11 @@ export async function POST(request: Request) {
     }
     if (action === "keep-unclassified") {
       return Response.json(
-        await keepBudgetNamesUnclassified(member, payload.selectedNames),
+        {
+          error:
+            "미분류 상태 유지 작업은 더 이상 사용하지 않습니다. 검토 목록에서 제외를 이용해 주세요.",
+        },
+        { status: 410 },
       );
     }
     if (action === "preview-permanent-delete") {

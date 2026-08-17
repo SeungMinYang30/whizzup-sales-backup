@@ -52,3 +52,20 @@ test("상단 카드 문구는 영업·수주·현재 일정의 역할을 구분�
   assert.match(crm, /위즈업 수주 현황[\s\S]*전체 수주[\s\S]*진행 중[\s\S]*납품 완료/);
   assert.match(crm, /현재 시공·납품 일정[\s\S]*현재 대상[\s\S]*예정[\s\S]*진행/);
 });
+
+test("수주 후는 의미 있는 업무일 최신순이며 같은 날짜에만 수주 주체 순서를 적용한다", () => {
+  const awardSortBlock = crm.slice(
+    crm.indexOf("const displayedRecords = useMemo"),
+    crm.indexOf("const awardDisplayGroups = useMemo"),
+  );
+  assert.ok(awardSortBlock.indexOf("const aMeaningful") < awardSortBlock.indexOf("const awardOrder"));
+  assert.match(awardSortBlock, /bMeaningful\.activityDate\.localeCompare\(aMeaningful\.activityDate\)/);
+  assert.match(awardSortBlock, /awardResultPriority\(a\.awardStatus\)/);
+});
+
+test("전체 기관은 현재 상태와 분리된 단계·수주 주체 상세 필터를 제공한다", () => {
+  assert.match(crm, /institutionDetailFilter/);
+  assert.match(crm, /aria-label="상세 필터"/);
+  assert.match(crm, /전체 단계[\s\S]*수주 전[\s\S]*수주 후 전체[\s\S]*위즈업 수주[\s\S]*협력사 수주[\s\S]*타업체 수주/);
+  assert.match(crm, /phase !== "post" \|\| record\.awardStatus !== institutionDetailFilter/);
+});
