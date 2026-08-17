@@ -652,56 +652,114 @@ async function renderFieldInspectionSummaryPage(
   visitorName = fieldInspectionVisitorName(quote),
 ) {
   const { canvas, context } = inspectionCanvas();
+  const productLines = fieldInspectionProductLines(quote);
+  const measurement = document.createElement("canvas").getContext("2d");
+  if (!measurement) throw new Error("제품 확인 목록의 행 높이를 계산하지 못했습니다.");
+  const productWidths = [48, 188, 228, 76, 70, 86, 160, 178, 62];
+  const productColumns = [72];
+  productWidths.forEach((width) => productColumns.push(productColumns[productColumns.length - 1] + width));
+  const compactProductHeight = (name: string, specification: string) => {
+    measurement.font = '400 13px "Malgun Gothic", "Noto Sans KR", sans-serif';
+    const lines = Math.max(
+      splitText(measurement, name, productWidths[1] - 14, 3).length,
+      splitText(measurement, specification, productWidths[2] - 14, 3).length,
+    );
+    return Math.max(48, 18 + lines * 17);
+  };
   inspectionHeading(context, "현장 작동·수량 확인서", "제품 작동 상태와 납품·교구 수량을 현장에서 함께 확인합니다.", "검수서류");
   let y = 166;
-  inspectionSection(context, "기본정보", y); y += 48;
-  inspectionField(context, "기관명", quote.organization, 72, y, 1096, 64); y += 64;
-  inspectionField(context, "방문일", "20____.____.____", 72, y, 548, 62, { manual: true });
-  inspectionField(context, "견적번호", quote.quoteNumber, 620, y, 548, 62, { align: "center" }); y += 62;
-  inspectionField(context, "사업명", quote.projectTitle || "제품 공급", 72, y, 1096, 68, { maxLines: 3 }); y += 68;
+  inspectionSection(context, "기본정보", y); y += 42;
+  inspectionField(context, "기관명", quote.organization, 72, y, 1096, 52); y += 52;
+  inspectionField(context, "방문일", "20____.____.____", 72, y, 548, 52, { manual: true });
+  inspectionField(context, "견적번호", quote.quoteNumber, 620, y, 548, 52, { align: "center" }); y += 52;
+  inspectionField(context, "사업명", quote.projectTitle || "제품 공급", 72, y, 1096, 54, { maxLines: 2 }); y += 54;
   const suppliers = fieldInspectionSupplierText(quote);
   context.font = '400 15px "Malgun Gothic", "Noto Sans KR", sans-serif';
   const supplierLines = splitText(context, suppliers, 920, 8);
-  const supplierHeight = Math.max(68, 28 + supplierLines.length * 21);
+  const supplierHeight = Math.max(54, 20 + supplierLines.length * 19);
   inspectionField(context, "제조·공급사", suppliers, 72, y, 1096, supplierHeight, { maxLines: 8, fontSize: 15 }); y += supplierHeight;
-  inspectionField(context, "현장 지원사", FIELD_SUPPORT_COMPANY, 72, y, 548, 64);
-  inspectionField(context, "위즈업 방문자", visitorName, 620, y, 548, 64, { manual: true }); y += 76;
+  inspectionField(context, "현장 지원사", FIELD_SUPPORT_COMPANY, 72, y, 548, 52);
+  inspectionField(context, "위즈업 방문자", visitorName, 620, y, 548, 52, { manual: true }); y += 62;
 
-  inspectionSection(context, "확인결과", y); y += 48;
+  inspectionSection(context, "확인결과", y); y += 42;
   const resultRows = [
     ["제품 기본 작동", "□ 정상", "□ 이상"],
     ["견적 제품 수량", "□ 일치", "□ 불일치"],
     ["교구 수량", "□ 일치", "□ 부족"],
   ];
   resultRows.forEach(([label, left, right]) => {
-    inspectionBox(context, 72, y, 650, 62, "#ffffff");
-    inspectionBox(context, 722, y, 223, 62, "#fffbeb");
-    inspectionBox(context, 945, y, 223, 62, "#fffbeb");
-    drawCell(context, label, 72, y, 650, 62, { bold: true, fontSize: 16 });
-    drawCell(context, left, 722, y, 223, 62, { align: "center", fontSize: 16 });
-    drawCell(context, right, 945, y, 223, 62, { align: "center", fontSize: 16 });
-    y += 62;
+    inspectionBox(context, 72, y, 650, 48, "#ffffff");
+    inspectionBox(context, 722, y, 223, 48, "#fffbeb");
+    inspectionBox(context, 945, y, 223, 48, "#fffbeb");
+    drawCell(context, label, 72, y, 650, 48, { bold: true, fontSize: 15 });
+    drawCell(context, left, 722, y, 223, 48, { align: "center", fontSize: 15 });
+    drawCell(context, right, 945, y, 223, 48, { align: "center", fontSize: 15 });
+    y += 48;
   });
-  y += 14;
-  inspectionSection(context, "이상·누락 및 요청사항", y); y += 48;
-  const memoHeight = Math.max(150, 1_187 - y);
-  inspectionBox(context, 72, y, 1096, memoHeight, "#fffbeb");
+  y += 10;
+
+  inspectionSection(context, "견적 제품 현장 확인 목록", y); y += 42;
+  const headings = ["No", "품명", "규격", "견적", "단위", "현장", "작동 확인", "수량 확인", "비고"];
+  context.fillStyle = "#17233f";
+  context.fillRect(72, y, 1096, 42);
+  headings.forEach((heading, index) => {
+    context.fillStyle = "#ffffff";
+    context.font = '700 12px "Malgun Gothic", sans-serif';
+    context.textAlign = "center";
+    context.fillText(heading, productColumns[index] + productWidths[index] / 2, y + 27);
+  });
+  y += 42;
+  let renderedProductCount = 0;
+  const productBottom = 1_202;
+  if (!productLines.length) {
+    inspectionBox(context, 72, y, 1096, 48, "#ffffff");
+    drawCell(context, "확인할 일반 제품이 없습니다.", 72, y, 1096, 48, { align: "center", fontSize: 14 });
+    y += 48;
+  } else {
+    for (let index = 0; index < productLines.length; index += 1) {
+      const row = productLines[index];
+      const height = compactProductHeight(row.name, row.specification);
+      if (renderedProductCount > 0 && y + height > productBottom) break;
+      const values = [String(index + 1), row.name, row.specification, won.format(row.quantity), row.unit, "", "□ 정상  □ 이상", "□ 일치  □ 불일치", ""];
+      values.forEach((value, columnIndex) => {
+        inspectionBox(context, productColumns[columnIndex], y, productWidths[columnIndex], height, [5, 6, 7, 8].includes(columnIndex) ? "#fffbeb" : "#ffffff");
+        drawCell(context, value, productColumns[columnIndex], y, productWidths[columnIndex], height, {
+          align: [0, 3, 4, 5, 6, 7].includes(columnIndex) ? "center" : "left",
+          maxLines: columnIndex === 1 || columnIndex === 2 ? 3 : 2,
+          fontSize: columnIndex >= 6 ? 11 : 13,
+        });
+      });
+      renderedProductCount += 1;
+      y += height;
+    }
+  }
+  if (renderedProductCount < productLines.length) {
+    context.fillStyle = "#65738b";
+    context.font = '700 12px "Malgun Gothic", sans-serif';
+    context.textAlign = "right";
+    context.fillText(`나머지 ${productLines.length - renderedProductCount}개 품목은 다음 장에 계속됩니다.`, 1168, y + 18);
+    y += 26;
+  }
+  y += 10;
+
+  inspectionSection(context, "이상·누락 및 요청사항", y); y += 40;
+  inspectionBox(context, 72, y, 1096, 94, "#fffbeb");
   context.fillStyle = "#9aa4b4";
   context.font = '400 14px "Malgun Gothic", sans-serif';
   context.fillText("현장에서 확인한 이상, 누락 수량, 추가 요청사항을 작성해 주세요.", 96, y + 30);
-  y += memoHeight + 16;
-  inspectionSection(context, "확인자 서명", y); y += 48;
-  inspectionBox(context, 72, y, 548, 44, "#edf2fb");
-  inspectionBox(context, 620, y, 548, 44, "#edf2fb");
-  drawCell(context, "기관 담당자", 72, y, 548, 44, { bold: true, align: "center", fontSize: 16 });
-  drawCell(context, "위즈업 방문자", 620, y, 548, 44, { bold: true, align: "center", fontSize: 16 });
-  y += 44;
-  inspectionSignatureBox(context, 72, y, 548, 200);
-  inspectionSignatureBox(context, 620, y, 548, 200, visitorName);
-  y += 216;
-  inspectionBox(context, 72, y, 1096, 62, "#f4f7fc");
-  drawCell(context, FIELD_INSPECTION_NOTICE, 86, y, 1068, 62, { align: "center", maxLines: 2, fontSize: 12 });
-  return inspectionCanvasPage(canvas);
+  y += 104;
+  inspectionSection(context, "확인자 서명", y); y += 40;
+  inspectionBox(context, 72, y, 548, 38, "#edf2fb");
+  inspectionBox(context, 620, y, 548, 38, "#edf2fb");
+  drawCell(context, "기관 담당자", 72, y, 548, 38, { bold: true, align: "center", fontSize: 15 });
+  drawCell(context, "위즈업 방문자", 620, y, 548, 38, { bold: true, align: "center", fontSize: 15 });
+  y += 38;
+  inspectionSignatureBox(context, 72, y, 548, 140);
+  inspectionSignatureBox(context, 620, y, 548, 140, visitorName);
+  y += 152;
+  inspectionBox(context, 72, y, 1096, 56, "#f4f7fc");
+  drawCell(context, FIELD_INSPECTION_NOTICE, 86, y, 1068, 56, { align: "center", maxLines: 2, fontSize: 12 });
+  return { page: await inspectionCanvasPage(canvas), renderedProductCount };
 }
 
 function inspectionRowHeight(
@@ -732,8 +790,10 @@ function paginateInspectionRows<T>(rows: T[], heights: number[], capacity = 1_31
   return pages;
 }
 
-async function renderProductInspectionPages(quote: AuthoredQuotation) {
-  const lines = fieldInspectionProductLines(quote);
+async function renderProductInspectionPages(quote: AuthoredQuotation, startIndex = 0) {
+  const allLines = fieldInspectionProductLines(quote);
+  const lines = allLines.slice(startIndex);
+  if (!lines.length) return [];
   const measurement = document.createElement("canvas").getContext("2d");
   if (!measurement) throw new Error("제품 확인 목록의 행 높이를 계산하지 못했습니다.");
   const widths = [48, 188, 228, 76, 70, 86, 160, 178, 62];
@@ -757,7 +817,7 @@ async function renderProductInspectionPages(quote: AuthoredQuotation) {
     });
     let y = top + 56;
     chunks[pageIndex].forEach(({ row, height, index }) => {
-      const values = [String(index + 1), row.name, row.specification, won.format(row.quantity), row.unit, "", "□ 정상  □ 이상", "□ 일치  □ 불일치", ""];
+      const values = [String(startIndex + index + 1), row.name, row.specification, won.format(row.quantity), row.unit, "", "□ 정상  □ 이상", "□ 일치  □ 불일치", ""];
       values.forEach((value, columnIndex) => {
         inspectionBox(context, columns[columnIndex], y, widths[columnIndex], height, [5, 6, 7, 8].includes(columnIndex) ? "#fffbeb" : "#ffffff");
         drawCell(context, value, columns[columnIndex], y, widths[columnIndex], height, {
@@ -824,12 +884,12 @@ async function renderEquipmentInspectionPages(quote: AuthoredQuotation) {
 }
 
 async function renderFieldInspectionPages(quote: AuthoredQuotation, visitorName = fieldInspectionVisitorName(quote)) {
-  const [summary, products, equipment] = await Promise.all([
+  const [summary, equipment] = await Promise.all([
     renderFieldInspectionSummaryPage(quote, visitorName),
-    renderProductInspectionPages(quote),
     renderEquipmentInspectionPages(quote),
   ]);
-  return [summary, ...products, ...equipment];
+  const products = await renderProductInspectionPages(quote, summary.renderedProductCount);
+  return [summary.page, ...products, ...equipment];
 }
 
 async function jpegPagesToPdf(pages: Array<{ blob: Blob; width: number; height: number }>) {

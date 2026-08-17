@@ -13621,6 +13621,10 @@ button:is(
 .quotation-history-summary em { padding: 4px 7px; border-radius: 999px; background: #e9f7f1; color: #16805d; white-space: nowrap; }
 .quotation-history-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
 .quotation-history-action-message { margin: 0; padding: 10px 14px; border-bottom: 1px solid #dde5f1; background: #fff8e8; color: #8a5a00; font-size: 12px; font-weight: 700; }
+.quotation-pdf-fallback-actions { display: inline-flex; align-items: center; gap: 7px; margin-left: 10px; }
+.quotation-pdf-fallback-actions a,
+.quotation-pdf-fallback-actions button { min-height: 32px; padding: 0 11px; border: 1px solid #3157e6; border-radius: 7px; background: #3157e6; color: #fff; font: inherit; font-weight: 850; text-decoration: none; cursor: pointer; }
+.quotation-pdf-fallback-actions button { border-color: #cbd6e8; background: #fff; color: #56657c; }
 .quotation-output-menu { position: relative; flex: 0 0 auto; }
 .quotation-output-menu > summary {
   display: inline-flex;
@@ -13695,17 +13699,29 @@ button:is(
   .quotation-row-actions { justify-content: flex-start; }
 }
 
-/* Timeline labels stay readable without changing row height. */
+/* Keep institution context visible while giving most of the screen to dates. */
+.construction-schedule-workspace {
+  --construction-fixed-width: 440px;
+  --construction-day-count: 14;
+  --construction-date-min-width: 840px;
+}
 .construction-timeline-head,
-.construction-timeline-row { grid-template-columns: 665px minmax(2666px, 1fr); min-width: 3331px; }
+.construction-timeline-row {
+  grid-template-columns: var(--construction-fixed-width) minmax(var(--construction-date-min-width), 1fr);
+  min-width: calc(var(--construction-fixed-width) + var(--construction-date-min-width));
+}
 .construction-fixed-head,
-.construction-fixed-cells { grid-template-columns: 120px 220px 200px 125px; }
-.construction-days { grid-template-columns: repeat(31, 86px); }
+.construction-fixed-cells { grid-template-columns: 200px 160px 80px; }
+.construction-days { grid-template-columns: repeat(var(--construction-day-count), minmax(0, 1fr)); }
 .construction-fixed-head > span { display: flex; align-items: center; justify-content: center; text-align: center; }
-.construction-fixed-cells > span:first-child,
 .construction-fixed-cells > span:last-child { display: flex; align-items: center; justify-content: center; text-align: center; }
+.construction-work-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .construction-event { display: flex; align-items: center; justify-content: center; min-height: 30px; padding-inline: 7px; text-align: center; }
 .construction-event > span { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.construction-range-setting { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 9px 0 0; padding: 9px; border: 1px solid #dbe3ef; border-radius: 8px; }
+.construction-range-setting legend { padding: 0 4px; color: #728099; font-size: 10px; font-weight: 850; }
+.construction-range-setting label { display: flex; align-items: center; gap: 6px; color: #405170; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.construction-range-setting input { accent-color: #3e49e9; }
 
 @media (max-width: 900px) {
   .organization-quotation-history article { grid-template-columns: minmax(0, 1fr) auto; }
@@ -14212,21 +14228,21 @@ button:is(
 
 .construction-schedule-workspace.is-expanded .construction-timeline-head,
 .construction-schedule-workspace.is-expanded .construction-timeline-row {
-  grid-template-columns: 740px minmax(2604px, 1fr);
-  min-width: 3344px;
+  grid-template-columns: var(--construction-fixed-width) minmax(var(--construction-date-min-width), 1fr);
+  min-width: calc(var(--construction-fixed-width) + var(--construction-date-min-width));
 }
 
 .construction-schedule-workspace.is-expanded .construction-fixed-head,
 .construction-schedule-workspace.is-expanded .construction-fixed-cells {
-  grid-template-columns: 135px 255px 230px 120px;
+  grid-template-columns: 200px 160px 80px;
 }
 
 .construction-schedule-workspace.is-expanded .construction-days {
-  grid-template-columns: repeat(31, 84px);
+  grid-template-columns: repeat(var(--construction-day-count), minmax(0, 1fr));
 }
 
 .construction-schedule-workspace.is-expanded .construction-fixed-cells {
-  min-height: 82px;
+  min-height: 72px;
   align-items: stretch;
 }
 
@@ -14246,7 +14262,7 @@ button:is(
 
 .construction-schedule-workspace.is-expanded .construction-row-days,
 .construction-schedule-workspace.is-expanded .construction-row-days > span {
-  min-height: 82px;
+  min-height: 72px;
 }
 
 .construction-schedule-workspace.is-expanded .construction-event {
@@ -14287,15 +14303,26 @@ button:is(
 }
 
 @media (max-width: 700px) {
+  .quotation-workspace-message,
+  .quotation-history-action-message { display: grid; gap: 8px; }
+  .quotation-pdf-fallback-actions { width: 100%; margin-left: 0; }
+  .quotation-pdf-fallback-actions a { flex: 1; display: inline-flex; align-items: center; justify-content: center; min-height: 42px; }
+  .quotation-pdf-fallback-actions button { min-height: 42px; }
   .quotation-inspection-visitor-field input { min-height: 44px; font-size: 13px; }
 }
 
 @media (max-width: 1000px) {
+  .construction-schedule-workspace.is-expanded { --construction-fixed-width: 360px; }
+  .construction-schedule-workspace.is-expanded .construction-fixed-head,
+  .construction-schedule-workspace.is-expanded .construction-fixed-cells { grid-template-columns: 170px 125px 65px; }
   .construction-schedule-workspace.is-expanded .construction-timeline { display: block; }
   .construction-schedule-workspace.is-expanded .construction-mobile-list { display: none; }
 }
 
+.construction-mobile-expand-button { display: none !important; }
+
 @media (max-width: 700px) {
+  .construction-mobile-expand-button { display: flex !important; }
   .construction-schedule-workspace.is-expanded .construction-schedule-header { padding: 10px 12px; }
   .construction-schedule-workspace.is-expanded .construction-schedule-header > div:first-child p,
   .construction-schedule-workspace.is-expanded .construction-schedule-header .section-kicker { display: none; }

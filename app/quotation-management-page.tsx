@@ -442,6 +442,18 @@ function openPdfBlobInReservedTab(file: Blob, tab: Window) {
   }
 }
 
+function openPdfUrlInReservedTab(url: string, tab: Window) {
+  try {
+    tab.location.replace(url);
+    tab.focus();
+    window.setTimeout(() => tab.focus(), 120);
+    return true;
+  } catch {
+    tab.close();
+    return false;
+  }
+}
+
 async function renderGeneratedPdfPages(file: File) {
   const { GlobalWorkerOptions, getDocument } = await import("pdfjs-dist");
   GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
@@ -589,6 +601,7 @@ export default function QuotationManagementPage({
   const [trashOpen, setTrashOpen] = useState(false);
   const [quotationActionId, setQuotationActionId] = useState(0);
   const [inspectionDocumentAction, setInspectionDocumentAction] = useState("");
+  const [inspectionPdfFallback, setInspectionPdfFallback] = useState<{ url: string; name: string } | null>(null);
   const [inspectionVisitorName, setInspectionVisitorName] = useInspectionVisitorName();
   const [quotationFileJobVersion, setQuotationFileJobVersion] = useState(0);
   const [bulkFileRefresh, setBulkFileRefresh] = useState({ running: false, completed: 0, total: 0, failed: 0 });
@@ -610,6 +623,7 @@ export default function QuotationManagementPage({
   const draggedItemIdRef = useRef("");
   const editorHistoryActiveRef = useRef(false);
   const duplicateFileReconcileRef = useRef(false);
+  const inspectionPdfFallbackRef = useRef("");
   useAutoCloseQuotationOutputMenus();
   const quotationFileJobsRef = useRef(new Set<number>());
   const productSearchRef = useRef<HTMLDivElement | null>(null);
@@ -625,6 +639,10 @@ export default function QuotationManagementPage({
   useEffect(() => { draftRef.current = draft; }, [draft]);
 
   useEffect(() => () => settlementPrintPages.forEach((url) => URL.revokeObjectURL(url)), [settlementPrintPages]);
+
+  useEffect(() => () => {
+    if (inspectionPdfFallbackRef.current) URL.revokeObjectURL(inspectionPdfFallbackRef.current);
+  }, []);
 
   useEffect(() => {
     if (!productResultsOpen) return;
@@ -2395,12 +2413,18 @@ export default function QuotationManagementPage({
     }
     const action = `${quote.id}:inspection-pdf-view`;
     setInspectionDocumentAction(action);
+    if (inspectionPdfFallbackRef.current) URL.revokeObjectURL(inspectionPdfFallbackRef.current);
+    inspectionPdfFallbackRef.current = "";
+    setInspectionPdfFallback(null);
     setMessage("현장 검수서류 PDF를 만들고 있습니다.");
     try {
       const visitorName = await resolveInspectionVisitorName(inspectionVisitorName, quote.updatedByName);
       const file = await createFieldInspectionPdfFile(quote, quotationRegion(quote), visitorName);
-      if (!openPdfBlobInReservedTab(file, tab)) throw new Error("검수서류 PDF를 새 탭에서 열지 못했습니다.");
-      setMessage("현장 검수서류 PDF를 새 탭에서 열었습니다.");
+      const url = URL.createObjectURL(file);
+      inspectionPdfFallbackRef.current = url;
+      setInspectionPdfFallback({ url, name: file.name });
+      if (!openPdfUrlInReservedTab(url, tab)) throw new Error("검수서류 PDF를 새 탭에서 열지 못했습니다.");
+      setMessage("현장 검수서류 PDF가 준비됐습니다. 화면이 전환되지 않으면 PDF 열기를 눌러 주세요.");
     } catch (error) {
       tab.close();
       setMessage(error instanceof Error ? error.message : "현장 검수서류 PDF를 만들지 못했습니다.");
@@ -2732,7 +2756,7 @@ export default function QuotationManagementPage({
         <button className="app-button app-button-secondary" type="button" onClick={() => { setProductQuery(""); beginEditor(draftForScope(scope)); }}>{scope ? "현재 기관 빈 견적 만들기" : "새 견적 만들기"}</button>
       </div>
     </header>
-    {message && <div className="quotation-workspace-message">{message}</div>}
+    {message && <div className="quotation-workspace-message">{message}{inspectionPdfFallback ? <span className="quotation-pdf-fallback-actions"><a href={inspectionPdfFallback.url} target="_blank" rel="noreferrer">PDF 열기</a><button type="button" onClick={() => setInspectionPdfFallback(null)}>닫기</button></span> : null}</div>}
     <div className="quotation-list-toolbar">
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="기관명·사업명·견적번호 검색" />
       <span>{filteredQuotes.length.toLocaleString()}건</span>

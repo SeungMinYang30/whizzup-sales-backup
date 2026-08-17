@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AuthoredQuotation } from "../lib/authored-quotations";
 import { createFieldInspectionPdfFile, createFieldInspectionWorkbookFile } from "./field-inspection-documents";
 import { resolveInspectionVisitorName, useAutoCloseQuotationOutputMenus, useInspectionVisitorName } from "./quotation-output-menu-behavior";
@@ -51,8 +51,13 @@ export default function OrganizationQuotationHistory({
   const [reloadVersion, setReloadVersion] = useState(0);
   const [inspectionAction, setInspectionAction] = useState("");
   const [actionMessage, setActionMessage] = useState("");
+  const [inspectionPdfFallback, setInspectionPdfFallback] = useState<{ url: string; name: string } | null>(null);
+  const inspectionPdfFallbackRef = useRef("");
   const [inspectionVisitorName, setInspectionVisitorName] = useInspectionVisitorName();
   useAutoCloseQuotationOutputMenus();
+  useEffect(() => () => {
+    if (inspectionPdfFallbackRef.current) URL.revokeObjectURL(inspectionPdfFallbackRef.current);
+  }, []);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -156,13 +161,20 @@ export default function OrganizationQuotationHistory({
     tab.opener = null;
     const action = `${quote.id}:view`;
     setInspectionAction(action);
+    if (inspectionPdfFallbackRef.current) URL.revokeObjectURL(inspectionPdfFallbackRef.current);
+    inspectionPdfFallbackRef.current = "";
+    setInspectionPdfFallback(null);
     setActionMessage("");
     try {
       const visitorName = await resolveInspectionVisitorName(inspectionVisitorName, quote.updatedByName);
       const file = await createFieldInspectionPdfFile(quote, "", visitorName);
       const url = URL.createObjectURL(file);
+      inspectionPdfFallbackRef.current = url;
+      setInspectionPdfFallback({ url, name: file.name });
       tab.location.replace(url);
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      tab.focus();
+      window.setTimeout(() => tab.focus(), 120);
+      setActionMessage("검수서류 PDF가 준비됐습니다. 화면이 전환되지 않으면 PDF 열기를 눌러 주세요.");
     } catch (actionError) {
       tab.close();
       setActionMessage(actionError instanceof Error ? actionError.message : "현장 검수서류 PDF를 만들지 못했습니다.");
@@ -224,7 +236,7 @@ export default function OrganizationQuotationHistory({
     </section> : null}
     <section className="organization-quotation-history">
     <header><div><span className="section-kicker">QUOTATION HISTORY</span><h3>견적서 내역</h3>{readOnly && <p>최종 저장된 견적서와 PDF·Excel 파일을 확인합니다.</p>}</div><span>{visibleQuotes.length}건</span></header>
-    {actionMessage && <p className="quotation-history-action-message" role="status">{actionMessage}</p>}
+    {actionMessage && <p className="quotation-history-action-message" role="status">{actionMessage}{inspectionPdfFallback ? <span className="quotation-pdf-fallback-actions"><a href={inspectionPdfFallback.url} target="_blank" rel="noreferrer">PDF 열기</a><button type="button" onClick={() => setInspectionPdfFallback(null)}>닫기</button></span> : null}</p>}
     {error ? <div className="quotation-history-empty" role="alert"><p>{error}</p><button className="quotation-history-action primary" type="button" onClick={() => setReloadVersion((version) => version + 1)}>다시 불러오기</button></div> : loading ? <p>견적서를 불러오는 중입니다.</p> : visibleQuotes.length ? <div>{visibleQuotes.map((quote) => <article key={quote.id}>
       <span className="quotation-history-main"><b>{quote.quoteNumber}</b><small>{quote.quoteDate} · {quote.status === "final" ? "현재 최종본" : "작성 중"}</small>{displayedBudgets(quote).length > 0 ? <small>연결 예산 · {displayedBudgets(quote).map((budget) => `${budget.name} ${won.format(budget.allocatedAmount)}원`).join(" · ")}</small> : <small>예산 연결 필요</small>}</span>
       <div className="quotation-history-summary"><strong>{won.format(quote.totalAmount)}원</strong><small>품목 {quote.items.filter((item) => item.productId !== "__construction_cost__").length}개{quote.items.some((item) => item.productId === "__construction_cost__") ? ` · 공사비 ${won.format(quote.items.filter((item) => item.productId === "__construction_cost__").reduce((sum, item) => sum + item.amount, 0))}원` : ""}</small><em>{quote.status === "final" ? "최종" : "임시"}</em></div>

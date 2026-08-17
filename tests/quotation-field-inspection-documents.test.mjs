@@ -37,13 +37,13 @@ function sampleInput(withEquipment = true) {
   };
 }
 
-test("현장 검수 Excel은 기존 견적 시트 뒤에 확인서와 자동 품목 시트를 추가한다", () => {
+test("현장 검수 Excel은 일반 제품을 확인서에 합치고 교구 목록만 별도 시트로 둔다", () => {
   const files = unzipSync(createFieldInspectionWorkbook(sampleInput(true)));
   const workbook = decode(files["xl/workbook.xml"]);
   assert.match(workbook, /name="견적서"/);
   assert.match(workbook, /name="교구 세부견적"/);
   assert.match(workbook, /name="현장 확인서"/);
-  assert.match(workbook, /name="제품 확인 목록"/);
+  assert.doesNotMatch(workbook, /name="제품 확인 목록"/);
   assert.match(workbook, /name="교구 확인 목록"/);
 
   const summary = decode(files["xl/worksheets/sheet3.xml"]);
@@ -53,16 +53,14 @@ test("현장 검수 Excel은 기존 견적 시트 뒤에 확인서와 자동 품
   assert.match(summary, /현장 지원사/);
   assert.match(summary, /주식회사 위즈업/);
   assert.match(summary, /양승민 이사/);
-  assert.match(summary, /r="30" ht="40"/);
-  assert.match(summary, /r="32" ht="40"/);
+  assert.match(summary, /견적 제품 현장 확인 목록/);
+  assert.match(summary, /가상현실 스포츠시스템/);
+  assert.match(summary, /전자칠판/);
+  assert.match(summary, /교구 세트/);
   assert.match(summary, /성명: 양승민 이사/);
   assert.doesNotMatch(summary, /drawing/);
 
-  const products = decode(files["xl/worksheets/sheet4.xml"]);
-  assert.match(products, /가상현실 스포츠시스템/);
-  assert.match(products, /전자칠판/);
-  assert.match(products, /교구 세트/);
-  const equipment = decode(files["xl/worksheets/sheet5.xml"]);
+  const equipment = decode(files["xl/worksheets/sheet4.xml"]);
   assert.match(equipment, /축구공 4호/);
   assert.match(equipment, /□ 일치  □ 부족/);
 });
@@ -73,9 +71,29 @@ test("교구가 없는 견적에는 교구 관련 두 시트를 만들지 않는
   assert.doesNotMatch(workbook, /name="교구 세부견적"/);
   assert.doesNotMatch(workbook, /name="교구 확인 목록"/);
   assert.match(workbook, /name="현장 확인서"/);
-  assert.match(workbook, /name="제품 확인 목록"/);
-  assert.ok(files["xl/worksheets/sheet3.xml"]);
-  assert.equal(files["xl/worksheets/sheet4.xml"], undefined);
+  assert.doesNotMatch(workbook, /name="제품 확인 목록"/);
+  assert.ok(files["xl/worksheets/sheet2.xml"]);
+  assert.equal(files["xl/worksheets/sheet3.xml"], undefined);
+});
+
+test("제품이 많은 현장 확인서는 메모·서명 블록 앞에서 수동 페이지를 나눈다", () => {
+  const input = sampleInput(false);
+  input.lines = Array.from({ length: 10 }, (_, index) => ({
+    productId: `product-${index + 1}`,
+    name: `현장 확인 제품 ${index + 1}`,
+    specification: "긴 규격도 자동 줄바꿈되는 현장 확인용 제품 규격",
+    quantity: index + 1,
+    unit: "대",
+    unitPrice: 1_000_000,
+    note: "",
+    supplyType: "direct",
+    supplierVendorName: "주식회사 위즈업",
+  }));
+  const files = unzipSync(createFieldInspectionWorkbook(input));
+  const summary = decode(files["xl/worksheets/sheet2.xml"]);
+  assert.match(summary, /<rowBreaks count="1" manualBreakCount="1">/);
+  assert.match(summary, /이상·누락 및 요청사항/);
+  assert.match(summary, /확인자 서명/);
 });
 
 test("견적 목록·수정 화면·기관 상세에 동일한 현장 검수서류 메뉴와 방문자 입력이 있다", async () => {
@@ -95,9 +113,11 @@ test("견적 목록·수정 화면·기관 상세에 동일한 현장 검수서�
   }
   assert.match(pdf, /renderPages\(quote\)/);
   assert.match(pdf, /renderFieldInspectionPages\(quote, visitorName\.trim\(\)/);
-  assert.match(pdf, /inspectionSignatureBox\(context, 620, y, 548, 200, visitorName\)/);
-  assert.match(pdf, /1_187 - y/);
+  assert.match(pdf, /inspectionSignatureBox\(context, 620, y, 548, 140, visitorName\)/);
+  assert.match(pdf, /renderProductInspectionPages\(quote, summary\.renderedProductCount\)/);
   assert.match(pdf, /FIELD_INSPECTION_NOTICE/);
+  assert.match(page, /PDF 열기/);
+  assert.match(history, /PDF 열기/);
   assert.match(menuBehavior, /pointerdown/);
   assert.match(menuBehavior, /scroll/);
   assert.match(menuBehavior, /Escape/);
@@ -115,6 +135,9 @@ test("모바일 시공 일정은 직접 크게 보기와 전체화면·가로보
   assert.match(page, /requestFullscreen/);
   assert.match(page, /lock\?\.\("landscape"\)/);
   assert.match(page, /setHideCompleted\(key !== "completed"\)/);
+  assert.match(page, /useState<14 \| 31>\(14\)/);
+  assert.match(page, /기관명·지역/);
   assert.match(css, /\.construction-mobile-expand-button/);
+  assert.match(css, /--construction-fixed-width: 440px/);
   assert.match(css, /\.construction-schedule-workspace\.is-expanded \.construction-mobile-summary \{ display: none; \}/);
 });

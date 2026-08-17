@@ -362,17 +362,41 @@ function inspectionSource(input: QuotationWorkbookInput) {
 function fieldInspectionSheetXml(input: QuotationWorkbookInput) {
   const supplierText = fieldInspectionSupplierText(inspectionSource(input));
   const supplierHeight = Math.min(112, 30 + Math.max(0, Math.ceil(supplierText.length / 48) - 1) * 16);
+  const productLines = fieldInspectionProductLines(inspectionSource(input));
+  const productStartRow = 20;
+  const productRows = (productLines.length ? productLines : [{ name: "확인할 일반 제품이 없습니다.", specification: "", quantity: 0, unit: "" }]).map((line, index) => {
+    const row = productStartRow + index;
+    const height = line.name.length + line.specification.length > 55 ? 38 : 29;
+    return `<row r="${row}" ht="${height}" customHeight="1">${numeric(`A${row}`, productLines.length ? index + 1 : 0, 7)}${inline(`B${row}`, line.name, 8)}${inline(`C${row}`, "", 8)}${inline(`D${row}`, line.specification, 8)}${inline(`E${row}`, "", 8)}${numeric(`F${row}`, line.quantity, 7)}${inline(`G${row}`, line.unit, 7)}${inline(`H${row}`, "", 21)}${inline(`I${row}`, "□ 정상  □ 이상", 21)}${inline(`J${row}`, "□ 일치  □ 불일치", 21)}</row>`;
+  }).join("");
+  const productEndRow = productStartRow + Math.max(1, productLines.length) - 1;
+  const memoHeaderRow = productEndRow + 2;
+  const memoStartRow = memoHeaderRow + 1;
+  const memoEndRow = memoStartRow + 2;
+  const signatureHeaderRow = memoEndRow + 2;
+  const signatureTitleRow = signatureHeaderRow + 1;
+  const signatureStartRow = signatureTitleRow + 1;
+  const signatureEndRow = signatureStartRow + 1;
+  const noticeRow = signatureEndRow + 1;
+  const memoPageBreak = productLines.length > 6
+    ? `<rowBreaks count="1" manualBreakCount="1"><brk id="${memoHeaderRow - 1}" min="0" max="16383" man="1"/></rowBreaks>`
+    : "";
   const merges = [
     "A2:J3", "A4:J4", "A6:J6", "A7:B7", "C7:J7",
     "A8:B8", "C8:E8", "F8:G8", "H8:J8", "A9:B9", "C9:J9",
     "A10:B10", "C10:J10", "A11:B11", "C11:E11", "F11:G11", "H11:J11",
     "A13:J13", "A14:F14", "G14:H14", "I14:J14", "A15:F15", "G15:H15", "I15:J15",
-    "A16:F16", "G16:H16", "I16:J16", "A18:J18", "A19:J25", "A27:J27",
-    "A28:E28", "F28:J28", "A29:E32", "F29:J32", "A33:J33",
+    "A16:F16", "G16:H16", "I16:J16", "A18:J18",
+    ...Array.from({ length: Math.max(1, productLines.length) }, (_, index) => [`B${productStartRow + index}:C${productStartRow + index}`, `D${productStartRow + index}:E${productStartRow + index}`]).flat(),
+    `A${memoHeaderRow}:J${memoHeaderRow}`, `A${memoStartRow}:J${memoEndRow}`,
+    `A${signatureHeaderRow}:J${signatureHeaderRow}`,
+    `A${signatureTitleRow}:E${signatureTitleRow}`, `F${signatureTitleRow}:J${signatureTitleRow}`,
+    `A${signatureStartRow}:E${signatureEndRow}`, `F${signatureStartRow}:J${signatureEndRow}`,
+    `A${noticeRow}:J${noticeRow}`,
   ];
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:J33"/>
+  <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:J${noticeRow}"/>
   <sheetViews><sheetView showGridLines="0" zoomScale="85" workbookViewId="0"/></sheetViews>
   <sheetFormatPr defaultRowHeight="20"/>
   <cols><col min="1" max="2" width="10" customWidth="1"/><col min="3" max="5" width="13" customWidth="1"/><col min="6" max="7" width="10" customWidth="1"/><col min="8" max="10" width="13" customWidth="1"/></cols>
@@ -390,32 +414,23 @@ function fieldInspectionSheetXml(input: QuotationWorkbookInput) {
     <row r="14" ht="34" customHeight="1">${inline("A14", "제품 기본 작동", 3)}${styledBlanks(14, ["B","C","D","E","F"], 3)}${inline("G14", "□ 정상", 21)}${inline("H14", "", 21)}${inline("I14", "□ 이상", 21)}${inline("J14", "", 21)}</row>
     <row r="15" ht="34" customHeight="1">${inline("A15", "견적 제품 수량", 3)}${styledBlanks(15, ["B","C","D","E","F"], 3)}${inline("G15", "□ 일치", 21)}${inline("H15", "", 21)}${inline("I15", "□ 불일치", 21)}${inline("J15", "", 21)}</row>
     <row r="16" ht="34" customHeight="1">${inline("A16", "교구 수량", 3)}${styledBlanks(16, ["B","C","D","E","F"], 3)}${inline("G16", "□ 일치", 21)}${inline("H16", "", 21)}${inline("I16", "□ 부족", 21)}${inline("J16", "", 21)}</row>
-    <row r="18" ht="25" customHeight="1">${inline("A18", "이상·누락 및 요청사항", 2)}${styledBlanks(18, ["B","C","D","E","F","G","H","I","J"], 2)}</row>
-    <row r="19" ht="28" customHeight="1">${inline("A19", "", 22)}${styledBlanks(19, ["B","C","D","E","F","G","H","I","J"], 22)}</row>${[20,21,22,23,24,25].map((row) => `<row r="${row}" ht="16" customHeight="1"/>`).join("")}
-    <row r="27" ht="25" customHeight="1">${inline("A27", "확인자 서명", 2)}${styledBlanks(27, ["B","C","D","E","F","G","H","I","J"], 2)}</row>
-    <row r="28" ht="28" customHeight="1">${inline("A28", "기관 담당자", 3)}${styledBlanks(28, ["B","C","D","E"], 3)}${inline("F28", "위즈업 방문자", 3)}${styledBlanks(28, ["G","H","I","J"], 3)}</row>
-    <row r="29" ht="34" customHeight="1">${inline("A29", "성명: ____________________\n서명:", 22)}${styledBlanks(29, ["B","C","D","E"], 22)}${inline("F29", `성명: ${input.visitorName || "____________________"}\n서명:`, 22)}${styledBlanks(29, ["G","H","I","J"], 22)}</row>${[30,31,32].map((row) => `<row r="${row}" ht="40" customHeight="1"/>`).join("")}
-    <row r="33" ht="38" customHeight="1">${inline("A33", FIELD_INSPECTION_NOTICE, 20)}${styledBlanks(33, ["B","C","D","E","F","G","H","I","J"], 20)}</row>
-  </sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells>
+    <row r="18" ht="25" customHeight="1">${inline("A18", "견적 제품 현장 확인 목록", 2)}${styledBlanks(18, ["B","C","D","E","F","G","H","I","J"], 2)}</row>
+    <row r="19" ht="27" customHeight="1">${inline("A19", "No", 2)}${inline("B19", "품명", 2)}${inline("C19", "", 2)}${inline("D19", "규격", 2)}${inline("E19", "", 2)}${inline("F19", "견적", 2)}${inline("G19", "단위", 2)}${inline("H19", "현장", 2)}${inline("I19", "작동 확인", 2)}${inline("J19", "수량 확인", 2)}</row>
+    ${productRows}
+    <row r="${memoHeaderRow}" ht="25" customHeight="1">${inline(`A${memoHeaderRow}`, "이상·누락 및 요청사항", 2)}${styledBlanks(memoHeaderRow, ["B","C","D","E","F","G","H","I","J"], 2)}</row>
+    <row r="${memoStartRow}" ht="26" customHeight="1">${inline(`A${memoStartRow}`, "", 22)}${styledBlanks(memoStartRow, ["B","C","D","E","F","G","H","I","J"], 22)}</row>${Array.from({ length: memoEndRow - memoStartRow }, (_, index) => `<row r="${memoStartRow + index + 1}" ht="24" customHeight="1"/>`).join("")}
+    <row r="${signatureHeaderRow}" ht="25" customHeight="1">${inline(`A${signatureHeaderRow}`, "확인자 서명", 2)}${styledBlanks(signatureHeaderRow, ["B","C","D","E","F","G","H","I","J"], 2)}</row>
+    <row r="${signatureTitleRow}" ht="26" customHeight="1">${inline(`A${signatureTitleRow}`, "기관 담당자", 3)}${styledBlanks(signatureTitleRow, ["B","C","D","E"], 3)}${inline(`F${signatureTitleRow}`, "위즈업 방문자", 3)}${styledBlanks(signatureTitleRow, ["G","H","I","J"], 3)}</row>
+    <row r="${signatureStartRow}" ht="32" customHeight="1">${inline(`A${signatureStartRow}`, "성명: ____________________\n서명:", 22)}${styledBlanks(signatureStartRow, ["B","C","D","E"], 22)}${inline(`F${signatureStartRow}`, `성명: ${input.visitorName || "____________________"}\n서명:`, 22)}${styledBlanks(signatureStartRow, ["G","H","I","J"], 22)}</row><row r="${signatureEndRow}" ht="34" customHeight="1"/>
+    <row r="${noticeRow}" ht="38" customHeight="1">${inline(`A${noticeRow}`, FIELD_INSPECTION_NOTICE, 20)}${styledBlanks(noticeRow, ["B","C","D","E","F","G","H","I","J"], 20)}</row>
+  </sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells>${memoPageBreak}
   <printOptions horizontalCentered="1" verticalCentered="0"/><pageMargins left="0.3" right="0.3" top="0.35" bottom="0.35" header="0.15" footer="0.15"/>
-  <pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="1" horizontalDpi="300" verticalDpi="300"/>
+  <pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0" horizontalDpi="300" verticalDpi="300"/>
 </worksheet>`;
 }
 
-function productInspectionSheetXml(input: QuotationWorkbookInput) {
-  const lines = fieldInspectionProductLines(inspectionSource(input));
-  const firstRow = 8;
-  const rows = (lines.length ? lines : [{ name: "확인할 제품이 없습니다.", specification: "", quantity: 0, unit: "" }]).map((line, index) => {
-    const row = firstRow + index;
-    const height = line.name.length + line.specification.length > 55 ? 42 : 32;
-    return `<row r="${row}" ht="${height}" customHeight="1">${numeric(`A${row}`, lines.length ? index + 1 : 0, 7)}${inline(`B${row}`, line.name, 8)}${inline(`C${row}`, line.specification, 8)}${numeric(`D${row}`, line.quantity, 7)}${inline(`E${row}`, line.unit, 7)}${inline(`F${row}`, "", 21)}${inline(`G${row}`, "□ 정상  □ 이상", 21)}${inline(`H${row}`, "□ 일치  □ 불일치", 21)}${inline(`I${row}`, "", 22)}</row>`;
-  }).join("");
-  const noticeRow = firstRow + Math.max(1, lines.length) + 1;
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:I${noticeRow}"/><sheetViews><sheetView showGridLines="0" zoomScale="80" workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="20"/><cols><col min="1" max="1" width="5" customWidth="1"/><col min="2" max="2" width="22" customWidth="1"/><col min="3" max="3" width="28" customWidth="1"/><col min="4" max="5" width="9" customWidth="1"/><col min="6" max="6" width="11" customWidth="1"/><col min="7" max="8" width="18" customWidth="1"/><col min="9" max="9" width="18" customWidth="1"/></cols><sheetData>
-    <row r="1" ht="6" customHeight="1">${inline("A1", "", 19)}</row><row r="2" ht="34" customHeight="1">${inline("A2", "견적 제품 현장 확인 목록", 1)}</row><row r="3" ht="22" customHeight="1">${inline("A3", `${input.customerName} · ${input.quoteNumber || "견적번호 미지정"}`, 18)}</row>
-    <row r="5" ht="24" customHeight="1">${inline("A5", "현장 확인용", 2)}${styledBlanks(5, ["B","C","D","E","F","G","H","I"], 2)}</row>
-    <row r="7" ht="28" customHeight="1">${inline("A7", "No", 2)}${inline("B7", "품명", 2)}${inline("C7", "규격", 2)}${inline("D7", "견적", 2)}${inline("E7", "단위", 2)}${inline("F7", "현장", 2)}${inline("G7", "작동 확인", 2)}${inline("H7", "수량 확인", 2)}${inline("I7", "비고", 2)}</row>${rows}<row r="${noticeRow}" ht="36" customHeight="1">${inline(`A${noticeRow}`, "※ 실제 저장된 최종 견적 품목과 수량이 자동 입력되며 금액·원가·마진은 표시하지 않습니다.", 20)}${styledBlanks(noticeRow, ["B","C","D","E","F","G","H","I"], 20)}</row>
-  </sheetData><mergeCells count="4"><mergeCell ref="A2:I2"/><mergeCell ref="A3:I3"/><mergeCell ref="A5:I5"/><mergeCell ref="A${noticeRow}:I${noticeRow}"/></mergeCells><printOptions horizontalCentered="1"/><pageMargins left="0.25" right="0.25" top="0.35" bottom="0.35" header="0.15" footer="0.15"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0" horizontalDpi="300" verticalDpi="300"/></worksheet>`;
+function fieldInspectionSheetEndRow(input: QuotationWorkbookInput) {
+  return 30 + Math.max(1, fieldInspectionProductLines(inspectionSource(input)).length);
 }
 
 function equipmentInspectionSheetXml(input: QuotationWorkbookInput) {
@@ -517,15 +532,13 @@ function createWorkbook(input: QuotationWorkbookInput, includeInspection: boolea
   const equipmentKitFooterRow = hasEquipmentKit ? equipmentKitSignatureStartRow + 2 : 0;
   const hasAirpassDrawing = Boolean(hasEquipmentKit && input.airpassSealData?.length);
   const fieldInspectionSheetId = includeInspection ? (hasEquipmentKit ? 3 : 2) : 0;
-  const productInspectionSheetId = includeInspection ? fieldInspectionSheetId + 1 : 0;
-  const equipmentInspectionSheetId = includeInspection && hasEquipmentKit ? productInspectionSheetId + 1 : 0;
-  const worksheetCount = equipmentInspectionSheetId || productInspectionSheetId || (hasEquipmentKit ? 2 : 1);
+  const equipmentInspectionSheetId = includeInspection && hasEquipmentKit ? fieldInspectionSheetId + 1 : 0;
+  const worksheetCount = equipmentInspectionSheetId || fieldInspectionSheetId || (hasEquipmentKit ? 2 : 1);
   const workbookSheets = [
     '<sheet name="견적서" sheetId="1" r:id="rId1"/>',
     ...(hasEquipmentKit ? ['<sheet name="교구 세부견적" sheetId="2" r:id="rId2"/>'] : []),
     ...(includeInspection ? [
       `<sheet name="현장 확인서" sheetId="${fieldInspectionSheetId}" r:id="rId${fieldInspectionSheetId}"/>`,
-      `<sheet name="제품 확인 목록" sheetId="${productInspectionSheetId}" r:id="rId${productInspectionSheetId}"/>`,
       ...(hasEquipmentKit ? [`<sheet name="교구 확인 목록" sheetId="${equipmentInspectionSheetId}" r:id="rId${equipmentInspectionSheetId}"/>`] : []),
     ] : []),
   ].join("");
@@ -533,8 +546,7 @@ function createWorkbook(input: QuotationWorkbookInput, includeInspection: boolea
     `<definedName name="_xlnm.Print_Area" localSheetId="0">'견적서'!$A$1:$J$${signatureEndRow}</definedName>`,
     ...(hasEquipmentKit ? [`<definedName name="_xlnm.Print_Area" localSheetId="1">'교구 세부견적'!$A$1:$J$${equipmentKitFooterRow}</definedName>`] : []),
     ...(includeInspection ? [
-      `<definedName name="_xlnm.Print_Area" localSheetId="${fieldInspectionSheetId - 1}">'현장 확인서'!$A$1:$J$33</definedName>`,
-      `<definedName name="_xlnm.Print_Area" localSheetId="${productInspectionSheetId - 1}">'제품 확인 목록'!$A$1:$I$${9 + Math.max(1, fieldInspectionProductLines(inspectionSource(input)).length)}</definedName>`,
+      `<definedName name="_xlnm.Print_Area" localSheetId="${fieldInspectionSheetId - 1}">'현장 확인서'!$A$1:$J$${fieldInspectionSheetEndRow(input)}</definedName>`,
       ...(hasEquipmentKit ? [`<definedName name="_xlnm.Print_Area" localSheetId="${equipmentInspectionSheetId - 1}">'교구 확인 목록'!$A$1:$G$${9 + Math.max(1, fieldInspectionEquipmentLines(inspectionSource(input)).length)}</definedName>`] : []),
     ] : []),
   ].join("");
@@ -554,7 +566,6 @@ function createWorkbook(input: QuotationWorkbookInput, includeInspection: boolea
   if (hasEquipmentKit) files["xl/worksheets/sheet2.xml"] = bytes(equipmentKitSheetXml(input, hasAirpassDrawing));
   if (includeInspection) {
     files[`xl/worksheets/sheet${fieldInspectionSheetId}.xml`] = bytes(fieldInspectionSheetXml(input));
-    files[`xl/worksheets/sheet${productInspectionSheetId}.xml`] = bytes(productInspectionSheetXml(input));
     if (hasEquipmentKit) files[`xl/worksheets/sheet${equipmentInspectionSheetId}.xml`] = bytes(equipmentInspectionSheetXml(input));
   }
   if (hasDrawing) {

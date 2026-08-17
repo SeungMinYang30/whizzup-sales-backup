@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   addConstructionDays,
   constructionStageTone,
@@ -133,6 +133,8 @@ export default function ConstructionSchedulePage({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [orientationHint, setOrientationHint] = useState(false);
+  const [compactTimeline, setCompactTimeline] = useState(false);
+  const [timelineRange, setTimelineRange] = useState<14 | 31>(14);
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [mobileStatusFilter, setMobileStatusFilter] = useState<
@@ -140,15 +142,24 @@ export default function ConstructionSchedulePage({
   >("all");
   const [editor, setEditor] = useState<EditorState | null>(null);
   const workspaceRef = useRef<HTMLElement | null>(null);
+  const timelineDayCount = timelineRange === 31 ? 31 : compactTimeline ? 7 : 14;
   const dayMetas = useMemo(
-    () => getConstructionTimelineDays(start, 31, today),
-    [start, today],
+    () => getConstructionTimelineDays(start, timelineDayCount, today),
+    [start, timelineDayCount, today],
   );
   const days = useMemo(() => dayMetas.map((day) => day.date), [dayMetas]);
   const dayMetaByDate = useMemo(
     () => new Map(dayMetas.map((day) => [day.date, day])),
     [dayMetas],
   );
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1000px)");
+    const update = () => setCompactTimeline(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   const latestByScope = useMemo(() => {
     const map = new Map<string, ScheduleRecord>();
@@ -645,7 +656,14 @@ export default function ConstructionSchedulePage({
   ].filter(Boolean).join(" ");
 
   return (
-    <section ref={workspaceRef} className={`construction-schedule-workspace${embedded ? " is-embedded" : ""}${expanded ? " is-expanded" : ""}`}>
+    <section
+      ref={workspaceRef}
+      className={`construction-schedule-workspace${embedded ? " is-embedded" : ""}${expanded ? " is-expanded" : ""}${timelineRange === 31 ? " is-month-range" : ""}`}
+      style={{
+        "--construction-day-count": timelineDayCount,
+        "--construction-date-min-width": `${timelineDayCount * (compactTimeline ? 56 : 60)}px`,
+      } as CSSProperties}
+    >
       <header className="construction-schedule-header">
         <div>
           <span className="section-kicker">INSTALLATION · DELIVERY</span>
@@ -663,6 +681,11 @@ export default function ConstructionSchedulePage({
                 <input type="checkbox" checked={hideCompleted} onChange={(event) => setHideCompleted(event.target.checked)} />
                 완료 기관 제외
               </label>
+              <fieldset className="construction-range-setting">
+                <legend>표시 기간</legend>
+                <label><input type="radio" name="construction-range" checked={timelineRange === 14} onChange={() => setTimelineRange(14)} /> 한 화면</label>
+                <label><input type="radio" name="construction-range" checked={timelineRange === 31} onChange={() => setTimelineRange(31)} /> 31일 전체</label>
+              </fieldset>
             </div> : null}
           </div>
           <button type="button" className="construction-mobile-expand-button" aria-pressed={expanded} onClick={() => void toggleExpanded()}>{expanded ? "기본 보기" : "크게 보기"}</button>
@@ -710,7 +733,7 @@ export default function ConstructionSchedulePage({
 
       <div className="construction-timeline">
         <div className="construction-timeline-head">
-          <div className="construction-fixed-head"><span>지역</span><span>기관명</span><span>공사·품목</span><span>담당자</span></div>
+          <div className="construction-fixed-head"><span>기관명·지역</span><span>공사·품목</span><span>담당자</span></div>
           <div className="construction-days">
             {dayMetas.map((day) => (
               <span className={dayClassName(day)} key={day.date} title={day.holidayName || undefined}>
@@ -725,9 +748,8 @@ export default function ConstructionSchedulePage({
         {!loading && rows.map(({ project, record, items }) => (
           <article className="construction-timeline-row" key={scopeKey(project.organization, project.businessRound)}>
             <div className="construction-fixed-cells">
-              <span>{record?.region || "지역 미등록"}</span>
               <span className="construction-institution-cell">
-                <button type="button" className="construction-institution-main" onClick={() => onOpenOrganization(project.organization, project.businessRound)}><strong>{project.organization}</strong><small>{project.businessRound}차 사업</small></button>
+                <button type="button" className="construction-institution-main" onClick={() => onOpenOrganization(project.organization, project.businessRound)}><strong>{project.organization}</strong><small>{record?.region || "지역 미등록"} · {project.businessRound}차 사업</small></button>
                 {isPrimaryOwner ? <button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표 목록에서 삭제`} title="일정표 목록에서 삭제" disabled={saving} onClick={() => void removeProjectFromBoard(project)}>−</button> : null}
               </span>
               <button
