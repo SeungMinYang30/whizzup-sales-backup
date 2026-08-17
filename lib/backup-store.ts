@@ -86,6 +86,8 @@ const BUDGET_NAME_BACKUP_TABLES = new Set([
   "budget_name_aliases",
   "budget_name_members",
   "budget_name_events",
+  "budget_name_deleted_audit",
+  "budget_name_review_exclusions",
 ]);
 const LEGACY_BUDGET_NAME_NOTICE =
   "이 백업은 표준 예산명 기능 도입 이전 형식입니다. 복원 시 현재 표준 예산명과 별칭은 유지하고, 당시 활동·지도·품목 등 포함 자료만 복원합니다.";
@@ -562,6 +564,35 @@ export const BACKUP_TABLES = [
       "created_at",
     ],
     orderBy: "id",
+  },
+  {
+    name: "budget_name_deleted_audit",
+    columns: [
+      "id",
+      "deleted_group_id",
+      "canonical_name",
+      "canonical_key",
+      "snapshot_json",
+      "deleted_by",
+      "deleted_by_name",
+      "deleted_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "budget_name_review_exclusions",
+    columns: [
+      "entity_type",
+      "entity_id",
+      "original_name",
+      "excluded_by",
+      "excluded_by_name",
+      "excluded_at",
+      "restored_by",
+      "restored_by_name",
+      "restored_at",
+    ],
+    orderBy: "excluded_at, entity_type, entity_id",
   },
   {
     name: "budget_name_requests",

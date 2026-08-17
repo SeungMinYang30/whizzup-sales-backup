@@ -82,6 +82,7 @@ export type ConstructionScheduleProject = {
   sourceProductNames: string[];
   completed: boolean;
   hidden: boolean;
+  hiddenCandidate: boolean;
   updatedAt: string;
 };
 
@@ -588,6 +589,7 @@ function constructionProjectJson(
     sourceProductNames,
     completed: Number(row.completed) === 1,
     hidden: clean(row.hidden_at) !== "",
+    hiddenCandidate: clean(row.work_summary_mode) === "candidate-hidden",
     updatedAt: String(row.updated_at ?? ""),
   };
 }
@@ -918,6 +920,7 @@ export async function addConstructionScheduleProject(input: {
      ) VALUES (?, ?, ?, 0, ?, ?, ?, ?)
      ON CONFLICT(organization, business_round) DO UPDATE SET
        work_summary = CASE WHEN excluded.work_summary <> '' THEN excluded.work_summary ELSE work_summary END,
+       work_summary_mode = 'auto',
        completed = 0,
        hidden_at = '',
        updated_by = excluded.updated_by,
@@ -1373,7 +1376,8 @@ export async function setConstructionScheduleProjectHidden(input: {
     `UPDATE construction_schedule_projects
      SET hidden_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE '' END,
          updated_by = ?, updated_by_name = ?, updated_at = CURRENT_TIMESTAMP
-     WHERE organization = ? AND business_round = ?`,
+     WHERE organization = ? AND business_round = ?
+       AND COALESCE(work_summary_mode, 'auto') <> 'candidate-hidden'`,
   ).bind(
     input.hidden ? 1 : 0,
     input.memberId,
@@ -1382,6 +1386,54 @@ export async function setConstructionScheduleProjectHidden(input: {
     businessRound,
   ).run();
   if (!result.meta.changes) throw new Error("일정표 기관을 찾지 못했습니다.");
+  return listConstructionScheduleBoard();
+}
+
+export async function setConstructionScheduleCandidateHidden(input: {
+  organization: unknown;
+  businessRound: unknown;
+  hidden: boolean;
+  memberId: number;
+  memberName: string;
+}) {
+  const organization = clean(input.organization).slice(0, 120);
+  const businessRound = Math.max(1, Number(input.businessRound) || 1);
+  if (!organization) throw new Error("숨김 처리할 수주 기관을 확인해 주세요.");
+  const d1 = await ensureOrganizationSchedulesReady();
+  await requireWhizzupAwardScope(d1, organization, businessRound);
+  if (input.hidden) {
+    const result = await d1.prepare(
+      `INSERT INTO construction_schedule_projects (
+         organization, business_round, work_summary, work_summary_mode,
+         completed, hidden_at, created_by, created_by_name,
+         updated_by, updated_by_name
+       ) VALUES (?, ?, '', 'candidate-hidden', 0, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+       ON CONFLICT(organization, business_round) DO UPDATE SET
+         hidden_at = CURRENT_TIMESTAMP,
+         updated_by = excluded.updated_by,
+         updated_by_name = excluded.updated_by_name,
+         updated_at = CURRENT_TIMESTAMP
+       WHERE COALESCE(construction_schedule_projects.work_summary_mode, 'auto') = 'candidate-hidden'`,
+    ).bind(
+      organization,
+      businessRound,
+      input.memberId,
+      input.memberName,
+      input.memberId,
+      input.memberName,
+    ).run();
+    if (!result.meta.changes) {
+      throw new Error("이미 일정표에 등록된 기관은 기관 추가창에서 숨길 수 없습니다.");
+    }
+  } else {
+    const result = await d1.prepare(
+      `DELETE FROM construction_schedule_projects
+       WHERE organization = ? AND business_round = ?
+         AND COALESCE(work_summary_mode, 'auto') = 'candidate-hidden'
+         AND TRIM(COALESCE(hidden_at, '')) <> ''`,
+    ).bind(organization, businessRound).run();
+    if (!result.meta.changes) throw new Error("숨긴 기관을 찾지 못했습니다.");
+  }
   return listConstructionScheduleBoard();
 }
 

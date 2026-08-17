@@ -16,6 +16,7 @@ import {
   removeConstructionScheduleProject,
   replaceOrganizationSchedules,
   saveConstructionSchedules,
+  setConstructionScheduleCandidateHidden,
   setConstructionScheduleProjectHidden,
   updateOrganizationSchedule,
 } from "../../../lib/organization-schedules";
@@ -83,7 +84,20 @@ export async function GET(request: Request) {
     const member = await requireApprovedMember();
     const url = new URL(request.url);
     if (url.searchParams.get("scope") === "construction-board") {
-      return Response.json(await listConstructionScheduleBoard());
+      const board = await listConstructionScheduleBoard();
+      if (await isPrimaryOwner(member)) return Response.json(board);
+      const hiddenScopes = new Set(
+        board.projects
+          .filter((project) => project.hidden)
+          .map((project) => `${project.organization}\u001f${project.businessRound}`),
+      );
+      return Response.json({
+        projects: board.projects.filter((project) => !project.hidden),
+        schedules: board.schedules.filter(
+          (schedule) =>
+            !hiddenScopes.has(`${schedule.organization}\u001f${schedule.businessRound}`),
+        ),
+      });
     }
     if (url.searchParams.get("scope") === "construction-stages") {
       return Response.json({
@@ -316,12 +330,29 @@ export async function POST(request: Request) {
           : await listOrganizationSchedules(payload.organization, payload.businessRound),
       });
     }
-    if (payload.action === "hide-construction-project" || payload.action === "restore-construction-project") {
+    if (
+      payload.action === "hide-construction-project" ||
+      payload.action === "restore-construction-project" ||
+      payload.action === "hide-construction-candidate" ||
+      payload.action === "restore-construction-candidate"
+    ) {
       if (!(await isPrimaryOwner(member))) {
         return Response.json(
-          { error: "시공·납품 일정표의 기관 삭제·복원은 기본 운영자만 할 수 있습니다." },
+          { error: "시공·납품 일정표의 기관 숨김·다시 표시는 기본 운영자만 할 수 있습니다." },
           { status: 403 },
         );
+      }
+      if (
+        payload.action === "hide-construction-candidate" ||
+        payload.action === "restore-construction-candidate"
+      ) {
+        return Response.json(await setConstructionScheduleCandidateHidden({
+          organization: payload.organization,
+          businessRound: payload.businessRound,
+          hidden: payload.action === "hide-construction-candidate",
+          memberId: member.id,
+          memberName: member.displayName,
+        }));
       }
       return Response.json(await setConstructionScheduleProjectHidden({
         organization: payload.organization,

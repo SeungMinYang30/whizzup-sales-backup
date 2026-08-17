@@ -364,7 +364,8 @@ test("예산별 기관 화면은 지도와 같은 등록창을 쓰고 모바일 
     source("../app/globals.css"),
   ]);
 
-  assert.match(crm, /id: "budget-institutions", label: "예산별 기관"/);
+  assert.match(crm, /id: "followup", label: "기관·예산 관리"/);
+  assert.match(crm, /institution-budget-center-tabs/);
   assert.match(crm, /displayMode=\{\s*view === "budget-institutions" \? "budget" : "map"/);
   assert.match(map, /예산·공고별 기관 명단/);
   assert.match(map, /campaignPdfRef\.current\?\.click\(\)/);

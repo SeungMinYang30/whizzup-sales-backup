@@ -6,7 +6,7 @@ const crm = await readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("기관별 관리는 전체·수주 전·수주 후 탭과 하나의 메뉴로 통합된다", () => {
-  assert.match(crm, /label: "기관별 통합 관리"/);
+  assert.match(crm, /label: "기관·예산 관리"/);
   assert.doesNotMatch(crm, /label: "기관별 관리\(수주 후\)"/);
   assert.match(crm, /\["all", "전체"\][\s\S]*\["pre", "수주 전"\][\s\S]*\["post", "수주 후"\]/);
   assert.match(css, /\.institution-management-tabs/);

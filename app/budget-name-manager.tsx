@@ -6,11 +6,30 @@ import type {
   BudgetKind,
 } from "./budget-name-selector";
 
+type BudgetReviewDetail = {
+  entityType: "activity" | "equipment_project";
+  entityId: number;
+  name: string;
+  organization: string;
+  region: string;
+  businessRound: number;
+  recordDate: string;
+  recordSummary: string;
+  budgetAmount: string | null;
+  projectName: string;
+  itemNames: string[];
+  sameBusiness: boolean;
+  excluded: boolean;
+  excludedByName: string;
+  excludedAt: string;
+};
+
 type BudgetNameRow = {
   name: string;
   activityCount: number;
   projectCount: number;
   matchStatus: string;
+  details: BudgetReviewDetail[];
 };
 
 type BudgetAlias = {
@@ -112,69 +131,28 @@ type BudgetManagementPayload = {
   requests: BudgetRequest[];
   events: BudgetEvent[];
   retrofitPreview: RetrofitRow[];
+  excludedItems: BudgetReviewDetail[];
   error?: string;
 };
 
-type ManagerTab = "standards" | "unclassified" | "requests" | "history";
+type PermanentDeletePreview = {
+  groupId: number;
+  exists: boolean;
+  canDelete: boolean;
+  group?: { canonicalName?: string };
+  counts?: Record<string, number>;
+  details?: Array<{
+    type: string;
+    organization: string;
+    businessRound: number;
+    name: string;
+    id: string;
+  }>;
+  auditEventCount?: number;
+};
+
+type ManagerTab = "standards" | "unclassified" | "requests";
 type RequestDecision = "approve-new" | "approve-alias" | "hold" | "reject";
-
-type LegacyMergeReport = {
-  budgets?: {
-    sourceCount?: number;
-    targetCount?: number;
-    sourceUnclassifiedCount?: number;
-    targetUnclassifiedCount?: number;
-    missing?: Array<{ canonicalName?: string }>;
-  };
-  members?: {
-    sourceApprovedCount?: number;
-    targetApprovedCount?: number;
-    missingEmails?: string[];
-    duplicateEmails?: Array<{ email?: string; memberIds?: number[] }>;
-    source?: LegacyMemberComparison[];
-    target?: LegacyMemberComparison[];
-  };
-  backupId?: string;
-  after?: LegacyMergeReport;
-};
-
-type LegacyMemberComparison = {
-  email?: string;
-  displayName?: string;
-  status?: string;
-  isSales?: boolean;
-  assignments?: { total?: number };
-};
-
-type LegacyMergeAudit = {
-  backup?: { id?: string; createdAt?: string };
-  members?: {
-    yangSeungmin?: { displayName?: string; status?: string; isSales?: boolean } | null;
-  };
-  assignments?: {
-    restoredFromUnassigned?: number;
-    restoredByManager?: Record<string, number>;
-    changedWhileLocked?: number;
-    sameEmployeeRename?: number;
-    differentEmployeeOverwrite?: number;
-    unknownAssignedChanged?: number;
-    authorsAdded?: number;
-    historyAdded?: number;
-    scheduleRowsChanged?: number;
-    campaignTargetRowsChanged?: number;
-    complexProjectRowsChanged?: number;
-  };
-  budgets?: {
-    groupsBefore?: number;
-    groupsAfter?: number;
-    aliasesBefore?: number;
-    aliasesAfter?: number;
-    linksBefore?: number;
-    linksAfter?: number;
-    eventsBefore?: number;
-    eventsAfter?: number;
-  };
-};
 
 function clean(value: unknown) {
   return String(value ?? "").normalize("NFKC").replace(/\s+/g, " ").trim();
@@ -462,6 +440,36 @@ function normalizeRetrofitRow(value: unknown): RetrofitRow | null {
 }
 
 function normalizePayload(payload: Record<string, unknown>): BudgetManagementPayload {
+  const normalizeDetail = (value: unknown): BudgetReviewDetail | null => {
+    const row = (value ?? {}) as Record<string, unknown>;
+    const entityId = positiveInteger(row.entityId ?? row.entity_id);
+    if (!entityId) return null;
+    return {
+      entityType:
+        clean(row.entityType ?? row.entity_type) === "equipment_project"
+          ? "equipment_project"
+          : "activity",
+      entityId,
+      name: clean(row.name),
+      organization: clean(row.organization),
+      region: clean(row.region),
+      businessRound: positiveInteger(row.businessRound ?? row.business_round) || 1,
+      recordDate: clean(row.recordDate ?? row.record_date),
+      recordSummary: clean(row.recordSummary ?? row.record_summary),
+      budgetAmount:
+        row.budgetAmount === null || row.budget_amount === null
+          ? null
+          : clean(row.budgetAmount ?? row.budget_amount),
+      projectName: clean(row.projectName ?? row.project_name),
+      itemNames: Array.isArray(row.itemNames)
+        ? row.itemNames.map(clean).filter(Boolean)
+        : [],
+      sameBusiness: Boolean(row.sameBusiness ?? row.same_business),
+      excluded: Boolean(row.excluded),
+      excludedByName: clean(row.excludedByName ?? row.excluded_by_name),
+      excludedAt: clean(row.excludedAt ?? row.excluded_at),
+    };
+  };
   const names = (Array.isArray(payload.names) ? payload.names : [])
     .map((value): BudgetNameRow | null => {
       const row = (value ?? {}) as Record<string, unknown>;
@@ -472,6 +480,9 @@ function normalizePayload(payload: Record<string, unknown>): BudgetManagementPay
         activityCount: Number(row.activityCount ?? row.activity_count) || 0,
         projectCount: Number(row.projectCount ?? row.project_count) || 0,
         matchStatus: clean(row.matchStatus ?? row.match_status) || "unclassified",
+        details: (Array.isArray(row.details) ? row.details : [])
+          .map(normalizeDetail)
+          .filter((item): item is BudgetReviewDetail => Boolean(item)),
       };
     })
     .filter((item): item is BudgetNameRow => Boolean(item));
@@ -495,6 +506,11 @@ function normalizePayload(payload: Record<string, unknown>): BudgetManagementPay
     )
       .map(normalizeRetrofitRow)
       .filter((item): item is RetrofitRow => Boolean(item)),
+    excludedItems: (
+      Array.isArray(payload.excludedItems) ? payload.excludedItems : []
+    )
+      .map(normalizeDetail)
+      .filter((item): item is BudgetReviewDetail => Boolean(item)),
     error: clean(payload.error),
   };
 }
@@ -518,8 +534,12 @@ function formatDateTime(value: string) {
 
 export default function BudgetNameManager({
   onToast,
+  onOpenInstitution,
+  onOpenHistory,
 }: {
   onToast: (message: string) => void;
+  onOpenInstitution?: (organization: string, businessRound: number) => void;
+  onOpenHistory?: () => void;
 }) {
   const [data, setData] = useState<BudgetManagementPayload>({
     names: [],
@@ -527,6 +547,7 @@ export default function BudgetNameManager({
     requests: [],
     events: [],
     retrofitPreview: [],
+    excludedItems: [],
   });
   const [tab, setTab] = useState<ManagerTab>("standards");
   const [loading, setLoading] = useState(true);
@@ -566,10 +587,11 @@ export default function BudgetNameManager({
     originalName?: string;
   } | null>(null);
   const [selectedRetrofit, setSelectedRetrofit] = useState<string[]>([]);
-  const [legacyReport, setLegacyReport] = useState<LegacyMergeReport | null>(null);
-  const [legacyAudit, setLegacyAudit] = useState<LegacyMergeAudit | null>(null);
-  const [legacyBusy, setLegacyBusy] = useState(false);
-  const [legacyMergeConfirmOpen, setLegacyMergeConfirmOpen] = useState(false);
+  const [detailName, setDetailName] = useState("");
+  const [excludedManagerOpen, setExcludedManagerOpen] = useState(false);
+  const [deletePreview, setDeletePreview] =
+    useState<PermanentDeletePreview | null>(null);
+  const [deleteConfirmationName, setDeleteConfirmationName] = useState("");
 
   async function load() {
     setLoading(true);
@@ -596,73 +618,6 @@ export default function BudgetNameManager({
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, []);
-
-  async function compareLegacyData() {
-    if (legacyBusy) return;
-    setLegacyBusy(true);
-    setError("");
-    try {
-      const response = await fetch("/api/admin/legacy-source-merge", {
-        cache: "no-store",
-      });
-      const payload = (await response.json()) as LegacyMergeReport & { error?: string };
-      if (!response.ok) {
-        throw new Error(clean(payload.error) || "원본과 버셀 데이터를 비교하지 못했습니다.");
-      }
-      setLegacyReport(payload);
-      onToast("원본과 버셀의 표준 예산명·담당자 데이터를 비교했습니다.");
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "원본 비교에 실패했습니다.");
-    } finally {
-      setLegacyBusy(false);
-    }
-  }
-
-  async function mergeLegacyData() {
-    if (legacyBusy) return;
-    setLegacyMergeConfirmOpen(false);
-    setLegacyBusy(true);
-    setError("");
-    try {
-      const response = await fetch("/api/admin/legacy-source-merge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      const payload = (await response.json()) as LegacyMergeReport & { error?: string };
-      if (!response.ok) {
-        throw new Error(clean(payload.error) || "원본 누락 데이터 병합에 실패했습니다.");
-      }
-      setLegacyReport(payload.after ?? payload);
-      await load();
-      onToast(`안전 병합이 완료되었습니다. 백업 ID: ${payload.backupId ?? "확인 가능"}`);
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "원본 누락 데이터 병합에 실패했습니다.");
-    } finally {
-      setLegacyBusy(false);
-    }
-  }
-
-  async function auditLegacyData() {
-    if (legacyBusy) return;
-    setLegacyBusy(true);
-    setError("");
-    try {
-      const response = await fetch("/api/admin/legacy-source-merge?audit=latest", {
-        cache: "no-store",
-      });
-      const payload = (await response.json()) as LegacyMergeAudit & { error?: string };
-      if (!response.ok) {
-        throw new Error(clean(payload.error) || "최근 병합 결과를 검증하지 못했습니다.");
-      }
-      setLegacyAudit(payload);
-      onToast("최근 병합 백업과 현재 데이터를 대조했습니다.");
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "최근 병합 검증에 실패했습니다.");
-    } finally {
-      setLegacyBusy(false);
-    }
-  }
 
   async function runAction(
     body: Record<string, unknown>,
@@ -706,6 +661,10 @@ export default function BudgetNameManager({
                 "retrofitPreview" in payload || "retrofit_preview" in payload
                   ? normalized.retrofitPreview
                   : current.retrofitPreview,
+              excludedItems:
+                "excludedItems" in payload
+                  ? normalized.excludedItems
+                  : current.excludedItems,
               error: normalized.error || current.error,
             }
           : normalized,
@@ -721,6 +680,107 @@ export default function BudgetNameManager({
       return null;
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function openPermanentDelete(group: BudgetGroup) {
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/budget-names", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "preview-permanent-delete",
+          groupId: group.id,
+        }),
+      });
+      const payload = (await response.json()) as PermanentDeletePreview & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(clean(payload.error) || "영구 삭제 가능 여부를 확인하지 못했습니다.");
+      }
+      setDeletePreview(payload);
+      setDeleteConfirmationName("");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "영구 삭제 가능 여부를 확인하지 못했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function confirmPermanentDelete() {
+    if (!deletePreview?.canDelete || saving) return;
+    const canonicalName = clean(deletePreview.group?.canonicalName);
+    if (clean(deleteConfirmationName) !== canonicalName) {
+      setError(`삭제할 이름 ‘${canonicalName}’을 정확히 입력해 주세요.`);
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/budget-names", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "permanent-delete",
+          groupId: deletePreview.groupId,
+          confirmationName: canonicalName,
+          acknowledgePermanent: true,
+        }),
+      });
+      const payload = (await response.json()) as Record<string, unknown> & {
+        deleted?: boolean;
+        deletePreview?: PermanentDeletePreview;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(clean(payload.error) || "표준 예산명을 영구 삭제하지 못했습니다.");
+      }
+      if (!payload.deleted) {
+        setDeletePreview(payload.deletePreview ?? deletePreview);
+        setError("삭제 직전 새로운 연결이 확인되어 영구 삭제하지 않았습니다.");
+        return;
+      }
+      setData(normalizePayload(payload));
+      setDeletePreview(null);
+      setDeleteConfirmationName("");
+      onToast(`표준 예산명 ‘${canonicalName}’을 영구 삭제했습니다.`);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "표준 예산명을 영구 삭제하지 못했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function changeReviewExclusions(
+    details: BudgetReviewDetail[],
+    excluded: boolean,
+  ) {
+    if (!details.length) return;
+    const actionLabel = excluded ? "제외" : "복원";
+    const confirmed = window.confirm(
+      `${details.length.toLocaleString()}건을 검토 목록에서 ${actionLabel}합니다.\n\n원본 영업·사업·예산 기록과 금액, 기관·사업 연결은 변경되지 않습니다. 계속할까요?`,
+    );
+    if (!confirmed) return;
+    const result = await runAction(
+      {
+        action: "set-review-exclusions",
+        excluded,
+        entities: details.map((detail) => ({
+          entityType: detail.entityType,
+          entityId: detail.entityId,
+        })),
+      },
+      excluded
+        ? "선택한 원본 기록을 미분류 검토 목록에서 제외했습니다."
+        : "제외한 원본 기록을 미분류 검토 목록으로 복원했습니다.",
+    );
+    if (result) {
+      setSelectedNames([]);
+      if (!excluded) setExcludedManagerOpen(result.excludedItems.length > 0);
     }
   }
 
@@ -990,102 +1050,73 @@ export default function BudgetNameManager({
 
   return (
     <section className="budget-name-manager">
-      {legacyMergeConfirmOpen && (
+      {deletePreview && (
         <div className="institution-confirmation-overlay" role="presentation">
           <div
-            className="institution-confirmation-dialog"
+            className="institution-confirmation-dialog budget-permanent-delete-dialog"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="legacy-merge-confirm-title"
+            aria-labelledby="budget-permanent-delete-title"
           >
-            <span className="institution-confirmation-eyebrow">SAFE SOURCE MERGE</span>
-            <h2 id="legacy-merge-confirm-title">백업 후 누락 데이터만 병합할까요?</h2>
+            <span className="institution-confirmation-eyebrow">PERMANENT DELETE</span>
+            <h2 id="budget-permanent-delete-title">
+              ‘{deletePreview.group?.canonicalName || "선택 예산명"}’ 영구 삭제
+            </h2>
             <p className="institution-confirmation-description">
-              버셀의 구성원·업무 연결·표준 예산 관련 테이블을 먼저 백업한 뒤,
-              원본 사이트에서 확인되는 누락 연결만 이메일과 안정적인 업무 기준으로 복구합니다.
-              기존 버셀 데이터는 삭제하거나 초기화하지 않습니다.
+              삭제하면 복구할 수 없습니다. 서버가 현재 연결 상태를 다시 확인한 결과입니다.
             </p>
+            <div className="budget-delete-impact-grid">
+              <span>추가 별칭 <strong>{deletePreview.counts?.aliases ?? 0}건</strong></span>
+              <span>기관·사업 연결 <strong>{deletePreview.counts?.members ?? 0}건</strong></span>
+              <span>영업 기록 <strong>{deletePreview.counts?.activities ?? 0}건</strong></span>
+              <span>사업·품목 <strong>{deletePreview.counts?.projects ?? 0}건</strong></span>
+              <span>공동사업 <strong>{deletePreview.counts?.jointProjects ?? 0}건</strong></span>
+              <span>신청 ID <strong>{deletePreview.counts?.requests ?? 0}건</strong></span>
+            </div>
+            {!!deletePreview.details?.length && (
+              <div className="budget-delete-impact-details">
+                {deletePreview.details.slice(0, 30).map((detail) => (
+                  <div key={`${detail.type}:${detail.id}`}>
+                    <strong>{detail.type}</strong>
+                    <span>{detail.organization || "기관 없음"}{detail.businessRound ? ` · ${detail.businessRound}차` : ""}</span>
+                    <small>{detail.name || "예산명·내용 미입력"}</small>
+                  </div>
+                ))}
+              </div>
+            )}
+            {deletePreview.canDelete ? (
+              <label className="budget-delete-confirm-name">
+                <span>확인을 위해 예산명 입력</span>
+                <input
+                  value={deleteConfirmationName}
+                  onChange={(event) => setDeleteConfirmationName(event.target.value)}
+                  placeholder={deletePreview.group?.canonicalName || "예산명"}
+                />
+                <small>감사이력은 이름·삭제자·삭제시각 스냅샷으로 보존됩니다.</small>
+              </label>
+            ) : (
+              <p className="budget-delete-blocked">
+                연결된 자료가 있어 삭제할 수 없습니다. 먼저 해당 연결을 명시적으로 이전하거나 해제해 주세요.
+              </p>
+            )}
             <div className="institution-confirmation-actions">
-              <button
-                type="button"
-                className="institution-confirmation-secondary"
-                onClick={() => setLegacyMergeConfirmOpen(false)}
-              >
-                취소
+              <button type="button" className="institution-confirmation-secondary" onClick={() => setDeletePreview(null)}>
+                닫기
               </button>
-              <button
-                type="button"
-                className="institution-confirmation-primary"
-                onClick={() => void mergeLegacyData()}
-                disabled={legacyBusy}
-              >
-                {legacyBusy ? "백업·병합 중…" : "백업 후 안전 병합"}
-              </button>
+              {deletePreview.canDelete && (
+                <button
+                  type="button"
+                  className="institution-confirmation-primary danger"
+                  disabled={saving || clean(deleteConfirmationName) !== clean(deletePreview.group?.canonicalName)}
+                  onClick={() => void confirmPermanentDelete()}
+                >
+                  {saving ? "재검증 중…" : "복구 불가 확인 후 영구 삭제"}
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
-      <div className="panel" style={{ marginBottom: 16 }}>
-        <div className="panel-header">
-          <div>
-            <span className="section-kicker">SAFE SOURCE MERGE</span>
-            <h2>원본 데이터 안전 비교·병합</h2>
-            <p>표준 예산명과 전체 구성원·담당 업무 연결을 백업 후 이메일과 안정적인 업무 기준으로 대조합니다.</p>
-          </div>
-          <div className="panel-actions">
-            <button type="button" onClick={() => void compareLegacyData()} disabled={legacyBusy}>
-              {legacyBusy ? "확인 중…" : "원본과 비교"}
-            </button>
-            <button type="button" onClick={() => void auditLegacyData()} disabled={legacyBusy}>
-              최근 복구 검증
-            </button>
-            <button type="button" className="primary" onClick={() => setLegacyMergeConfirmOpen(true)} disabled={legacyBusy || !legacyReport}>
-              백업 후 누락 병합
-            </button>
-          </div>
-        </div>
-        {legacyReport && (
-          <>
-            <div className="budget-manager-summary-grid">
-              <div><strong>표준 예산명</strong><span>원본 {legacyReport.budgets?.sourceCount ?? 0}개 · 버셀 {legacyReport.budgets?.targetCount ?? 0}개</span></div>
-              <div><strong>미분류 예산명</strong><span>원본 {legacyReport.budgets?.sourceUnclassifiedCount ?? 0}개 · 버셀 {legacyReport.budgets?.targetUnclassifiedCount ?? 0}개</span></div>
-              <div><strong>승인 구성원</strong><span>원본 {legacyReport.members?.sourceApprovedCount ?? 0}명 · 버셀 {legacyReport.members?.targetApprovedCount ?? 0}명</span></div>
-              <div><strong>누락·중복</strong><span>예산 {legacyReport.budgets?.missing?.length ?? 0}개 · 이메일 누락 {legacyReport.members?.missingEmails?.length ?? 0}개 · 중복 {legacyReport.members?.duplicateEmails?.length ?? 0}개</span></div>
-            </div>
-            {!!legacyReport.members?.source?.length && (
-              <details className="budget-manager-compare-details">
-                <summary>직원별 영업 담당 상태·연결 건수 비교</summary>
-                <div className="budget-manager-member-compare">
-                  {legacyReport.members.source.map((sourceMember) => {
-                    const targetMember = legacyReport.members?.target?.find((member) => clean(member.email).toLowerCase() === clean(sourceMember.email).toLowerCase());
-                    return (
-                      <div key={sourceMember.email}>
-                        <strong>{sourceMember.displayName || sourceMember.email}</strong>
-                        <span>{sourceMember.email}</span>
-                        <span>원본 {sourceMember.isSales ? "영업" : "사이트 이용"} · 연결 {sourceMember.assignments?.total ?? 0}건</span>
-                        <span>버셀 {targetMember ? (targetMember.isSales ? "영업" : "사이트 이용") : "계정 누락"} · 연결 {targetMember?.assignments?.total ?? 0}건</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </details>
-            )}
-          </>
-        )}
-        {legacyAudit && (
-          <div className="budget-manager-summary-grid" style={{ marginTop: 12 }}>
-            <div><strong>최근 백업</strong><span>{legacyAudit.backup?.id || "확인 필요"}</span></div>
-            <div><strong>담당 복구</strong><span>미지정에서 {legacyAudit.assignments?.restoredFromUnassigned ?? 0}건</span></div>
-            <div><strong>보호 결과</strong><span>잠금 변경 {legacyAudit.assignments?.changedWhileLocked ?? 0}건 · 타 직원 덮어쓰기 {legacyAudit.assignments?.differentEmployeeOverwrite ?? 0}건</span></div>
-            <div><strong>이름 표기 정리</strong><span>동일 이메일 {legacyAudit.assignments?.sameEmployeeRename ?? 0}건 · 확인 필요 {legacyAudit.assignments?.unknownAssignedChanged ?? 0}건</span></div>
-            <div><strong>양승민 계정</strong><span>{legacyAudit.members?.yangSeungmin?.status || "미확인"} · {legacyAudit.members?.yangSeungmin?.isSales ? "영업 담당자" : "사이트 이용만"}</span></div>
-            <div><strong>연결 복구</strong><span>작성자 {legacyAudit.assignments?.authorsAdded ?? 0}건 · 이력 {legacyAudit.assignments?.historyAdded ?? 0}건</span></div>
-            <div><strong>업무 연결</strong><span>일정 {legacyAudit.assignments?.scheduleRowsChanged ?? 0}건 · 캠페인 {legacyAudit.assignments?.campaignTargetRowsChanged ?? 0}건 · 수주 사업 {legacyAudit.assignments?.complexProjectRowsChanged ?? 0}건</span></div>
-            <div><strong>예산 관계</strong><span>표준 {legacyAudit.budgets?.groupsBefore ?? 0}→{legacyAudit.budgets?.groupsAfter ?? 0} · 별칭 {legacyAudit.budgets?.aliasesBefore ?? 0}→{legacyAudit.budgets?.aliasesAfter ?? 0}</span></div>
-            <div><strong>예산 연결</strong><span>연결 {legacyAudit.budgets?.linksBefore ?? 0}→{legacyAudit.budgets?.linksAfter ?? 0} · 이력 {legacyAudit.budgets?.eventsBefore ?? 0}→{legacyAudit.budgets?.eventsAfter ?? 0}</span></div>
-          </div>
-        )}
-      </div>
       <nav className="budget-manager-tabs" aria-label="표준 예산명 관리">
         <button
           type="button"
@@ -1113,13 +1144,15 @@ export default function BudgetNameManager({
             {pendingRequests.length}
           </span>
         </button>
-        <button
-          type="button"
-          className={tab === "history" ? "active" : ""}
-          onClick={() => setTab("history")}
-        >
-          변경 이력
-        </button>
+        {onOpenHistory && (
+          <button
+            type="button"
+            className="budget-history-link"
+            onClick={onOpenHistory}
+          >
+            변경 이력 보기
+          </button>
+        )}
       </nav>
 
       {error && (
@@ -1206,8 +1239,8 @@ export default function BudgetNameManager({
                 <span className="section-kicker">REGISTERED BUDGETS</span>
                 <h2>등록된 표준 예산명</h2>
                 <p>
-                  사용 중인 이름은 삭제하지 않고 비활성화합니다. 별칭은 하나씩
-                  안전하게 추가·해제할 수 있습니다.
+                  사용 중인 이름은 비활성화할 수 있고, 연결이 전혀 없는 이름만
+                  서버 재검증 후 영구 삭제할 수 있습니다.
                 </p>
               </div>
               <div className="inline-search">
@@ -1362,6 +1395,14 @@ export default function BudgetNameManager({
                             </button>
                           </>
                         )}
+                        <button
+                          type="button"
+                          className="danger permanent"
+                          disabled={saving}
+                          onClick={() => void openPermanentDelete(group)}
+                        >
+                          영구 삭제
+                        </button>
                       </div>
                     </header>
 
@@ -1750,6 +1791,26 @@ export default function BudgetNameManager({
               >
                 기존 표준 예산에 연결
               </button>
+              <button
+                type="button"
+                disabled={saving || !selectedNames.length}
+                onClick={() =>
+                  void changeReviewExclusions(
+                    data.names
+                      .filter((item) => selectedNames.includes(item.name))
+                      .flatMap((item) => item.details),
+                    true,
+                  )
+                }
+              >
+                검토 목록에서 제외
+              </button>
+              <button
+                type="button"
+                onClick={() => setExcludedManagerOpen((current) => !current)}
+              >
+                제외 항목 관리 {data.excludedItems.length.toLocaleString()}건
+              </button>
             </div>
           </div>
 
@@ -1804,24 +1865,29 @@ export default function BudgetNameManager({
 
           <div className="budget-name-grid" aria-busy={loading}>
             {filteredNames.map((item) => (
-              <label
+              <div
                 className={selectedNames.includes(item.name) ? "selected" : ""}
                 key={item.name}
               >
-                <input
-                  type="checkbox"
-                  checked={selectedNames.includes(item.name)}
-                  onChange={() => toggleName(item.name)}
-                />
-                <span>
-                  <strong>{item.name}</strong>
-                  <small>
-                    영업 {item.activityCount.toLocaleString()}건 · 사업·품목{" "}
-                    {item.projectCount.toLocaleString()}건
-                  </small>
-                </span>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={selectedNames.includes(item.name)}
+                    onChange={() => toggleName(item.name)}
+                  />
+                  <span>
+                    <strong>{item.name}</strong>
+                    <small>
+                      영업 {item.activityCount.toLocaleString()}건 · 사업·품목{" "}
+                      {item.projectCount.toLocaleString()}건
+                    </small>
+                  </span>
+                </label>
                 <em>미분류</em>
-              </label>
+                <button type="button" onClick={() => setDetailName(item.name)}>
+                  상세보기
+                </button>
+              </div>
             ))}
             {!loading && !filteredNames.length && (
               <p className="budget-name-empty">
@@ -1829,6 +1895,67 @@ export default function BudgetNameManager({
               </p>
             )}
           </div>
+          {excludedManagerOpen && (
+            <section className="budget-review-excluded" aria-label="제외 항목 관리">
+              <div>
+                <strong>제외 항목 관리</strong>
+                <span>원본 데이터는 그대로이며 검토 목록 노출만 관리합니다.</span>
+              </div>
+              {data.excludedItems.map((detail) => (
+                <article key={`${detail.entityType}:${detail.entityId}`}>
+                  <div>
+                    <strong>{detail.organization || "기관 미입력"}</strong>
+                    <span>{detail.name} · {detail.businessRound}차 사업</span>
+                    <small>{detail.excludedByName || "운영자"} · {formatDateTime(detail.excludedAt)}</small>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void changeReviewExclusions([detail], false)}
+                  >
+                    다시 표시
+                  </button>
+                </article>
+              ))}
+              {!data.excludedItems.length && <p>제외된 항목이 없습니다.</p>}
+            </section>
+          )}
+          {detailName && (() => {
+            const item = data.names.find((name) => name.name === detailName);
+            if (!item) return null;
+            return (
+              <div className="institution-confirmation-overlay" role="presentation" onMouseDown={() => setDetailName("")}>
+                <section className="institution-confirmation-dialog budget-review-detail-dialog" role="dialog" aria-modal="true" aria-label={`${item.name} 연결 상세`} onMouseDown={(event) => event.stopPropagation()}>
+                  <header>
+                    <div><span className="section-kicker">SOURCE CONNECTIONS</span><h3>{item.name}</h3><p>영업과 사업·품목이 같은 기관·사업에서 각각 집계될 수 있습니다.</p></div>
+                    <button type="button" onClick={() => setDetailName("")} aria-label="닫기">×</button>
+                  </header>
+                  <div className="budget-review-detail-list">
+                    {item.details.map((detail) => (
+                      <article key={`${detail.entityType}:${detail.entityId}`}>
+                        <div className="budget-review-detail-heading">
+                          <strong>{detail.organization || "기관 미입력"}</strong>
+                          <span>{detail.region || "지역 미입력"} · {detail.businessRound}차</span>
+                          <em>{detail.entityType === "activity" ? "영업 기록" : "사업·품목 기록"}</em>
+                        </div>
+                        <dl>
+                          <div><dt>기록일</dt><dd>{detail.recordDate || "미입력"}</dd></div>
+                          <div><dt>금액</dt><dd>{detail.budgetAmount === null || detail.budgetAmount === "" ? "금액 미입력(NULL)" : Number(String(detail.budgetAmount).replace(/[^0-9-]/g, "")).toLocaleString("ko-KR") + "원"}</dd></div>
+                          <div><dt>내용</dt><dd>{detail.recordSummary || "내용 미입력"}</dd></div>
+                          {detail.entityType === "equipment_project" && <div><dt>사업·품목</dt><dd>{[detail.projectName, ...detail.itemNames].filter(Boolean).join(" · ") || "품목 미입력"}</dd></div>}
+                          <div><dt>사업 연결</dt><dd>{detail.sameBusiness ? "영업 기록과 같은 기관·사업 차수" : "별도 사업·품목 기록"}</dd></div>
+                        </dl>
+                        <div className="budget-review-detail-actions">
+                          {onOpenInstitution && <button type="button" onClick={() => onOpenInstitution(detail.organization, detail.businessRound)}>기관 상세로 이동</button>}
+                          <button type="button" disabled={saving} onClick={() => void changeReviewExclusions([detail], true)}>검토 목록에서 제외</button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -2060,58 +2187,6 @@ export default function BudgetNameManager({
               <p className="budget-name-empty">
                 처리할 새 예산명 신청이 없습니다.
               </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {tab === "history" && (
-        <div className="panel budget-event-panel">
-          <div className="panel-header">
-            <div>
-              <span className="section-kicker">CHANGE HISTORY</span>
-              <h2>표준 예산명 변경 이력</h2>
-              <p>
-                변경자·처리 시각·전후 내용을 보존합니다. 이후 변경이 없는 안전한
-                작업만 되돌릴 수 있습니다.
-              </p>
-            </div>
-          </div>
-          <div className="budget-event-list">
-            {data.events.map((event) => (
-              <article key={event.id}>
-                <span>{event.action || "예산명 변경"}</span>
-                <div>
-                  <strong>{event.summary || "변경 상세 기록"}</strong>
-                  <small>
-                    {event.changedByName || "시스템"} ·{" "}
-                    {formatDateTime(event.createdAt)}
-                  </small>
-                </div>
-                {event.undoable && (
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          "이 예산명 변경을 안전하게 되돌릴까요?",
-                        )
-                      ) {
-                        void runAction(
-                          { action: "undo-event", eventId: event.id },
-                          "예산명 변경을 되돌렸습니다.",
-                        );
-                      }
-                    }}
-                  >
-                    되돌리기
-                  </button>
-                )}
-              </article>
-            ))}
-            {!loading && !data.events.length && (
-              <p className="budget-name-empty">아직 변경 이력이 없습니다.</p>
             )}
           </div>
         </div>

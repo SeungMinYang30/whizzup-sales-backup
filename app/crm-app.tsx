@@ -253,6 +253,15 @@ function isCampaignRegistrationSystemRecord(
   );
 }
 
+function isInstitutionRegistrationOnlyRecord(
+  record: Pick<Activity, "sourceChat" | "activityType">,
+) {
+  return (
+    isCampaignRegistrationSystemRecord(record) ||
+    record.sourceChat === "기관 마스터"
+  );
+}
+
 function isAwardManagementSystemRecord(
   record: Pick<Activity, "sourceChat">,
 ) {
@@ -1420,7 +1429,7 @@ type MemberPermission =
 
 const memberPermissionOptions: {
   id: MemberPermission;
-  group: "operations";
+  group: "operations" | "admin-center";
   label: string;
   description: string;
 }[] = [
@@ -1432,8 +1441,8 @@ const memberPermissionOptions: {
   },
   {
     id: "members:manage",
-    group: "operations",
-    label: "구성원 관리",
+    group: "admin-center",
+    label: "구성원·권한 관리",
     description: "가입 승인·상태·역할·접근 권한 관리",
   },
   {
@@ -1462,21 +1471,21 @@ const memberPermissionOptions: {
   },
   {
     id: "trash:manage",
-    group: "operations",
-      label: "복구·변경 이력",
-    description: "백업·복구 화면에서 삭제된 자료 확인·복원",
+    group: "admin-center",
+    label: "변경 복구 관리",
+    description: "삭제된 자료와 변경 이력을 확인하고 안전하게 복원",
   },
   {
     id: "integration:manage",
-    group: "operations",
-    label: "API 등록·관리",
+    group: "admin-center",
+    label: "API·연동 관리",
     description: "OpenAI·카카오맵 API 등록과 연결 점검",
   },
   {
     id: "backup:manage",
-    group: "operations",
-    label: "데이터 백업·복구",
-    description: "전체 DB 백업·복원과 복구 도구",
+    group: "admin-center",
+    label: "DB 백업 관리",
+    description: "전체 DB 백업·검증·복원 도구",
   },
 ];
 
@@ -1611,9 +1620,8 @@ const emptyForm: FormState = {
 
 const navItems: { id: View; label: string; mark: string }[] = [
   { id: "dashboard", label: "대시보드", mark: "D" },
-  { id: "budget-institutions", label: "예산별 기관", mark: "B" },
+  { id: "followup", label: "기관·예산 관리", mark: "F" },
   { id: "complex-projects", label: "공간재구조화 사업 관리", mark: "X" },
-  { id: "followup", label: "기관별 통합 관리", mark: "F" },
   { id: "products", label: "제품·견적·협력사 관리", mark: "P" },
   { id: "resources", label: "자료실", mark: "R" },
   { id: "map", label: "영업·수주 지도", mark: "M" },
@@ -1625,31 +1633,31 @@ const presenceViewLabels: Record<View, string> = {
   "complex-projects": "공간재구조화 사업 관리",
   resources: "자료실",
   records: "영업 기록",
-  followup: "기관별 통합 관리",
+  followup: "기관별 통합관리",
   schedules: "일정",
   organizations: "관리자 영업 점검",
-  awards: "기관별 통합 관리",
+  awards: "기관별 통합관리",
   vendors: "협력사 관리",
   products: "제품·견적·협력사 관리",
   map: "영업·수주 지도",
   lounge: "휴게실",
-  team: "구성원 관리",
-  trash: "휴지통",
-  backup: "데이터 백업·복구",
+  team: "관리자 센터 · 구성원·권한",
+  trash: "관리자 센터 · 변경 복구",
+  backup: "관리자 센터 · DB 백업",
   accounting: "수금·채권 관리",
   analytics: "수주·제품 통계",
   "owner-performance": "대시보드",
   inventory: "물류·재고 관리",
   "installation-schedule": "시공·납품 일정",
   quotations: "견적서 관리",
-  integration: "API 등록·관리",
+  integration: "관리자 센터 · API·연동",
 };
 
 function presenceViewLabel(value: string) {
   return presenceViewLabels[value as View] ?? "";
 }
 
-const menuOrderStoragePrefix = "whizzup:menu-order:v1:";
+const menuOrderStoragePrefix = "whizzup:menu-order:v3:";
 type MenuGroup = "workspace" | "management";
 type MenuDragState = { group: MenuGroup; id: View };
 
@@ -1669,12 +1677,7 @@ function completeWorkspaceMenuOrder(order: View[]) {
   ];
   navItems.forEach((item) => {
     if (completed.includes(item.id)) return;
-    if (item.id === "budget-institutions") {
-      const dashboardIndex = completed.indexOf("dashboard");
-      completed.splice(Math.max(0, dashboardIndex + 1), 0, item.id);
-    } else {
-      completed.push(item.id);
-    }
+    completed.push(item.id);
   });
   return completed;
 }
@@ -6417,6 +6420,8 @@ export default function CrmApp({
     useState<ManagerIssueFilter>("attention");
   const [budgetWorkspaceSection, setBudgetWorkspaceSection] =
     useState<"institutions" | "names">("institutions");
+  const [adminRecoveryDataType, setAdminRecoveryDataType] =
+    useState<"general" | "budget">("general");
   const [managerSearch, setManagerSearch] = useState("");
   const deferredManagerSearch = useDeferredValue(managerSearch);
   const [teamPeriodDays, setTeamPeriodDays] = useState<TeamPeriod>(30);
@@ -6672,6 +6677,18 @@ export default function CrmApp({
   const canManageTrash = Boolean(
     session && memberCan(session.member, "trash:manage"),
   );
+  const canAccessAdminCenter =
+    canManageMembers ||
+    canManageIntegration ||
+    canManageTrash ||
+    canManageBackup;
+  const adminCenterEntryView: View = canManageMembers
+    ? "team"
+    : canManageIntegration
+      ? "integration"
+      : canManageTrash
+        ? "trash"
+        : "backup";
   const canManageAccounting = Boolean(
     session && memberCan(session.member, "accounting:manage"),
   );
@@ -6705,10 +6722,10 @@ export default function CrmApp({
           label: "관리자 영업 점검",
           mark: "O",
         },
-        canManageMembers && {
-          id: "team" as View,
-          label: "구성원 관리",
-          mark: "T",
+        canAccessAdminCenter && {
+          id: adminCenterEntryView,
+          label: "관리자 센터",
+          mark: "A",
         },
         canManageAccounting && {
           id: "accounting" as View,
@@ -6724,16 +6741,6 @@ export default function CrmApp({
           id: "inventory" as View,
           label: "물류·재고 관리",
           mark: "I",
-        },
-        canManageIntegration && {
-          id: "integration" as View,
-          label: "API 등록·관리",
-          mark: "A",
-        },
-        (canManageBackup || canManageTrash) && {
-          id: "backup" as View,
-          label: "데이터 백업·복구",
-          mark: "B",
         },
       ].filter(
         (
@@ -7383,7 +7390,7 @@ export default function CrmApp({
       const requestedView =
         state?.whizzupView ||
         (availableViews.has(hashView) ? hashView : "dashboard");
-      let nextView = requestedView === "trash" ? "backup" : requestedView;
+      let nextView = requestedView;
       if (
         (presentationMode && presentationHiddenViews.has(nextView)) ||
         ((nextView === "organizations" || nextView === "records") &&
@@ -7395,7 +7402,8 @@ export default function CrmApp({
         (nextView === "lounge" && !isPrimaryOwner) ||
         (nextView === "inventory" && !canManageInventory) ||
         (nextView === "integration" && !canManageIntegration) ||
-        (nextView === "backup" && !canManageBackup && !canManageTrash)
+        (nextView === "trash" && !canManageTrash) ||
+        (nextView === "backup" && !canManageBackup)
       ) {
         nextView = "dashboard";
       }
@@ -8548,6 +8556,7 @@ export default function CrmApp({
 
   const latestInstitutionRows = useMemo(() => {
     const latestByOrganization = new Map<string, Activity>();
+    const registrationOnlyByOrganization = new Map<string, Activity>();
     records.forEach((record) => {
       if (
         isPartnerRegistrationSystemRecord(record) ||
@@ -8555,12 +8564,21 @@ export default function CrmApp({
         isPdfCampaignRegistration(record)
       ) return;
       const key = institutionAliasKey(record.organization);
-      const current = latestByOrganization.get(key);
+      if (!key) return;
+      const target = isCampaignRegistrationSystemRecord(record)
+        ? registrationOnlyByOrganization
+        : latestByOrganization;
+      const current = target.get(key);
       if (
         !current ||
         record.activityDate > current.activityDate ||
         (record.activityDate === current.activityDate && record.id > current.id)
       ) {
+        target.set(key, record);
+      }
+    });
+    registrationOnlyByOrganization.forEach((record, key) => {
+      if (!latestByOrganization.has(key)) {
         latestByOrganization.set(key, record);
       }
     });
@@ -8602,8 +8620,11 @@ export default function CrmApp({
       .filter(
         ({ record }) =>
           statusFilter === "전체 상태" ||
-          normalizeSalesProgress(record.status, record.awardStatus) ===
-            statusFilter,
+          (statusFilter === "명단 등록만"
+            ? isInstitutionRegistrationOnlyRecord(record)
+            : !isInstitutionRegistrationOnlyRecord(record) &&
+              normalizeSalesProgress(record.status, record.awardStatus) ===
+                statusFilter),
       )
       .filter(
         ({ record }) =>
@@ -8618,6 +8639,10 @@ export default function CrmApp({
       .map(({ record }) => record)
       .sort((a, b) => {
         if (followupSort === "activity-desc") {
+          const registrationOrder =
+            Number(isInstitutionRegistrationOnlyRecord(a)) -
+            Number(isInstitutionRegistrationOnlyRecord(b));
+          if (registrationOrder) return registrationOrder;
           return (
             b.activityDate.localeCompare(a.activityDate) ||
             b.id - a.id
@@ -8668,7 +8693,6 @@ export default function CrmApp({
   ]);
 
   const unifiedManagementRows = useMemo(() => {
-    const keyword = deferredSearch.trim().toLocaleLowerCase("ko-KR");
     const rows = [
       ...preAwardInstitutionRows.map(({ record }) => ({
         record,
@@ -8703,7 +8727,9 @@ export default function CrmApp({
       if (statusFilter !== "전체 상태") {
         const category =
           phase === "pre"
-            ? "영업 중"
+            ? isInstitutionRegistrationOnlyRecord(record)
+              ? "명단 등록만"
+              : "영업 중"
             : record.awardStatus === "타업체 수주"
               ? "타업체 수주·종료"
               : isCompletedAwardStage(record.awardStage)
@@ -8711,7 +8737,7 @@ export default function CrmApp({
                 : "수주 진행";
         if (category !== statusFilter) return false;
       }
-      return !keyword || (recordSearchIndex.get(record.id)?.includes(keyword) ?? false);
+      return true;
     });
     const latestDateByInstitution = new Map<string, string>();
     rows.forEach(({ record }) => {
@@ -8745,6 +8771,12 @@ export default function CrmApp({
           ? rightAmount - leftAmount
           : leftAmount - rightAmount;
       }
+      if (awardSort === "date-desc") {
+        const registrationOrder =
+          Number(isInstitutionRegistrationOnlyRecord(left.record)) -
+          Number(isInstitutionRegistrationOnlyRecord(right.record));
+        if (registrationOrder) return registrationOrder;
+      }
       const groupOrder = (latestDateByInstitution.get(institutionAliasKey(right.record.organization)) ?? "").localeCompare(latestDateByInstitution.get(institutionAliasKey(left.record.organization)) ?? "");
       if (groupOrder) return groupOrder;
       const institutionOrder = left.record.organization.localeCompare(right.record.organization, "ko-KR");
@@ -8757,20 +8789,68 @@ export default function CrmApp({
     awardSort,
     budgetGroupFilter,
     budgetReviewCatalog,
-    deferredSearch,
     latestAwardRecords,
     preAwardInstitutionRows,
-    recordSearchIndex,
     statusFilter,
   ]);
+  const unifiedManagementDisplayGroups = useMemo(() => {
+    const keyword = deferredSearch.trim().toLocaleLowerCase("ko-KR");
+    const orderByRow = new Map(
+      unifiedManagementRows.map(({ record, phase }, index) => [
+        `${phase}:${record.id}`,
+        index,
+      ]),
+    );
+    const groupsForPhase = (phase: "pre" | "post") =>
+      filterJointProjectGroupsByMember(
+        groupJointProjectRows(
+          unifiedManagementRows
+            .filter((row) => row.phase === phase)
+            .map((row) => row.record),
+        ),
+        keyword
+          ? (record) =>
+              recordSearchIndex.get(record.id)?.includes(keyword) ??
+              [
+                record.organization,
+                record.region,
+                record.contactName,
+                record.contactPhone,
+                record.contactEmail,
+                record.progressManager,
+              ]
+                .join(" ")
+                .toLocaleLowerCase("ko-KR")
+                .includes(keyword)
+          : undefined,
+      ).map((group) => ({ ...group, phase }));
+    return [...groupsForPhase("pre"), ...groupsForPhase("post")].sort(
+      (left, right) => {
+        const leftOrder = Math.min(
+          ...left.members.map(
+            (member) => orderByRow.get(`${left.phase}:${member.id}`) ?? Number.MAX_SAFE_INTEGER,
+          ),
+        );
+        const rightOrder = Math.min(
+          ...right.members.map(
+            (member) => orderByRow.get(`${right.phase}:${member.id}`) ?? Number.MAX_SAFE_INTEGER,
+          ),
+        );
+        return leftOrder - rightOrder;
+      },
+    );
+  }, [deferredSearch, recordSearchIndex, unifiedManagementRows]);
   const unifiedManagementPageCount = Math.max(
     1,
-    Math.ceil(unifiedManagementRows.length / DATA_LIST_PAGE_SIZE),
+    Math.ceil(unifiedManagementDisplayGroups.length / DATA_LIST_PAGE_SIZE),
   );
   const unifiedManagementPageRows = useMemo(() => {
     const offset = (institutionPage - 1) * DATA_LIST_PAGE_SIZE;
-    return unifiedManagementRows.slice(offset, offset + DATA_LIST_PAGE_SIZE);
-  }, [institutionPage, unifiedManagementRows]);
+    return unifiedManagementDisplayGroups.slice(
+      offset,
+      offset + DATA_LIST_PAGE_SIZE,
+    );
+  }, [institutionPage, unifiedManagementDisplayGroups]);
   const followupDisplayGroups = useMemo(() => {
     const keyword = deferredSearch.trim().toLocaleLowerCase("ko-KR");
     return filterJointProjectGroupsByMember(
@@ -12455,11 +12535,6 @@ export default function CrmApp({
       institutionManagementTab?: InstitutionManagementTab;
     } = {},
   ) {
-    if (nextView === "trash") {
-      navigateTo("backup", { replace: true });
-      setMobileNav(false);
-      return;
-    }
     if (
       (presentationMode && presentationHiddenViews.has(nextView)) ||
       ((nextView === "organizations" || nextView === "records") &&
@@ -12471,7 +12546,8 @@ export default function CrmApp({
       (nextView === "lounge" && !isPrimaryOwner) ||
       (nextView === "inventory" && !canManageInventory) ||
       (nextView === "integration" && !canManageIntegration) ||
-      (nextView === "backup" && !canManageBackup && !canManageTrash)
+      (nextView === "trash" && !canManageTrash) ||
+      (nextView === "backup" && !canManageBackup)
     ) {
       navigateTo("dashboard", { replace: true });
       setMobileNav(false);
@@ -15926,12 +16002,21 @@ export default function CrmApp({
       ? teamMembers.filter((member) => memberPresence[member.id]?.isOnline)
       : teamMembers;
 
+  const isAdminCenterView =
+    view === "team" ||
+    view === "integration" ||
+    view === "trash" ||
+    view === "backup";
+  const isInstitutionBudgetCenterView =
+    view === "followup" || view === "awards" || view === "budget-institutions";
   const title =
-    view === "dashboard"
+    isAdminCenterView
+      ? "관리자 센터"
+      : isInstitutionBudgetCenterView
+        ? "기관·예산 관리"
+      : view === "dashboard"
       ? "대시보드"
-      : view === "budget-institutions"
-        ? "예산별 기관"
-        : view === "complex-projects"
+      : view === "complex-projects"
                 ? "공간재구조화 사업 관리"
         : view === "resources"
           ? "자료실"
@@ -15939,15 +16024,11 @@ export default function CrmApp({
         ? teamPeriodDays === "all"
           ? "팀 업무 현황"
           : `${teamPeriodLabel} 팀 업무`
-        : view === "followup"
-          ? "기관별 통합 관리"
-          : view === "schedules"
+        : view === "schedules"
             ? "다가오는 진행 일정"
           : view === "organizations"
             ? "관리자 영업 점검"
-            : view === "awards"
-              ? "기관별 통합 관리"
-              : view === "vendors"
+            : view === "vendors"
                 ? "협력사 관리"
               : view === "products"
                 ? "제품·견적·협력사 관리"
@@ -15959,11 +16040,7 @@ export default function CrmApp({
                 ? "영업·수주 지도"
               : view === "lounge"
                 ? "사내 휴게실"
-              : view === "team"
-                ? "구성원 관리"
-                : view === "backup"
-                  ? "데이터 백업·복구"
-                : view === "accounting"
+              : view === "accounting"
                   ? "수금·채권 관리"
                 : view === "analytics"
                   ? "수주·제품 통계"
@@ -15971,7 +16048,7 @@ export default function CrmApp({
                   ? "경영 요약"
                 : view === "inventory"
                   ? "물류·재고 관리"
-                  : "API 등록·관리";
+                  : "API·연동";
 
   const renderInstitutionManagementTabs = () => (
     <div className="institution-management-tabs" role="tablist" aria-label="기관별 통합 관리 범위">
@@ -15999,14 +16076,60 @@ export default function CrmApp({
           <span>{label}</span>
           <small>
             {tab === "all"
-              ? preAwardInstitutionRows.length + latestAwardRecords.length
+              ? unifiedManagementDisplayGroups.length
               : tab === "pre"
-                ? preAwardInstitutionRows.length
-                : latestAwardRecords.length}
+                ? followupDisplayGroups.length
+                : awardDisplayGroups.length}
           </small>
         </button>
       ))}
     </div>
+  );
+
+  const renderInstitutionBudgetCenterTabs = () => (
+    <nav className="institution-budget-center-tabs" aria-label="기관·예산 관리 기준">
+      <button
+        type="button"
+        className={view === "followup" || view === "awards" ? "active" : ""}
+        onClick={() =>
+          void selectView("followup", { institutionManagementTab: "all" })
+        }
+      >
+        기관 중심
+      </button>
+      {canManageRecords && (
+        <button
+          type="button"
+          className={view === "budget-institutions" ? "active" : ""}
+          onClick={() => void selectView("budget-institutions")}
+        >
+          예산 중심
+        </button>
+      )}
+    </nav>
+  );
+
+  const adminCenterTabs = [
+    canManageMembers && { id: "team" as View, label: "구성원·권한" },
+    canManageIntegration && { id: "integration" as View, label: "API·연동" },
+    canManageTrash && { id: "trash" as View, label: "변경 복구" },
+    canManageBackup && { id: "backup" as View, label: "DB 백업" },
+  ].filter((tab): tab is { id: View; label: string } => Boolean(tab));
+
+  const renderAdminCenterTabs = () => (
+    <nav className="admin-center-tabs" aria-label="관리자 센터 메뉴">
+      {adminCenterTabs.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          className={view === tab.id ? "active" : ""}
+          aria-current={view === tab.id ? "page" : undefined}
+          onClick={() => void selectView(tab.id)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </nav>
   );
 
   if (sessionLoading) {
@@ -16209,7 +16332,7 @@ export default function CrmApp({
               }}
             >
               <button
-                className={view === item.id || (item.id === "followup" && view === "awards") || (item.id === "products" && view === "vendors") ? "active" : ""}
+                className={view === item.id || (item.id === "followup" && (view === "awards" || view === "budget-institutions")) || (item.id === "products" && view === "vendors") ? "active" : ""}
                 onClick={() =>
                   void selectView(item.id, {
                     institutionManagementTab:
@@ -16296,7 +16419,7 @@ export default function CrmApp({
                   }}
                 >
                   <button
-                    className={`admin-nav-item ${item.id === "accounting" || item.id === "organizations" ? "long-label" : ""} ${view === item.id ? "active" : ""}`}
+                    className={`admin-nav-item ${item.id === "accounting" || item.id === "organizations" ? "long-label" : ""} ${item.label === "관리자 센터" ? isAdminCenterView ? "active" : "" : view === item.id ? "active" : ""}`}
                     onClick={() => void selectView(item.id)}
                   >
                     <span className="nav-mark">{item.mark}</span>
@@ -16543,18 +16666,18 @@ export default function CrmApp({
           </div>
         </header>
 
-        <div className={`content ${view === "dashboard" || view === "followup" || view === "map" || view === "budget-institutions" || view === "complex-projects" || view === "resources" || view === "backup" || view === "records" || view === "organizations" || view === "awards" || view === "products" || view === "vendors" || view === "accounting" || view === "analytics" || view === "owner-performance" || view === "inventory" ? "content-wide" : ""}`}>
+        <div className={`content ${view === "dashboard" || view === "followup" || view === "map" || view === "budget-institutions" || view === "complex-projects" || view === "resources" || isAdminCenterView || view === "records" || view === "organizations" || view === "awards" || view === "products" || view === "vendors" || view === "accounting" || view === "analytics" || view === "owner-performance" || view === "inventory" ? "content-wide" : ""}`}>
           <div className="page-heading">
             <div>
               <p className="eyebrow">TM · MEETING MANAGEMENT</p>
               <h1>{title}</h1>
               <p>
-                {view === "dashboard"
+                {isAdminCenterView
+                  ? "구성원 권한, 외부 연동, 변경 복구와 DB 백업을 권한별 탭에서 관리합니다."
+                  : isInstitutionBudgetCenterView
+                    ? "기관 중심 영업·수주 흐름과 예산 중심 선정기관·표준 예산명을 한곳에서 관리합니다."
+                  : view === "dashboard"
                   ? "오늘 업무와 개인 일정, 수주 후 설치·납품 일정을 한눈에 확인합니다."
-                  : view === "team"
-                  ? "가입 승인, 역할·권한, 영업 담당자와 실시간 접속 현황을 관리합니다."
-                  : view === "backup"
-                    ? "전체 업무 데이터를 안전하게 보관하고, 필요할 때 검증 후 복원합니다."
                   : view === "accounting"
                     ? "위즈업 수주의 입금 예정액을 확인하고, 실제 수금액과 미수금을 관리합니다."
                   : view === "analytics"
@@ -16563,18 +16686,12 @@ export default function CrmApp({
                     ? "운영자 본인만 담당자별 수주·마진·판매 실적을 확인할 수 있습니다."
                   : view === "inventory"
                     ? "보유 장비의 현재 수량과 입고·출고·조정 이력을 한곳에서 관리합니다."
-                   : view === "integration"
-                     ? "사이트에서 사용할 OpenAI API 키와 모델을 안전하게 등록·교체합니다."
-                    : view === "awards" || view === "followup"
-                      ? "수주 전 영업부터 계약·시공·납품 완료까지 기관과 사업 차수별로 한곳에서 관리합니다."
-                      : view === "vendors"
+                    : view === "vendors"
                         ? "협력사의 사업자·정산·담당자 정보와 증빙 문서를 한곳에서 관리합니다."
                       : view === "products"
                         ? "표준 견적서의 제품 정보와 단가·수수료율·마진율을 한곳에서 확인합니다."
                       : view === "map"
                         ? "기관 위치와 진행 상태를 확인하고, 방문할 학교를 선택해 영업 동선을 계획합니다."
-                      : view === "budget-institutions"
-                        ? "선정기관 명단을 예산별로 관리하고, 기존 영업 기록과 안전하게 연결합니다."
                       : view === "complex-projects"
                         ? "큰 사업의 예산·공간·품목·영업보호·분할 납품을 기존 회계와 통계에 연결해 관리합니다."
                       : view === "resources"
@@ -16612,6 +16729,9 @@ export default function CrmApp({
               <button onClick={() => void loadRecords()}>다시 시도</button>
             </div>
           )}
+
+          {isAdminCenterView && renderAdminCenterTabs()}
+          {isInstitutionBudgetCenterView && renderInstitutionBudgetCenterTabs()}
 
           {view === "lounge" ? (
             <Suspense fallback={<DeferredPageFallback />}>
@@ -17336,7 +17456,22 @@ export default function CrmApp({
 
           {view === "budget-institutions" && budgetWorkspaceSection === "names" && canManageRecords ? (
             <Suspense fallback={<DeferredPageFallback />}>
-              <BudgetNameManager onToast={setToast} />
+            <BudgetNameManager
+              onToast={setToast}
+              onOpenHistory={
+                canManageTrash
+                  ? () => {
+                      setAdminRecoveryDataType("budget");
+                      navigateTo("trash");
+                    }
+                  : undefined
+              }
+              onOpenInstitution={(organization, businessRound) => {
+                setDetailOrganization(organization);
+                setDetailBusinessRound(businessRound);
+                navigateTo("followup", { institutionManagementTab: "all" });
+              }}
+            />
             </Suspense>
           ) : null}
 
@@ -17921,7 +18056,12 @@ export default function CrmApp({
                                   {
                                     id: "operations" as const,
                                     title: "운영 도구 접근",
-                                    description: "왼쪽 운영 도구 메뉴 표시 기준",
+                                    description: "담당 업무별 운영 화면 접근 권한",
+                                  },
+                                  {
+                                    id: "admin-center" as const,
+                                    title: "관리자 센터",
+                                    description: "선택한 권한에 해당하는 관리자 센터 탭만 표시",
                                   },
                                 ].map((group) => (
                                   <section
@@ -17978,7 +18118,8 @@ export default function CrmApp({
                                 ))}
                             </div>
                             <p className="owner-only-access-note">
-                              선택한 운영 도구 메뉴만 왼쪽 메뉴에 표시됩니다.
+                              관리자 센터 권한이 하나라도 있으면 메뉴가 표시되고,
+                              허용된 탭만 열립니다.
                               운영자 권한 변경은 운영자만 가능합니다.
                             </p>
                             <button
@@ -18008,7 +18149,7 @@ export default function CrmApp({
                 )}
               </article>
             </section>
-          ) : view === "backup" ? (
+          ) : view === "trash" || view === "backup" ? (
             <Suspense fallback={<DeferredPageFallback />}>
               <DataBackupPage
                 onDataChanged={loadRecords}
@@ -18016,6 +18157,9 @@ export default function CrmApp({
                 isPrimaryOwner={isOwner}
                 canManageBackup={canManageBackup}
                 canManageTrash={canManageTrash}
+                activeSection={view === "trash" ? "trash" : "backup"}
+                initialRecoveryDataType={adminRecoveryDataType}
+                hideSectionTabs
               />
             </Suspense>
           ) : view === "integration" ? (
@@ -19045,14 +19189,14 @@ export default function CrmApp({
                   )}
                   <span className="record-count">
                     {institutionManagementTab === "all"
-                      ? unifiedManagementRows.length
+                      ? unifiedManagementDisplayGroups.length
                       : followupDisplayGroups.length}개 사업
                   </span>
                 </div>
                 <div className="institution-mobile-header-actions">
                   <span className="record-count">
                     {institutionManagementTab === "all"
-                      ? unifiedManagementRows.length
+                      ? unifiedManagementDisplayGroups.length
                       : followupDisplayGroups.length}개 사업
                   </span>
                 </div>
@@ -19263,8 +19407,8 @@ export default function CrmApp({
                 >
                   <option value="전체 상태">전체 현재 상태</option>
                   {(institutionManagementTab === "all"
-                    ? ["영업 중", "수주 진행", "납품 완료", "타업체 수주·종료"]
-                    : [...SALES_PROGRESS_OPTIONS]
+                    ? ["영업 중", "명단 등록만", "수주 진행", "납품 완료", "타업체 수주·종료"]
+                    : [...SALES_PROGRESS_OPTIONS, "명단 등록만"]
                   ).map((status) => (
                     <option key={status}>{status}</option>
                   ))}
@@ -19387,33 +19531,48 @@ export default function CrmApp({
                         </tr>
                       </thead>
                       <tbody>
-                        {unifiedManagementPageRows.map(({ record, phase }, index) => {
-                          const selected =
+                        {unifiedManagementPageRows.map((group, index) => {
+                          const { phase } = group;
+                          const record = group.primary;
+                          const memberIds = group.members
+                            .map((member) => member.id)
+                            .filter((id) => id > 0);
+                          const selectedIdSet =
                             phase === "post"
-                              ? selectedAwardIdSet.has(record.id)
-                              : selectedInstitutionIdSet.has(record.id);
+                              ? selectedAwardIdSet
+                              : selectedInstitutionIdSet;
+                          const selected =
+                            memberIds.length > 0 &&
+                            memberIds.every((id) => selectedIdSet.has(id));
                           const contact = primaryInstitutionContact(record.contacts);
                           const contract =
                             phase === "post"
-                              ? registeredContractDisplay(record)
+                              ? registeredContractDisplay(record, group.members)
                               : null;
+                          const registrationOnly =
+                            phase === "pre" &&
+                            isInstitutionRegistrationOnlyRecord(record);
                           return (
                             <tr
-                              key={`${phase}-${record.id}`}
+                              key={`${phase}-${group.key}`}
                               className={`unified-management-row phase-${phase}`}
                               tabIndex={0}
                               role="button"
                               aria-label={`${record.organization} ${record.businessRound}차 사업 상세 보기`}
                               onClick={(event) => {
                                 if ((event.target as HTMLElement).closest("button, a, input, select, textarea")) return;
-                                setDetailBusinessRound(record.businessRound);
-                                setDetailOrganization(record.organization);
+                                openJointProjectGroupDetail(
+                                  group,
+                                  Boolean(deferredSearch.trim()),
+                                );
                               }}
                               onKeyDown={(event) => {
                                 if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
                                 event.preventDefault();
-                                setDetailBusinessRound(record.businessRound);
-                                setDetailOrganization(record.organization);
+                                openJointProjectGroupDetail(
+                                  group,
+                                  Boolean(deferredSearch.trim()),
+                                );
                               }}
                             >
                               <td className="selection-cell">
@@ -19421,11 +19580,17 @@ export default function CrmApp({
                                   className="row-select-checkbox"
                                   type="checkbox"
                                   checked={selected}
-                                  aria-label={`${record.organization} ${record.businessRound}차 사업 선택`}
+                                  disabled={memberIds.length === 0}
+                                  aria-label={`${group.sponsorOrganization} ${record.businessRound}차 사업 전체 선택`}
                                   onClick={(event) => event.stopPropagation()}
                                   onChange={() => {
                                     const setter = phase === "post" ? setSelectedAwardIds : setSelectedInstitutionIds;
-                                    setter((current) => current.includes(record.id) ? current.filter((id) => id !== record.id) : [...current, record.id]);
+                                    setter((current) => {
+                                      const ids = new Set(memberIds);
+                                      return selected
+                                        ? current.filter((id) => !ids.has(id))
+                                        : [...new Set([...current, ...memberIds])];
+                                    });
                                   }}
                                 />
                               </td>
@@ -19433,11 +19598,32 @@ export default function CrmApp({
                               <td>
                                 <span className="date-cell">{formatDate(record.activityDate)}</span>
                                 <small className={`management-phase-tag ${phase}`}>{phase === "post" ? "수주 후" : "수주 전"}</small>
+                                {registrationOnly && <small className="registration-only-date">명단 등록일</small>}
                               </td>
                               <td><span className="region-cell">{record.region || "—"}</span></td>
                               <td>
-                                <strong className="org-name">{record.organization}</strong>
+                                <strong className="org-name">{group.sponsorOrganization}</strong>
                                 <small>{record.businessRound}차 사업 · {record.topic || record.budgetType || "사업명 미입력"}</small>
+                                {group.projectId && (
+                                  <>
+                                    <span className="joint-project-badge sponsor" title={group.projectName}>
+                                      공동사업 주관 · {group.members.filter((member) => member.jointProjectRole !== "sponsor").length}곳
+                                    </span>
+                                    <JointProjectMemberList
+                                      members={group.members}
+                                      matchingMembers={group.matchingMembers}
+                                      searchActive={Boolean(deferredSearch.trim())}
+                                      onSelectMember={(member) => {
+                                        cancelDetailInlineEdit();
+                                        setDetailBusinessRound(member.businessRound);
+                                        setDetailOrganization(member.organization);
+                                      }}
+                                    />
+                                  </>
+                                )}
+                                {registrationOnly && (
+                                  <span className="registration-only-badge">명단 등록만 · 영업 기록 없음</span>
+                                )}
                               </td>
                               <td className="management-contact-cell">
                                 <strong>{contact.name || record.contactName || "담당자 미등록"}{contact.role || record.contactRole ? ` · ${contact.role || record.contactRole}` : ""}</strong>
@@ -19452,7 +19638,13 @@ export default function CrmApp({
                                     ))}
                                   </div>
                                 ) : <small>예산·금액 미입력</small>}
-                                {contract && <small className={`management-contract quote-${contract.status}`}>계약 {contract.amount} · {contract.detail}</small>}
+                                {contract && (
+                                  <div className={`management-contract-summary quote-${contract.status}`}>
+                                    <small>계약금액</small>
+                                    <strong className="budget-amount">{contract.amount}</strong>
+                                    <small>{contract.detail}</small>
+                                  </div>
+                                )}
                               </td>
                               <td>
                                 {phase === "post" ? (
@@ -19462,6 +19654,8 @@ export default function CrmApp({
                                       <button type="button" className="award-complete-action" disabled={awardCompletionBusyId !== null} onClick={(event) => { event.stopPropagation(); void markAwardAsCompleted(record); }}>{awardCompletionBusyId === record.id ? "처리 중…" : "납품 완료 처리"}</button>
                                     )}
                                   </div>
+                                ) : registrationOnly ? (
+                                  <span className="sales-progress-pill registration-only">명단 등록만</span>
                                 ) : <span className="sales-progress-pill">{normalizeSalesProgress(record.status, record.awardStatus)}</span>}
                               </td>
                               <td>
@@ -19480,15 +19674,15 @@ export default function CrmApp({
                                 {record.executionType === "컨소" && <small>{record.consortiumCompany || "컨소업체 미등록"}</small>}
                               </td>
                               <td>{renderInlineAssigneePicker(record)}</td>
-                              <td><button type="button" className="management-detail-button" onClick={(event) => { event.stopPropagation(); setDetailBusinessRound(record.businessRound); setDetailOrganization(record.organization); }}>상세</button></td>
+                              <td><button type="button" className="management-detail-button" onClick={(event) => { event.stopPropagation(); openJointProjectGroupDetail(group, Boolean(deferredSearch.trim())); }}>상세</button></td>
                             </tr>
                           );
                         })}
                       </tbody>
                     </table>
-                    {!loading && unifiedManagementRows.length === 0 && <div className="empty-state large">조건에 맞는 기관·사업이 없습니다.</div>}
+                    {!loading && unifiedManagementDisplayGroups.length === 0 && <div className="empty-state large">조건에 맞는 기관·사업이 없습니다.</div>}
                   </StickyTableWrap>
-                  <DataListPagination page={institutionPage} pageCount={unifiedManagementPageCount} total={unifiedManagementRows.length} label="기관별 통합 관리 페이지" onPageChange={setInstitutionPage} />
+                  <DataListPagination page={institutionPage} pageCount={unifiedManagementPageCount} total={unifiedManagementDisplayGroups.length} label="기관별 통합 관리 페이지" onPageChange={setInstitutionPage} />
                 </>
               ) : (
               <>
@@ -19581,7 +19775,9 @@ export default function CrmApp({
                             {formatDate(record.activityDate)}
                           </span>
                           <small>
-                            {record.followUpDate
+                            {isInstitutionRegistrationOnlyRecord(record)
+                              ? "명단 등록일"
+                              : record.followUpDate
                               ? `재연락 ${formatDate(record.followUpDate)}`
                               : "재연락일 미정"}
                           </small>
@@ -19612,6 +19808,9 @@ export default function CrmApp({
                           {priorAward ? (
                             <span className="prior-award-badge">{priorAward}</span>
                           ) : null}
+                          {isInstitutionRegistrationOnlyRecord(record) && (
+                            <span className="registration-only-badge">명단 등록만 · 영업 기록 없음</span>
+                          )}
                         </td>
                         <td>
                           <strong className="contact-person-cell">
@@ -19656,8 +19855,10 @@ export default function CrmApp({
                             )}
                         </td>
                         <td>
-                          <span className="sales-progress-pill">
-                            {normalizeSalesProgress(record.status, record.awardStatus)}
+                          <span className={`sales-progress-pill${isInstitutionRegistrationOnlyRecord(record) ? " registration-only" : ""}`}>
+                            {isInstitutionRegistrationOnlyRecord(record)
+                              ? "명단 등록만"
+                              : normalizeSalesProgress(record.status, record.awardStatus)}
                           </span>
                         </td>
                         <td>
@@ -20569,15 +20770,21 @@ export default function CrmApp({
                             {record.contactEmail ? <a href={`mailto:${record.contactEmail}`}>{record.contactEmail}</a> : <small>기관 메일 미등록</small>}
                           </td>
                           <td className="budget-summary-cell">
-                            <strong
-                              className="award-budget-name budget-summary-name"
-                              title={compactBudgetDisplayForRecord(record).title}
-                            >
-                              {compactBudgetDisplayForRecord(record).name}
-                            </strong>
-                            <span className="budget-amount">
-                              {compactBudgetDisplayForRecord(record).amount}
-                            </span>
+                            <div className="institution-budget-lines">
+                              {institutionBudgetLinesForRecord(record).length > 0 ? (
+                                institutionBudgetLinesForRecord(record).map((budget) => (
+                                  <div className="institution-budget-line" key={budget.key}>
+                                    <span className="budget-summary-name">{budget.name}</span>
+                                    <strong className="budget-amount">{budget.amount}</strong>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="institution-budget-line empty">
+                                  <span className="budget-summary-name">예산 미등록</span>
+                                  <strong className="budget-amount">금액 미입력</strong>
+                                </div>
+                              )}
+                            </div>
                             <small>
                               {hasResolvedStandardBudget(record)
                                 ? "표준 예산"

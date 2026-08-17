@@ -100,6 +100,18 @@ const schemaStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS budget_name_events_group_idx
     ON budget_name_events(group_id, created_at)`,
+  `CREATE TABLE IF NOT EXISTS budget_name_deleted_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    deleted_group_id INTEGER NOT NULL,
+    canonical_name TEXT NOT NULL,
+    canonical_key TEXT NOT NULL DEFAULT '',
+    snapshot_json TEXT NOT NULL DEFAULT '{}',
+    deleted_by INTEGER NOT NULL,
+    deleted_by_name TEXT NOT NULL DEFAULT '',
+    deleted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS budget_name_deleted_audit_group_idx
+    ON budget_name_deleted_audit(deleted_group_id, deleted_at)`,
   `CREATE TABLE IF NOT EXISTS budget_name_requests (
     id TEXT PRIMARY KEY,
     requested_name TEXT NOT NULL,
@@ -137,6 +149,20 @@ const schemaStatements = [
     ON budget_name_request_records(request_id, id)`,
   `CREATE INDEX IF NOT EXISTS budget_name_request_records_entity_idx
     ON budget_name_request_records(entity_type, entity_id)`,
+  `CREATE TABLE IF NOT EXISTS budget_name_review_exclusions (
+    entity_type TEXT NOT NULL,
+    entity_id INTEGER NOT NULL,
+    original_name TEXT NOT NULL DEFAULT '',
+    excluded_by INTEGER NOT NULL,
+    excluded_by_name TEXT NOT NULL DEFAULT '',
+    excluded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    restored_by INTEGER,
+    restored_by_name TEXT NOT NULL DEFAULT '',
+    restored_at TEXT,
+    PRIMARY KEY(entity_type, entity_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS budget_name_review_exclusions_active_idx
+    ON budget_name_review_exclusions(restored_at, excluded_at)`,
 ];
 
 const additiveBudgetColumns: Record<
@@ -1592,6 +1618,7 @@ async function runBudgetStatementsInChunks(
 
 export async function listBudgetNameManagement() {
   const d1 = await ensureBudgetNamesReady();
+  await repairExistingStandardBudgetCompanions(d1);
   const [
     namesResult,
     groupsResult,
@@ -1789,6 +1816,113 @@ export async function listBudgetNameManagement() {
         .all<Record<string, unknown>>(),
     ]);
 
+  const [activityDetailResult, projectDetailResult] = await Promise.all([
+    d1
+      .prepare(
+        `SELECT 'activity' AS entityType, a.id AS entityId,
+                a.budget_type AS name, a.organization, a.region,
+                a.business_round AS businessRound,
+                a.activity_date AS recordDate, a.summary AS recordSummary,
+                a.budget_amount AS budgetAmount,
+                '' AS projectName, '' AS itemName,
+                1 AS sameBusiness,
+                CASE WHEN x.entity_id IS NULL THEN 0 ELSE 1 END AS excluded,
+                COALESCE(x.excluded_by_name, '') AS excludedByName,
+                COALESCE(x.excluded_at, '') AS excludedAt
+         FROM activities a
+         LEFT JOIN budget_name_review_exclusions x
+           ON x.entity_type = 'activity' AND x.entity_id = a.id
+          AND x.restored_at IS NULL
+         WHERE TRIM(a.budget_type) <> ''
+           AND COALESCE(a.award_status, '미정')
+             NOT IN ('협력사 수주', '타업체 수주')
+           AND a.budget_group_id IS NULL
+           AND COALESCE(a.budget_match_status, 'unclassified')
+             IN ('review', 'unclassified', 'legacy')
+         ORDER BY a.activity_date DESC, a.id DESC`,
+      )
+      .all<Record<string, unknown>>(),
+    d1
+      .prepare(
+        `SELECT 'equipment_project' AS entityType, p.id AS entityId,
+                p.budget_type AS name, p.organization,
+                COALESCE(a.region, '') AS region,
+                p.business_round AS businessRound,
+                COALESCE(a.activity_date, p.updated_at, p.created_at) AS recordDate,
+                COALESCE(NULLIF(TRIM(p.notes), ''), p.name) AS recordSummary,
+                p.budget_amount AS budgetAmount,
+                p.name AS projectName, COALESCE(i.product_name, '') AS itemName,
+                CASE WHEN p.activity_id IS NOT NULL
+                       AND COALESCE(a.business_round, p.business_round) = p.business_round
+                     THEN 1 ELSE 0 END AS sameBusiness,
+                CASE WHEN x.entity_id IS NULL THEN 0 ELSE 1 END AS excluded,
+                COALESCE(x.excluded_by_name, '') AS excludedByName,
+                COALESCE(x.excluded_at, '') AS excludedAt
+         FROM equipment_projects p
+         LEFT JOIN activities a ON a.id = p.activity_id
+         LEFT JOIN equipment_items i ON i.project_id = p.id
+         LEFT JOIN budget_name_review_exclusions x
+           ON x.entity_type = 'equipment_project' AND x.entity_id = p.id
+          AND x.restored_at IS NULL
+         WHERE TRIM(p.budget_type) <> ''
+           AND (p.activity_id IS NULL OR COALESCE(a.award_status, '미정')
+             NOT IN ('협력사 수주', '타업체 수주'))
+           AND p.budget_group_id IS NULL
+           AND COALESCE(p.budget_match_status, 'unclassified')
+             IN ('review', 'unclassified', 'legacy')
+         ORDER BY recordDate DESC, p.id DESC, i.sort_order, i.id`,
+      )
+      .all<Record<string, unknown>>(),
+  ]);
+  const detailByEntity = new Map<string, Record<string, unknown>>();
+  for (const source of [
+    ...(activityDetailResult.results ?? []),
+    ...(projectDetailResult.results ?? []),
+  ]) {
+    const entityType = String(source.entityType ?? "activity");
+    const entityId = Number(source.entityId);
+    const key = `${entityType}:${entityId}`;
+    const previous = detailByEntity.get(key);
+    const itemName = cleanBudgetName(source.itemName);
+    if (previous) {
+      const names = new Set(
+        Array.isArray(previous.itemNames)
+          ? previous.itemNames.map((value) => String(value))
+          : [],
+      );
+      if (itemName) names.add(itemName);
+      previous.itemNames = [...names];
+      continue;
+    }
+    detailByEntity.set(key, {
+      entityType,
+      entityId,
+      name: cleanBudgetName(source.name),
+      organization: String(source.organization ?? ""),
+      region: String(source.region ?? ""),
+      businessRound: Number(source.businessRound) || 1,
+      recordDate: String(source.recordDate ?? ""),
+      recordSummary: String(source.recordSummary ?? ""),
+      budgetAmount:
+        source.budgetAmount === null || source.budgetAmount === undefined
+          ? null
+          : String(source.budgetAmount),
+      projectName: String(source.projectName ?? ""),
+      itemNames: itemName ? [itemName] : [],
+      sameBusiness: Number(source.sameBusiness) === 1,
+      excluded: Number(source.excluded) === 1,
+      excludedByName: String(source.excludedByName ?? ""),
+      excludedAt: String(source.excludedAt ?? ""),
+    });
+  }
+  const reviewDetails = [...detailByEntity.values()];
+  const detailGroups = new Map<string, typeof reviewDetails>();
+  for (const detail of reviewDetails.filter((item) => !item.excluded)) {
+    const name = String(detail.name ?? "");
+    const values = detailGroups.get(name) ?? [];
+    values.push(detail);
+    detailGroups.set(name, values);
+  }
   const names = (namesResult.results ?? []) as Array<{
     name: string;
     activityCount: number;
@@ -1835,9 +1969,22 @@ export async function listBudgetNameManagement() {
     values.push(member);
     membersByGroup.set(groupId, values);
   }
-  const visibleNames = names.filter(
-    (item) => !ignoredBudgetNames.has(normalizeBudgetNameKey(item.name)),
-  );
+  const visibleNames = [...detailGroups.entries()]
+    .filter(([name]) => !ignoredBudgetNames.has(normalizeBudgetNameKey(name)))
+    .map(([name, details]) => ({
+      name,
+      activityCount: details.filter((item) => item.entityType === "activity").length,
+      projectCount: details.filter(
+        (item) => item.entityType === "equipment_project",
+      ).length,
+      details,
+    }))
+    .sort(
+      (left, right) =>
+        right.activityCount + right.projectCount -
+          (left.activityCount + left.projectCount) ||
+        left.name.localeCompare(right.name, "ko"),
+    );
   const resolvedNames = await Promise.all(
     visibleNames.map(async (item) => {
       const resolution = await resolveCanonicalBudgetName(d1, item.name);
@@ -1968,6 +2115,7 @@ export async function listBudgetNameManagement() {
   });
   return {
     names: resolvedNames,
+    excludedItems: reviewDetails.filter((item) => item.excluded),
     groups: groups.map((group) => ({
       ...group,
       budgetKind: normalizeBudgetKind(group.budgetKind),
@@ -2279,6 +2427,124 @@ async function assertBudgetAliasAvailable(
   return { aliasName, aliasKey };
 }
 
+function positiveGeneratedId(value: unknown) {
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : 0;
+}
+
+async function ensureStandardBudgetCompanions(
+  d1: D1Database,
+  member: Member,
+  groupId: number,
+  snapshot: {
+    canonicalName: string;
+    canonicalKey: string;
+    budgetKind: BudgetKind;
+    amountMode: BudgetAmountMode;
+    defaultAmount: number | null;
+  },
+) {
+  if (!positiveGeneratedId(groupId)) {
+    throw new Error("표준 예산명 저장 상태를 확인하지 못했습니다. 목록을 새로고침한 뒤 다시 확인해 주세요.");
+  }
+  await d1.batch([
+    d1
+      .prepare(
+        `INSERT INTO budget_name_aliases
+          (group_id, alias_name, alias_key, active, created_by, created_by_name)
+         SELECT ?, ?, ?, 1, ?, ?
+         WHERE NOT EXISTS (
+           SELECT 1 FROM budget_name_aliases
+           WHERE group_id = ? AND alias_key = ? AND active = 1
+         )`,
+      )
+      .bind(
+        groupId,
+        snapshot.canonicalName,
+        snapshot.canonicalKey,
+        member.id,
+        member.displayName,
+        groupId,
+        snapshot.canonicalKey,
+      ),
+    d1
+      .prepare(
+        `INSERT INTO budget_name_events
+          (group_id, action, snapshot_json, request_id, batch_key,
+           changed_by, changed_by_name)
+         SELECT ?, 'create-standard', ?, NULL, '', ?, ?
+         WHERE NOT EXISTS (
+           SELECT 1 FROM budget_name_events
+           WHERE group_id = ? AND action = 'create-standard'
+         )`,
+      )
+      .bind(
+        groupId,
+        JSON.stringify({
+          canonicalName: snapshot.canonicalName,
+          budgetKind: snapshot.budgetKind,
+          amountMode: snapshot.amountMode,
+          defaultAmount: snapshot.defaultAmount,
+          summary: `표준 예산명 ‘${snapshot.canonicalName}’ 등록`,
+        }),
+        member.id,
+        member.displayName,
+        groupId,
+      ),
+  ]);
+}
+
+async function repairExistingStandardBudgetCompanions(d1: D1Database) {
+  const result = await d1
+    .prepare(
+      `SELECT g.id, g.canonical_name AS canonicalName,
+              g.canonical_key AS canonicalKey, g.budget_kind AS budgetKind,
+              g.amount_mode AS amountMode, g.default_amount AS defaultAmount,
+              g.created_by AS createdBy, g.created_by_name AS createdByName
+       FROM budget_name_groups g
+       WHERE NOT EXISTS (
+               SELECT 1 FROM budget_name_aliases a
+               WHERE a.group_id = g.id AND a.alias_key = g.canonical_key
+                 AND COALESCE(a.active, 1) = 1
+             )
+          OR NOT EXISTS (
+               SELECT 1 FROM budget_name_events e
+               WHERE e.group_id = g.id AND e.action = 'create-standard'
+             )
+       ORDER BY g.id`,
+    )
+    .all<{
+      id: number;
+      canonicalName: string;
+      canonicalKey: string;
+      budgetKind: string;
+      amountMode: string;
+      defaultAmount: number | null;
+      createdBy: number;
+      createdByName: string;
+    }>();
+  for (const group of result.results ?? []) {
+    await ensureStandardBudgetCompanions(
+      d1,
+      {
+        id: Number(group.createdBy) || 0,
+        displayName: cleanBudgetName(group.createdByName) || "시스템",
+      } as Member,
+      Number(group.id),
+      {
+        canonicalName: String(group.canonicalName ?? ""),
+        canonicalKey: String(group.canonicalKey ?? ""),
+        budgetKind: normalizeBudgetKind(group.budgetKind, "purpose"),
+        amountMode: normalizeBudgetAmountMode(group.amountMode, "manual"),
+        defaultAmount:
+          group.defaultAmount === null || group.defaultAmount === undefined
+            ? null
+            : Number(group.defaultAmount),
+      },
+    );
+  }
+}
+
 export async function createStandardBudgetName(
   member: Member,
   input: {
@@ -2289,8 +2555,11 @@ export async function createStandardBudgetName(
   },
 ) {
   const d1 = await ensureBudgetNamesReady();
-  const { aliasName: canonicalName, aliasKey: canonicalKey } =
-    await assertBudgetAliasAvailable(d1, input.canonicalName);
+  const canonicalName = cleanBudgetName(input.canonicalName);
+  const canonicalKey = normalizeBudgetNameKey(canonicalName);
+  if (!canonicalName || ignoredBudgetNames.has(canonicalKey)) {
+    throw new Error("사용할 수 있는 예산명을 입력해 주세요.");
+  }
   const budgetKind = normalizeBudgetKind(input.budgetKind, "purpose");
   const amountMode =
     budgetKind === "self"
@@ -2301,48 +2570,97 @@ export async function createStandardBudgetName(
     defaultAmountValue && Number.isSafeInteger(Number(defaultAmountValue))
       ? Math.max(0, Number(defaultAmountValue))
       : null;
+  const snapshot = {
+    canonicalName,
+    canonicalKey,
+    budgetKind,
+    amountMode,
+    defaultAmount,
+  };
+  const existing = await d1
+    .prepare(
+      `SELECT id FROM budget_name_groups
+       WHERE active = 1 AND canonical_key = ?
+       ORDER BY id ASC LIMIT 1`,
+    )
+    .bind(canonicalKey)
+    .first<{ id: number }>();
+  const existingId = positiveGeneratedId(existing?.id);
+  if (existingId) {
+    try {
+      await ensureStandardBudgetCompanions(d1, member, existingId, snapshot);
+    } catch {
+      throw new Error("표준 예산명은 이미 저장되어 있습니다. 목록을 새로고침해 상태를 확인해 주세요.");
+    }
+    return { ...(await listBudgetNameManagement()), groupId: existingId, recovered: true };
+  }
+  await assertBudgetAliasAvailable(d1, canonicalName);
   const maxOrder = await d1
     .prepare(
       `SELECT COALESCE(MAX(sort_order), 0) AS maxOrder
        FROM budget_name_groups`,
     )
     .first<{ maxOrder: number }>();
-  const result = await d1
-    .prepare(
-       `INSERT INTO budget_name_groups
-        (canonical_name, canonical_key, active, budget_kind, amount_mode, default_amount,
-         sort_order, created_by, created_by_name, updated_by, updated_by_name)
-       VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .bind(
-      canonicalName,
-      canonicalKey,
-      budgetKind,
-      amountMode,
-      defaultAmount,
-      Number(maxOrder?.maxOrder ?? 0) + 10,
-      member.id,
-      member.displayName,
-      member.id,
-      member.displayName,
-    )
-    .run();
-  const groupId = Number(result.meta.last_row_id);
-  await d1
-    .prepare(
-      `INSERT INTO budget_name_aliases
-        (group_id, alias_name, alias_key, active, created_by, created_by_name)
-       VALUES (?, ?, ?, 1, ?, ?)`,
-    )
-    .bind(groupId, canonicalName, canonicalKey, member.id, member.displayName)
-    .run();
-  await writeBudgetEvent(d1, member, "create-standard", groupId, {
-    canonicalName,
-    budgetKind,
-    amountMode,
-    defaultAmount,
-    summary: `표준 예산명 ‘${canonicalName}’ 등록`,
-  });
+  let groupId = 0;
+  try {
+    const result = await d1
+      .prepare(
+         `INSERT INTO budget_name_groups
+          (canonical_name, canonical_key, active, budget_kind, amount_mode, default_amount,
+           sort_order, created_by, created_by_name, updated_by, updated_by_name)
+         VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
+         RETURNING id`,
+      )
+      .bind(
+        canonicalName,
+        canonicalKey,
+        budgetKind,
+        amountMode,
+        defaultAmount,
+        Number(maxOrder?.maxOrder ?? 0) + 10,
+        member.id,
+        member.displayName,
+        member.id,
+        member.displayName,
+      )
+      .run();
+    groupId = positiveGeneratedId(
+      (result.results?.[0] as Record<string, unknown> | undefined)?.id ??
+        result.meta.last_row_id,
+    );
+  } catch {
+    const concurrent = await d1
+      .prepare(
+        `SELECT id FROM budget_name_groups
+         WHERE active = 1 AND canonical_key = ?
+         ORDER BY id ASC LIMIT 1`,
+      )
+      .bind(canonicalKey)
+      .first<{ id: number }>();
+    groupId = positiveGeneratedId(concurrent?.id);
+    if (!groupId) {
+      throw new Error("표준 예산명을 등록하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    }
+  }
+  if (!groupId) {
+    const saved = await d1
+      .prepare(
+        `SELECT id FROM budget_name_groups
+         WHERE active = 1 AND canonical_key = ?
+         ORDER BY id ASC LIMIT 1`,
+      )
+      .bind(canonicalKey)
+      .first<{ id: number }>();
+    groupId = positiveGeneratedId(saved?.id);
+  }
+  if (!groupId) {
+    throw new Error("표준 예산명 저장 결과를 확인하지 못했습니다. 목록을 새로고침한 뒤 다시 확인해 주세요.");
+  }
+  try {
+    await ensureStandardBudgetCompanions(d1, member, groupId, snapshot);
+  } catch {
+    throw new Error("표준 예산명은 저장되었지만 연결 정보를 확인하지 못했습니다. 목록을 새로고침한 뒤 같은 이름으로 다시 확인해 주세요.");
+  }
   return { ...(await listBudgetNameManagement()), groupId };
 }
 
@@ -2549,6 +2867,184 @@ export async function deactivateStandardBudgetName(
     summary: `표준 예산명 ‘${group.canonicalName}’ 비활성화`,
   });
   return listBudgetNameManagement();
+}
+
+type PermanentBudgetDeleteDetail = {
+  type: string;
+  organization: string;
+  businessRound: number;
+  name: string;
+  id: string;
+};
+
+async function safeBudgetReferenceRows<T extends Record<string, unknown>>(
+  statement: Promise<{ results: T[] }>,
+) {
+  try {
+    return (await statement).results ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function previewPermanentStandardBudgetDelete(groupIdInput: unknown) {
+  const d1 = await ensureBudgetNamesReady();
+  const groupId = positiveGeneratedId(groupIdInput);
+  if (!groupId) throw new Error("영구 삭제할 표준 예산명을 선택해 주세요.");
+  const group = await d1
+    .prepare(
+      `SELECT id, canonical_name AS canonicalName, canonical_key AS canonicalKey,
+              active, budget_kind AS budgetKind, amount_mode AS amountMode,
+              default_amount AS defaultAmount, created_by_name AS createdByName,
+              created_at AS createdAt
+       FROM budget_name_groups WHERE id = ?`,
+    )
+    .bind(groupId)
+    .first<Record<string, unknown>>();
+  if (!group) {
+    return { groupId, exists: false, canDelete: true, counts: {}, details: [] };
+  }
+  const canonicalKey = String(group.canonicalKey ?? "");
+  const jsonNeedleCamel = `%\"budgetGroupId\":${groupId}%`;
+  const jsonNeedleSnake = `%\"budget_group_id\":${groupId}%`;
+  const [aliases, members, activities, projects, jointProjects, requests, events] =
+    await Promise.all([
+      safeBudgetReferenceRows(
+        d1.prepare(
+          `SELECT id, alias_name AS name FROM budget_name_aliases
+           WHERE group_id = ? AND alias_key <> ?`,
+        ).bind(groupId, canonicalKey).all<Record<string, unknown>>(),
+      ),
+      safeBudgetReferenceRows(
+        d1.prepare(
+          `SELECT m.id, m.entity_type AS type, m.entity_id AS entityId,
+                  m.original_name AS name,
+                  COALESCE(a.organization, p.organization, '') AS organization,
+                  COALESCE(a.business_round, linked.business_round, 1) AS businessRound
+           FROM budget_name_members m
+           LEFT JOIN activities a ON m.entity_type = 'activity' AND a.id = m.entity_id
+           LEFT JOIN equipment_projects p ON m.entity_type = 'equipment_project' AND p.id = m.entity_id
+           LEFT JOIN activities linked ON linked.id = p.activity_id
+           WHERE m.group_id = ?`,
+        ).bind(groupId).all<Record<string, unknown>>(),
+      ),
+      safeBudgetReferenceRows(
+        d1.prepare(
+          `SELECT id, organization, business_round AS businessRound,
+                  COALESCE(NULLIF(budget_type, ''), NULLIF(budget_original_name, ''), '') AS name
+           FROM activities
+           WHERE budget_group_id = ? OR budgets_json LIKE ? OR budgets_json LIKE ?`,
+        ).bind(groupId, jsonNeedleCamel, jsonNeedleSnake).all<Record<string, unknown>>(),
+      ),
+      safeBudgetReferenceRows(
+        d1.prepare(
+          `SELECT p.id, p.organization, COALESCE(a.business_round, 1) AS businessRound,
+                  COALESCE(NULLIF(p.name, ''), NULLIF(p.budget_type, ''), '') AS name
+           FROM equipment_projects p
+           LEFT JOIN activities a ON a.id = p.activity_id
+           WHERE p.budget_group_id = ?`,
+        ).bind(groupId).all<Record<string, unknown>>(),
+      ),
+      safeBudgetReferenceRows(
+        d1.prepare(
+          `SELECT id, sponsor_organization AS organization,
+                  COALESCE(joint_round, 1) AS businessRound, name
+           FROM joint_projects WHERE budget_group_id = ?`,
+        ).bind(groupId).all<Record<string, unknown>>(),
+      ),
+      safeBudgetReferenceRows(
+        d1.prepare(
+          `SELECT id, requested_name AS name, organization, 1 AS businessRound
+           FROM budget_name_requests WHERE resolved_group_id = ?`,
+        ).bind(groupId).all<Record<string, unknown>>(),
+      ),
+      safeBudgetReferenceRows(
+        d1.prepare(
+          `SELECT id, action AS name FROM budget_name_events WHERE group_id = ?`,
+        ).bind(groupId).all<Record<string, unknown>>(),
+      ),
+    ]);
+  const details: PermanentBudgetDeleteDetail[] = [
+    ...aliases.map((row) => ({ type: "별칭", organization: "", businessRound: 0, name: String(row.name ?? ""), id: String(row.id ?? "") })),
+    ...members.map((row) => ({ type: `연결:${String(row.type ?? "기록")}`, organization: String(row.organization ?? ""), businessRound: Number(row.businessRound ?? 1), name: String(row.name ?? ""), id: String(row.id ?? "") })),
+    ...activities.map((row) => ({ type: "영업 기록", organization: String(row.organization ?? ""), businessRound: Number(row.businessRound ?? 1), name: String(row.name ?? ""), id: String(row.id ?? "") })),
+    ...projects.map((row) => ({ type: "사업·품목", organization: String(row.organization ?? ""), businessRound: Number(row.businessRound ?? 1), name: String(row.name ?? ""), id: String(row.id ?? "") })),
+    ...jointProjects.map((row) => ({ type: "공동사업", organization: String(row.organization ?? ""), businessRound: Number(row.businessRound ?? 1), name: String(row.name ?? ""), id: String(row.id ?? "") })),
+    ...requests.map((row) => ({ type: "예산명 신청", organization: String(row.organization ?? ""), businessRound: Number(row.businessRound ?? 1), name: String(row.name ?? ""), id: String(row.id ?? "") })),
+  ];
+  const counts = {
+    aliases: aliases.length,
+    members: members.length,
+    activities: activities.length,
+    projects: projects.length,
+    jointProjects: jointProjects.length,
+    requests: requests.length,
+    events: events.length,
+  };
+  const blockingCount =
+    counts.aliases + counts.members + counts.activities + counts.projects +
+    counts.jointProjects + counts.requests;
+  return {
+    groupId,
+    exists: true,
+    canDelete: blockingCount === 0,
+    group,
+    counts,
+    details,
+    auditEventCount: events.length,
+  };
+}
+
+export async function permanentlyDeleteStandardBudgetName(
+  member: Member,
+  input: { groupId?: unknown; confirmationName?: unknown; acknowledgePermanent?: unknown },
+) {
+  const preview = await previewPermanentStandardBudgetDelete(input.groupId);
+  if (!preview.exists) {
+    return { ...(await listBudgetNameManagement()), deleted: true, alreadyDeleted: true };
+  }
+  const group = preview.group as Record<string, unknown>;
+  const canonicalName = String(group.canonicalName ?? "");
+  if (cleanBudgetName(input.confirmationName) !== canonicalName || input.acknowledgePermanent !== true) {
+    throw new Error(`‘${canonicalName}’ 이름과 복구할 수 없음 확인이 필요합니다.`);
+  }
+  if (!preview.canDelete) {
+    return { ...(await listBudgetNameManagement()), deleted: false, deletePreview: preview };
+  }
+  const d1 = await ensureBudgetNamesReady();
+  const rechecked = await previewPermanentStandardBudgetDelete(preview.groupId);
+  if (!rechecked.exists) {
+    return { ...(await listBudgetNameManagement()), deleted: true, alreadyDeleted: true };
+  }
+  if (!rechecked.canDelete) {
+    return { ...(await listBudgetNameManagement()), deleted: false, deletePreview: rechecked };
+  }
+  const snapshot = JSON.stringify({
+    group: rechecked.group,
+    counts: rechecked.counts,
+    auditEventCount: rechecked.auditEventCount,
+    summary: `표준 예산명 ‘${canonicalName}’ 영구 삭제`,
+  });
+  const results = await d1.batch([
+    d1.prepare(
+      `INSERT INTO budget_name_deleted_audit
+        (deleted_group_id, canonical_name, canonical_key, snapshot_json,
+         deleted_by, deleted_by_name)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).bind(preview.groupId, canonicalName, String(group.canonicalKey ?? ""), snapshot, member.id, member.displayName),
+    d1.prepare(`DELETE FROM budget_name_events WHERE group_id = ?`).bind(preview.groupId),
+    d1.prepare(`DELETE FROM budget_name_aliases WHERE group_id = ?`).bind(preview.groupId),
+    d1.prepare(`DELETE FROM budget_name_members WHERE group_id = ?`).bind(preview.groupId),
+    d1.prepare(`DELETE FROM budget_name_groups WHERE id = ?`).bind(preview.groupId),
+  ]);
+  const deleted = Number(results.at(-1)?.meta.changes ?? 0) > 0;
+  if (!deleted) {
+    const latest = await previewPermanentStandardBudgetDelete(preview.groupId);
+    if (latest.exists) {
+      throw new Error("삭제 직전 연결 상태가 변경되어 영구 삭제하지 않았습니다. 상태를 다시 확인해 주세요.");
+    }
+  }
+  return { ...(await listBudgetNameManagement()), deleted: true };
 }
 
 export async function setStandardBudgetActive(
@@ -3107,6 +3603,108 @@ export async function keepBudgetNamesUnclassified(
     projectIds: rows.projects.map((row) => Number(row.id)),
     summary: `${selectedNames.length}개 이름을 미분류로 유지`,
   });
+  return listBudgetNameManagement();
+}
+
+function budgetReviewEntityRefs(value: unknown) {
+  const rows = Array.isArray(value) ? value : [];
+  const seen = new Set<string>();
+  return rows
+    .map((item) => {
+      const row = (item ?? {}) as Record<string, unknown>;
+      const entityType: BudgetEntityType =
+        row.entityType === "equipment_project"
+          ? "equipment_project"
+          : "activity";
+      const entityId = Number(row.entityId);
+      if (!Number.isInteger(entityId) || entityId < 1) return null;
+      const key = `${entityType}:${entityId}`;
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return { entityType, entityId };
+    })
+    .filter(
+      (item): item is { entityType: BudgetEntityType; entityId: number } =>
+        Boolean(item),
+    )
+    .slice(0, 1000);
+}
+
+export async function setBudgetReviewExclusions(
+  member: Member,
+  input: { entities?: unknown; excluded?: unknown },
+) {
+  const d1 = await ensureBudgetNamesReady();
+  const entities = budgetReviewEntityRefs(input.entities);
+  if (!entities.length) throw new Error("검토 목록에서 변경할 항목을 선택해 주세요.");
+  const excluded = input.excluded !== false;
+  const changed: Array<Record<string, unknown>> = [];
+  for (const entity of entities) {
+    const table =
+      entity.entityType === "activity" ? "activities" : "equipment_projects";
+    const row = await d1
+      .prepare(
+        `SELECT id, budget_type AS originalName
+         FROM ${table}
+         WHERE id = ? AND budget_group_id IS NULL
+           AND COALESCE(budget_match_status, 'unclassified')
+             IN ('review', 'unclassified', 'legacy')`,
+      )
+      .bind(entity.entityId)
+      .first<{ id: number; originalName: string }>();
+    if (!row) continue;
+    if (excluded) {
+      await d1
+        .prepare(
+          `INSERT INTO budget_name_review_exclusions
+            (entity_type, entity_id, original_name, excluded_by,
+             excluded_by_name, excluded_at, restored_by, restored_by_name, restored_at)
+           VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, NULL, '', NULL)
+           ON CONFLICT(entity_type, entity_id) DO UPDATE SET
+             original_name = excluded.original_name,
+             excluded_by = excluded.excluded_by,
+             excluded_by_name = excluded.excluded_by_name,
+             excluded_at = CURRENT_TIMESTAMP,
+             restored_by = NULL, restored_by_name = '', restored_at = NULL`,
+        )
+        .bind(
+          entity.entityType,
+          entity.entityId,
+          String(row.originalName ?? ""),
+          member.id,
+          member.displayName,
+        )
+        .run();
+    } else {
+      await d1
+        .prepare(
+          `UPDATE budget_name_review_exclusions
+           SET restored_by = ?, restored_by_name = ?, restored_at = CURRENT_TIMESTAMP
+           WHERE entity_type = ? AND entity_id = ? AND restored_at IS NULL`,
+        )
+        .bind(
+          member.id,
+          member.displayName,
+          entity.entityType,
+          entity.entityId,
+        )
+        .run();
+    }
+    changed.push({ ...entity, originalName: String(row.originalName ?? "") });
+  }
+  if (!changed.length) throw new Error("변경 가능한 미분류 예산 기록이 없습니다.");
+  await writeBudgetEvent(
+    d1,
+    member,
+    excluded ? "exclude-review" : "restore-review",
+    null,
+    {
+      entities: changed,
+      summary: excluded
+        ? `미분류 예산 기록 ${changed.length}건을 검토 목록에서 제외`
+        : `제외된 미분류 예산 기록 ${changed.length}건을 검토 목록으로 복원`,
+    },
+  );
   return listBudgetNameManagement();
 }
 
@@ -3707,5 +4305,162 @@ export async function undoBudgetEvent(member: Member, eventIdInput: unknown) {
       "이 작업은 일부 기록만 임의로 되돌릴 수 없습니다. 변경 이력을 확인해 주세요.",
     );
   }
+  const laterChange = await d1
+    .prepare(
+      `SELECT id, action, changed_by_name AS changedByName,
+              created_at AS createdAt
+       FROM budget_name_events
+       WHERE group_id = ? AND id > ?
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .bind(event.groupId, event.id)
+    .first<{
+      id: number;
+      action: string;
+      changedByName: string;
+      createdAt: string;
+    }>();
+  if (laterChange) {
+    throw new Error(
+      `이후에 ‘${laterChange.action}’ 변경이 있어 안전하게 되돌릴 수 없습니다. 영향 대상을 먼저 확인해 주세요.`,
+    );
+  }
   return undoBudgetGroup(member, Number(event.groupId));
+}
+
+function parseBudgetHistorySnapshot(value: unknown) {
+  try {
+    const parsed = JSON.parse(String(value ?? "{}"));
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function budgetHistoryImpact(snapshot: Record<string, unknown>) {
+  const counts =
+    snapshot.counts && typeof snapshot.counts === "object"
+      ? (snapshot.counts as Record<string, unknown>)
+      : {};
+  const arrays = [
+    "members",
+    "activities",
+    "projects",
+    "entities",
+    "directlyLinkedRecords",
+    "restoredMembers",
+  ];
+  const arrayCount = arrays.reduce(
+    (sum, key) => sum + (Array.isArray(snapshot[key]) ? snapshot[key].length : 0),
+    0,
+  );
+  const countTotal = Object.values(counts).reduce<number>((sum, value) => {
+    const parsed = Number(value);
+    return sum + (Number.isFinite(parsed) && parsed > 0 ? parsed : 0);
+  }, 0);
+  const organization = cleanBudgetName(snapshot.organization);
+  const businessRound = Number(snapshot.businessRound);
+  return {
+    total: Math.max(arrayCount, countTotal),
+    organization,
+    businessRound:
+      Number.isInteger(businessRound) && businessRound > 0 ? businessRound : null,
+    counts,
+  };
+}
+
+export async function listBudgetNameHistory() {
+  const d1 = await ensureBudgetNamesReady();
+  await repairExistingStandardBudgetCompanions(d1);
+  const [eventsResult, deletedResult] = await Promise.all([
+    d1
+      .prepare(
+        `SELECT e.id, e.group_id AS groupId, e.action,
+                e.snapshot_json AS snapshotJson,
+                e.request_id AS requestId,
+                e.changed_by_name AS changedByName, e.created_at AS createdAt,
+                CASE
+                  WHEN e.group_id IS NOT NULL
+                   AND e.action IN ('group', 'register-new', 'create-standard')
+                   AND NOT EXISTS (
+                     SELECT 1 FROM budget_name_events later
+                     WHERE later.group_id = e.group_id AND later.id > e.id
+                   )
+                   AND EXISTS (
+                     SELECT 1 FROM budget_name_groups g
+                     WHERE g.id = e.group_id AND g.active = 1
+                   )
+                  THEN 1 ELSE 0
+                END AS undoable
+         FROM budget_name_events e
+         ORDER BY e.id DESC LIMIT 300`,
+      )
+      .all<Record<string, unknown>>(),
+    d1
+      .prepare(
+        `SELECT id, deleted_group_id AS groupId, canonical_name AS canonicalName,
+                snapshot_json AS snapshotJson,
+                deleted_by_name AS changedByName, deleted_at AS createdAt
+         FROM budget_name_deleted_audit
+         ORDER BY id DESC LIMIT 100`,
+      )
+      .all<Record<string, unknown>>(),
+  ]);
+  const events = (eventsResult.results ?? []).map((row) => {
+    const snapshot = parseBudgetHistorySnapshot(row.snapshotJson);
+    return {
+      id: `event:${Number(row.id)}`,
+      eventId: Number(row.id),
+      kind: "event" as const,
+      groupId: row.groupId === null ? null : Number(row.groupId),
+      action: String(row.action ?? ""),
+      summary:
+        cleanBudgetName(snapshot.summary) ||
+        cleanBudgetName(snapshot.canonicalName) ||
+        cleanBudgetName(snapshot.requestedName) ||
+        String(row.action ?? "예산명 변경"),
+      changedByName: String(row.changedByName ?? "시스템"),
+      createdAt: String(row.createdAt ?? ""),
+      before:
+        snapshot.before && typeof snapshot.before === "object"
+          ? snapshot.before
+          : null,
+      after:
+        snapshot.after && typeof snapshot.after === "object"
+          ? snapshot.after
+          : null,
+      impact: budgetHistoryImpact(snapshot),
+      snapshot,
+      undoable: Number(row.undoable) === 1,
+      restoreStatus: Number(row.undoable) === 1 ? "복원 가능" : "이력 확인",
+    };
+  });
+  const deleted = (deletedResult.results ?? []).map((row) => {
+    const snapshot = parseBudgetHistorySnapshot(row.snapshotJson);
+    return {
+      id: `deleted:${Number(row.id)}`,
+      eventId: null,
+      kind: "deleted" as const,
+      groupId: Number(row.groupId),
+      action: "permanent-delete",
+      summary:
+        cleanBudgetName(snapshot.summary) ||
+        `표준 예산명 ‘${String(row.canonicalName ?? "")}’ 영구 삭제`,
+      changedByName: String(row.changedByName ?? "시스템"),
+      createdAt: String(row.createdAt ?? ""),
+      before: snapshot.group ?? null,
+      after: null,
+      impact: budgetHistoryImpact(snapshot),
+      snapshot,
+      undoable: false,
+      restoreStatus: "복원 불가",
+    };
+  });
+  return {
+    events: [...events, ...deleted].sort((left, right) =>
+      String(right.createdAt).localeCompare(String(left.createdAt)),
+    ),
+  };
 }

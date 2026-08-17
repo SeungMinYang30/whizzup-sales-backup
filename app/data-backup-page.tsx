@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import TrashPage from "./trash-page";
+import BudgetHistoryPanel from "./budget-history-panel";
 import VersionStatusCard from "./version-status-card";
 import ContinuityControlCard from "./continuity-control-card";
 
@@ -79,17 +80,32 @@ export default function DataBackupPage({
   isPrimaryOwner,
   canManageBackup,
   canManageTrash,
+  activeSection: requestedSection,
+  hideSectionTabs = false,
+  initialRecoveryDataType = "general",
 }: {
   onDataChanged: () => Promise<void>;
   notify: (message: string) => void;
   isPrimaryOwner: boolean;
   canManageBackup: boolean;
   canManageTrash: boolean;
+  activeSection?: "trash" | "backup";
+  hideSectionTabs?: boolean;
+  initialRecoveryDataType?: "general" | "budget";
 }) {
   const [activeSection, setActiveSection] = useState<"trash" | "backup">(
-    canManageTrash ? "trash" : "backup",
+    requestedSection === "trash" && canManageTrash
+      ? "trash"
+      : requestedSection === "backup" && canManageBackup
+        ? "backup"
+        : canManageTrash
+          ? "trash"
+          : "backup",
   );
   const [busy, setBusy] = useState("");
+  const [recoveryDataType, setRecoveryDataType] = useState<"general" | "budget">(
+    initialRecoveryDataType,
+  );
   const [backupFileName, setBackupFileName] = useState("");
   const [driveBackups, setDriveBackups] = useState<DriveBackupOption[]>([]);
   const [selectedDriveBackupId, setSelectedDriveBackupId] = useState("");
@@ -111,6 +127,18 @@ export default function DataBackupPage({
     }
   }, []);
   const [restoreConfirmation, setRestoreConfirmation] = useState("");
+
+  useEffect(() => {
+    if (requestedSection === "trash" && canManageTrash) {
+      setActiveSection("trash");
+    } else if (requestedSection === "backup" && canManageBackup) {
+      setActiveSection("backup");
+    }
+  }, [requestedSection, canManageBackup, canManageTrash]);
+
+  useEffect(() => {
+    setRecoveryDataType(initialRecoveryDataType);
+  }, [initialRecoveryDataType]);
 
   async function loadDriveBackups() {
     try {
@@ -429,19 +457,39 @@ export default function DataBackupPage({
   if (activeSection === "trash" && canManageTrash) {
     return (
       <section className="backup-workspace">
-        {sectionTabs}
-        <TrashPage
-          onDataChanged={onDataChanged}
-          notify={notify}
-          canPermanentlyDelete={isPrimaryOwner}
-        />
+        {!hideSectionTabs && sectionTabs}
+        <nav className="recovery-data-type-tabs" aria-label="변경 복구 자료 종류">
+          <button
+            type="button"
+            className={recoveryDataType === "general" ? "active" : ""}
+            onClick={() => setRecoveryDataType("general")}
+          >
+            삭제 자료·일괄 변경
+          </button>
+          <button
+            type="button"
+            className={recoveryDataType === "budget" ? "active" : ""}
+            onClick={() => setRecoveryDataType("budget")}
+          >
+            표준 예산명
+          </button>
+        </nav>
+        {recoveryDataType === "budget" ? (
+          <BudgetHistoryPanel notify={notify} onDataChanged={onDataChanged} />
+        ) : (
+          <TrashPage
+            onDataChanged={onDataChanged}
+            notify={notify}
+            canPermanentlyDelete={isPrimaryOwner}
+          />
+        )}
       </section>
     );
   }
 
   return (
     <section className="backup-workspace">
-      {sectionTabs}
+      {!hideSectionTabs && sectionTabs}
     <section className="backup-layout">
       <VersionStatusCard />
       <ContinuityControlCard enabled={isPrimaryOwner} />

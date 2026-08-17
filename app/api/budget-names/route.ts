@@ -2,6 +2,7 @@ import {
   AccessError,
   accessErrorResponse,
   requireAdminMember,
+  requireMemberPermission,
 } from "../../../lib/collaboration";
 import {
   addBudgetAlias,
@@ -11,13 +12,17 @@ import {
   deactivateStandardBudgetName,
   groupBudgetNames,
   keepBudgetNamesUnclassified,
+  listBudgetNameHistory,
   listBudgetNameManagement,
   moveBudgetMember,
+  permanentlyDeleteStandardBudgetName,
+  previewPermanentStandardBudgetDelete,
   previewBudgetRetrofit,
   processBudgetNameRequest,
   registerNewStandardBudgetName,
   reorderStandardBudgetNames,
   setStandardBudgetActive,
+  setBudgetReviewExclusions,
   undoBudgetGroup,
   undoBudgetEvent,
   unlinkBudgetAlias,
@@ -27,8 +32,13 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const view = new URL(request.url).searchParams.get("view");
+    if (view === "history") {
+      await requireMemberPermission("trash:manage");
+      return Response.json(await listBudgetNameHistory());
+    }
     await requireAdminMember();
     return Response.json(await listBudgetNameManagement());
   } catch (error) {
@@ -38,9 +48,12 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const member = await requireAdminMember();
     const payload = (await request.json()) as Record<string, unknown>;
     const action = String(payload.action ?? "");
+    const member =
+      action === "undo-event"
+        ? await requireMemberPermission("trash:manage")
+        : await requireAdminMember();
     if (action === "create-standard") {
       return Response.json(await createStandardBudgetName(member, payload));
     }
@@ -73,6 +86,15 @@ export async function POST(request: Request) {
       return Response.json(
         await keepBudgetNamesUnclassified(member, payload.selectedNames),
       );
+    }
+    if (action === "preview-permanent-delete") {
+      return Response.json(await previewPermanentStandardBudgetDelete(payload.groupId));
+    }
+    if (action === "permanent-delete") {
+      return Response.json(await permanentlyDeleteStandardBudgetName(member, payload));
+    }
+    if (action === "set-review-exclusions") {
+      return Response.json(await setBudgetReviewExclusions(member, payload));
     }
     if (action === "process-request") {
       return Response.json(await processBudgetNameRequest(member, payload));

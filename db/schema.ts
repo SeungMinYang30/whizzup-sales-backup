@@ -1258,6 +1258,51 @@ export const budgetNameEvents = sqliteTable(
   ],
 );
 
+export const budgetNameDeletedAudit = sqliteTable(
+  "budget_name_deleted_audit",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    deletedGroupId: integer("deleted_group_id").notNull(),
+    canonicalName: text("canonical_name").notNull(),
+    canonicalKey: text("canonical_key").notNull().default(""),
+    snapshotJson: text("snapshot_json").notNull().default("{}"),
+    deletedBy: integer("deleted_by").notNull(),
+    deletedByName: text("deleted_by_name").notNull().default(""),
+    deletedAt: text("deleted_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("budget_name_deleted_audit_group_idx").on(
+      table.deletedGroupId,
+      table.deletedAt,
+    ),
+  ],
+);
+
+export const budgetNameReviewExclusions = sqliteTable(
+  "budget_name_review_exclusions",
+  {
+    entityType: text("entity_type").notNull(),
+    entityId: integer("entity_id").notNull(),
+    originalName: text("original_name").notNull().default(""),
+    excludedBy: integer("excluded_by").notNull(),
+    excludedByName: text("excluded_by_name").notNull().default(""),
+    excludedAt: text("excluded_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    restoredBy: integer("restored_by"),
+    restoredByName: text("restored_by_name").notNull().default(""),
+    restoredAt: text("restored_at"),
+  },
+  (table) => [
+    uniqueIndex("budget_name_review_exclusions_entity_idx").on(
+      table.entityType,
+      table.entityId,
+    ),
+    index("budget_name_review_exclusions_active_idx").on(
+      table.restoredAt,
+      table.excludedAt,
+    ),
+  ],
+);
+
 export const budgetNameRequests = sqliteTable(
   "budget_name_requests",
   {

@@ -35,6 +35,7 @@ type ConstructionProject = {
   sourceProductNames: string[];
   completed: boolean;
   hidden: boolean;
+  hiddenCandidate: boolean;
   updatedAt: string;
 };
 
@@ -138,6 +139,8 @@ export default function ConstructionSchedulePage({
   const [timelineRange, setTimelineRange] = useState<14 | 31>(14);
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState("");
+  const [addVisibleCount, setAddVisibleCount] = useState(30);
+  const [hiddenManagerOpen, setHiddenManagerOpen] = useState(false);
   const [mobileStatusFilter, setMobileStatusFilter] = useState<
     "all" | "active" | "missingSchedule" | "completed" | "missingManager"
   >("all");
@@ -386,20 +389,30 @@ export default function ConstructionSchedulePage({
     };
   }, [latestByScope, projects, schedulesByScope]);
 
-  const addOptions = useMemo(() => {
+  const addCandidates = useMemo(() => {
     const keyword = addQuery.trim().toLocaleLowerCase("ko-KR");
     const registered = new Set(
       projects
-        .filter((project) => !project.hidden)
         .map((project) => scopeKey(project.organization, project.businessRound)),
     );
     return institutionOptions
       .filter((option) => !registered.has(scopeKey(option.organization, option.businessRound)))
       .filter((option) =>
         !keyword || `${option.organization} ${option.region}`.toLocaleLowerCase("ko-KR").includes(keyword),
-      )
-      .slice(0, 30);
+      );
   }, [addQuery, institutionOptions, projects]);
+  const addOptions = useMemo(
+    () => addCandidates.slice(0, addVisibleCount),
+    [addCandidates, addVisibleCount],
+  );
+  const hiddenProjects = useMemo(
+    () => projects.filter((project) => project.hidden),
+    [projects],
+  );
+
+  useEffect(() => {
+    setAddVisibleCount(30);
+  }, [addQuery]);
 
   async function addProject(record: ScheduleRecord) {
     if (saving) return;
@@ -428,6 +441,71 @@ export default function ConstructionSchedulePage({
       setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "기관을 추가하지 못했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function hideCandidate(record: ScheduleRecord) {
+    if (!isPrimaryOwner || saving) return;
+    if (!window.confirm(`${record.organization} ${record.businessRound}차 사업을 기관 추가 후보에서 숨기시겠습니까? 원본 수주·견적·일정·통계는 변경되지 않습니다.`)) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "hide-construction-candidate",
+          organization: record.organization,
+          businessRound: record.businessRound,
+        }),
+      });
+      const payload = (await response.json()) as {
+        projects?: ConstructionProject[];
+        schedules?: ConstructionSchedule[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || "기관을 숨기지 못했습니다.");
+      setProjects(payload.projects ?? []);
+      setSchedules(payload.schedules ?? []);
+      setMessage(`${record.organization} ${record.businessRound}차 사업을 기관 추가 후보에서 숨겼습니다.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "기관을 숨기지 못했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function restoreHiddenProject(project: ConstructionProject) {
+    if (!isPrimaryOwner || saving) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: project.hiddenCandidate
+            ? "restore-construction-candidate"
+            : "restore-construction-project",
+          organization: project.organization,
+          businessRound: project.businessRound,
+        }),
+      });
+      const payload = (await response.json()) as {
+        projects?: ConstructionProject[];
+        schedules?: ConstructionSchedule[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || "기관을 다시 표시하지 못했습니다.");
+      setProjects(payload.projects ?? []);
+      setSchedules(payload.schedules ?? []);
+      setMessage(
+        project.hiddenCandidate
+          ? `${project.organization} ${project.businessRound}차 사업을 기관 추가 후보에 다시 표시합니다.`
+          : `${project.organization} ${project.businessRound}차 사업을 일정표에 다시 표시합니다.`,
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "기관을 다시 표시하지 못했습니다.");
     } finally {
       setSaving(false);
     }
@@ -621,7 +699,7 @@ export default function ConstructionSchedulePage({
 
   async function removeProjectFromBoard(project: ConstructionProject) {
     if (saving) return;
-    if (!window.confirm("이 기관을 시공·납품 일정표 목록에서 삭제하시겠습니까? 기관·수주·품목·기존 일정 기록은 유지되며, 필요하면 ‘기관 추가’로 다시 등록할 수 있습니다.")) return;
+    if (!window.confirm("이 기관을 시공·납품 일정표에서 숨기시겠습니까? 기관·수주·품목·기존 일정·통계는 유지되며 언제든 다시 표시할 수 있습니다.")) return;
     setSaving(true);
     try {
       const response = await fetch("/api/schedules", {
@@ -638,12 +716,12 @@ export default function ConstructionSchedulePage({
         schedules?: ConstructionSchedule[];
         error?: string;
       };
-      if (!response.ok) throw new Error(payload.error || "일정표 목록에서 기관을 삭제하지 못했습니다.");
+      if (!response.ok) throw new Error(payload.error || "일정표에서 기관을 숨기지 못했습니다.");
       setProjects(payload.projects ?? []);
       setSchedules(payload.schedules ?? []);
-      setMessage("일정표 목록에서 삭제했습니다. 기관·수주·품목·기존 일정 기록은 유지되며 ‘기관 추가’에서 다시 등록할 수 있습니다.");
+      setMessage("일정표에서 숨겼습니다. 기관·수주·품목·기존 일정·통계는 그대로 유지됩니다.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "일정표 목록에서 기관을 삭제하지 못했습니다.");
+      setMessage(error instanceof Error ? error.message : "일정표에서 기관을 숨기지 못했습니다.");
     } finally {
       setSaving(false);
     }
@@ -711,7 +789,7 @@ export default function ConstructionSchedulePage({
           <p>기관을 등록하고 단계별 업체와 기간을 한 화면에서 관리합니다.</p>
         </div>
         <div className="construction-schedule-actions">
-          <button type="button" className="primary-button" onClick={() => setAddOpen(true)}>+ 기관 추가</button>
+          <button type="button" className="primary-button" onClick={() => { setAddVisibleCount(30); setHiddenManagerOpen(false); setAddOpen(true); }}>+ 기관 추가</button>
           <button type="button" className="construction-desktop-action" onClick={exportExcel}>엑셀 내보내기</button>
           <button type="button" className="construction-expand-button construction-desktop-action" aria-pressed={expanded} onClick={() => void toggleExpanded()}>{expanded ? "기본 보기" : "크게 보기"}</button>
           <div className="construction-settings-wrap construction-desktop-action">
@@ -790,7 +868,7 @@ export default function ConstructionSchedulePage({
             <div className="construction-fixed-cells">
               <span className="construction-institution-cell">
                 <button type="button" className="construction-institution-main" onClick={() => onOpenOrganization(project.organization, project.businessRound)}><strong>{project.organization}</strong><small>{record?.region || "지역 미등록"} · {project.businessRound}차 사업</small><small className="construction-mobile-row-meta">{formatManagerName(record?.progressManager || "")} · {displayWorkSummary(project) || "공사·품목 미등록"}</small></button>
-                {isPrimaryOwner ? <button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표 목록에서 삭제`} title="일정표 목록에서 삭제" disabled={saving} onClick={() => void removeProjectFromBoard(project)}>−</button> : null}
+                {isPrimaryOwner ? <button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표에서 숨김`} title="일정표에서 숨김" disabled={saving} onClick={() => void removeProjectFromBoard(project)}>−</button> : null}
               </span>
               <button
                 type="button"
@@ -834,7 +912,7 @@ export default function ConstructionSchedulePage({
       <div className="construction-mobile-list">
         {rows.map(({ project, record, items }) => (
           <article key={scopeKey(project.organization, project.businessRound)}>
-            <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{formatManagerName(record?.progressManager || "")}</span>{isPrimaryOwner ? <button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표 목록에서 삭제`} title="일정표 목록에서 삭제" disabled={saving} onClick={() => void removeProjectFromBoard(project)}>−</button> : null}</header>
+            <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{formatManagerName(record?.progressManager || "")}</span>{isPrimaryOwner ? <button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표에서 숨김`} title="일정표에서 숨김" disabled={saving} onClick={() => void removeProjectFromBoard(project)}>−</button> : null}</header>
             <p>{record?.region || "지역 미등록"} · {displayWorkSummary(project) || "공사·품목 미등록"}</p>
             <div>{items.map((item) => {
               const day = dayMetaByDate.get(item.scheduledDate);
@@ -850,13 +928,42 @@ export default function ConstructionSchedulePage({
           <div className="construction-add-dialog" role="dialog" aria-modal="true">
             <header><div><span className="section-kicker">ADD INSTITUTION</span><h3>시공 일정표에 기관 추가</h3><p>위즈업 수주로 전환된 기관만 검색되며 기관 상세페이지와 그대로 연결됩니다.</p></div><button type="button" onClick={() => setAddOpen(false)}>×</button></header>
             <input autoFocus value={addQuery} onChange={(event) => setAddQuery(event.target.value)} placeholder="위즈업 수주 기관명 또는 지역 검색" />
+            <div className="construction-add-summary">
+              <span>전체 후보 {addCandidates.length.toLocaleString()}곳 · 현재 {addOptions.length.toLocaleString()}곳 표시</span>
+              {isPrimaryOwner && (
+                <button type="button" onClick={() => setHiddenManagerOpen((current) => !current)}>
+                  숨긴 기관 관리 {hiddenProjects.length.toLocaleString()}곳
+                </button>
+              )}
+            </div>
+            {isPrimaryOwner && hiddenManagerOpen && (
+              <div className="construction-hidden-manager">
+                {hiddenProjects.map((project) => (
+                  <div key={scopeKey(project.organization, project.businessRound)}>
+                    <span><strong>{project.organization}</strong><small>{project.businessRound}차 사업 · {project.hiddenCandidate ? "기관 추가 후보" : "일정표 기관"}</small></span>
+                    <button type="button" disabled={saving} onClick={() => void restoreHiddenProject(project)}>다시 표시</button>
+                  </div>
+                ))}
+                {!hiddenProjects.length && <p>숨긴 기관이 없습니다.</p>}
+              </div>
+            )}
             <div className="construction-add-results">
               {addOptions.map((option) => (
-                <button type="button" key={scopeKey(option.organization, option.businessRound)} disabled={saving} onClick={() => void addProject(option)}>
-                  <span><strong>{option.organization}</strong><small>{option.region || "지역 미등록"} · {option.businessRound}차 사업</small></span><b>추가</b>
-                </button>
+                <div className="construction-add-result" key={scopeKey(option.organization, option.businessRound)}>
+                  <button type="button" disabled={saving} onClick={() => void addProject(option)}>
+                    <span><strong>{option.organization}</strong><small>{option.region || "지역 미등록"} · {option.businessRound}차 사업</small></span><b>추가</b>
+                  </button>
+                  {isPrimaryOwner && (
+                    <button type="button" className="construction-candidate-hide" disabled={saving} onClick={() => void hideCandidate(option)}>숨김</button>
+                  )}
+                </div>
               ))}
               {!addOptions.length ? <p>추가할 수 있는 기관이 없습니다.</p> : null}
+              {addOptions.length < addCandidates.length && (
+                <button type="button" className="construction-add-more" onClick={() => setAddVisibleCount((current) => current + 30)}>
+                  30곳 더 보기 ({(addCandidates.length - addOptions.length).toLocaleString()}곳 남음)
+                </button>
+              )}
             </div>
           </div>
         </div>
