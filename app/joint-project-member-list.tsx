@@ -8,6 +8,8 @@ export type JointProjectMemberListItem = {
   businessRound: number;
   jointProjectRole?: "sponsor" | "site" | "";
   jointProjectMemberBudgetAmount?: number | null;
+  jointProjectBudgetType?: string;
+  budgetType?: string;
   budgetAmount?: number | string | null;
 };
 
@@ -60,12 +62,15 @@ export default function JointProjectMemberList({
     member: JointProjectMemberListItem,
     matched: boolean,
   ) => {
-    const rawAmount =
-      member.jointProjectMemberBudgetAmount ?? member.budgetAmount ?? 0;
     const amount =
-      typeof rawAmount === "number"
-        ? rawAmount
-        : Number(String(rawAmount).replace(/[^\d.-]/g, "")) || 0;
+      member.jointProjectMemberBudgetAmount === null ||
+      member.jointProjectMemberBudgetAmount === undefined
+        ? null
+        : member.jointProjectMemberBudgetAmount;
+    const budgetName =
+      member.jointProjectBudgetType?.trim() ||
+      member.budgetType?.trim() ||
+      "예산명 미확인";
     return (
       <button
         type="button"
@@ -79,7 +84,13 @@ export default function JointProjectMemberList({
         <b>{member.organization}</b>
         <small>
           기관 사업 {member.businessRound}차
-          {showBudget ? ` · ${amount.toLocaleString("ko-KR")}원` : ""}
+          {showBudget
+            ? ` · ${budgetName} · ${
+                amount === null
+                  ? "금액 미입력"
+                  : `${amount.toLocaleString("ko-KR")}원`
+              }`
+            : ""}
         </small>
       </button>
     );

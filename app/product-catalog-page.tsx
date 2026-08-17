@@ -1253,7 +1253,7 @@ export default function ProductCatalogPage({
 
   return (
     <>
-      <nav className="product-workspace-tabs" aria-label="제품·견적·협력사 관리 화면">
+      <nav className="product-workspace-tabs" aria-label="견적·제품·협력사 관리 화면">
         <button type="button" className={workspaceTab === "quotations" ? "active" : ""} onClick={() => setWorkspaceTab("quotations")}>
           <span>견적서 관리</span><b>{quotationCount === null ? "…" : quotationCount.toLocaleString()}</b>
         </button>

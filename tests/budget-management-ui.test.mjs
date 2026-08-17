@@ -69,7 +69,7 @@ test("자체예산은 실제 직접 입력과 품목 합계 자동 계산을 안
   assert.match(crm, /품목·견적 미등록/);
   assert.match(
     crm,
-    /amount: `\$\{quote\.contractAmountReference\.toLocaleString\("ko-KR"\)\}원`,[\s\S]*detail: "",[\s\S]*status: "complete" as const/,
+    /amount: `\$\{totalAmount\.toLocaleString\("ko-KR"\)\}원`,[\s\S]*status: "complete" as const/,
   );
   assert.match(crm, /견적 금액 확인 필요/);
   assert.match(crm, /"미정",[\s\S]*"미등록",[\s\S]*"확인필요"/);
@@ -98,8 +98,8 @@ test("업무 화면의 예산명 입력은 활성 표준 예산명 선택기로 
     "일괄 수정·기관 상세·기록 점검·신규 기록에서 공통 선택기를 사용해야 합니다.",
   );
   assert.ok(
-    crm.match(/standardOnly/g)?.length >= 4,
-    "업무용 선택기는 미등록 이름을 직접 저장할 수 없어야 합니다.",
+    crm.match(/standardOnly/g)?.length >= 2,
+    "일괄 수정과 기록 점검 선택기는 활성 표준 예산만 저장해야 합니다.",
   );
   assert.doesNotMatch(
     crm,

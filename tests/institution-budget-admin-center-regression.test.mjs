@@ -12,7 +12,7 @@ test("workspace exposes one institution-budget center in the final menu order", 
     'label: "대시보드"',
     'label: "기관·예산 관리"',
     'label: "공간재구조화 사업 관리"',
-    'label: "제품·견적·협력사 관리"',
+    'label: "견적·제품·협력사 관리"',
     'label: "자료실"',
     'label: "영업·수주 지도"',
   ].map((needle) => crm.indexOf(needle));
@@ -105,10 +105,14 @@ test("permanent delete rechecks references, snapshots audit, and requires exact 
 
 test("unclassified review exclusions are entity-scoped and never rewrite originals", async () => {
   const budgets = await source("../lib/budget-names.ts");
+  const manager = await source("../app/budget-name-manager.tsx");
   assert.match(budgets, /budget_name_review_exclusions/);
   assert.match(budgets, /entity_type[\s\S]{0,80}entity_id/);
   assert.match(budgets, /exclude-review/);
   assert.match(budgets, /restore-review/);
+  assert.match(budgets, /reviewDetailsAvailable/);
+  assert.match(manager, /원본 연결 상세를 불러오지 못해 제외·복원할 수 없습니다/);
+  assert.doesNotMatch(manager, /if \(!details\.length\) return/);
 });
 
 test("construction candidates are progressive and owner-only hide restore is server checked", async () => {

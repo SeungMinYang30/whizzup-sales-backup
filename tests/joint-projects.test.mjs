@@ -105,8 +105,9 @@ test("공동사업 목록은 주관기관 한 건으로 접고 설치기관 검�
   assert.match(display, /matchingMembers/);
   assert.match(crm, /groupJointProjectRows\(displayedRecords\)/);
   assert.match(crm, /groupJointProjectRows\(followupRows\)/);
-  assert.match(map, /groupJointProjectRows\(activeCampaignTargets\)\.filter/);
+  assert.match(map, /const orderedBudgetTargetGroups = groupJointProjectRows\(activeCampaignTargets\)/);
   assert.match(map, /group\.members\.some\(matchesBudgetTargetFilters\)/);
+  assert.match(map, /budgetAwardPriority\(left\.primary\.currentAwardStatus\)/);
   assert.match(map, /const filteredBudgetTargets = filteredBudgetTargetGroups\.flatMap/);
   assert.match(crm, /<JointProjectMemberList/);
   assert.match(map, /<JointProjectMemberList/);
@@ -120,9 +121,11 @@ test("공동사업 목록은 주관기관 한 건으로 접고 설치기관 검�
   assert.match(styles, /\.joint-project-button[\s\S]*border: 1px solid #88a4f8/);
 });
 
-test("공동사업 상세는 주관기관 셸 안에서 선택 기관의 기록과 물품으로 전환한다", () => {
-  assert.match(crm, /detailShellOrganization/);
-  assert.match(crm, /현재 보기 \$\{detailOrganization\}/);
+test("공동사업 상세는 선택 기관을 큰 제목으로 표시하고 관계 안내와 기록을 함께 전환한다", () => {
+  assert.match(crm, /<h2 id="history-title">\{detailOrganization\}<\/h2>/);
+  assert.match(crm, /설치기관 \$\{Math\.max\(1, selectedIndex \+ 1\)\}\/\$\{siteMembers\.length\}/);
+  assert.match(crm, /주관 공동사업/);
+  assert.match(crm, /주관기관 · 설치기관 \$\{siteMembers\.length\}곳 관리/);
   assert.match(crm, /selectedActivityId=\{detailDisplayRecord\.id\}/);
   assert.match(crm, /setDetailBusinessRound\(member\.businessRound\)/);
   assert.match(summary, /onSelectMember/);
@@ -130,6 +133,18 @@ test("공동사업 상세는 주관기관 셸 안에서 선택 기관의 기록�
   assert.match(summary, /aria-pressed=\{member\.id === current\?\.id\}/);
   assert.match(summary, /현재 보기 \$\{current\.organization\}/);
   assert.match(styles, /\.history-summary-grid > div[\s\S]*inset 0 -1px 0 #d8e0ec/);
+});
+
+test("공동사업 예산은 표준 예산명과 설치기관 합계만 표시하고 NULL과 0원을 구분한다", () => {
+  assert.match(crm, /institutionBudgetLinesForGroup/);
+  assert.match(crm, /group\.primary\.jointProjectBudgetType/);
+  assert.match(crm, /member\.jointProjectRole !== "sponsor"/);
+  assert.match(crm, /member\.jointProjectMemberBudgetAmount === null/);
+  assert.match(crm, /enteredAmounts\.length === 0\s*\? "금액 미입력"/);
+  assert.match(memberList, /amount === null\s*\? "금액 미입력"/);
+  assert.doesNotMatch(memberList, /jointProjectMemberBudgetAmount \?\? member\.budgetAmount \?\? 0/);
+  assert.match(summary, /hasEnteredAmount/);
+  assert.match(modal, /<summary>상세 설정<\/summary>/);
 });
 
 test("설치기관 담당자는 같은 공동사업의 주관기관 연락처를 확인 후 한 번만 불러온다", () => {
@@ -192,7 +207,7 @@ test("공동사업 연결은 기존 기관 선택과 새 기관 즉시 등록을
   assert.match(modal, /공동사업 빠른 등록/);
   assert.match(modal, /대신 \$\{organization\}을 주관기관으로 선택할까요/);
   assert.match(modal, /등록된 기관을 선택하거나 새 기관을 먼저 등록/);
-  assert.match(modal, /공동사업 차수는 이 공동사업의 연도별 묶음 기준/);
+  assert.match(modal, /기본값은 1차이며 기관별 기존 사업 차수는 변경하지 않습니다/);
   assert.match(store, /등록된 주관기관을 선택해 주세요/);
   assert.match(store, /실제 기관 기록을 찾지 못했습니다/);
   assert.doesNotMatch(store, /uniqueMembers\.unshift\(\{[\s\S]*organization: sponsorOrganization/);

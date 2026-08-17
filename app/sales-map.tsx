@@ -833,6 +833,18 @@ function normalizeCampaign(row: Record<string, unknown>): SalesCampaign {
   };
 }
 
+function normalizeNullableAmount(value: unknown): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    (typeof value === "string" && value.trim() === "")
+  ) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
 function normalizeCampaignTarget(
   row: Record<string, unknown>,
 ): SalesCampaignTarget {
@@ -928,10 +940,12 @@ function normalizeCampaignTarget(
       Number(value("jointProjectRound", "joint_project_round")) > 0
         ? Number(value("jointProjectRound", "joint_project_round"))
         : null,
-    jointProjectMemberBudgetAmount:
-      Number(value("jointProjectMemberBudgetAmount", "joint_project_member_budget_amount")) >= 0
-        ? Number(value("jointProjectMemberBudgetAmount", "joint_project_member_budget_amount"))
-        : null,
+    jointProjectMemberBudgetAmount: normalizeNullableAmount(
+      value(
+        "jointProjectMemberBudgetAmount",
+        "joint_project_member_budget_amount",
+      ),
+    ),
   };
 }
 
@@ -970,6 +984,20 @@ function formatWon(value: number | null) {
     : `${Math.round(value).toLocaleString("ko-KR")}원`;
 }
 
+function jointProjectSiteBudgetTotal(members: SalesCampaignTarget[]) {
+  const amounts = members
+    .filter((member) => member.jointProjectRole !== "sponsor")
+    .flatMap((member) =>
+      member.jointProjectMemberBudgetAmount === null ||
+      member.jointProjectMemberBudgetAmount === undefined
+        ? []
+        : [member.jointProjectMemberBudgetAmount],
+    );
+  return amounts.length > 0
+    ? amounts.reduce((sum, amount) => sum + amount, 0)
+    : null;
+}
+
 function budgetAmountSourceLabel(target: SalesCampaignTarget) {
   if (target.budgetAmountSource === "institution") return "기관 상세 입력";
   if (target.budgetAmountSource === "card-default") return "카드 기본금액";
@@ -987,8 +1015,16 @@ function budgetTargetStatus(target: SalesCampaignTarget) {
       ? "위즈업 선정"
       : "수주 후 진행";
   }
+  if (target.currentAwardStatus === "협력사 수주") return "협력사 선정";
   if (target.currentAwardStatus === "타업체 수주") return "타업체 선정";
   return "진행 중";
+}
+
+function budgetAwardPriority(status: string) {
+  if (status === "위즈업 수주") return 1;
+  if (status === "협력사 수주") return 2;
+  if (status === "타업체 수주") return 3;
+  return 0;
 }
 
 function budgetTargetSelection(target: SalesCampaignTarget) {
@@ -4682,6 +4718,7 @@ export default function SalesMapPage({
   const budgetStatuses = [
     "진행 중",
     "위즈업 선정",
+    "협력사 선정",
     "타업체 선정",
     "수주 후 진행",
     "완료",
@@ -4720,10 +4757,22 @@ export default function SalesMapPage({
     }
     return true;
   };
+  const orderedBudgetTargetGroups = groupJointProjectRows(activeCampaignTargets)
+    .filter((group) => group.members.some(matchesBudgetTargetFilters))
+    .sort((left, right) => {
+      const statusOrder =
+        budgetAwardPriority(left.primary.currentAwardStatus) -
+        budgetAwardPriority(right.primary.currentAwardStatus);
+      if (statusOrder) return statusOrder;
+      return (
+        right.primary.currentActivityDate.localeCompare(
+          left.primary.currentActivityDate,
+        ) ||
+        right.primary.id - left.primary.id
+      );
+    });
   const filteredBudgetTargetGroups = filterJointProjectGroupsByMember(
-    groupJointProjectRows(activeCampaignTargets).filter((group) =>
-      group.members.some(matchesBudgetTargetFilters),
-    ),
+    orderedBudgetTargetGroups,
     budgetKeyword
       ? (target) =>
           [
@@ -5216,15 +5265,7 @@ export default function SalesMapPage({
                               {activeCampaign.budgetType || "예산명 확인 필요"}
                             </span>
                             <strong>{group.projectId
-                              ? formatWon(
-                                group.members
-                                  .filter((member) => member.jointProjectRole !== "sponsor")
-                                  .reduce(
-                                    (total, member) =>
-                                      total + (member.jointProjectMemberBudgetAmount ?? member.budgetAmount ?? 0),
-                                    0,
-                                  ),
-                              )
+                              ? formatWon(jointProjectSiteBudgetTotal(group.members))
                               : formatWon(target.budgetAmount)}</strong>
                             {!group.projectId && (
                               <small>{budgetAmountSourceLabel(target)}</small>
@@ -5384,15 +5425,7 @@ export default function SalesMapPage({
                               {activeCampaign.budgetType || "예산명 확인 필요"}
                             </span>
                             <strong>{group.projectId
-                              ? formatWon(
-                                group.members
-                                  .filter((member) => member.jointProjectRole !== "sponsor")
-                                  .reduce(
-                                    (total, member) =>
-                                      total + (member.jointProjectMemberBudgetAmount ?? member.budgetAmount ?? 0),
-                                    0,
-                                  ),
-                              )
+                              ? formatWon(jointProjectSiteBudgetTotal(group.members))
                               : formatWon(target.budgetAmount)}</strong>
                             {!group.projectId && (
                               <small>{budgetAmountSourceLabel(target)}</small>

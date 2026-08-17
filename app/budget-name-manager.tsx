@@ -132,6 +132,7 @@ type BudgetManagementPayload = {
   events: BudgetEvent[];
   retrofitPreview: RetrofitRow[];
   excludedItems: BudgetReviewDetail[];
+  reviewDetailsAvailable: boolean;
   error?: string;
 };
 
@@ -511,6 +512,7 @@ function normalizePayload(payload: Record<string, unknown>): BudgetManagementPay
     )
       .map(normalizeDetail)
       .filter((item): item is BudgetReviewDetail => Boolean(item)),
+    reviewDetailsAvailable: payload.reviewDetailsAvailable !== false,
     error: clean(payload.error),
   };
 }
@@ -548,6 +550,7 @@ export default function BudgetNameManager({
     events: [],
     retrofitPreview: [],
     excludedItems: [],
+    reviewDetailsAvailable: true,
   });
   const [tab, setTab] = useState<ManagerTab>("standards");
   const [loading, setLoading] = useState(true);
@@ -759,7 +762,14 @@ export default function BudgetNameManager({
     details: BudgetReviewDetail[],
     excluded: boolean,
   ) {
-    if (!details.length) return;
+    if (!details.length) {
+      setError(
+        data.reviewDetailsAvailable
+          ? "선택한 예산명의 원본 연결 기록이 없습니다. 목록을 새로고침한 뒤 다시 확인해 주세요."
+          : "원본 연결 상세를 불러오지 못해 제외·복원할 수 없습니다. 잠시 후 새로고침해 주세요.",
+      );
+      return;
+    }
     const actionLabel = excluded ? "제외" : "복원";
     const confirmed = window.confirm(
       `${details.length.toLocaleString()}건을 검토 목록에서 ${actionLabel}합니다.\n\n원본 영업·사업·예산 기록과 금액, 기관·사업 연결은 변경되지 않습니다. 계속할까요?`,
@@ -1813,6 +1823,11 @@ export default function BudgetNameManager({
               </button>
             </div>
           </div>
+          {!data.reviewDetailsAvailable && (
+            <div className="form-alert error" role="alert">
+              원본 연결 상세를 불러오지 못했습니다. 제외·복원은 목록을 새로고침한 뒤 다시 시도해 주세요.
+            </div>
+          )}
 
           <div className="budget-unclassified-create">
             <input

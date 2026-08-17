@@ -61,8 +61,8 @@ test("formal quotation supports catalog items, direct-consortium margin, seal an
 });
 
 test("제품·견적 화면은 견적서·제품·협력사를 탭으로 나누고 견적 목록을 페이지 처리한다", () => {
-  assert.match(crm, /제품·견적·협력사 관리/);
-  assert.match(productWorkspace, /제품·견적·협력사 관리 화면/);
+  assert.match(crm, /견적·제품·협력사 관리/);
+  assert.match(productWorkspace, /견적·제품·협력사 관리 화면/);
   assert.match(productWorkspace, /견적서 관리/);
   assert.match(productWorkspace, /제품 기준정보/);
   assert.match(productWorkspace, /협력사 관리/);

@@ -2132,6 +2132,7 @@ export async function listBudgetNameManagement() {
   return {
     names: resolvedNames,
     excludedItems: reviewDetails.filter((item) => item.excluded),
+    reviewDetailsAvailable,
     groups: groups.map((group) => ({
       ...group,
       budgetKind: normalizeBudgetKind(group.budgetKind),

@@ -11081,6 +11081,27 @@ tr:hover .row-actions { opacity: 1; }
 .history-scope-toggle { display: flex; align-items: center; gap: 7px; }
 .history-scope-toggle button.active { border-color: #566cff; background: #eef1ff; color: #263fd0; }
 
+.joint-project-advanced {
+  border: 1px solid #dce3ee;
+  border-radius: 12px;
+  background: #f8faff;
+}
+
+.joint-project-advanced > summary {
+  cursor: pointer;
+  padding: 11px 14px;
+  font-weight: 800;
+  color: #415078;
+}
+
+.joint-project-advanced[open] > summary {
+  border-bottom: 1px solid #e1e6f0;
+}
+
+.joint-project-advanced .joint-project-period-fields {
+  padding: 12px;
+}
+
 .joint-project-period-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -15641,6 +15662,20 @@ button:is(
 .management-phase-tag { display: inline-flex; margin-top: 5px; padding: 3px 6px; border-radius: 999px; font-size: 9px; font-weight: 850; }
 .management-phase-tag.pre { background: #eaf2ff; color: #2563b8; }
 .management-phase-tag.post { background: #f0ebff; color: #7046c4; }
+.award-result-badge {
+  display: inline-flex;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 850;
+  line-height: 1.35;
+  white-space: normal;
+}
+.award-result-badge.result-0 { background: #e4f8ef; color: #087451; }
+.award-result-badge.result-1 { background: #efeaff; color: #6337b5; }
+.award-result-badge.result-2 { background: #fff0ec; color: #b4482e; }
 .sales-progress-pill { display: inline-flex; padding: 5px 8px; border-radius: 999px; background: #edf3ff; color: #3457b9; font-size: 10px; font-weight: 850; }
 .management-contract-summary { display: grid; gap: 2px; margin-top: 7px; padding-top: 7px; border-top: 1px solid #e6ebf3; }
 .management-contract { display: block; margin-top: 6px; color: #536583; }

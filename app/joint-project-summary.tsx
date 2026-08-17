@@ -30,6 +30,13 @@ type JointMember = {
 };
 
 function money(value: unknown) {
+  if (
+    value === null ||
+    value === undefined ||
+    (typeof value === "string" && value.trim() === "")
+  ) {
+    return null;
+  }
   const parsed = Number(String(value ?? "").replace(/[^0-9.-]/g, ""));
   return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : null;
 }
@@ -137,7 +144,12 @@ export default function JointProjectSummary({
         Number(member.resolved_activity_id) === Number(selectedActivityId),
     ) ?? projectMembers.find((member) => member.organization === organization);
   const siteMembers = projectMembers.filter((member) => member.role === "site");
-  const total = budgetTracks.reduce((sum, track) => sum + track.amount, 0);
+  const hasEnteredAmount = projectMembers.some(
+    (member) => member.role === "site" && money(member.budget_amount) !== null,
+  );
+  const total = hasEnteredAmount
+    ? budgetTracks.reduce((sum, track) => sum + track.amount, 0)
+    : null;
 
   return (
     <details

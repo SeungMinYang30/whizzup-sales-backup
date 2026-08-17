@@ -597,37 +597,37 @@ export default function JointProjectModal({
               </small>
             )}
           </label>
-          <div className="joint-project-period-fields">
-            <label className="joint-project-field">
-              <span>공동사업 연도</span>
-              <select
-                value={projectYear}
-                onChange={(event) => setProjectYear(event.target.value)}
-                disabled={Boolean(existingProjectId)}
-              >
-                {Array.from({ length: 7 }, (_, index) => new Date().getFullYear() - 2 + index).map((year) => (
-                  <option key={year} value={year}>{year}년</option>
-                ))}
-              </select>
-              <small>같은 예산·차수라도 연도가 다르면 별도 공동사업으로 관리됩니다.</small>
-            </label>
-            <label className="joint-project-field">
-              <span>공동사업 차수</span>
-              <select
-                value={selectedJointRound}
-                onChange={(event) => setSelectedJointRound(event.target.value)}
-                disabled={Boolean(existingProjectId)}
-              >
-                {Array.from({ length: 10 }, (_, index) => index + 1).map((round) => (
-                  <option key={round} value={round}>{round}차</option>
-                ))}
-              </select>
-              <small>
-                공동사업 차수는 이 공동사업의 연도별 묶음 기준입니다. 각 기관의
-                1차·2차 사업 차수는 변경하지 않고 별도로 연결합니다.
-              </small>
-            </label>
-          </div>
+          <details className="joint-project-advanced">
+            <summary>상세 설정</summary>
+            <div className="joint-project-period-fields">
+              <label className="joint-project-field">
+                <span>공동사업 연도</span>
+                <select
+                  value={projectYear}
+                  onChange={(event) => setProjectYear(event.target.value)}
+                  disabled={Boolean(existingProjectId)}
+                >
+                  {Array.from({ length: 7 }, (_, index) => new Date().getFullYear() - 2 + index).map((year) => (
+                    <option key={year} value={year}>{year}년</option>
+                  ))}
+                </select>
+                <small>기본값은 현재 연도이며 필요한 경우에만 변경합니다.</small>
+              </label>
+              <label className="joint-project-field">
+                <span>공동사업 차수</span>
+                <select
+                  value={selectedJointRound}
+                  onChange={(event) => setSelectedJointRound(event.target.value)}
+                  disabled={Boolean(existingProjectId)}
+                >
+                  {Array.from({ length: 10 }, (_, index) => index + 1).map((round) => (
+                    <option key={round} value={round}>{round}차</option>
+                  ))}
+                </select>
+                <small>기본값은 1차이며 기관별 기존 사업 차수는 변경하지 않습니다.</small>
+              </label>
+            </div>
+          </details>
           <label className="joint-project-field">
             <span>주관기관</span>
             <input
