@@ -23,7 +23,8 @@ test("AI construction schedules keep time and do not create equipment entries", 
   assert.match(schedules, /start_time, end_time, category, stage/);
   assert.match(schedules, /listStoredOrganizationSchedules\(organization, businessRound\)/);
   assert.match(schedules, /organization_schedule_import_state/);
-  assert.match(schedules, /duplicateLegacyScheduleIds/);
+  assert.match(schedules, /archiveConstructionDuplicateSalesSchedules/);
+  assert.match(schedules, /construction\.source_activity_id = sales\.source_activity_id/);
   assert.match(constructionPage, /시작 시간/);
   assert.match(constructionPage, /종일/);
   assert.match(constructionPage, /자동\(\+1시간\)/);

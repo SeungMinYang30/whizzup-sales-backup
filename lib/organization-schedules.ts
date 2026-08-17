@@ -270,6 +270,68 @@ const createActiveLocalScheduleSemanticIdentityIndexSql = `
     AND TRIM(COALESCE(deleted_at, '')) = ''
     AND TRIM(COALESCE(google_event_id, '')) = ''`;
 
+const constructionDuplicateSalesLabel = semanticScheduleLabelSql("sales.organization", "sales.label");
+const constructionDuplicateWorkLabel = semanticScheduleLabelSql("construction.organization", "construction.label");
+
+async function archiveConstructionDuplicateSalesSchedules(
+  d1: ReturnType<typeof getD1>,
+  options: {
+    organization?: string;
+    businessRound?: number;
+    memberId?: number;
+    memberName?: string;
+  } = {},
+) {
+  const scoped = Boolean(options.organization && options.businessRound);
+  const statement = d1.prepare(
+    `UPDATE organization_schedules AS sales
+     SET deleted_at = CURRENT_TIMESTAMP,
+         sync_status = 'local_only',
+         sync_operation = 'upsert',
+         sync_error = 'construction_duplicate_archived',
+         updated_by = CASE WHEN ? > 0 THEN ? ELSE updated_by END,
+         updated_by_name = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE LOWER(TRIM(COALESCE(sales.category, 'general'))) IN ('general', 'sales')
+       AND TRIM(COALESCE(sales.deleted_at, '')) = ''
+       AND TRIM(COALESCE(sales.google_event_id, '')) = ''
+       ${scoped ? "AND LOWER(TRIM(sales.organization)) = LOWER(TRIM(?)) AND sales.business_round = ?" : ""}
+       AND EXISTS (
+         SELECT 1
+         FROM organization_schedules construction
+         WHERE LOWER(TRIM(COALESCE(construction.category, 'general'))) = 'construction'
+           AND TRIM(COALESCE(construction.deleted_at, '')) = ''
+           AND LOWER(TRIM(construction.organization)) = LOWER(TRIM(sales.organization))
+           AND construction.business_round = sales.business_round
+           AND ${constructionDuplicateWorkLabel} = ${constructionDuplicateSalesLabel}
+           AND construction.scheduled_date = sales.scheduled_date
+           AND COALESCE(NULLIF(construction.end_date, ''), construction.scheduled_date) =
+               COALESCE(NULLIF(sales.end_date, ''), sales.scheduled_date)
+           AND TRIM(COALESCE(construction.start_time, '')) = TRIM(COALESCE(sales.start_time, ''))
+           AND TRIM(COALESCE(construction.end_time, '')) = TRIM(COALESCE(sales.end_time, ''))
+           AND (
+             (
+               sales.source_activity_id IS NOT NULL
+               AND construction.source_activity_id = sales.source_activity_id
+             )
+             OR (
+               sales.source_activity_id IS NULL
+               AND TRIM(COALESCE(sales.start_time, '')) = ''
+               AND TRIM(COALESCE(sales.end_time, '')) = ''
+               AND TRIM(COALESCE(sales.content, '')) = ''
+               AND TRIM(COALESCE(sales.details, '')) = ''
+             )
+           )
+       )`,
+  );
+  const memberId = Math.max(0, Number(options.memberId) || 0);
+  const memberName = clean(options.memberName || "시공 중복 일정 자동 보관").slice(0, 120);
+  const bindings: unknown[] = [memberId, memberId, memberName];
+  if (scoped) bindings.push(options.organization, options.businessRound);
+  const result = await statement.bind(...bindings).run();
+  return Number(result.meta.changes) || 0;
+}
+
 let schedulesReadyPromise: Promise<ReturnType<typeof getD1>> | null = null;
 
 async function initializeOrganizationSchedules() {
@@ -350,8 +412,9 @@ async function initializeOrganizationSchedules() {
   if (!projectColumns.results.some((column) => column.name === "hidden_at")) {
     await d1.prepare("ALTER TABLE construction_schedule_projects ADD COLUMN hidden_at TEXT NOT NULL DEFAULT ''").run();
   }
-  // Keep imported sales rows intact. Construction/sales overlap is resolved by
-  // the deterministic calendar presentation merge, never by deleting source data.
+  // AI 기록에서 일반 일정과 시공 일정이 함께 만들어진 과거 중복도 원본을
+  // 지우지 않고 deleted_at으로 보관해 복구 가능하게 정리합니다.
+  await archiveConstructionDuplicateSalesSchedules(d1);
   await d1.prepare(
     `INSERT OR IGNORE INTO organization_schedule_import_state (organization, business_round)
      SELECT DISTINCT organization, business_round
@@ -1173,6 +1236,12 @@ export async function saveConstructionSchedules(input: {
     ...scheduleStatements,
     ...removedStatements,
   ]);
+  await archiveConstructionDuplicateSalesSchedules(d1, {
+    organization,
+    businessRound,
+    memberId: input.memberId,
+    memberName: input.memberName,
+  });
   const hasInspection = schedules.some((schedule) => schedule.stage === "검수");
   const hasConstructionWork = schedules.some((schedule) => isValidConstructionStage(schedule.stage));
   if (hasInspection && projectCompleted) {
@@ -1841,10 +1910,14 @@ export async function mergeActivityProgressSchedule(input: {
        schedule.endTime,
      )));
 
-    // Do not remove the originating sales schedule. The calendar merge uses the
-    // shared source activity id and exact occurrence identity to show the
-    // construction entry while it exists, and restores the sales entry when it
-    // is later cancelled or deleted.
+    // AI 기록에서 같은 발생 건이 일반 일정과 시공 일정으로 함께 만들어진
+    // 경우 일반 일정은 복구 가능한 상태로 보관하고 시공 일정만 남깁니다.
+    await archiveConstructionDuplicateSalesSchedules(d1, {
+      organization,
+      businessRound,
+      memberId: input.memberId,
+      memberName: input.memberName,
+    });
 
     await d1.prepare(
       `UPDATE activities

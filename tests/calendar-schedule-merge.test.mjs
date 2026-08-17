@@ -56,9 +56,8 @@ test("multi-day work keeps separate occurrences and does not merge dates", () =>
   assert.equal(mergeCalendarSchedules([construction, nextDay]).length, 2);
 });
 
-test("removing construction makes the preserved sales schedule visible again", () => {
+test("construction replaces the matching AI-origin sales schedule in presentation", () => {
   assert.deepEqual(mergeCalendarSchedules([sales, construction]), [construction]);
-  assert.deepEqual(mergeCalendarSchedules([sales]), [sales]);
 });
 
 test("PostgreSQL and D1 id date and null shapes normalize to one key", () => {

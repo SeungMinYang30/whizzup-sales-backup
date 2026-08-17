@@ -1,8 +1,55 @@
 export const VERCEL_SCHEMA_VERSION =
-  "202608160001_institution_business_budgets";
+  "202608170001_construction_schedule_duplicate_archive";
 export const VERCEL_PREVIOUS_SCHEMA_VERSION =
-  "202608150001_institution_registry";
+  "202608160001_institution_business_budgets";
 export const VERCEL_BASE_SCHEMA_VERSION = "202608060007_full_backup_columns";
+
+const CONSTRUCTION_SCHEDULE_DUPLICATE_ARCHIVE_SQL = `
+UPDATE public.organization_schedules AS sales
+SET deleted_at = CURRENT_TIMESTAMP::text,
+    sync_status = 'local_only',
+    sync_operation = 'upsert',
+    sync_error = 'construction_duplicate_archived',
+    updated_by_name = '시공 중복 일정 소급 보관',
+    updated_at = CURRENT_TIMESTAMP
+WHERE LOWER(BTRIM(COALESCE(sales.category, 'general'))) IN ('general', 'sales')
+  AND BTRIM(COALESCE(sales.deleted_at, '')) = ''
+  AND BTRIM(COALESCE(sales.google_event_id, '')) = ''
+  AND EXISTS (
+    SELECT 1
+    FROM public.organization_schedules construction
+    WHERE LOWER(BTRIM(COALESCE(construction.category, 'general'))) = 'construction'
+      AND BTRIM(COALESCE(construction.deleted_at, '')) = ''
+      AND LOWER(BTRIM(construction.organization)) = LOWER(BTRIM(sales.organization))
+      AND construction.business_round = sales.business_round
+      AND REGEXP_REPLACE(
+            REGEXP_REPLACE(LOWER(BTRIM(construction.label)),
+              '^(영업|회의|시공|쇼룸|기타)[[:space:]·:]*', ''),
+            '[[:space:]·•._()-]+', '', 'g') =
+          REGEXP_REPLACE(
+            REGEXP_REPLACE(LOWER(BTRIM(sales.label)),
+              '^(영업|회의|시공|쇼룸|기타)[[:space:]·:]*', ''),
+            '[[:space:]·•._()-]+', '', 'g')
+      AND construction.scheduled_date = sales.scheduled_date
+      AND COALESCE(NULLIF(construction.end_date, ''), construction.scheduled_date) =
+          COALESCE(NULLIF(sales.end_date, ''), sales.scheduled_date)
+      AND BTRIM(COALESCE(construction.start_time, '')) = BTRIM(COALESCE(sales.start_time, ''))
+      AND BTRIM(COALESCE(construction.end_time, '')) = BTRIM(COALESCE(sales.end_time, ''))
+      AND (
+        (
+          sales.source_activity_id IS NOT NULL
+          AND construction.source_activity_id = sales.source_activity_id
+        )
+        OR (
+          sales.source_activity_id IS NULL
+          AND BTRIM(COALESCE(sales.start_time, '')) = ''
+          AND BTRIM(COALESCE(sales.end_time, '')) = ''
+          AND BTRIM(COALESCE(sales.content, '')) = ''
+          AND BTRIM(COALESCE(sales.details, '')) = ''
+        )
+      )
+  );
+`;
 
 const COMPLEX_PROJECT_BACKFILL_SQL = `
 INSERT INTO public.complex_project_budget_links
@@ -385,6 +432,7 @@ ${VERCEL_CUTOVER_SCHEMA_SQL}
 ${JOINT_PROJECT_IDENTITY_REPAIR_SQL}
 ${INSTITUTION_REGISTRY_SCHEMA_SQL}
 ${INSTITUTION_BUSINESS_BUDGETS_SCHEMA_SQL}
+${CONSTRUCTION_SCHEDULE_DUPLICATE_ARCHIVE_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
@@ -1317,6 +1365,7 @@ ${VERCEL_CUTOVER_SCHEMA_SQL}
 ${JOINT_PROJECT_IDENTITY_REPAIR_SQL}
 ${INSTITUTION_REGISTRY_SCHEMA_SQL}
 ${INSTITUTION_BUSINESS_BUDGETS_SCHEMA_SQL}
+${CONSTRUCTION_SCHEDULE_DUPLICATE_ARCHIVE_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
@@ -1586,6 +1635,7 @@ ${VERCEL_CUTOVER_SCHEMA_SQL}
 ${JOINT_PROJECT_IDENTITY_REPAIR_SQL}
 ${INSTITUTION_REGISTRY_SCHEMA_SQL}
 ${INSTITUTION_BUSINESS_BUDGETS_SCHEMA_SQL}
+${CONSTRUCTION_SCHEDULE_DUPLICATE_ARCHIVE_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
