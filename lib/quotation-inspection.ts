@@ -3,7 +3,6 @@ import { airpassEquipmentKitOutputLines } from "./airpass-equipment-kit";
 import { AIRPASS_COMPANY } from "./airpass-company";
 
 export const FIELD_SUPPORT_COMPANY = "주식회사 위즈업";
-export const FIELD_INSPECTION_NOTICE = "본 확인서는 현장의 제품 작동 및 수량 확인을 위한 자료이며, 계약상 공식 검사·검수 완료나 하자 책임의 확정을 의미하지 않습니다.";
 
 export type FieldInspectionProductLine = {
   name: string;

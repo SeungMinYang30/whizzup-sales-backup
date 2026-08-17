@@ -154,11 +154,7 @@ export default function OrganizationQuotationHistory({
     );
   const viewInspectionPdf = async (quote: AuthoredQuotation) => {
     const tab = window.open(`/pdf-opening.html?request=${Date.now()}`, "_blank");
-    if (!tab) {
-      setActionMessage("새 탭이 차단되었습니다. 팝업 및 리디렉션을 허용한 뒤 다시 눌러 주세요.");
-      return;
-    }
-    tab.opener = null;
+    if (tab) tab.opener = null;
     const action = `${quote.id}:view`;
     setInspectionAction(action);
     if (inspectionPdfFallbackRef.current) URL.revokeObjectURL(inspectionPdfFallbackRef.current);
@@ -170,13 +166,23 @@ export default function OrganizationQuotationHistory({
       const file = await createFieldInspectionPdfFile(quote, "", visitorName);
       const url = URL.createObjectURL(file);
       inspectionPdfFallbackRef.current = url;
-      setInspectionPdfFallback({ url, name: file.name });
-      tab.location.replace(url);
-      tab.focus();
-      window.setTimeout(() => tab.focus(), 120);
-      setActionMessage("검수서류 PDF가 준비됐습니다. 화면이 전환되지 않으면 PDF 열기를 눌러 주세요.");
+      if (!tab) {
+        setInspectionPdfFallback({ url, name: file.name });
+        setActionMessage("새 탭이 차단되었습니다. PDF 열기를 눌러 검수서류를 확인해 주세요.");
+      } else {
+        try {
+          tab.location.replace(url);
+          tab.focus();
+          window.setTimeout(() => tab.focus(), 120);
+          setActionMessage("");
+        } catch {
+          tab.close();
+          setInspectionPdfFallback({ url, name: file.name });
+          setActionMessage("새 탭에서 PDF를 열지 못했습니다. PDF 열기를 눌러 검수서류를 확인해 주세요.");
+        }
+      }
     } catch (actionError) {
-      tab.close();
+      tab?.close();
       setActionMessage(actionError instanceof Error ? actionError.message : "현장 검수서류 PDF를 만들지 못했습니다.");
     } finally {
       setInspectionAction("");

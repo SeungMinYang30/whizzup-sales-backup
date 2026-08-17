@@ -3,7 +3,6 @@ import { airpassEquipmentKitOutputLines, airpassEquipmentKitTotal, type AirpassE
 import { AIRPASS_COMPANY, AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "./airpass-company";
 import { formatQuotationItemNameForOutput } from "./quotation-output-text";
 import {
-  FIELD_INSPECTION_NOTICE,
   FIELD_SUPPORT_COMPANY,
   fieldInspectionEquipmentLines,
   fieldInspectionProductLines,
@@ -377,7 +376,6 @@ function fieldInspectionSheetXml(input: QuotationWorkbookInput) {
   const signatureTitleRow = signatureHeaderRow + 1;
   const signatureStartRow = signatureTitleRow + 1;
   const signatureEndRow = signatureStartRow + 1;
-  const noticeRow = signatureEndRow + 1;
   const memoPageBreak = productLines.length > 6
     ? `<rowBreaks count="1" manualBreakCount="1"><brk id="${memoHeaderRow - 1}" min="0" max="16383" man="1"/></rowBreaks>`
     : "";
@@ -392,11 +390,10 @@ function fieldInspectionSheetXml(input: QuotationWorkbookInput) {
     `A${signatureHeaderRow}:J${signatureHeaderRow}`,
     `A${signatureTitleRow}:E${signatureTitleRow}`, `F${signatureTitleRow}:J${signatureTitleRow}`,
     `A${signatureStartRow}:E${signatureEndRow}`, `F${signatureStartRow}:J${signatureEndRow}`,
-    `A${noticeRow}:J${noticeRow}`,
   ];
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:J${noticeRow}"/>
+  <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:J${signatureEndRow}"/>
   <sheetViews><sheetView showGridLines="0" zoomScale="85" workbookViewId="0"/></sheetViews>
   <sheetFormatPr defaultRowHeight="20"/>
   <cols><col min="1" max="2" width="10" customWidth="1"/><col min="3" max="5" width="13" customWidth="1"/><col min="6" max="7" width="10" customWidth="1"/><col min="8" max="10" width="13" customWidth="1"/></cols>
@@ -422,7 +419,6 @@ function fieldInspectionSheetXml(input: QuotationWorkbookInput) {
     <row r="${signatureHeaderRow}" ht="25" customHeight="1">${inline(`A${signatureHeaderRow}`, "확인자 서명", 2)}${styledBlanks(signatureHeaderRow, ["B","C","D","E","F","G","H","I","J"], 2)}</row>
     <row r="${signatureTitleRow}" ht="26" customHeight="1">${inline(`A${signatureTitleRow}`, "기관 담당자", 3)}${styledBlanks(signatureTitleRow, ["B","C","D","E"], 3)}${inline(`F${signatureTitleRow}`, "위즈업 방문자", 3)}${styledBlanks(signatureTitleRow, ["G","H","I","J"], 3)}</row>
     <row r="${signatureStartRow}" ht="32" customHeight="1">${inline(`A${signatureStartRow}`, "성명: ____________________\n서명:", 22)}${styledBlanks(signatureStartRow, ["B","C","D","E"], 22)}${inline(`F${signatureStartRow}`, `성명: ${input.visitorName || "____________________"}\n서명:`, 22)}${styledBlanks(signatureStartRow, ["G","H","I","J"], 22)}</row><row r="${signatureEndRow}" ht="34" customHeight="1"/>
-    <row r="${noticeRow}" ht="38" customHeight="1">${inline(`A${noticeRow}`, FIELD_INSPECTION_NOTICE, 20)}${styledBlanks(noticeRow, ["B","C","D","E","F","G","H","I","J"], 20)}</row>
   </sheetData><mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells>${memoPageBreak}
   <printOptions horizontalCentered="1" verticalCentered="0"/><pageMargins left="0.3" right="0.3" top="0.35" bottom="0.35" header="0.15" footer="0.15"/>
   <pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0" horizontalDpi="300" verticalDpi="300"/>
@@ -430,7 +426,7 @@ function fieldInspectionSheetXml(input: QuotationWorkbookInput) {
 }
 
 function fieldInspectionSheetEndRow(input: QuotationWorkbookInput) {
-  return 30 + Math.max(1, fieldInspectionProductLines(inspectionSource(input)).length);
+  return 29 + Math.max(1, fieldInspectionProductLines(inspectionSource(input)).length);
 }
 
 function equipmentInspectionSheetXml(input: QuotationWorkbookInput) {

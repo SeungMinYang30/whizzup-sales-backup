@@ -4,7 +4,6 @@ import { fieldInspectionDownloadName, quotationDownloadName, quotationFileStem }
 import { AIRPASS_COMPANY, AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "../lib/airpass-company";
 import { formatQuotationItemNameForOutput } from "../lib/quotation-output-text";
 import {
-  FIELD_INSPECTION_NOTICE,
   FIELD_SUPPORT_COMPANY,
   fieldInspectionEquipmentLines,
   fieldInspectionProductLines,
@@ -589,6 +588,8 @@ function inspectionHeading(
 }
 
 function inspectionSection(context: CanvasRenderingContext2D, title: string, y: number) {
+  context.textAlign = "left";
+  context.textBaseline = "alphabetic";
   context.fillStyle = "#17233f";
   context.fillRect(72, y, 1096, 48);
   context.fillStyle = "#ffffff";
@@ -640,6 +641,8 @@ function inspectionSignatureBox(
   height: number,
   name = "",
 ) {
+  context.textAlign = "left";
+  context.textBaseline = "alphabetic";
   inspectionBox(context, x, y, width, height, "#fffbeb");
   context.fillStyle = "#273650";
   context.font = '400 15px "Malgun Gothic", "Noto Sans KR", sans-serif';
@@ -756,9 +759,6 @@ async function renderFieldInspectionSummaryPage(
   y += 38;
   inspectionSignatureBox(context, 72, y, 548, 140);
   inspectionSignatureBox(context, 620, y, 548, 140, visitorName);
-  y += 152;
-  inspectionBox(context, 72, y, 1096, 56, "#f4f7fc");
-  drawCell(context, FIELD_INSPECTION_NOTICE, 86, y, 1068, 56, { align: "center", maxLines: 2, fontSize: 12 });
   return { page: await inspectionCanvasPage(canvas), renderedProductCount };
 }
 

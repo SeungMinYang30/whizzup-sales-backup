@@ -2407,10 +2407,6 @@ export default function QuotationManagementPage({
 
   async function viewFieldInspectionDocuments(quote: AuthoredQuotation) {
     const tab = reservePdfTab();
-    if (!tab) {
-      setMessage("새 탭이 차단되었습니다. 브라우저의 팝업 및 리디렉션 허용 후 검수서류 PDF 보기를 다시 눌러 주세요.");
-      return;
-    }
     const action = `${quote.id}:inspection-pdf-view`;
     setInspectionDocumentAction(action);
     if (inspectionPdfFallbackRef.current) URL.revokeObjectURL(inspectionPdfFallbackRef.current);
@@ -2422,11 +2418,14 @@ export default function QuotationManagementPage({
       const file = await createFieldInspectionPdfFile(quote, quotationRegion(quote), visitorName);
       const url = URL.createObjectURL(file);
       inspectionPdfFallbackRef.current = url;
-      setInspectionPdfFallback({ url, name: file.name });
-      if (!openPdfUrlInReservedTab(url, tab)) throw new Error("검수서류 PDF를 새 탭에서 열지 못했습니다.");
-      setMessage("현장 검수서류 PDF가 준비됐습니다. 화면이 전환되지 않으면 PDF 열기를 눌러 주세요.");
+      if (!tab || !openPdfUrlInReservedTab(url, tab)) {
+        setInspectionPdfFallback({ url, name: file.name });
+        setMessage("새 탭이 차단되었습니다. PDF 열기를 눌러 검수서류를 확인해 주세요.");
+      } else {
+        setMessage("");
+      }
     } catch (error) {
-      tab.close();
+      tab?.close();
       setMessage(error instanceof Error ? error.message : "현장 검수서류 PDF를 만들지 못했습니다.");
     } finally {
       setInspectionDocumentAction("");

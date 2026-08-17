@@ -14320,6 +14320,7 @@ button:is(
 }
 
 .construction-mobile-expand-button { display: none !important; }
+.construction-mobile-row-meta { display: none; }
 
 @media (max-width: 700px) {
   .construction-mobile-expand-button { display: flex !important; }
@@ -14331,6 +14332,130 @@ button:is(
   .construction-schedule-workspace.is-expanded .construction-settings-wrap > button { min-height: 38px; padding-inline: 10px; }
   .construction-schedule-workspace.is-expanded .construction-schedule-toolbar { grid-template-columns: 1fr; gap: 8px; }
   .construction-schedule-workspace.is-expanded .construction-mobile-summary { display: none; }
+}
+
+/* 휴대폰 가로 크게 보기: 기관 맥락은 한 열에 합치고 일정 영역과 여러 행을 우선합니다. */
+.construction-schedule-workspace.is-expanded.is-mobile-expanded {
+  --construction-fixed-width: 190px;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-header {
+  min-height: 0;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-header > div:first-child p,
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-header .section-kicker,
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-actions > .primary-button,
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-desktop-action {
+  display: none !important;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-header h2 {
+  margin: 0;
+  font-size: 16px;
+  white-space: nowrap;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-actions {
+  display: flex;
+  width: auto;
+  margin-left: auto;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-mobile-expand-button {
+  display: inline-flex !important;
+  width: auto;
+  min-height: 32px;
+  padding: 0 10px;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-mobile-summary {
+  display: none;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-toolbar {
+  grid-template-columns: auto minmax(220px, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-controls {
+  display: flex;
+  width: auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-controls button,
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-controls input,
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-search input {
+  min-height: 32px;
+  height: 32px;
+  padding-block: 0;
+  font-size: 11px;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-controls label {
+  display: flex;
+  grid-column: auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-controls input {
+  width: 118px;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-search {
+  display: grid;
+  width: auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-schedule-search span {
+  padding: 4px 6px;
+  font-size: 10px;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-fixed-head,
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-fixed-cells {
+  grid-template-columns: 190px;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-fixed-head > span:nth-child(n+2),
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-fixed-cells > .construction-work-summary,
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-fixed-cells > span:last-child {
+  display: none;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-fixed-head > span,
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-fixed-cells > span,
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-fixed-cells > button {
+  padding: 6px 8px;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-fixed-cells,
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-row-days,
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-row-days > span {
+  min-height: 54px;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-fixed-cells strong {
+  font-size: 11px;
+  line-height: 1.25;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-fixed-cells small {
+  margin-top: 2px;
+  font-size: 9px;
+  line-height: 1.2;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-mobile-row-meta {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-days > span {
+  padding: 3px 2px;
+  font-size: 9px;
+}
+.construction-schedule-workspace.is-expanded.is-mobile-expanded .construction-event {
+  min-height: 24px;
+  padding: 3px 2px;
+  font-size: 9px;
+  white-space: nowrap;
 }
 .comparison-preview-layer {
   position: fixed;

@@ -132,6 +132,7 @@ export default function ConstructionSchedulePage({
   const [hideCompleted, setHideCompleted] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [mobileExpanded, setMobileExpanded] = useState(false);
   const [orientationHint, setOrientationHint] = useState(false);
   const [compactTimeline, setCompactTimeline] = useState(false);
   const [timelineRange, setTimelineRange] = useState<14 | 31>(14);
@@ -142,6 +143,11 @@ export default function ConstructionSchedulePage({
   >("all");
   const [editor, setEditor] = useState<EditorState | null>(null);
   const workspaceRef = useRef<HTMLElement | null>(null);
+  const mobileExpandedRef = useRef(false);
+  const expandedScrollYRef = useRef(0);
+  const expandedHistoryTokenRef = useRef("");
+  const closingExpandedRef = useRef(false);
+  const suppressExpandedPopRef = useRef(false);
   const timelineDayCount = timelineRange === 31 ? 31 : compactTimeline ? 7 : 14;
   const dayMetas = useMemo(
     () => getConstructionTimelineDays(start, timelineDayCount, today),
@@ -215,36 +221,61 @@ export default function ConstructionSchedulePage({
       if (event.key === "Escape") void leaveExpanded();
     };
     const updateOrientationHint = () => {
-      setOrientationHint(window.matchMedia("(max-width: 700px) and (orientation: portrait)").matches);
+      setOrientationHint(mobileExpandedRef.current && window.matchMedia("(orientation: portrait)").matches);
     };
     const closeWhenFullscreenEnds = () => {
-      if (window.matchMedia("(max-width: 700px)").matches && !document.fullscreenElement) {
-        setExpanded(false);
+      if (mobileExpandedRef.current && !document.fullscreenElement && !closingExpandedRef.current) {
+        void leaveExpanded();
       }
+    };
+    const closeOnHistoryBack = () => {
+      if (suppressExpandedPopRef.current) {
+        suppressExpandedPopRef.current = false;
+        return;
+      }
+      if (mobileExpandedRef.current) void leaveExpanded({ historyAlreadyPopped: true });
     };
     document.body.style.overflow = "hidden";
     updateOrientationHint();
     window.addEventListener("keydown", closeOnEscape);
     window.addEventListener("resize", updateOrientationHint);
+    window.addEventListener("popstate", closeOnHistoryBack);
     document.addEventListener("fullscreenchange", closeWhenFullscreenEnds);
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
       window.removeEventListener("resize", updateOrientationHint);
+      window.removeEventListener("popstate", closeOnHistoryBack);
       document.removeEventListener("fullscreenchange", closeWhenFullscreenEnds);
       const orientation = screen.orientation as ScreenOrientation & { unlock?: () => void };
       orientation.unlock?.();
     };
   }, [expanded]);
 
-  async function leaveExpanded() {
+  async function leaveExpanded({ historyAlreadyPopped = false }: { historyAlreadyPopped?: boolean } = {}) {
+    if (closingExpandedRef.current) return;
+    closingExpandedRef.current = true;
+    const historyToken = expandedHistoryTokenRef.current;
+    const shouldPopHistory = mobileExpandedRef.current
+      && !historyAlreadyPopped
+      && historyToken
+      && history.state?.constructionScheduleExpanded === historyToken;
     setExpanded(false);
+    setMobileExpanded(false);
     setOrientationHint(false);
+    mobileExpandedRef.current = false;
+    expandedHistoryTokenRef.current = "";
     const orientation = screen.orientation as ScreenOrientation & { unlock?: () => void };
     orientation.unlock?.();
     if (document.fullscreenElement === workspaceRef.current && document.exitFullscreen) {
       try { await document.exitFullscreen(); } catch { /* 브라우저 기본 종료 동작을 유지합니다. */ }
     }
+    if (shouldPopHistory) {
+      suppressExpandedPopRef.current = true;
+      history.back();
+      window.setTimeout(() => { suppressExpandedPopRef.current = false; }, 500);
+    }
+    window.requestAnimationFrame(() => window.scrollTo({ top: expandedScrollYRef.current, behavior: "auto" }));
   }
 
   async function toggleExpanded() {
@@ -252,8 +283,17 @@ export default function ConstructionSchedulePage({
       await leaveExpanded();
       return;
     }
+    const isMobile = window.matchMedia("(max-width: 700px), (max-width: 1000px) and (pointer: coarse)").matches;
+    closingExpandedRef.current = false;
+    expandedScrollYRef.current = window.scrollY;
+    mobileExpandedRef.current = isMobile;
+    setMobileExpanded(isMobile);
     setExpanded(true);
-    if (!window.matchMedia("(max-width: 700px)").matches) return;
+    if (!isMobile) return;
+    const historyToken = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const currentState = history.state && typeof history.state === "object" ? history.state : {};
+    expandedHistoryTokenRef.current = historyToken;
+    history.pushState({ ...currentState, constructionScheduleExpanded: historyToken }, "");
     try {
       await workspaceRef.current?.requestFullscreen?.();
     } catch {
@@ -658,7 +698,7 @@ export default function ConstructionSchedulePage({
   return (
     <section
       ref={workspaceRef}
-      className={`construction-schedule-workspace${embedded ? " is-embedded" : ""}${expanded ? " is-expanded" : ""}${timelineRange === 31 ? " is-month-range" : ""}`}
+      className={`construction-schedule-workspace${embedded ? " is-embedded" : ""}${expanded ? " is-expanded" : ""}${mobileExpanded ? " is-mobile-expanded" : ""}${timelineRange === 31 ? " is-month-range" : ""}`}
       style={{
         "--construction-day-count": timelineDayCount,
         "--construction-date-min-width": `${timelineDayCount * (compactTimeline ? 56 : 60)}px`,
@@ -749,7 +789,7 @@ export default function ConstructionSchedulePage({
           <article className="construction-timeline-row" key={scopeKey(project.organization, project.businessRound)}>
             <div className="construction-fixed-cells">
               <span className="construction-institution-cell">
-                <button type="button" className="construction-institution-main" onClick={() => onOpenOrganization(project.organization, project.businessRound)}><strong>{project.organization}</strong><small>{record?.region || "지역 미등록"} · {project.businessRound}차 사업</small></button>
+                <button type="button" className="construction-institution-main" onClick={() => onOpenOrganization(project.organization, project.businessRound)}><strong>{project.organization}</strong><small>{record?.region || "지역 미등록"} · {project.businessRound}차 사업</small><small className="construction-mobile-row-meta">{formatManagerName(record?.progressManager || "")} · {displayWorkSummary(project) || "공사·품목 미등록"}</small></button>
                 {isPrimaryOwner ? <button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표 목록에서 삭제`} title="일정표 목록에서 삭제" disabled={saving} onClick={() => void removeProjectFromBoard(project)}>−</button> : null}
               </span>
               <button

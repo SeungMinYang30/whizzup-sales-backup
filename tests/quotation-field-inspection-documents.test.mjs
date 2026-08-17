@@ -58,6 +58,7 @@ test("현장 검수 Excel은 일반 제품을 확인서에 합치고 교구 목�
   assert.match(summary, /전자칠판/);
   assert.match(summary, /교구 세트/);
   assert.match(summary, /성명: 양승민 이사/);
+  assert.doesNotMatch(summary, /계약상 공식 검사·검수 완료/);
   assert.doesNotMatch(summary, /drawing/);
 
   const equipment = decode(files["xl/worksheets/sheet4.xml"]);
@@ -115,9 +116,15 @@ test("견적 목록·수정 화면·기관 상세에 동일한 현장 검수서�
   assert.match(pdf, /renderFieldInspectionPages\(quote, visitorName\.trim\(\)/);
   assert.match(pdf, /inspectionSignatureBox\(context, 620, y, 548, 140, visitorName\)/);
   assert.match(pdf, /renderProductInspectionPages\(quote, summary\.renderedProductCount\)/);
-  assert.match(pdf, /FIELD_INSPECTION_NOTICE/);
+  assert.doesNotMatch(pdf, /FIELD_INSPECTION_NOTICE/);
+  assert.match(pdf, /function inspectionSection[\s\S]*context\.textAlign = "left"/);
+  assert.match(pdf, /function inspectionSignatureBox[\s\S]*context\.textAlign = "left"/);
   assert.match(page, /PDF 열기/);
   assert.match(history, /PDF 열기/);
+  assert.doesNotMatch(page, /현장 검수서류 PDF가 준비됐습니다/);
+  assert.doesNotMatch(history, /검수서류 PDF가 준비됐습니다/);
+  assert.match(page, /새 탭이 차단되었습니다\. PDF 열기를 눌러/);
+  assert.match(history, /새 탭이 차단되었습니다\. PDF 열기를 눌러/);
   assert.match(menuBehavior, /pointerdown/);
   assert.match(menuBehavior, /scroll/);
   assert.match(menuBehavior, /Escape/);
@@ -134,10 +141,17 @@ test("모바일 시공 일정은 직접 크게 보기와 전체화면·가로보
   assert.doesNotMatch(page, /<summary>업무 메뉴<\/summary>/);
   assert.match(page, /requestFullscreen/);
   assert.match(page, /lock\?\.\("landscape"\)/);
+  assert.match(page, /history\.pushState/);
+  assert.match(page, /window\.addEventListener\("popstate"/);
+  assert.match(page, /is-mobile-expanded/);
+  assert.match(page, /construction-mobile-row-meta/);
   assert.match(page, /setHideCompleted\(key !== "completed"\)/);
   assert.match(page, /useState<14 \| 31>\(14\)/);
   assert.match(page, /기관명·지역/);
   assert.match(css, /\.construction-mobile-expand-button/);
   assert.match(css, /--construction-fixed-width: 440px/);
   assert.match(css, /\.construction-schedule-workspace\.is-expanded \.construction-mobile-summary \{ display: none; \}/);
+  assert.match(css, /\.construction-schedule-workspace\.is-expanded\.is-mobile-expanded/);
+  assert.match(css, /--construction-fixed-width: 190px/);
+  assert.match(css, /grid-template-columns: 190px/);
 });
