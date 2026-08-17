@@ -48,6 +48,16 @@ test("standard budget creation uses returned ids and repairs partial saves idemp
   assert.match(budgets, /defaultAmountValue[\s\S]{0,160}: null/);
 });
 
+test("budget manager initializes the latest D1 schema and uses PostgreSQL-safe detail ordering", async () => {
+  const budgets = await source("../lib/budget-names.ts");
+  assert.match(budgets, /budget_names_runtime_ready_v76/);
+  assert.match(
+    budgets,
+    /ORDER BY COALESCE\(a\.activity_date, p\.updated_at, p\.created_at\) DESC/,
+  );
+  assert.doesNotMatch(budgets, /ORDER BY recordDate DESC/);
+});
+
 test("standard budget history is shown only in admin recovery with safe undo checks", async () => {
   const budgets = await source("../lib/budget-names.ts");
   const route = await source("../app/api/budget-names/route.ts");

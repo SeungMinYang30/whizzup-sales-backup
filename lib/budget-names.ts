@@ -307,7 +307,7 @@ const virtualSportsBudgetMigrationAction =
 const virtualSportsCanonicalName = "가상현실스포츠실";
 const virtualSportsAliasNames = [virtualSportsCanonicalName, "문체부"];
 let budgetNamesReadyPromise: Promise<D1Database> | null = null;
-const budgetNamesRuntimeReadyKey = "budget_names_runtime_ready_v75";
+const budgetNamesRuntimeReadyKey = "budget_names_runtime_ready_v76";
 
 async function isBudgetNamesRuntimeReady(d1: D1Database) {
   try {
@@ -1870,7 +1870,8 @@ export async function listBudgetNameManagement() {
            AND p.budget_group_id IS NULL
            AND COALESCE(p.budget_match_status, 'unclassified')
              IN ('review', 'unclassified', 'legacy')
-         ORDER BY recordDate DESC, p.id DESC, i.sort_order, i.id`,
+         ORDER BY COALESCE(a.activity_date, p.updated_at, p.created_at) DESC,
+                  p.id DESC, i.sort_order, i.id`,
       )
       .all<Record<string, unknown>>(),
   ]);
