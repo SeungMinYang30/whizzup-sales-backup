@@ -42,6 +42,12 @@ export async function GET(request: Request) {
     await requireAdminMember();
     return Response.json(await listBudgetNameManagement());
   } catch (error) {
+    if (error instanceof Error) {
+      return Response.json(
+        { error: `예산명 조회 진단: ${error.message}` },
+        { status: 500 },
+      );
+    }
     return accessErrorResponse(error);
   }
 }
