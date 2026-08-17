@@ -729,7 +729,7 @@ async function renderFieldInspectionSummaryPage(
         drawCell(context, value, productColumns[columnIndex], y, productWidths[columnIndex], height, {
           align: [0, 3, 4, 5, 6, 7].includes(columnIndex) ? "center" : "left",
           maxLines: columnIndex === 1 || columnIndex === 2 ? 3 : 2,
-          fontSize: columnIndex >= 6 ? 11 : 13,
+          fontSize: 13,
         });
       });
       renderedProductCount += 1;
@@ -947,6 +947,6 @@ export async function createFieldInspectionPdf(quote: AuthoredQuotation, region 
     renderPages(quote),
     renderFieldInspectionPages(quote, visitorName.trim() || fieldInspectionVisitorName(quote)),
   ]);
-  const blob = await jpegPagesToPdf([...quotationPages, ...inspectionPages]);
+  const blob = await jpegPagesToPdf([...inspectionPages, ...quotationPages]);
   return new File([blob], fieldInspectionDownloadName({ ...quote, region }, "pdf"), { type: "application/pdf" });
 }

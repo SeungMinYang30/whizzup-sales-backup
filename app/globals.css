@@ -15253,3 +15253,52 @@ button:is(
     padding:8px 10px max(8px,env(safe-area-inset-bottom));
   }
 }
+
+/* Keep the product workspace readable on ultrawide displays. */
+@media (min-width: 1800px) {
+  .content.content-wide:has(> .product-workspace-tabs) {
+    width: 100%;
+    max-width: 1840px;
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+  .quotation-list-row {
+    grid-template-columns: minmax(660px, 1.55fr) minmax(360px, .8fr) minmax(320px, auto);
+  }
+  .quotation-row-main {
+    grid-template-columns: minmax(180px, 1fr) minmax(210px, 1.05fr) minmax(250px, 1.2fr);
+    gap: 14px;
+  }
+  .award-vendor-page {
+    grid-template-columns: 320px minmax(0, 1fr);
+  }
+}
+
+/* Output menus can escape the rounded quotation card and open upward near the viewport edge. */
+@media (min-width: 701px) {
+  .quotation-workspace.quotation-workspace-menu-open { overflow: visible; }
+  .quotation-output-menu.quotation-output-menu-upward > .quotation-output-menu-panel {
+    top: auto;
+    bottom: calc(100% + 6px);
+  }
+}
+
+/* The vendor directory owns one viewport-height column; only its list scrolls. */
+@media (min-width: 1081px) {
+  .award-vendor-directory {
+    display: flex;
+    height: calc(100dvh - 112px);
+    max-height: none;
+    box-sizing: border-box;
+    flex-direction: column;
+  }
+  .award-vendor-search { flex: 0 0 auto; }
+  .award-vendor-list {
+    min-height: 0;
+    max-height: none;
+    flex: 1 1 auto;
+    padding-bottom: 24px;
+    scroll-padding-bottom: 24px;
+  }
+  .award-vendor-pagination { flex: 0 0 auto; }
+}

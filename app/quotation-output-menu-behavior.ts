@@ -13,8 +13,39 @@ function menuElement(target: EventTarget | null) {
 
 function closeMenus(except: HTMLDetailsElement | null = null) {
   document.querySelectorAll<HTMLDetailsElement>("details.quotation-output-menu[open]").forEach((details) => {
-    if (details !== except) details.open = false;
+    if (details !== except) {
+      details.open = false;
+      details.classList.remove("quotation-output-menu-upward");
+      const workspace = details.closest<HTMLElement>(".quotation-workspace");
+      if (workspace && !workspace.querySelector("details.quotation-output-menu[open]")) {
+        workspace.classList.remove("quotation-workspace-menu-open");
+      }
+    }
   });
+}
+
+function positionOpenMenu(details: HTMLDetailsElement) {
+  const workspace = details.closest<HTMLElement>(".quotation-workspace");
+  if (!details.open) {
+    details.classList.remove("quotation-output-menu-upward");
+    if (workspace && !workspace.querySelector("details.quotation-output-menu[open]")) {
+      workspace.classList.remove("quotation-workspace-menu-open");
+    }
+    return;
+  }
+
+  workspace?.classList.add("quotation-workspace-menu-open");
+  details.classList.remove("quotation-output-menu-upward");
+  const panel = details.querySelector<HTMLElement>(".quotation-output-menu-panel");
+  if (!panel) return;
+  const summary = details.querySelector<HTMLElement>("summary");
+  const panelRect = panel.getBoundingClientRect();
+  const summaryRect = summary?.getBoundingClientRect() ?? details.getBoundingClientRect();
+  const roomBelow = window.innerHeight - summaryRect.bottom;
+  const roomAbove = summaryRect.top;
+  if (panelRect.bottom > window.innerHeight - 12 && roomAbove > roomBelow) {
+    details.classList.add("quotation-output-menu-upward");
+  }
 }
 
 export function closeQuotationOutputMenu(target: EventTarget | null) {
@@ -35,15 +66,23 @@ export function useAutoCloseQuotationOutputMenus() {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") closeMenus();
     };
+    const positionOnToggle = (event: Event) => {
+      const details = event.target instanceof HTMLDetailsElement && event.target.matches("details.quotation-output-menu")
+        ? event.target
+        : null;
+      if (details) window.requestAnimationFrame(() => positionOpenMenu(details));
+    };
     document.addEventListener("pointerdown", closeOutside, true);
     document.addEventListener("click", closeAfterAction);
     document.addEventListener("scroll", closeOnScroll, true);
     document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("toggle", positionOnToggle, true);
     return () => {
       document.removeEventListener("pointerdown", closeOutside, true);
       document.removeEventListener("click", closeAfterAction);
       document.removeEventListener("scroll", closeOnScroll, true);
       document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("toggle", positionOnToggle, true);
     };
   }, []);
 }
