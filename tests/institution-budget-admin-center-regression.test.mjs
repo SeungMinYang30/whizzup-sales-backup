@@ -75,6 +75,9 @@ test("budget audit and review exclusion tables exist in both deployment schemas"
     assert.match(vercelSchema, new RegExp(table));
     assert.match(backup, new RegExp(table));
   }
+  assert.match(backup, /ON CONFLICT \(id\) DO NOTHING/);
+  assert.match(backup, /ON CONFLICT \(entity_type, entity_id\) DO UPDATE/);
+  assert.doesNotMatch(backup, /DELETE FROM budget_name_(?:deleted_audit|review_exclusions)/);
 });
 
 test("permanent delete rechecks references, snapshots audit, and requires exact confirmation", async () => {

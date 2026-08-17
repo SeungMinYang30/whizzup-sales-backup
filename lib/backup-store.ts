@@ -3263,9 +3263,22 @@ function insertStatement(
   row: BackupRow,
 ) {
   const placeholders = table.columns.map(() => "?").join(", ");
+  const conflictClause =
+    table.name === "budget_name_deleted_audit"
+      ? " ON CONFLICT (id) DO NOTHING"
+      : table.name === "budget_name_review_exclusions"
+        ? ` ON CONFLICT (entity_type, entity_id) DO UPDATE SET
+              original_name = excluded.original_name,
+              excluded_by = excluded.excluded_by,
+              excluded_by_name = excluded.excluded_by_name,
+              excluded_at = excluded.excluded_at,
+              restored_by = excluded.restored_by,
+              restored_by_name = excluded.restored_by_name,
+              restored_at = excluded.restored_at`
+        : "";
   return d1
     .prepare(
-      `INSERT INTO ${table.name} (${table.columns.join(", ")}) VALUES (${placeholders})`,
+      `INSERT INTO ${table.name} (${table.columns.join(", ")}) VALUES (${placeholders})${conflictClause}`,
     )
     .bind(...table.columns.map((column) => {
       if (table.name === "complex_projects" && column === "source_type") {
@@ -3336,6 +3349,19 @@ function insertStatements(
   rows: BackupRow[],
 ) {
   const statements = [];
+  const conflictClause =
+    table.name === "budget_name_deleted_audit"
+      ? " ON CONFLICT (id) DO NOTHING"
+      : table.name === "budget_name_review_exclusions"
+        ? ` ON CONFLICT (entity_type, entity_id) DO UPDATE SET
+              original_name = excluded.original_name,
+              excluded_by = excluded.excluded_by,
+              excluded_by_name = excluded.excluded_by_name,
+              excluded_at = excluded.excluded_at,
+              restored_by = excluded.restored_by,
+              restored_by_name = excluded.restored_by_name,
+              restored_at = excluded.restored_at`
+        : "";
   for (
     let offset = 0;
     offset < rows.length;
@@ -3371,7 +3397,7 @@ function insertStatements(
     statements.push(
       d1
         .prepare(
-          `INSERT INTO ${table.name} (${table.columns.join(", ")}) VALUES ${values.join(", ")}`,
+          `INSERT INTO ${table.name} (${table.columns.join(", ")}) VALUES ${values.join(", ")}${conflictClause}`,
         )
         .bind(...parameters),
     );
@@ -3636,6 +3662,8 @@ async function replaceDatabaseFromBackup(
     "budget_name_request_records",
     "budget_name_members",
     "budget_name_events",
+    "budget_name_deleted_audit",
+    "budget_name_review_exclusions",
     "deletion_batches",
     "holdem_weekly_scores",
   ];
@@ -3782,6 +3810,7 @@ async function replaceDatabaseFromBackup(
     "budget_name_aliases",
     "budget_name_members",
     "budget_name_events",
+    "budget_name_deleted_audit",
     "budget_name_request_records",
     "sales_campaigns",
     "equipment_projects",
@@ -4020,6 +4049,8 @@ export async function restoreFullBackup(
     "budget_name_request_records",
     "budget_name_members",
     "budget_name_events",
+    "budget_name_deleted_audit",
+    "budget_name_review_exclusions",
     "deletion_batches",
     "holdem_weekly_scores",
   ];
