@@ -1616,9 +1616,30 @@ async function runBudgetStatementsInChunks(
   }
 }
 
+class BudgetNameLoadStageError extends Error {
+  constructor(readonly stage: "repair" | "base" | "details") {
+    super(`BUDGET_NAME_LOAD_${stage.toUpperCase()}`);
+    this.name = "BudgetNameLoadStageError";
+  }
+}
+
+async function runBudgetNameLoadStage<T>(
+  stage: BudgetNameLoadStageError["stage"],
+  operation: () => Promise<T>,
+) {
+  try {
+    return await operation();
+  } catch (error) {
+    console.error(`Standard budget management ${stage} stage failed`, error);
+    throw new BudgetNameLoadStageError(stage);
+  }
+}
+
 export async function listBudgetNameManagement() {
   const d1 = await ensureBudgetNamesReady();
-  await repairExistingStandardBudgetCompanions(d1);
+  await runBudgetNameLoadStage("repair", () =>
+    repairExistingStandardBudgetCompanions(d1),
+  );
   const [
     namesResult,
     groupsResult,
@@ -1627,8 +1648,8 @@ export async function listBudgetNameManagement() {
     requestRowsResult,
     requestRecordsResult,
     eventsResult,
-  ] =
-    await Promise.all([
+  ] = await runBudgetNameLoadStage("base", () =>
+    Promise.all([
       d1
         .prepare(
           `WITH activity_counts AS (
@@ -1814,9 +1835,11 @@ export async function listBudgetNameManagement() {
            ORDER BY id DESC LIMIT 200`,
         )
         .all<Record<string, unknown>>(),
-    ]);
+    ]),
+  );
 
-  const [activityDetailResult, projectDetailResult] = await Promise.all([
+  const [activityDetailResult, projectDetailResult] =
+    await runBudgetNameLoadStage("details", () => Promise.all([
     d1
       .prepare(
         `SELECT 'activity' AS entityType, a.id AS entityId,
@@ -1874,7 +1897,7 @@ export async function listBudgetNameManagement() {
                   p.id DESC, i.sort_order, i.id`,
       )
       .all<Record<string, unknown>>(),
-  ]);
+    ]));
   const detailByEntity = new Map<string, Record<string, unknown>>();
   for (const source of [
     ...(activityDetailResult.results ?? []),
