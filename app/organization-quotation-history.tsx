@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AuthoredQuotation } from "../lib/authored-quotations";
 import { createFieldInspectionPdfFile, createFieldInspectionWorkbookFile } from "./field-inspection-documents";
+import { resolveInspectionVisitorName, useAutoCloseQuotationOutputMenus, useInspectionVisitorName } from "./quotation-output-menu-behavior";
 
 const won = new Intl.NumberFormat("ko-KR");
 
@@ -50,6 +51,8 @@ export default function OrganizationQuotationHistory({
   const [reloadVersion, setReloadVersion] = useState(0);
   const [inspectionAction, setInspectionAction] = useState("");
   const [actionMessage, setActionMessage] = useState("");
+  const [inspectionVisitorName, setInspectionVisitorName] = useInspectionVisitorName();
+  useAutoCloseQuotationOutputMenus();
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -155,7 +158,8 @@ export default function OrganizationQuotationHistory({
     setInspectionAction(action);
     setActionMessage("");
     try {
-      const file = await createFieldInspectionPdfFile(quote);
+      const visitorName = await resolveInspectionVisitorName(inspectionVisitorName, quote.updatedByName);
+      const file = await createFieldInspectionPdfFile(quote, "", visitorName);
       const url = URL.createObjectURL(file);
       tab.location.replace(url);
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
@@ -170,7 +174,10 @@ export default function OrganizationQuotationHistory({
     const action = `${quote.id}:pdf`;
     setInspectionAction(action);
     setActionMessage("");
-    try { downloadGeneratedFile(await createFieldInspectionPdfFile(quote)); }
+    try {
+      const visitorName = await resolveInspectionVisitorName(inspectionVisitorName, quote.updatedByName);
+      downloadGeneratedFile(await createFieldInspectionPdfFile(quote, "", visitorName));
+    }
     catch (actionError) { setActionMessage(actionError instanceof Error ? actionError.message : "현장 검수서류 PDF를 만들지 못했습니다."); }
     finally { setInspectionAction(""); }
   };
@@ -178,7 +185,10 @@ export default function OrganizationQuotationHistory({
     const action = `${quote.id}:xlsx`;
     setInspectionAction(action);
     setActionMessage("");
-    try { downloadGeneratedFile(await createFieldInspectionWorkbookFile(quote)); }
+    try {
+      const visitorName = await resolveInspectionVisitorName(inspectionVisitorName, quote.updatedByName);
+      downloadGeneratedFile(await createFieldInspectionWorkbookFile(quote, "", visitorName));
+    }
     catch (actionError) { setActionMessage(actionError instanceof Error ? actionError.message : "현장 검수서류 Excel을 만들지 못했습니다."); }
     finally { setInspectionAction(""); }
   };
@@ -232,6 +242,7 @@ export default function OrganizationQuotationHistory({
         {quote.status === "final" && <details className="quotation-output-menu quotation-output-menu-inspection">
           <summary>현장 검수서류</summary>
           <div className="quotation-output-menu-panel">
+            <label className="quotation-inspection-visitor-field"><span>검수 방문자</span><input value={inspectionVisitorName} onChange={(event) => setInspectionVisitorName(event.target.value)} placeholder={quote.updatedByName || "방문자 이름"} /></label>
             <button type="button" disabled={inspectionAction.startsWith(`${quote.id}:`)} onClick={() => void viewInspectionPdf(quote)}>PDF 보기·인쇄</button>
             <button type="button" disabled={inspectionAction.startsWith(`${quote.id}:`)} onClick={() => void downloadInspectionPdf(quote)}>PDF 다운로드</button>
             <button type="button" disabled={inspectionAction.startsWith(`${quote.id}:`)} onClick={() => void downloadInspectionExcel(quote)}>Excel 통합 다운로드</button>

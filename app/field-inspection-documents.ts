@@ -5,7 +5,7 @@ import { createFieldInspectionWorkbook } from "../lib/quotation-xlsx";
 import { fieldInspectionDownloadName } from "../lib/quotation-file-name";
 import { createFieldInspectionPdf } from "./authored-quotation-pdf";
 
-export async function createFieldInspectionWorkbookFile(quote: AuthoredQuotation, region = "") {
+export async function createFieldInspectionWorkbookFile(quote: AuthoredQuotation, region = "", visitorName = "") {
   const [logoResponse, sealResponse, airpassSealResponse] = await Promise.all([
     fetch("/whizzup-logo.png"),
     quote.includeStamp ? fetch("/whizzup-seal.png") : Promise.resolve(null),
@@ -25,7 +25,7 @@ export async function createFieldInspectionWorkbookFile(quote: AuthoredQuotation
     discountAmount: quote.discountAmount,
     extraAmount: quote.extraAmount,
     memo: quote.memo,
-    visitorName: quote.updatedByName,
+    visitorName: visitorName.trim() || quote.updatedByName,
     logoData,
     sealData,
     airpassSealData,
@@ -56,6 +56,6 @@ export async function createFieldInspectionWorkbookFile(quote: AuthoredQuotation
   });
 }
 
-export async function createFieldInspectionPdfFile(quote: AuthoredQuotation, region = "") {
-  return createFieldInspectionPdf(quote, region);
+export async function createFieldInspectionPdfFile(quote: AuthoredQuotation, region = "", visitorName = "") {
+  return createFieldInspectionPdf(quote, region, visitorName.trim() || quote.updatedByName);
 }

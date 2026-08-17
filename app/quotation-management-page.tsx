@@ -21,6 +21,7 @@ import { hasProcurementSignal, procurementNumbersFromText } from "../lib/procure
 import { createAuthoredQuotationPdf } from "./authored-quotation-pdf";
 import { quotationDownloadName } from "../lib/quotation-file-name";
 import { createFieldInspectionPdfFile, createFieldInspectionWorkbookFile } from "./field-inspection-documents";
+import { resolveInspectionVisitorName, useAutoCloseQuotationOutputMenus, useInspectionVisitorName } from "./quotation-output-menu-behavior";
 import { originalQuotationDateByRoot, quotationListDateLabels } from "../lib/quotation-list-dates";
 import {
   contentSubstitutionBaseEarningRate,
@@ -588,6 +589,7 @@ export default function QuotationManagementPage({
   const [trashOpen, setTrashOpen] = useState(false);
   const [quotationActionId, setQuotationActionId] = useState(0);
   const [inspectionDocumentAction, setInspectionDocumentAction] = useState("");
+  const [inspectionVisitorName, setInspectionVisitorName] = useInspectionVisitorName();
   const [quotationFileJobVersion, setQuotationFileJobVersion] = useState(0);
   const [bulkFileRefresh, setBulkFileRefresh] = useState({ running: false, completed: 0, total: 0, failed: 0 });
   const [equipmentKitEditor, setEquipmentKitEditor] = useState<EquipmentKitEditor | null>(null);
@@ -608,6 +610,7 @@ export default function QuotationManagementPage({
   const draggedItemIdRef = useRef("");
   const editorHistoryActiveRef = useRef(false);
   const duplicateFileReconcileRef = useRef(false);
+  useAutoCloseQuotationOutputMenus();
   const quotationFileJobsRef = useRef(new Set<number>());
   const productSearchRef = useRef<HTMLDivElement | null>(null);
   const productSearchResultsRef = useRef<HTMLDivElement | null>(null);
@@ -2394,7 +2397,8 @@ export default function QuotationManagementPage({
     setInspectionDocumentAction(action);
     setMessage("현장 검수서류 PDF를 만들고 있습니다.");
     try {
-      const file = await createFieldInspectionPdfFile(quote, quotationRegion(quote));
+      const visitorName = await resolveInspectionVisitorName(inspectionVisitorName, quote.updatedByName);
+      const file = await createFieldInspectionPdfFile(quote, quotationRegion(quote), visitorName);
       if (!openPdfBlobInReservedTab(file, tab)) throw new Error("검수서류 PDF를 새 탭에서 열지 못했습니다.");
       setMessage("현장 검수서류 PDF를 새 탭에서 열었습니다.");
     } catch (error) {
@@ -2410,7 +2414,8 @@ export default function QuotationManagementPage({
     setInspectionDocumentAction(action);
     setMessage("현장 검수서류 PDF를 만들고 있습니다.");
     try {
-      const file = await createFieldInspectionPdfFile(quote, quotationRegion(quote));
+      const visitorName = await resolveInspectionVisitorName(inspectionVisitorName, quote.updatedByName);
+      const file = await createFieldInspectionPdfFile(quote, quotationRegion(quote), visitorName);
       downloadBlob(file, file.name);
       setMessage("현장 검수서류 PDF를 다운로드했습니다.");
     } catch (error) {
@@ -2425,7 +2430,8 @@ export default function QuotationManagementPage({
     setInspectionDocumentAction(action);
     setMessage("현장 검수서류 Excel을 만들고 있습니다.");
     try {
-      const file = await createFieldInspectionWorkbookFile(quote, quotationRegion(quote));
+      const visitorName = await resolveInspectionVisitorName(inspectionVisitorName, quote.updatedByName);
+      const file = await createFieldInspectionWorkbookFile(quote, quotationRegion(quote), visitorName);
       downloadBlob(file, file.name);
       setMessage("현장 검수서류 Excel을 다운로드했습니다.");
     } catch (error) {
@@ -2769,6 +2775,7 @@ export default function QuotationManagementPage({
             {!embedded && <details className="quotation-output-menu quotation-output-menu-inspection">
               <summary>현장 검수서류</summary>
               <div className="quotation-output-menu-panel">
+                <label className="quotation-inspection-visitor-field"><span>검수 방문자</span><input value={inspectionVisitorName} onChange={(event) => setInspectionVisitorName(event.target.value)} placeholder={quote.updatedByName || "방문자 이름"} /></label>
                 <button type="button" disabled={inspectionDocumentAction.startsWith(`${quote.id}:`)} onClick={() => void viewFieldInspectionDocuments(quote)}>PDF 보기·인쇄</button>
                 <button type="button" disabled={inspectionDocumentAction.startsWith(`${quote.id}:`)} onClick={() => void downloadFieldInspectionPdf(quote)}>PDF 다운로드</button>
                 <button type="button" disabled={inspectionDocumentAction.startsWith(`${quote.id}:`)} onClick={() => void downloadFieldInspectionExcel(quote)}>Excel 통합 다운로드</button>
@@ -2821,6 +2828,7 @@ export default function QuotationManagementPage({
               {draft.id && draft.status === "final" && <details className="quotation-output-menu quotation-output-menu-topbar quotation-output-menu-inspection">
                 <summary>현장 검수서류</summary>
                 <div className="quotation-output-menu-panel">
+                  <label className="quotation-inspection-visitor-field"><span>검수 방문자</span><input value={inspectionVisitorName} onChange={(event) => setInspectionVisitorName(event.target.value)} placeholder={quotes.find((quote) => quote.id === draft.id)?.updatedByName || "방문자 이름"} /></label>
                   <button type="button" disabled={inspectionDocumentAction.startsWith(`${draft.id}:`) || !quotes.some((quote) => quote.id === draft.id)} onClick={() => { const saved = quotes.find((quote) => quote.id === draft.id); if (saved) void viewFieldInspectionDocuments(saved); }}>PDF 보기·인쇄</button>
                   <button type="button" disabled={inspectionDocumentAction.startsWith(`${draft.id}:`) || !quotes.some((quote) => quote.id === draft.id)} onClick={() => { const saved = quotes.find((quote) => quote.id === draft.id); if (saved) void downloadFieldInspectionPdf(saved); }}>PDF 다운로드</button>
                   <button type="button" disabled={inspectionDocumentAction.startsWith(`${draft.id}:`) || !quotes.some((quote) => quote.id === draft.id)} onClick={() => { const saved = quotes.find((quote) => quote.id === draft.id); if (saved) void downloadFieldInspectionExcel(saved); }}>Excel 통합 다운로드</button>

@@ -12557,7 +12557,7 @@ details.complex-section > summary { cursor: pointer; font-size: 17px; font-weigh
 }
 
 /* Mobile construction workflow and calendar day sheet */
-.construction-mobile-action-menu,
+.construction-mobile-expand-button,
 .construction-mobile-summary,
 .home-calendar-agenda-backdrop,
 .home-calendar-agenda-close { display: none; }
@@ -12607,10 +12607,9 @@ details.complex-section > summary { cursor: pointer; font-size: 17px; font-weigh
   .construction-schedule-header > div:first-child p { display: none; }
   .construction-schedule-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .construction-schedule-actions > .primary-button,
-  .construction-mobile-action-menu { width: 100%; min-height: 44px; }
+  .construction-mobile-expand-button { width: 100%; min-height: 44px; }
   .construction-desktop-action { display: none !important; }
-  .construction-mobile-action-menu { position: relative; display: block; }
-  .construction-mobile-action-menu > summary {
+  .construction-mobile-expand-button {
     min-height: 44px;
     padding: 0 12px;
     border: 1px solid #ccd7e8;
@@ -12622,39 +12621,7 @@ details.complex-section > summary { cursor: pointer; font-size: 17px; font-weigh
     color: #344b72;
     font-size: 13px;
     font-weight: 850;
-    list-style: none;
     cursor: pointer;
-  }
-  .construction-mobile-action-menu > summary::-webkit-details-marker { display: none; }
-  .construction-mobile-action-menu > div {
-    position: absolute;
-    z-index: 50;
-    top: calc(100% + 7px);
-    right: 0;
-    width: min(270px, calc(100vw - 24px));
-    padding: 8px;
-    border: 1px solid #d7dfeb;
-    border-radius: 11px;
-    display: grid;
-    gap: 7px;
-    background: #fff;
-    box-shadow: 0 15px 34px rgba(27, 43, 73, .18);
-  }
-  .construction-mobile-action-menu button,
-  .construction-mobile-action-menu label {
-    width: 100%;
-    min-height: 44px;
-    padding: 0 12px;
-    border: 1px solid #e0e6ef;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 8px;
-    background: #fff;
-    color: #344b72;
-    font-size: 13px;
-    font-weight: 800;
   }
   .construction-mobile-summary {
     padding: 10px 12px;
@@ -14288,6 +14255,41 @@ button:is(
   line-height: 1.25;
 }
 
+.construction-orientation-hint {
+  flex: 0 0 auto;
+  padding: 9px 14px;
+  border-block: 1px solid #f1d590;
+  background: #fff8df;
+  color: #815d08;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.quotation-output-menu-inspection .quotation-output-menu-panel { min-width: 224px; }
+.quotation-inspection-visitor-field {
+  display: grid;
+  gap: 5px;
+  padding: 4px 3px 8px;
+  color: #56647a;
+  font-size: 11px;
+  font-weight: 800;
+}
+.quotation-inspection-visitor-field input {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid #d5ddec;
+  border-radius: 7px;
+  background: #fff;
+  color: #1d2c46;
+  font: inherit;
+}
+
+@media (max-width: 700px) {
+  .quotation-inspection-visitor-field input { min-height: 44px; font-size: 13px; }
+}
+
 @media (max-width: 1000px) {
   .construction-schedule-workspace.is-expanded .construction-timeline { display: block; }
   .construction-schedule-workspace.is-expanded .construction-mobile-list { display: none; }
@@ -14301,6 +14303,7 @@ button:is(
   .construction-schedule-workspace.is-expanded .construction-schedule-actions > button,
   .construction-schedule-workspace.is-expanded .construction-settings-wrap > button { min-height: 38px; padding-inline: 10px; }
   .construction-schedule-workspace.is-expanded .construction-schedule-toolbar { grid-template-columns: 1fr; gap: 8px; }
+  .construction-schedule-workspace.is-expanded .construction-mobile-summary { display: none; }
 }
 .comparison-preview-layer {
   position: fixed;

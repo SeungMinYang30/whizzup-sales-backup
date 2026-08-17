@@ -53,6 +53,9 @@ test("현장 검수 Excel은 기존 견적 시트 뒤에 확인서와 자동 품
   assert.match(summary, /현장 지원사/);
   assert.match(summary, /주식회사 위즈업/);
   assert.match(summary, /양승민 이사/);
+  assert.match(summary, /r="30" ht="40"/);
+  assert.match(summary, /r="32" ht="40"/);
+  assert.match(summary, /성명: 양승민 이사/);
   assert.doesNotMatch(summary, /drawing/);
 
   const products = decode(files["xl/worksheets/sheet4.xml"]);
@@ -75,19 +78,43 @@ test("교구가 없는 견적에는 교구 관련 두 시트를 만들지 않는
   assert.equal(files["xl/worksheets/sheet4.xml"], undefined);
 });
 
-test("견적 목록·수정 화면·기관 상세에 동일한 현장 검수서류 메뉴가 있다", async () => {
-  const [page, history, pdf] = await Promise.all([
+test("견적 목록·수정 화면·기관 상세에 동일한 현장 검수서류 메뉴와 방문자 입력이 있다", async () => {
+  const [page, history, pdf, menuBehavior] = await Promise.all([
     readFile(new URL("../app/quotation-management-page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/organization-quotation-history.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/authored-quotation-pdf.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/quotation-output-menu-behavior.ts", import.meta.url), "utf8"),
   ]);
   for (const source of [page, history]) {
     assert.match(source, /현장 검수서류/);
     assert.match(source, /PDF 보기·인쇄/);
     assert.match(source, /PDF 다운로드/);
     assert.match(source, /Excel 통합 다운로드/);
+    assert.match(source, /검수 방문자/);
+    assert.match(source, /resolveInspectionVisitorName\(inspectionVisitorName, quote\.updatedByName\)/);
   }
   assert.match(pdf, /renderPages\(quote\)/);
-  assert.match(pdf, /renderFieldInspectionPages\(quote\)/);
+  assert.match(pdf, /renderFieldInspectionPages\(quote, visitorName\.trim\(\)/);
+  assert.match(pdf, /inspectionSignatureBox\(context, 620, y, 548, 200, visitorName\)/);
+  assert.match(pdf, /1_187 - y/);
   assert.match(pdf, /FIELD_INSPECTION_NOTICE/);
+  assert.match(menuBehavior, /pointerdown/);
+  assert.match(menuBehavior, /scroll/);
+  assert.match(menuBehavior, /Escape/);
+  assert.match(menuBehavior, /fetch\("\/api\/session"/);
+  assert.match(menuBehavior, /return String\(payload\.member\?\.displayName/);
+});
+
+test("모바일 시공 일정은 직접 크게 보기와 전체화면·가로보기 안전 대체 동작을 쓴다", async () => {
+  const [page, css] = await Promise.all([
+    readFile(new URL("../app/construction-schedule-page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(page, /construction-mobile-expand-button/);
+  assert.doesNotMatch(page, /<summary>업무 메뉴<\/summary>/);
+  assert.match(page, /requestFullscreen/);
+  assert.match(page, /lock\?\.\("landscape"\)/);
+  assert.match(page, /setHideCompleted\(key !== "completed"\)/);
+  assert.match(css, /\.construction-mobile-expand-button/);
+  assert.match(css, /\.construction-schedule-workspace\.is-expanded \.construction-mobile-summary \{ display: none; \}/);
 });

@@ -619,27 +619,45 @@ function inspectionField(
   y: number,
   width: number,
   height: number,
-  options: { labelWidth?: number; manual?: boolean; maxLines?: number; fontSize?: number } = {},
+  options: { labelWidth?: number; manual?: boolean; maxLines?: number; fontSize?: number; align?: "left" | "center" | "right" } = {},
 ) {
   const labelWidth = options.labelWidth ?? 158;
   inspectionBox(context, x, y, labelWidth, height, "#edf2fb");
   inspectionBox(context, x + labelWidth, y, width - labelWidth, height, options.manual ? "#fffbeb" : "#ffffff");
   drawCell(context, label, x, y, labelWidth, height, { bold: true, align: "center", maxLines: 2, fontSize: 16 });
   drawCell(context, value, x + labelWidth, y, width - labelWidth, height, {
-    align: options.manual ? "center" : "left",
+    align: options.align ?? (options.manual ? "center" : "left"),
     maxLines: options.maxLines ?? 2,
     fontSize: options.fontSize ?? 16,
   });
 }
 
-async function renderFieldInspectionSummaryPage(quote: AuthoredQuotation) {
+function inspectionSignatureBox(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  name = "",
+) {
+  inspectionBox(context, x, y, width, height, "#fffbeb");
+  context.fillStyle = "#273650";
+  context.font = '400 15px "Malgun Gothic", "Noto Sans KR", sans-serif';
+  context.fillText(`성명: ${name || "____________________"}`, x + 24, y + 38);
+  context.fillText("서명:", x + 24, y + 88);
+}
+
+async function renderFieldInspectionSummaryPage(
+  quote: AuthoredQuotation,
+  visitorName = fieldInspectionVisitorName(quote),
+) {
   const { canvas, context } = inspectionCanvas();
   inspectionHeading(context, "현장 작동·수량 확인서", "제품 작동 상태와 납품·교구 수량을 현장에서 함께 확인합니다.", "검수서류");
   let y = 166;
   inspectionSection(context, "기본정보", y); y += 48;
   inspectionField(context, "기관명", quote.organization, 72, y, 1096, 64); y += 64;
   inspectionField(context, "방문일", "20____.____.____", 72, y, 548, 62, { manual: true });
-  inspectionField(context, "견적번호", quote.quoteNumber, 620, y, 548, 62); y += 62;
+  inspectionField(context, "견적번호", quote.quoteNumber, 620, y, 548, 62, { align: "center" }); y += 62;
   inspectionField(context, "사업명", quote.projectTitle || "제품 공급", 72, y, 1096, 68, { maxLines: 3 }); y += 68;
   const suppliers = fieldInspectionSupplierText(quote);
   context.font = '400 15px "Malgun Gothic", "Noto Sans KR", sans-serif';
@@ -647,7 +665,7 @@ async function renderFieldInspectionSummaryPage(quote: AuthoredQuotation) {
   const supplierHeight = Math.max(68, 28 + supplierLines.length * 21);
   inspectionField(context, "제조·공급사", suppliers, 72, y, 1096, supplierHeight, { maxLines: 8, fontSize: 15 }); y += supplierHeight;
   inspectionField(context, "현장 지원사", FIELD_SUPPORT_COMPANY, 72, y, 548, 64);
-  inspectionField(context, "위즈업 방문자", fieldInspectionVisitorName(quote), 620, y, 548, 64, { manual: true }); y += 76;
+  inspectionField(context, "위즈업 방문자", visitorName, 620, y, 548, 64, { manual: true }); y += 76;
 
   inspectionSection(context, "확인결과", y); y += 48;
   const resultRows = [
@@ -666,7 +684,7 @@ async function renderFieldInspectionSummaryPage(quote: AuthoredQuotation) {
   });
   y += 14;
   inspectionSection(context, "이상·누락 및 요청사항", y); y += 48;
-  const memoHeight = Math.max(150, 1_265 - y);
+  const memoHeight = Math.max(150, 1_187 - y);
   inspectionBox(context, 72, y, 1096, memoHeight, "#fffbeb");
   context.fillStyle = "#9aa4b4";
   context.font = '400 14px "Malgun Gothic", sans-serif';
@@ -678,11 +696,9 @@ async function renderFieldInspectionSummaryPage(quote: AuthoredQuotation) {
   drawCell(context, "기관 담당자", 72, y, 548, 44, { bold: true, align: "center", fontSize: 16 });
   drawCell(context, "위즈업 방문자", 620, y, 548, 44, { bold: true, align: "center", fontSize: 16 });
   y += 44;
-  inspectionBox(context, 72, y, 548, 122, "#fffbeb");
-  inspectionBox(context, 620, y, 548, 122, "#fffbeb");
-  drawCell(context, "성명: ____________________\n\n서명: ____________________", 72, y, 548, 122, { align: "center", maxLines: 4, fontSize: 15 });
-  drawCell(context, "성명: ____________________\n\n서명: ____________________", 620, y, 548, 122, { align: "center", maxLines: 4, fontSize: 15 });
-  y += 138;
+  inspectionSignatureBox(context, 72, y, 548, 200);
+  inspectionSignatureBox(context, 620, y, 548, 200, visitorName);
+  y += 216;
   inspectionBox(context, 72, y, 1096, 62, "#f4f7fc");
   drawCell(context, FIELD_INSPECTION_NOTICE, 86, y, 1068, 62, { align: "center", maxLines: 2, fontSize: 12 });
   return inspectionCanvasPage(canvas);
@@ -807,9 +823,9 @@ async function renderEquipmentInspectionPages(quote: AuthoredQuotation) {
   return pages;
 }
 
-async function renderFieldInspectionPages(quote: AuthoredQuotation) {
+async function renderFieldInspectionPages(quote: AuthoredQuotation, visitorName = fieldInspectionVisitorName(quote)) {
   const [summary, products, equipment] = await Promise.all([
-    renderFieldInspectionSummaryPage(quote),
+    renderFieldInspectionSummaryPage(quote, visitorName),
     renderProductInspectionPages(quote),
     renderEquipmentInspectionPages(quote),
   ]);
@@ -866,10 +882,10 @@ export async function createAuthoredQuotationPdf(quote: AuthoredQuotationPdfInpu
   return new File([blob], quotationDownloadName(quote, "pdf"), { type: "application/pdf" });
 }
 
-export async function createFieldInspectionPdf(quote: AuthoredQuotation, region = "") {
+export async function createFieldInspectionPdf(quote: AuthoredQuotation, region = "", visitorName = "") {
   const [quotationPages, inspectionPages] = await Promise.all([
     renderPages(quote),
-    renderFieldInspectionPages(quote),
+    renderFieldInspectionPages(quote, visitorName.trim() || fieldInspectionVisitorName(quote)),
   ]);
   const blob = await jpegPagesToPdf([...quotationPages, ...inspectionPages]);
   return new File([blob], fieldInspectionDownloadName({ ...quote, region }, "pdf"), { type: "application/pdf" });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addConstructionDays,
   constructionStageTone,
@@ -132,12 +132,14 @@ export default function ConstructionSchedulePage({
   const [hideCompleted, setHideCompleted] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [orientationHint, setOrientationHint] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [mobileStatusFilter, setMobileStatusFilter] = useState<
     "all" | "active" | "missingSchedule" | "completed" | "missingManager"
   >("all");
   const [editor, setEditor] = useState<EditorState | null>(null);
+  const workspaceRef = useRef<HTMLElement | null>(null);
   const dayMetas = useMemo(
     () => getConstructionTimelineDays(start, 31, today),
     [start, today],
@@ -199,15 +201,62 @@ export default function ConstructionSchedulePage({
     if (!expanded) return;
     const previousOverflow = document.body.style.overflow;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setExpanded(false);
+      if (event.key === "Escape") void leaveExpanded();
+    };
+    const updateOrientationHint = () => {
+      setOrientationHint(window.matchMedia("(max-width: 700px) and (orientation: portrait)").matches);
+    };
+    const closeWhenFullscreenEnds = () => {
+      if (window.matchMedia("(max-width: 700px)").matches && !document.fullscreenElement) {
+        setExpanded(false);
+      }
     };
     document.body.style.overflow = "hidden";
+    updateOrientationHint();
     window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("resize", updateOrientationHint);
+    document.addEventListener("fullscreenchange", closeWhenFullscreenEnds);
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", updateOrientationHint);
+      document.removeEventListener("fullscreenchange", closeWhenFullscreenEnds);
+      const orientation = screen.orientation as ScreenOrientation & { unlock?: () => void };
+      orientation.unlock?.();
     };
   }, [expanded]);
+
+  async function leaveExpanded() {
+    setExpanded(false);
+    setOrientationHint(false);
+    const orientation = screen.orientation as ScreenOrientation & { unlock?: () => void };
+    orientation.unlock?.();
+    if (document.fullscreenElement === workspaceRef.current && document.exitFullscreen) {
+      try { await document.exitFullscreen(); } catch { /* 브라우저 기본 종료 동작을 유지합니다. */ }
+    }
+  }
+
+  async function toggleExpanded() {
+    if (expanded) {
+      await leaveExpanded();
+      return;
+    }
+    setExpanded(true);
+    if (!window.matchMedia("(max-width: 700px)").matches) return;
+    try {
+      await workspaceRef.current?.requestFullscreen?.();
+    } catch {
+      // 전체화면을 지원하지 않아도 고정형 크게 보기는 계속 제공합니다.
+    }
+    try {
+      const orientation = screen.orientation as ScreenOrientation & {
+        lock?: (mode: "landscape") => Promise<void>;
+      };
+      await orientation.lock?.("landscape");
+    } catch {
+      setOrientationHint(window.matchMedia("(orientation: portrait)").matches);
+    }
+  }
 
   useEffect(() => {
     if (!onDashboardCounts || loading || !loadSucceeded) return;
@@ -596,7 +645,7 @@ export default function ConstructionSchedulePage({
   ].filter(Boolean).join(" ");
 
   return (
-    <section className={`construction-schedule-workspace${embedded ? " is-embedded" : ""}${expanded ? " is-expanded" : ""}`}>
+    <section ref={workspaceRef} className={`construction-schedule-workspace${embedded ? " is-embedded" : ""}${expanded ? " is-expanded" : ""}`}>
       <header className="construction-schedule-header">
         <div>
           <span className="section-kicker">INSTALLATION · DELIVERY</span>
@@ -606,7 +655,7 @@ export default function ConstructionSchedulePage({
         <div className="construction-schedule-actions">
           <button type="button" className="primary-button" onClick={() => setAddOpen(true)}>+ 기관 추가</button>
           <button type="button" className="construction-desktop-action" onClick={exportExcel}>엑셀 내보내기</button>
-          <button type="button" className="construction-expand-button construction-desktop-action" aria-pressed={expanded} onClick={() => setExpanded((current) => !current)}>{expanded ? "기본 보기" : "크게 보기"}</button>
+          <button type="button" className="construction-expand-button construction-desktop-action" aria-pressed={expanded} onClick={() => void toggleExpanded()}>{expanded ? "기본 보기" : "크게 보기"}</button>
           <div className="construction-settings-wrap construction-desktop-action">
             <button type="button" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((current) => !current)}>보기 설정</button>
             {settingsOpen ? <div className="construction-settings-popover">
@@ -616,19 +665,10 @@ export default function ConstructionSchedulePage({
               </label>
             </div> : null}
           </div>
-          <details className="construction-mobile-action-menu">
-            <summary>업무 메뉴</summary>
-            <div>
-              <button type="button" onClick={exportExcel}>엑셀 내보내기</button>
-              <button type="button" aria-pressed={expanded} onClick={() => setExpanded((current) => !current)}>{expanded ? "기본 보기" : "크게 보기"}</button>
-              <label className="construction-completed-filter">
-                <input type="checkbox" checked={hideCompleted} onChange={(event) => setHideCompleted(event.target.checked)} />
-                완료 기관 제외
-              </label>
-            </div>
-          </details>
+          <button type="button" className="construction-mobile-expand-button" aria-pressed={expanded} onClick={() => void toggleExpanded()}>{expanded ? "기본 보기" : "크게 보기"}</button>
         </div>
       </header>
+      {expanded && orientationHint ? <div className="construction-orientation-hint" role="status">휴대폰을 가로로 돌리면 PC형 일정표를 더 넓게 볼 수 있습니다.</div> : null}
 
       <div className="construction-mobile-summary" aria-label="시공 납품 현황 필터">
         {([
@@ -645,7 +685,7 @@ export default function ConstructionSchedulePage({
             key={key}
             onClick={() => {
               setMobileStatusFilter(key);
-              if (key === "completed") setHideCompleted(false);
+              setHideCompleted(key !== "completed");
             }}
           >
             <span>{label}</span><b>{count}</b>
