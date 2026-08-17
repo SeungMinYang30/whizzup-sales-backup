@@ -1616,30 +1616,13 @@ async function runBudgetStatementsInChunks(
   }
 }
 
-class BudgetNameLoadStageError extends Error {
-  constructor(readonly stage: "repair" | "base" | "details") {
-    super(`BUDGET_NAME_LOAD_${stage.toUpperCase()}`);
-    this.name = "BudgetNameLoadStageError";
-  }
-}
-
-async function runBudgetNameLoadStage<T>(
-  stage: BudgetNameLoadStageError["stage"],
-  operation: () => Promise<T>,
-) {
-  try {
-    return await operation();
-  } catch (error) {
-    console.error(`Standard budget management ${stage} stage failed`, error);
-    throw new BudgetNameLoadStageError(stage);
-  }
-}
-
 export async function listBudgetNameManagement() {
   const d1 = await ensureBudgetNamesReady();
-  await runBudgetNameLoadStage("repair", () =>
-    repairExistingStandardBudgetCompanions(d1),
-  );
+  // Companion repair is a best-effort recovery for legacy partial saves. A
+  // repair failure must not hide the already-saved standard budget catalog.
+  await repairExistingStandardBudgetCompanions(d1).catch((error) => {
+    console.error("Standard budget companion repair failed", error);
+  });
   const [
     namesResult,
     groupsResult,
@@ -1648,8 +1631,7 @@ export async function listBudgetNameManagement() {
     requestRowsResult,
     requestRecordsResult,
     eventsResult,
-  ] = await runBudgetNameLoadStage("base", () =>
-    Promise.all([
+  ] = await Promise.all([
       d1
         .prepare(
           `WITH activity_counts AS (
@@ -1835,11 +1817,10 @@ export async function listBudgetNameManagement() {
            ORDER BY id DESC LIMIT 200`,
         )
         .all<Record<string, unknown>>(),
-    ]),
-  );
+    ]);
 
-  const [activityDetailResult, projectDetailResult] =
-    await runBudgetNameLoadStage("details", () => Promise.all([
+  let reviewDetailsAvailable = true;
+  const [activityDetailResult, projectDetailResult] = await Promise.all([
     d1
       .prepare(
         `SELECT 'activity' AS entityType, a.id AS entityId,
@@ -1897,7 +1878,14 @@ export async function listBudgetNameManagement() {
                   p.id DESC, i.sort_order, i.id`,
       )
       .all<Record<string, unknown>>(),
-    ]));
+    ]).catch((error) => {
+      reviewDetailsAvailable = false;
+      console.error("Standard budget review details failed", error);
+      return [
+        { results: [] as Array<Record<string, unknown>> },
+        { results: [] as Array<Record<string, unknown>> },
+      ];
+    });
   const detailByEntity = new Map<string, Record<string, unknown>>();
   for (const source of [
     ...(activityDetailResult.results ?? []),
@@ -1993,16 +1981,20 @@ export async function listBudgetNameManagement() {
     values.push(member);
     membersByGroup.set(groupId, values);
   }
-  const visibleNames = [...detailGroups.entries()]
-    .filter(([name]) => !ignoredBudgetNames.has(normalizeBudgetNameKey(name)))
-    .map(([name, details]) => ({
-      name,
-      activityCount: details.filter((item) => item.entityType === "activity").length,
-      projectCount: details.filter(
-        (item) => item.entityType === "equipment_project",
-      ).length,
-      details,
-    }))
+  const visibleNameRows = reviewDetailsAvailable
+    ? [...detailGroups.entries()].map(([name, details]) => ({
+        name,
+        activityCount: details.filter((item) => item.entityType === "activity").length,
+        projectCount: details.filter(
+          (item) => item.entityType === "equipment_project",
+        ).length,
+        details,
+      }))
+    : names.map((item) => ({ ...item, details: [] as typeof reviewDetails }));
+  const visibleNames = visibleNameRows
+    .filter((item) =>
+      !ignoredBudgetNames.has(normalizeBudgetNameKey(item.name)),
+    )
     .sort(
       (left, right) =>
         right.activityCount + right.projectCount -

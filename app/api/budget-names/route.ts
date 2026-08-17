@@ -42,15 +42,6 @@ export async function GET(request: Request) {
     await requireAdminMember();
     return Response.json(await listBudgetNameManagement());
   } catch (error) {
-    if (
-      error instanceof Error &&
-      /^BUDGET_NAME_LOAD_(REPAIR|BASE|DETAILS)$/.test(error.message)
-    ) {
-      return Response.json(
-        { error: `예산명 조회 점검 코드: ${error.message}` },
-        { status: 500 },
-      );
-    }
     return accessErrorResponse(error);
   }
 }
