@@ -8,6 +8,7 @@ import {
   archiveDriveFile,
   downloadDriveFile,
   getDriveFileMetadata,
+  googleDriveStorageErrorResponse,
   isResourceStorageConfigured,
   moveDriveFilesTransaction,
   removeDriveFile,
@@ -155,7 +156,7 @@ export async function GET(request: Request) {
       posts: posts.results.map((post) => resourcePostJson(post, byPost.get(Number(post.id)) ?? [])),
     });
   } catch (error) {
-    return accessErrorResponse(error);
+    return googleDriveStorageErrorResponse(error) ?? accessErrorResponse(error);
   }
 }
 
@@ -369,7 +370,7 @@ export async function POST(request: Request) {
     return Response.json({ post: resourcePostJson(post, attachments) }, { status: 201 });
   } catch (error) {
     await removeUnreferencedResourceFiles(uploadedFileIds);
-    return accessErrorResponse(error);
+    return googleDriveStorageErrorResponse(error) ?? accessErrorResponse(error);
   }
 }
 
@@ -435,7 +436,7 @@ export async function PATCH(request: Request) {
     }
     return Response.json({ ok: true });
   } catch (error) {
-    return accessErrorResponse(error);
+    return googleDriveStorageErrorResponse(error) ?? accessErrorResponse(error);
   }
 }
 
@@ -458,6 +459,6 @@ export async function DELETE(request: Request) {
       .run();
     return Response.json({ ok: true });
   } catch (error) {
-    return accessErrorResponse(error);
+    return googleDriveStorageErrorResponse(error) ?? accessErrorResponse(error);
   }
 }

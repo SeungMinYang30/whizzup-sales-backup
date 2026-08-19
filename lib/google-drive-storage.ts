@@ -34,6 +34,23 @@ type DriveConfig = {
   clientSecret: string;
   refreshToken: string;
   rootFolderId: string;
+  serviceAccountEmail: string;
+  serviceAccountPrivateKey: string;
+  impersonatedUser: string;
+};
+
+export type GoogleDriveConnectionStatus = {
+  platform: "vercel" | "sites";
+  configured: boolean;
+  connected: boolean;
+  mode: "service-account" | "oauth" | "none";
+  oauthConfigured: boolean;
+  serviceAccountConfigured: boolean;
+  serviceAccountEmail: string;
+  rootFolderConfigured: boolean;
+  issue: "" | "reauthorization_required" | "configuration" | "permission" | "temporary";
+  message: string;
+  checkedAt: string;
 };
 
 export type DriveFile = {
@@ -77,7 +94,12 @@ export function isDriveFolder(file: DriveFile) {
   return file.mimeType === FOLDER_MIME_TYPE;
 }
 
-let accessTokenCache: { token: string; expiresAt: number } | null = null;
+type DriveAuthMode = "service-account" | "oauth";
+type DriveAccessToken = { token: string; expiresAt: number; mode: DriveAuthMode };
+
+let oauthAccessTokenCache: DriveAccessToken | null = null;
+let serviceAccountAccessTokenCache: DriveAccessToken | null = null;
+let serviceAccountRootAccessCache: { allowed: boolean; expiresAt: number } | null = null;
 const folderCache = new Map<string, string>();
 
 function text(value: unknown) {
@@ -86,17 +108,49 @@ function text(value: unknown) {
 
 function config(): DriveConfig {
   const values = process.env as Record<string, unknown>;
+  let serviceAccountEmail = "";
+  let serviceAccountPrivateKey = "";
+  const rawServiceAccount =
+    text(values.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON) ||
+    text(values.WHIZZUP_GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON);
+  if (rawServiceAccount) {
+    try {
+      const parsed = JSON.parse(rawServiceAccount) as {
+        client_email?: unknown;
+        private_key?: unknown;
+      };
+      serviceAccountEmail = text(parsed.client_email);
+      serviceAccountPrivateKey = text(parsed.private_key);
+    } catch {
+      // The status endpoint reports an incomplete server-account configuration.
+    }
+  }
   return {
     clientId: text(values.GOOGLE_DRIVE_CLIENT_ID),
     clientSecret: text(values.GOOGLE_DRIVE_CLIENT_SECRET),
     refreshToken: text(values.GOOGLE_DRIVE_REFRESH_TOKEN),
     rootFolderId: text(values.GOOGLE_DRIVE_ROOT_FOLDER_ID),
+    serviceAccountEmail,
+    serviceAccountPrivateKey,
+    impersonatedUser: text(values.GOOGLE_DRIVE_IMPERSONATED_USER),
   };
+}
+
+function oauthConfigured(value = config()) {
+  return Boolean(value.clientId && value.clientSecret && value.refreshToken);
+}
+
+function serviceAccountConfigured(value = config()) {
+  return Boolean(
+    value.rootFolderId &&
+      value.serviceAccountEmail &&
+      value.serviceAccountPrivateKey,
+  );
 }
 
 export function isGoogleDriveConfigured() {
   const value = config();
-  return Boolean(value.clientId && value.clientSecret && value.refreshToken);
+  return oauthConfigured(value) || serviceAccountConfigured(value);
 }
 
 export function isResourceStorageConfigured() {
@@ -207,59 +261,361 @@ async function uploadLocalResumableChunk(input: {
 
 function requireConfig() {
   const value = config();
-  if (!value.clientId || !value.clientSecret || !value.refreshToken) {
+  if (!oauthConfigured(value) && !serviceAccountConfigured(value)) {
     throw new GoogleDriveStorageError(
       "DRIVE_NOT_CONFIGURED",
-      "Google Drive 연결 정보가 등록되지 않았습니다. 관리자 센터에서 연결 설정을 확인해 주세요.",
+      "Google Drive 연결 정보가 없습니다. 관리자 센터의 API·연동에서 설정 상태를 확인해 주세요.",
       503,
     );
   }
   return value;
 }
 
-async function accessToken(force = false) {
-  if (!force && accessTokenCache && accessTokenCache.expiresAt > Date.now() + 60_000) {
-    return accessTokenCache.token;
+function base64Url(bytes: Uint8Array | string) {
+  const source = typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes;
+  let binary = "";
+  source.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function pemBytes(value: string) {
+  const normalized = value.replace(/\\n/g, "\n");
+  const encoded = normalized
+    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
+    .replace(/-----END PRIVATE KEY-----/g, "")
+    .replace(/\s+/g, "");
+  const binary = atob(encoded);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+function tokenRetryDelay(attempt: number) {
+  return new Promise((resolve) =>
+    setTimeout(resolve, 180 + attempt * 280 + Math.floor(Math.random() * 140)),
+  );
+}
+
+type GoogleTokenPayload = {
+  access_token?: string;
+  expires_in?: number;
+  error?: string;
+  error_description?: string;
+  error_subtype?: string;
+};
+
+async function requestGoogleToken(
+  body: URLSearchParams,
+  authMode: DriveAuthMode,
+) {
+  let lastStatus = 503;
+  let lastPayload: GoogleTokenPayload = {};
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
+      const payload = (await response.json().catch(() => ({}))) as GoogleTokenPayload;
+      lastStatus = response.status;
+      lastPayload = payload;
+      if (response.ok && payload.access_token) return payload;
+      if (![429, 500, 502, 503, 504].includes(response.status)) break;
+    } catch {
+      lastStatus = 503;
+      lastPayload = { error: "network_error" };
+    }
+    if (attempt < 2) await tokenRetryDelay(attempt);
+  }
+  const providerCode = text(lastPayload.error);
+  const subtype = text(lastPayload.error_subtype);
+  console.error("Google Drive token request failed", {
+    status: lastStatus,
+    providerCode: providerCode || "unknown",
+    subtype: subtype || "none",
+  });
+  if (providerCode === "invalid_grant") {
+    throw new GoogleDriveStorageError(
+      "DRIVE_AUTH",
+      authMode === "service-account"
+        ? "Google Drive 서버 계정 위임 또는 서명 설정을 확인해 주세요. 기존 사용자 승인 연결이 있으면 자동으로 대체합니다."
+        : subtype === "invalid_rapt"
+        ? "Google Workspace 보안 정책에 따라 Drive 재인증이 필요합니다. 관리자 센터의 API·연동에서 연결 상태를 확인해 주세요."
+        : "Google Drive 장기 인증이 만료되었거나 해제되었습니다. OAuth 앱의 게시 상태를 확인하고 한 번 다시 승인해 주세요.",
+      503,
+    );
+  }
+  if (["invalid_client", "deleted_client"].includes(providerCode)) {
+    throw new GoogleDriveStorageError(
+      "DRIVE_NOT_CONFIGURED",
+      "Google Drive OAuth 클라이언트 설정이 일치하지 않습니다. 배포 설정을 확인해 주세요.",
+      503,
+    );
+  }
+  throw new GoogleDriveStorageError(
+    "DRIVE_ACCESS",
+    "Google 인증 서버에 일시적으로 연결하지 못했습니다. 자동 재시도 후에도 실패하여 잠시 뒤 다시 확인해 주세요.",
+    503,
+  );
+}
+
+async function oauthAccessToken(force = false): Promise<DriveAccessToken> {
+  if (
+    !force &&
+    oauthAccessTokenCache &&
+    oauthAccessTokenCache.expiresAt > Date.now() + 60_000
+  ) {
+    return oauthAccessTokenCache;
   }
   const value = requireConfig();
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
+  if (!oauthConfigured(value)) {
+    throw new GoogleDriveStorageError(
+      "DRIVE_NOT_CONFIGURED",
+      "Google Drive 사용자 승인 연결이 등록되지 않았습니다.",
+      503,
+    );
+  }
+  const payload = await requestGoogleToken(
+    new URLSearchParams({
       client_id: value.clientId,
       client_secret: value.clientSecret,
       refresh_token: value.refreshToken,
       grant_type: "refresh_token",
     }),
-  });
-  const payload = (await response.json().catch(() => ({}))) as {
-    access_token?: string;
-    expires_in?: number;
-    error_description?: string;
-  };
-  if (!response.ok || !payload.access_token) {
+    "oauth",
+  );
+  if (!payload.access_token) {
     throw new GoogleDriveStorageError(
       "DRIVE_AUTH",
-      "Google Drive 인증이 만료되었거나 해제되었습니다. 관리자 센터에서 Drive 연결을 다시 확인해 주세요.",
+      "Google Drive 사용자 승인 연결을 갱신하지 못했습니다.",
       503,
     );
   }
-  accessTokenCache = {
+  oauthAccessTokenCache = {
     token: payload.access_token,
     expiresAt: Date.now() + Math.max(300, Number(payload.expires_in) || 3600) * 1000,
+    mode: "oauth",
   };
-  return accessTokenCache.token;
+  return oauthAccessTokenCache;
+}
+
+async function serviceAccountAccessToken(force = false): Promise<DriveAccessToken> {
+  if (
+    !force &&
+    serviceAccountAccessTokenCache &&
+    serviceAccountAccessTokenCache.expiresAt > Date.now() + 60_000
+  ) {
+    return serviceAccountAccessTokenCache;
+  }
+  const value = requireConfig();
+  if (!serviceAccountConfigured(value)) {
+    throw new GoogleDriveStorageError(
+      "DRIVE_NOT_CONFIGURED",
+      "Google Drive 서버 계정 연결이 준비되지 않았습니다.",
+      503,
+    );
+  }
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const unsigned = `${base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${base64Url(
+    JSON.stringify({
+      iss: value.serviceAccountEmail,
+      scope: "https://www.googleapis.com/auth/drive",
+      aud: "https://oauth2.googleapis.com/token",
+      iat: issuedAt,
+      exp: issuedAt + 3600,
+      ...(value.impersonatedUser ? { sub: value.impersonatedUser } : {}),
+    }),
+  )}`;
+  const key = await crypto.subtle.importKey(
+    "pkcs8",
+    pemBytes(value.serviceAccountPrivateKey),
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    key,
+    new TextEncoder().encode(unsigned),
+  );
+  const payload = await requestGoogleToken(
+    new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: `${unsigned}.${base64Url(new Uint8Array(signature))}`,
+    }),
+    "service-account",
+  );
+  if (!payload.access_token) {
+    throw new GoogleDriveStorageError(
+      "DRIVE_AUTH",
+      "Google Drive 서버 계정 인증을 갱신하지 못했습니다.",
+      503,
+    );
+  }
+  serviceAccountAccessTokenCache = {
+    token: payload.access_token,
+    expiresAt: Date.now() + Math.max(300, Number(payload.expires_in) || 3600) * 1000,
+    mode: "service-account",
+  };
+  return serviceAccountAccessTokenCache;
+}
+
+async function serviceAccountCanUseRoot(token: DriveAccessToken, force = false) {
+  if (
+    !force &&
+    serviceAccountRootAccessCache &&
+    serviceAccountRootAccessCache.expiresAt > Date.now()
+  ) {
+    return serviceAccountRootAccessCache.allowed;
+  }
+  const rootFolderId = config().rootFolderId;
+  if (!rootFolderId) return false;
+  const url = new URL(`${DRIVE_API}/files/${encodeURIComponent(rootFolderId)}`);
+  url.searchParams.set("fields", "id,mimeType,capabilities(canAddChildren)");
+  url.searchParams.set("supportsAllDrives", "true");
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token.token}` },
+  });
+  const payload = (await response.json().catch(() => ({}))) as {
+    mimeType?: string;
+    capabilities?: { canAddChildren?: boolean };
+  };
+  const allowed =
+    response.ok &&
+    payload.mimeType === FOLDER_MIME_TYPE &&
+    payload.capabilities?.canAddChildren !== false;
+  serviceAccountRootAccessCache = {
+    allowed,
+    expiresAt: Date.now() + (allowed ? 10 * 60_000 : 2 * 60_000),
+  };
+  return allowed;
+}
+
+async function accessToken(force = false, oauthOnly = false): Promise<DriveAccessToken> {
+  const value = requireConfig();
+  if (!oauthOnly && serviceAccountConfigured(value)) {
+    try {
+      const token = await serviceAccountAccessToken(force);
+      if (await serviceAccountCanUseRoot(token, force)) return token;
+    } catch (error) {
+      if (!oauthConfigured(value)) throw error;
+      console.warn("Google Drive server-account fallback is unavailable", {
+        code: error instanceof GoogleDriveStorageError ? error.code : "unknown",
+      });
+    }
+  }
+  if (oauthConfigured(value)) return oauthAccessToken(force);
+  throw new GoogleDriveStorageError(
+    "DRIVE_ACCESS",
+    `Google Drive 서버 계정(${value.serviceAccountEmail})에 백업 폴더 쓰기 권한이 없습니다. 공유 드라이브 권한을 확인해 주세요.`,
+    503,
+  );
 }
 
 async function driveFetch(input: string, init: RequestInit = {}, retry = true) {
+  const auth = await accessToken();
   const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${await accessToken()}`);
+  headers.set("Authorization", `Bearer ${auth.token}`);
   const response = await fetch(input, { ...init, headers });
-  if (response.status === 401 && retry) {
-    accessTokenCache = null;
-    return driveFetch(input, init, false);
+  if ((response.status === 401 || response.status === 403) && retry) {
+    if (auth.mode === "service-account" && oauthConfigured()) {
+      const oauth = await accessToken(false, true);
+      const oauthHeaders = new Headers(init.headers);
+      oauthHeaders.set("Authorization", `Bearer ${oauth.token}`);
+      return fetch(input, { ...init, headers: oauthHeaders });
+    }
+    if (auth.mode === "oauth" && response.status === 401) {
+      oauthAccessTokenCache = null;
+      const refreshed = await oauthAccessToken(true);
+      const refreshedHeaders = new Headers(init.headers);
+      refreshedHeaders.set("Authorization", `Bearer ${refreshed.token}`);
+      return fetch(input, { ...init, headers: refreshedHeaders });
+    }
   }
   return response;
+}
+
+function connectionIssue(error: unknown): GoogleDriveConnectionStatus["issue"] {
+  if (!(error instanceof GoogleDriveStorageError)) return "temporary";
+  if (error.code === "DRIVE_AUTH") return "reauthorization_required";
+  if (error.code === "DRIVE_NOT_CONFIGURED") return "configuration";
+  if (error.code === "DRIVE_ACCESS") return "permission";
+  return "temporary";
+}
+
+export async function getGoogleDriveConnectionStatus(
+  verify = false,
+): Promise<GoogleDriveConnectionStatus> {
+  const value = config();
+  const base = {
+    platform: isPostgresDatabase() ? ("vercel" as const) : ("sites" as const),
+    configured: oauthConfigured(value) || serviceAccountConfigured(value),
+    oauthConfigured: oauthConfigured(value),
+    serviceAccountConfigured: Boolean(
+      value.serviceAccountEmail && value.serviceAccountPrivateKey,
+    ),
+    serviceAccountEmail: value.serviceAccountEmail,
+    rootFolderConfigured: Boolean(value.rootFolderId),
+    checkedAt: verify ? new Date().toISOString() : "",
+  };
+  if (!isPostgresDatabase()) {
+    return {
+      ...base,
+      configured: false,
+      connected: false,
+      mode: "none",
+      issue: "",
+      message: "Sites 대기판은 Google Drive 대신 D1/R2 독립 저장소를 사용합니다.",
+    };
+  }
+  if (!verify) {
+    return {
+      ...base,
+      connected: false,
+      mode: "none",
+      issue: base.configured ? "" : "configuration",
+      message: base.configured
+        ? "연결 정보를 확인할 준비가 되었습니다."
+        : "Google Drive 연결 정보가 없습니다.",
+    };
+  }
+  try {
+    const auth = await accessToken(true);
+    const url = new URL(`${DRIVE_API}/about`);
+    url.searchParams.set("fields", "user(permissionId)");
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+    });
+    if (!response.ok) {
+      throw driveReadError(response.status, "Google Drive 연결 계정을 확인하지 못했습니다.");
+    }
+    return {
+      ...base,
+      configured: true,
+      connected: true,
+      mode: auth.mode,
+      issue: "",
+      message:
+        auth.mode === "service-account"
+          ? "서버 계정으로 안정적으로 연결되어 주기적인 사용자 재승인이 필요하지 않습니다."
+          : "사용자 승인 방식으로 연결되어 있습니다. OAuth 앱이 테스트 상태이면 장기 인증이 만료될 수 있습니다.",
+    };
+  } catch (error) {
+    return {
+      ...base,
+      connected: false,
+      mode: "none",
+      issue: connectionIssue(error),
+      message:
+        error instanceof Error
+          ? error.message
+          : "Google Drive 연결을 확인하지 못했습니다.",
+    };
+  }
 }
 
 function escapeQueryValue(value: string) {
@@ -560,7 +916,16 @@ export async function createDriveResumableUpload(input: {
     }
     return localUploadSession(input);
   }
-  const folderId = await ensureDrivePath(input.folderSegments);
+  let folderId = "";
+  try {
+    folderId = await ensureDrivePath(input.folderSegments);
+  } catch (error) {
+    if (!isPostgresDatabase()) throw error;
+    console.warn("Google Drive upload fell back to independent storage", {
+      code: error instanceof GoogleDriveStorageError ? error.code : "temporary",
+    });
+    return localUploadSession(input);
+  }
   const metadata = {
     name: input.fileName.slice(0, 240),
     parents: [folderId],

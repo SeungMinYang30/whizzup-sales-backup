@@ -1572,6 +1572,25 @@ type SchoolDirectorySettingsStatus = {
   lastSyncedAt?: string;
 };
 
+type GoogleDriveSettingsStatus = {
+  platform: "vercel" | "sites";
+  configured: boolean;
+  connected: boolean;
+  mode: "service-account" | "oauth" | "none";
+  oauthConfigured: boolean;
+  serviceAccountConfigured: boolean;
+  serviceAccountEmail: string;
+  rootFolderConfigured: boolean;
+  issue:
+    | ""
+    | "reauthorization_required"
+    | "configuration"
+    | "permission"
+    | "temporary";
+  message: string;
+  checkedAt: string;
+};
+
 function normalizeMemberPermissions(value: unknown): MemberPermission[] {
   let source: unknown = value;
   if (typeof value === "string") {
@@ -6575,6 +6594,11 @@ export default function CrmApp({
     useState(false);
   const [schoolDirectorySyncBusy, setSchoolDirectorySyncBusy] = useState(false);
   const [schoolDirectoryConnectionMessage, setSchoolDirectoryConnectionMessage] =
+    useState("");
+  const [googleDriveSettings, setGoogleDriveSettings] =
+    useState<GoogleDriveSettingsStatus | null>(null);
+  const [googleDriveSettingsBusy, setGoogleDriveSettingsBusy] = useState(false);
+  const [googleDriveConnectionMessage, setGoogleDriveConnectionMessage] =
     useState("");
   const [aiDraft, setAiDraft] = useState("");
   const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
@@ -12370,11 +12394,16 @@ export default function CrmApp({
 
   async function loadIntegration() {
     try {
-      const [openAIResponse, kakaoResponse, schoolDirectoryResponse] =
-        await Promise.all([
+      const [
+        openAIResponse,
+        kakaoResponse,
+        schoolDirectoryResponse,
+        googleDriveResponse,
+      ] = await Promise.all([
           fetch("/api/openai-settings", { cache: "no-store" }),
           fetch("/api/map/config", { cache: "no-store" }),
           fetch("/api/school-directory-settings", { cache: "no-store" }),
+          fetch("/api/google-drive-settings?verify=1", { cache: "no-store" }),
         ]);
       const openAIPayload =
         (await openAIResponse.json()) as OpenAISettingsStatus & {
@@ -12386,6 +12415,10 @@ export default function CrmApp({
         };
       const schoolDirectoryPayload =
         (await schoolDirectoryResponse.json()) as SchoolDirectorySettingsStatus & {
+          error?: string;
+        };
+      const googleDrivePayload =
+        (await googleDriveResponse.json()) as GoogleDriveSettingsStatus & {
           error?: string;
         };
       if (!openAIResponse.ok) {
@@ -12404,6 +12437,12 @@ export default function CrmApp({
             "나이스 학교정보 API 설정을 불러오지 못했습니다.",
         );
       }
+      if (!googleDriveResponse.ok) {
+        throw new Error(
+          googleDrivePayload.error ||
+            "Google Drive 연결 상태를 불러오지 못했습니다.",
+        );
+      }
       setOpenAISettings(openAIPayload);
       setOpenAIModel(openAIPayload.model || "gpt-5.4-mini");
       setOpenAIApiKey("");
@@ -12414,6 +12453,8 @@ export default function CrmApp({
       setSchoolDirectorySettings(schoolDirectoryPayload);
       setSchoolDirectoryApiKey("");
       setSchoolDirectoryConnectionMessage("");
+      setGoogleDriveSettings(googleDrivePayload);
+      setGoogleDriveConnectionMessage("");
     } catch (caught) {
       setToast(
         caught instanceof Error
@@ -12421,6 +12462,45 @@ export default function CrmApp({
           : "API 연결 정보를 불러오지 못했습니다.",
       );
     }
+  }
+
+  async function testGoogleDriveSettings() {
+    try {
+      setGoogleDriveSettingsBusy(true);
+      setGoogleDriveConnectionMessage("");
+      const response = await fetch("/api/google-drive-settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-WHIZZUP-Request-Mode": "read",
+        },
+        body: JSON.stringify({ action: "test" }),
+      });
+      const payload = (await response.json()) as GoogleDriveSettingsStatus & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(
+          payload.error || "Google Drive 연결을 확인하지 못했습니다.",
+        );
+      }
+      setGoogleDriveSettings(payload);
+      setGoogleDriveConnectionMessage(payload.message);
+    } catch (caught) {
+      setGoogleDriveConnectionMessage(
+        caught instanceof Error
+          ? caught.message
+          : "Google Drive 연결을 확인하지 못했습니다.",
+      );
+    } finally {
+      setGoogleDriveSettingsBusy(false);
+    }
+  }
+
+  async function copyGoogleDriveServiceAccount() {
+    const email = googleDriveSettings?.serviceAccountEmail.trim();
+    if (!email) return;
+    await copyText(email, "Drive 공유용 서버 계정 주소를 복사했습니다.");
   }
 
   async function manageOpenAISettings(action: "test" | "save" | "revert") {
@@ -18413,6 +18493,108 @@ export default function CrmApp({
             </Suspense>
           ) : view === "integration" ? (
             <section className="integration-layout">
+              {googleDriveSettings?.platform === "vercel" && (
+                <article className="panel openai-settings-card google-drive-settings-card">
+                  <div className="openai-settings-heading">
+                    <div>
+                      <span className="section-kicker">GOOGLE DRIVE</span>
+                      <h2>Google Drive 백업 연결</h2>
+                      <p>
+                        서버 계정 연결을 우선 사용하고, 사용할 수 없을 때만 기존
+                        사용자 승인 연결로 안전하게 전환합니다.
+                      </p>
+                    </div>
+                    <span
+                      className={`openai-connection-status ${
+                        googleDriveSettings.connected
+                          ? "connected"
+                          : "disconnected"
+                      }`}
+                    >
+                      <i />
+                      {googleDriveSettings.connected ? "현재 연결됨" : "점검 필요"}
+                    </span>
+                  </div>
+
+                  <div className="openai-current-settings kakao-current-settings">
+                    <div>
+                      <span>현재 연결 방식</span>
+                      <strong>
+                        {googleDriveSettings.mode === "service-account"
+                          ? "서버 계정 자동 연결"
+                          : googleDriveSettings.mode === "oauth"
+                            ? "사용자 승인 연결"
+                            : "연결 확인 필요"}
+                      </strong>
+                      <small>
+                        {googleDriveSettings.mode === "service-account"
+                          ? "사용자 재승인 없이 서버가 인증을 자동 갱신합니다."
+                          : googleDriveSettings.message}
+                      </small>
+                    </div>
+                    <div>
+                      <span>자동 대체 경로</span>
+                      <strong>
+                        {googleDriveSettings.oauthConfigured
+                          ? "OAuth 예비 연결 준비됨"
+                          : "OAuth 예비 연결 없음"}
+                      </strong>
+                      <small>
+                        일시적인 인증 서버 오류는 자동으로 최대 3회 재시도합니다.
+                      </small>
+                    </div>
+                  </div>
+
+                  {googleDriveSettings.serviceAccountEmail && (
+                    <div className="openai-registration-form kakao-registration-form">
+                      <label>
+                        <span>Drive 공유용 서버 계정</span>
+                        <input
+                          type="text"
+                          readOnly
+                          value={googleDriveSettings.serviceAccountEmail}
+                          aria-label="Google Drive 공유용 서버 계정"
+                        />
+                        <small>
+                          이 주소에 백업 폴더의 콘텐츠 관리자 권한을 한 번만
+                          부여하면 주기적인 재연결이 필요하지 않습니다.
+                        </small>
+                      </label>
+                    </div>
+                  )}
+
+                  <div className="openai-settings-actions">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={googleDriveSettingsBusy}
+                      onClick={() => void testGoogleDriveSettings()}
+                    >
+                      {googleDriveSettingsBusy ? "연결 확인 중…" : "연결 다시 확인"}
+                    </button>
+                    {googleDriveSettings.serviceAccountEmail && (
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => void copyGoogleDriveServiceAccount()}
+                      >
+                        서버 계정 주소 복사
+                      </button>
+                    )}
+                  </div>
+                  {googleDriveConnectionMessage && (
+                    <p className="openai-connection-message" role="status">
+                      {googleDriveConnectionMessage}
+                    </p>
+                  )}
+                  <p className="openai-security-note">
+                    인증 비밀값은 화면과 전체 DB 백업에 포함하지 않습니다. OAuth만
+                    사용할 때는 Google Cloud의 게시 상태가 테스트가 아닌 운영 상태여야
+                    장기 인증이 주기적으로 만료되지 않습니다.
+                  </p>
+                </article>
+              )}
+
               <article className="panel openai-settings-card">
                 <div className="openai-settings-heading">
                   <div>
