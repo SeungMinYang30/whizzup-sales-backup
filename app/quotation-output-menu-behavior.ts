@@ -1,6 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { personDisplayLabel } from "../lib/person-label";
+
+type SessionMember = {
+  displayName?: string;
+  display_name?: string;
+  jobTitle?: string;
+  job_title?: string;
+};
 
 function menuElement(target: EventTarget | null) {
   const element = target instanceof Element
@@ -94,13 +102,11 @@ export function useInspectionVisitorName() {
     void fetch("/api/session", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) return null;
-        return response.json() as Promise<{
-          member?: { displayName?: string; display_name?: string };
-        }>;
+        return response.json() as Promise<{ member?: SessionMember }>;
       })
       .then((payload) => {
         if (!payload || controller.signal.aborted) return;
-        const name = String(payload.member?.displayName ?? payload.member?.display_name ?? "").trim();
+        const name = personDisplayLabel(payload.member ?? {});
         if (name) setVisitorName(name);
       })
       .catch(() => {
@@ -117,10 +123,8 @@ export async function resolveInspectionVisitorName(visitorName: string, fallback
   try {
     const response = await fetch("/api/session", { cache: "no-store" });
     if (!response.ok) return fallbackName;
-    const payload = await response.json() as {
-      member?: { displayName?: string; display_name?: string };
-    };
-    return String(payload.member?.displayName ?? payload.member?.display_name ?? "").trim() || fallbackName;
+    const payload = await response.json() as { member?: SessionMember };
+    return personDisplayLabel(payload.member ?? {}) || fallbackName;
   } catch {
     return fallbackName;
   }

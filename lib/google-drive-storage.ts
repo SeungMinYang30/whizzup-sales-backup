@@ -11,7 +11,10 @@ const LOCAL_FOLDER_ID = "postgres-object-storage";
 const LOCAL_UPLOAD_CHUNK_BYTES = RESOURCE_UPLOAD_CHUNK_BYTES;
 
 export type GoogleDriveStorageErrorCode =
+  | "DRIVE_NOT_CONFIGURED"
   | "DRIVE_AUTH"
+  | "DRIVE_ACCESS"
+  | "DRIVE_FILE_NOT_FOUND"
   | "DRIVE_SESSION_EXPIRED"
   | "DRIVE_UPLOAD_FAILED";
 
@@ -62,7 +65,7 @@ export async function listDriveChildren(parentId: string) {
       error?: { message?: string };
     };
     if (!response.ok) {
-      throw new Error(payload.error?.message || "Google Drive 폴더 내용을 불러오지 못했습니다.");
+      throw driveReadError(response.status, "Google Drive에서 백업 폴더를 찾지 못했습니다.");
     }
     files.push(...(payload.files ?? []));
     pageToken = payload.nextPageToken || "";
@@ -205,7 +208,11 @@ async function uploadLocalResumableChunk(input: {
 function requireConfig() {
   const value = config();
   if (!value.clientId || !value.clientSecret || !value.refreshToken) {
-    throw new Error("Google Drive 자료실 연결 정보가 등록되지 않았습니다.");
+    throw new GoogleDriveStorageError(
+      "DRIVE_NOT_CONFIGURED",
+      "Google Drive 연결 정보가 등록되지 않았습니다. 관리자 센터에서 연결 설정을 확인해 주세요.",
+      503,
+    );
   }
   return value;
 }
@@ -231,7 +238,11 @@ async function accessToken(force = false) {
     error_description?: string;
   };
   if (!response.ok || !payload.access_token) {
-    throw new Error(payload.error_description || "Google Drive 인증을 갱신하지 못했습니다.");
+    throw new GoogleDriveStorageError(
+      "DRIVE_AUTH",
+      "Google Drive 인증이 만료되었거나 해제되었습니다. 관리자 센터에서 Drive 연결을 다시 확인해 주세요.",
+      503,
+    );
   }
   accessTokenCache = {
     token: payload.access_token,
@@ -346,6 +357,32 @@ export async function ensureDrivePath(segments: string[]) {
     }
     return parentId;
   });
+}
+
+export function googleDriveStorageErrorResponse(error: unknown) {
+  if (!(error instanceof GoogleDriveStorageError)) return null;
+  return Response.json(
+    { error: error.message, code: error.code },
+    { status: error.status },
+  );
+}
+
+function driveReadError(status: number, notFoundMessage: string) {
+  if (status === 401 || status === 403) {
+    return new GoogleDriveStorageError(
+      "DRIVE_ACCESS",
+      "Google Drive 연결 권한이 만료되었거나 부족합니다. 관리자 센터에서 Drive 연결을 확인해 주세요.",
+      503,
+    );
+  }
+  if (status === 404) {
+    return new GoogleDriveStorageError("DRIVE_FILE_NOT_FOUND", notFoundMessage, 404);
+  }
+  return new GoogleDriveStorageError(
+    "DRIVE_ACCESS",
+    "Google Drive 파일 저장소에 일시적으로 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    502,
+  );
 }
 
 export async function uploadDriveFile(input: {
@@ -648,10 +685,10 @@ export async function downloadDriveFile(fileId: string) {
     `${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`,
   );
   if (!response.ok || !response.body) {
-    const payload = (await response.json().catch(() => ({}))) as {
-      error?: { message?: string };
-    };
-    throw new Error(payload.error?.message || "Google Drive 파일을 내려받지 못했습니다.");
+    throw driveReadError(
+      response.status,
+      "Google Drive에서 저장된 파일을 찾지 못했습니다. 현재 저장 내용으로 다시 생성해 주세요.",
+    );
   }
   return response;
 }

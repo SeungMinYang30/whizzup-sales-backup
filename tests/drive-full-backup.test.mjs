@@ -35,12 +35,14 @@ test("full backup button archives one restorable JSON file to dated Google Drive
   assert.match(page, /body: JSON\.stringify\(\{ action: "archive-full-backup" \}\)/);
 });
 
-test("full backup action does not download a second copy to the PC", () => {
+test("full backup falls back to a browser download only when Drive archiving fails", () => {
   const fullBranch = page.slice(
     page.indexOf('if (kind === "full")'),
     page.indexOf('const response = await fetch(`/api/backup?kind=${kind}`'),
   );
-  assert.doesNotMatch(fullBranch, /saveBlob/);
+  assert.match(fullBranch, /downloadFullBackupToComputer/);
+  assert.match(page, /Google Drive 저장은 실패했지만 현재 전체 DB 안전 백업을 PC에 다운로드했습니다/);
+  assert.match(page, /X-WHIZZUP-Request-Mode/);
   assert.match(fullBranch, /return;/);
 });
 
@@ -115,4 +117,11 @@ test("Drive folder creation is serialized and existing duplicates resolve consis
   assert.match(driveStorage, /hashtextextended\(\?::text, 0\)/);
   assert.match(driveStorage, /orderBy", "createdTime"/);
   assert.match(driveStorage, /left\.id\.localeCompare\(right\.id\)/);
+});
+
+test("Drive read failures expose safe categories without leaking provider errors", () => {
+  assert.match(driveStorage, /DRIVE_NOT_CONFIGURED/);
+  assert.match(driveStorage, /DRIVE_FILE_NOT_FOUND/);
+  assert.match(driveStorage, /googleDriveStorageErrorResponse/);
+  assert.match(driveStorage, /관리자 센터에서 Drive 연결을 확인해 주세요/);
 });

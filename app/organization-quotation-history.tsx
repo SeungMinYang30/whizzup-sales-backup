@@ -2,24 +2,29 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AuthoredQuotation } from "../lib/authored-quotations";
+import { quotationDownloadName } from "../lib/quotation-file-name";
+import { createAuthoredQuotationPdf } from "./authored-quotation-pdf";
+import { createAuthoredQuotationWorkbookFile, storedQuotationFile } from "./authored-quotation-downloads";
 import { createFieldInspectionPdfFile, createFieldInspectionWorkbookFile } from "./field-inspection-documents";
 import { resolveInspectionVisitorName, useAutoCloseQuotationOutputMenus, useInspectionVisitorName } from "./quotation-output-menu-behavior";
 
 const won = new Intl.NumberFormat("ko-KR");
 
-function safeFileName(value: string) {
-  return value.trim().replace(/[\\/:*?"<>|]/g, "_") || "견적서";
-}
-
-function downloadGeneratedFile(file: File) {
+function downloadGeneratedFile(file: Blob, name = file instanceof File ? file.name : "download") {
   const url = URL.createObjectURL(file);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = file.name;
+  anchor.download = name;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+}
+
+function reservePdfTab() {
+  const tab = window.open(`/pdf-opening.html?request=${Date.now()}`, "_blank");
+  if (tab) tab.opener = null;
+  return tab;
 }
 
 export default function OrganizationQuotationHistory({
@@ -50,6 +55,7 @@ export default function OrganizationQuotationHistory({
   const [error, setError] = useState("");
   const [reloadVersion, setReloadVersion] = useState(0);
   const [inspectionAction, setInspectionAction] = useState("");
+  const [quotationFileAction, setQuotationFileAction] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [inspectionPdfFallback, setInspectionPdfFallback] = useState<{ url: string; name: string } | null>(null);
   const inspectionPdfFallbackRef = useRef("");
@@ -152,6 +158,76 @@ export default function OrganizationQuotationHistory({
     ) : (
       <button className="quotation-history-action" type="button" disabled>{label}</button>
     );
+  const viewQuotationPdf = async (quote: AuthoredQuotation) => {
+    const tab = reservePdfTab();
+    if (!tab) {
+      setActionMessage("새 탭이 차단되었습니다. 팝업 허용 후 PDF 보기를 다시 눌러 주세요.");
+      return;
+    }
+    setQuotationFileAction(`${quote.id}:pdf-view`);
+    setActionMessage("");
+    try {
+      let file: Blob;
+      let regenerated = false;
+      try {
+        if (!quote.pdfUrl) throw new Error("저장된 PDF 파일이 없습니다.");
+        file = await storedQuotationFile(quote.pdfUrl, "저장된 PDF를 불러오지 못했습니다.");
+      } catch {
+        file = await createAuthoredQuotationPdf(quote);
+        regenerated = true;
+      }
+      const url = URL.createObjectURL(file);
+      tab.location.replace(url);
+      tab.focus();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      if (regenerated) setActionMessage("저장소 연결이 원활하지 않아 현재 최종 견적 내용으로 PDF를 다시 만들었습니다.");
+    } catch (actionError) {
+      tab.close();
+      setActionMessage(actionError instanceof Error ? actionError.message : "견적서 PDF를 열지 못했습니다.");
+    } finally {
+      setQuotationFileAction("");
+    }
+  };
+  const downloadQuotationPdf = async (quote: AuthoredQuotation) => {
+    setQuotationFileAction(`${quote.id}:pdf-download`);
+    setActionMessage("");
+    try {
+      try {
+        if (!quote.pdfUrl) throw new Error("저장된 PDF 파일이 없습니다.");
+        downloadGeneratedFile(
+          await storedQuotationFile(quote.pdfUrl, "저장된 PDF를 내려받지 못했습니다."),
+          quote.drivePdfName || quotationDownloadName(quote, "pdf"),
+        );
+      } catch {
+        downloadGeneratedFile(await createAuthoredQuotationPdf(quote));
+        setActionMessage("저장소 연결이 원활하지 않아 현재 최종 견적 내용으로 PDF를 다시 만들어 다운로드했습니다.");
+      }
+    } catch (actionError) {
+      setActionMessage(actionError instanceof Error ? actionError.message : "견적서 PDF를 만들지 못했습니다.");
+    } finally {
+      setQuotationFileAction("");
+    }
+  };
+  const downloadQuotationExcel = async (quote: AuthoredQuotation) => {
+    setQuotationFileAction(`${quote.id}:xlsx-download`);
+    setActionMessage("");
+    try {
+      try {
+        if (!quote.excelUrl) throw new Error("저장된 Excel 파일이 없습니다.");
+        downloadGeneratedFile(
+          await storedQuotationFile(quote.excelUrl, "저장된 Excel을 내려받지 못했습니다."),
+          quote.driveXlsxName || quotationDownloadName(quote, "xlsx"),
+        );
+      } catch {
+        downloadGeneratedFile(await createAuthoredQuotationWorkbookFile(quote));
+        setActionMessage("저장소 연결이 원활하지 않아 현재 최종 견적 내용으로 Excel을 다시 만들어 다운로드했습니다.");
+      }
+    } catch (actionError) {
+      setActionMessage(actionError instanceof Error ? actionError.message : "견적서 Excel을 만들지 못했습니다.");
+    } finally {
+      setQuotationFileAction("");
+    }
+  };
   const viewInspectionPdf = async (quote: AuthoredQuotation) => {
     const tab = window.open(`/pdf-opening.html?request=${Date.now()}`, "_blank");
     if (tab) tab.opener = null;
@@ -250,13 +326,11 @@ export default function OrganizationQuotationHistory({
         {quote.status === "final" && <details className="quotation-output-menu">
           <summary>PDF</summary>
           <div className="quotation-output-menu-panel">
-            {fileAction(quote.pdfUrl, "보기", true)}
-            {quote.pdfUrl
-              ? <a className="quotation-history-action" href={quote.pdfUrl} download={`${safeFileName(`${quote.organization}_${quote.quoteNumber}_견적서`)}.pdf`}>다운로드</a>
-              : <button className="quotation-history-action" type="button" disabled>다운로드</button>}
+            <button type="button" disabled={quotationFileAction.startsWith(`${quote.id}:`) || !quote.items.length} onClick={() => void viewQuotationPdf(quote)}>보기</button>
+            <button type="button" disabled={quotationFileAction.startsWith(`${quote.id}:`) || !quote.items.length} onClick={() => void downloadQuotationPdf(quote)}>다운로드</button>
           </div>
         </details>}
-        {quote.status === "final" && fileAction(quote.excelUrl, "Excel 다운로드")}
+        {quote.status === "final" && <button className="quotation-history-action" type="button" disabled={quotationFileAction.startsWith(`${quote.id}:`) || !quote.items.length} onClick={() => void downloadQuotationExcel(quote)}>Excel 다운로드</button>}
         {quote.status === "final" && <details className="quotation-output-menu quotation-output-menu-inspection">
           <summary>현장 검수서류</summary>
           <div className="quotation-output-menu-panel">

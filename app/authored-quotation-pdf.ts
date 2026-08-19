@@ -686,7 +686,7 @@ async function renderFieldInspectionSummaryPage(
 
   inspectionSection(context, "확인결과", y); y += 42;
   const resultRows = [
-    ["제품 기본 작동", "□ 정상", "□ 이상"],
+    ["제품 상태·작동", "□ 정상", "□ 이상"],
     ["견적 제품 수량", "□ 일치", "□ 불일치"],
     ["교구 수량", "□ 일치", "□ 부족"],
   ];
@@ -702,7 +702,7 @@ async function renderFieldInspectionSummaryPage(
   y += 10;
 
   inspectionSection(context, "견적 제품 현장 확인 목록", y); y += 42;
-  const headings = ["No", "품명", "규격", "견적", "단위", "현장", "작동 확인", "수량 확인", "비고"];
+  const headings = ["No", "품명", "규격", "견적", "단위", "현장", "상태·작동", "수량 확인", "비고"];
   context.fillStyle = "#17233f";
   context.fillRect(72, y, 1096, 42);
   headings.forEach((heading, index) => {
@@ -806,7 +806,7 @@ async function renderProductInspectionPages(quote: AuthoredQuotation, startIndex
     const columns = [72];
     widths.forEach((width) => columns.push(columns[columns.length - 1] + width));
     const top = 174;
-    const headings = ["No", "품명", "규격", "견적", "단위", "현장", "작동 확인", "수량 확인", "비고"];
+    const headings = ["No", "품명", "규격", "견적", "단위", "현장", "상태·작동", "수량 확인", "비고"];
     context.fillStyle = "#17233f";
     context.fillRect(72, top, 1096, 56);
     headings.forEach((heading, index) => {

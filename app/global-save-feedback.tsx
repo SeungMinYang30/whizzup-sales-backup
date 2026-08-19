@@ -27,15 +27,19 @@ type SaveFeedbackState = SaveFeedbackDetail & { id: number };
 function requestDetails(input: RequestInfo | URL, init?: RequestInit) {
   const method = String(init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
   const rawUrl = input instanceof Request ? input.url : String(input);
+  const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+  const readOnly = headers.get("X-WHIZZUP-Request-Mode") === "read";
   try {
-    return { method, url: new URL(rawUrl, window.location.href) };
+    return { method, url: new URL(rawUrl, window.location.href), readOnly };
   } catch {
-    return { method, url: null };
+    return { method, url: null, readOnly };
   }
 }
 
-function isUserDataMutation(method: string, url: URL | null) {
+function isUserDataMutation(method: string, url: URL | null, readOnly = false) {
   return Boolean(
+    !readOnly
+    &&
     MUTATION_METHODS.has(method)
     && url
     && url.origin === window.location.origin
@@ -97,7 +101,7 @@ export default function GlobalSaveFeedback() {
     const originalFetch = window.fetch.bind(window);
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const details = requestDetails(input, init);
-      const mutation = isUserDataMutation(details.method, details.url);
+      const mutation = isUserDataMutation(details.method, details.url, details.readOnly);
       try {
         const response = await originalFetch(input, init);
         if (mutation && !response.ok) {

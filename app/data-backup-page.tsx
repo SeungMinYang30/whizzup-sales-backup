@@ -74,6 +74,45 @@ function standbyErrorMessage(message: string) {
   return message;
 }
 
+function responseDownloadName(response: Response, fallback: string) {
+  const disposition = response.headers.get("content-disposition") || "";
+  const encoded = /filename\*=UTF-8''([^;]+)/iu.exec(disposition)?.[1];
+  if (encoded) {
+    try { return decodeURIComponent(encoded); } catch { /* 안전한 기본 이름을 사용합니다. */ }
+  }
+  return fallback;
+}
+
+function saveBrowserDownload(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+}
+
+async function downloadFullBackupToComputer() {
+  const response = await fetch("/api/backup?kind=full", {
+    cache: "no-store",
+    headers: { "X-WHIZZUP-Request-Mode": "read" },
+  });
+  if (!response.ok) {
+    let message = "PC 안전 백업도 만들지 못했습니다.";
+    try {
+      const payload = await response.json() as { error?: unknown };
+      message = String(payload.error || "").trim() || message;
+    } catch {
+      // JSON이 아니면 기본 안내를 유지합니다.
+    }
+    throw new Error(message);
+  }
+  const fallback = `WHIZZUP_full_backup_${new Date().toISOString().slice(0, 10)}.json.gz`;
+  saveBrowserDownload(await response.blob(), responseDownloadName(response, fallback));
+}
+
 export default function DataBackupPage({
   onDataChanged,
   notify,
@@ -143,9 +182,13 @@ export default function DataBackupPage({
   async function loadDriveBackups() {
     try {
       setBusy((current) => current || "list-drive-backups");
+      setBackupError("");
       const response = await fetch("/api/backup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-WHIZZUP-Request-Mode": "read",
+        },
         body: JSON.stringify({ action: "list-drive-backups" }),
       });
       const payload = (await response.json()) as {
@@ -262,18 +305,26 @@ export default function DataBackupPage({
     try {
       setBusy(safety ? "safety-download" : `download-${kind}`);
       if (kind === "full") {
-        const response = await fetch("/api/backup", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "archive-full-backup" }),
-        });
-        const payload = (await response.json()) as {
-          ok?: boolean;
-          archive?: { fileName?: string; folderPath?: string };
-          error?: string;
-        };
-        if (!response.ok || !payload.ok || !payload.archive) {
-          throw new Error(payload.error || "Google Drive 백업을 만들지 못했습니다.");
+        let payload: { ok?: boolean; archive?: { fileName?: string; folderPath?: string }; error?: string };
+        try {
+          const response = await fetch("/api/backup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "archive-full-backup" }),
+          });
+          payload = (await response.json()) as typeof payload;
+          if (!response.ok || !payload.ok || !payload.archive) {
+            throw new Error(payload.error || "Google Drive 백업을 만들지 못했습니다.");
+          }
+        } catch (driveError) {
+          await downloadFullBackupToComputer();
+          const now = new Date().toISOString();
+          window.localStorage.setItem("whizzup-last-full-backup-at", now);
+          if (safety) setSafetyBackupDownloaded(true);
+          const reason = driveError instanceof Error ? driveError.message : "Google Drive 연결 오류";
+          setBackupError(`${reason} 대신 현재 전체 DB 안전 백업을 이 PC에 내려받았습니다.`);
+          notify("Google Drive 저장은 실패했지만 현재 전체 DB 안전 백업을 PC에 다운로드했습니다. 다운로드 파일을 별도 보관해 주세요.");
+          return;
         }
         const now = new Date().toISOString();
         window.localStorage.setItem("whizzup-last-full-backup-at", now);
@@ -281,8 +332,8 @@ export default function DataBackupPage({
         await loadDriveBackups();
         notify(
           safety
-            ? `복원 직전 안전 백업을 Google Drive에 저장했습니다. (${payload.archive.folderPath})`
-            : `Google Drive 백업 완료: ${payload.archive.folderPath}/${payload.archive.fileName}`,
+            ? `복원 직전 안전 백업을 Google Drive에 저장했습니다. (${payload.archive?.folderPath})`
+            : `Google Drive 백업 완료: ${payload.archive?.folderPath}/${payload.archive?.fileName}`,
         );
         return;
       }

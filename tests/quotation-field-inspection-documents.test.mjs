@@ -53,6 +53,9 @@ test("현장 검수 Excel은 일반 제품을 확인서에 합치고 교구 목�
   assert.match(summary, /현장 지원사/);
   assert.match(summary, /주식회사 위즈업/);
   assert.match(summary, /양승민 이사/);
+  assert.match(summary, /제품 상태·작동/);
+  assert.match(summary, /상태·작동/);
+  assert.doesNotMatch(summary, /제품 기본 작동|작동 확인/);
   assert.match(summary, /견적 제품 현장 확인 목록/);
   assert.match(summary, /가상현실 스포츠시스템/);
   assert.match(summary, /전자칠판/);
@@ -113,6 +116,9 @@ test("견적 목록·수정 화면·기관 상세에 동일한 현장 검수서�
     assert.match(source, /resolveInspectionVisitorName\(inspectionVisitorName, quote\.updatedByName\)/);
   }
   assert.match(pdf, /renderPages\(quote\)/);
+  assert.match(pdf, /제품 상태·작동/);
+  assert.match(pdf, /상태·작동/);
+  assert.doesNotMatch(pdf, /제품 기본 작동|작동 확인/);
   assert.match(pdf, /renderFieldInspectionPages\(quote, visitorName\.trim\(\)/);
   assert.match(pdf, /inspectionSignatureBox\(context, 620, y, 548, 140, visitorName\)/);
   assert.match(pdf, /renderProductInspectionPages\(quote, summary\.renderedProductCount\)/);
@@ -129,7 +135,8 @@ test("견적 목록·수정 화면·기관 상세에 동일한 현장 검수서�
   assert.match(menuBehavior, /scroll/);
   assert.match(menuBehavior, /Escape/);
   assert.match(menuBehavior, /fetch\("\/api\/session"/);
-  assert.match(menuBehavior, /return String\(payload\.member\?\.displayName/);
+  assert.match(menuBehavior, /jobTitle\?: string/);
+  assert.match(menuBehavior, /personDisplayLabel\(payload\.member \?\? \{\}\)/);
 });
 
 test("모바일 시공 일정은 직접 크게 보기와 전체화면·가로보기 안전 대체 동작을 쓴다", async () => {

@@ -9,6 +9,7 @@ import {
 } from "../../../../lib/authored-quotations";
 import {
   downloadDriveFile,
+  googleDriveStorageErrorResponse,
   isGoogleDriveConfigured,
   organizeDriveFile,
   removeDriveFile,
@@ -107,7 +108,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    return accessErrorResponse(error);
+    return googleDriveStorageErrorResponse(error) ?? accessErrorResponse(error);
   }
 }
 

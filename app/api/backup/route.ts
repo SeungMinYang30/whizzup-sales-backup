@@ -24,6 +24,7 @@ import {
   createDriveResumableUpload,
   downloadDriveFile,
   ensureDrivePath,
+  googleDriveStorageErrorResponse,
   isDriveFolder,
   listDriveChildren,
   uploadDriveFile,
@@ -321,7 +322,7 @@ function validationErrorResponse(error: unknown) {
   ) {
     return Response.json({ error: error.message }, { status: 400 });
   }
-  return accessErrorResponse(error);
+  return googleDriveStorageErrorResponse(error) ?? accessErrorResponse(error);
 }
 
 async function readPayload(request: Request) {

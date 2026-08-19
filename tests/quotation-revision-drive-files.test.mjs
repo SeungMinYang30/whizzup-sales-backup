@@ -15,6 +15,8 @@ const migration = await readFile(new URL("../drizzle/0083_quotation_revisions_an
 const trashMigration = await readFile(new URL("../drizzle/0084_quotation_trash_and_upload_guard.sql", import.meta.url), "utf8");
 const quotationsRoute = await readFile(new URL("../app/api/quotations/route.ts", import.meta.url), "utf8");
 const quotationReconcileRoute = await readFile(new URL("../app/api/quotations/reconcile/route.ts", import.meta.url), "utf8");
+const quotationDownloads = await readFile(new URL("../app/authored-quotation-downloads.ts", import.meta.url), "utf8");
+const quotationHistory = await readFile(new URL("../app/organization-quotation-history.tsx", import.meta.url), "utf8");
 
 test("quotation actions distinguish drafts, current final files and same-number editing", () => {
   assert.match(page, /이어서 작성/);
@@ -102,6 +104,17 @@ test("generated Drive file names and PDF use one canonical quotation name", () =
   assert.match(pdf, /식별번호/);
   assert.match(pdf, /견적 조건 및 특이사항/);
   assert.match(pdf, /금액 요약/);
+});
+
+test("saved quotation downloads regenerate from current data when Drive is unavailable", () => {
+  assert.match(page, /storedQuotationFile\(quote\.pdfUrl/);
+  assert.match(page, /await createAuthoredQuotationPdf\(quote\)/);
+  assert.match(page, /await quotationWorkbookFile\(quote\)/);
+  assert.match(page, /저장소 연결이 원활하지 않아 현재 최종 견적 내용으로/);
+  assert.match(quotationDownloads, /createAuthoredQuotationWorkbookFile/);
+  assert.match(quotationDownloads, /createQuotationWorkbook/);
+  assert.match(quotationHistory, /downloadQuotationPdf/);
+  assert.match(quotationHistory, /downloadQuotationExcel/);
 });
 
 test("existing Drive quotation files are renamed and moved in place", () => {

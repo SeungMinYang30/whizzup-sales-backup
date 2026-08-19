@@ -19,6 +19,7 @@ import { createInternalProfitReportWorkbook, type InternalProfitReportWorkbookIn
 import { createConsortiumSettlementPdf, createInternalProfitReportPdf } from "./consortium-settlement-pdf";
 import { hasProcurementSignal, procurementNumbersFromText } from "../lib/procurement-product";
 import { createAuthoredQuotationPdf } from "./authored-quotation-pdf";
+import { createAuthoredQuotationWorkbookFile, storedQuotationFile } from "./authored-quotation-downloads";
 import { quotationDownloadName } from "../lib/quotation-file-name";
 import { createFieldInspectionPdfFile, createFieldInspectionWorkbookFile } from "./field-inspection-documents";
 import { resolveInspectionVisitorName, useAutoCloseQuotationOutputMenus, useInspectionVisitorName } from "./quotation-output-menu-behavior";
@@ -2220,51 +2221,7 @@ export default function QuotationManagementPage({
   }
 
   async function quotationWorkbookFile(quote: AuthoredQuotation) {
-    const [logoResponse, sealResponse, airpassSealResponse] = await Promise.all([
-      fetch("/whizzup-logo.png"),
-      quote.includeStamp ? fetch("/whizzup-seal.png") : Promise.resolve(null),
-      quote.items.some((item) => item.equipmentKit) ? fetch("/airpass-seal.png") : Promise.resolve(null),
-    ]);
-    const logoData = logoResponse.ok ? new Uint8Array(await logoResponse.arrayBuffer()) : undefined;
-    const sealData = sealResponse?.ok ? new Uint8Array(await sealResponse.arrayBuffer()) : undefined;
-    const airpassSealData = airpassSealResponse?.ok ? new Uint8Array(await airpassSealResponse.arrayBuffer()) : undefined;
-    const bytes = createQuotationWorkbook({
-      customerName: quote.organization,
-      quoteDate: quote.quoteDate,
-      projectTitle: quote.projectTitle,
-      quoteNumber: quote.quoteNumber,
-      validUntil: quote.validUntil,
-      includeStamp: quote.includeStamp,
-      discountAmount: quote.discountAmount,
-      extraAmount: quote.extraAmount,
-      memo: quote.memo,
-      logoData,
-      sealData,
-      airpassSealData,
-      equipmentKit: quote.items.find((item) => item.equipmentKit)?.equipmentKit,
-      equipmentKitComplimentary: Boolean(quote.items.find((item) => item.equipmentKit)?.complimentary),
-      lines: quote.items.map((item) => ({
-        name: item.name,
-        specification: item.specification,
-        quantity: item.quantity,
-        unit: item.unit,
-        unitPrice: item.unitPrice,
-        note: item.note,
-        procurement: item.procurement,
-        procurementChannel: item.procurementChannel,
-        procurementNumber: item.procurementNumber,
-        procurementFeeRate: item.procurementFeeRate,
-        equipmentKit: Boolean(item.equipmentKit),
-        complimentary: Boolean(item.complimentary),
-      })),
-    });
-    const workbookBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    return new File([workbookBuffer], quotationDownloadName({
-      ...quote,
-      region: quotationRegion(quote),
-    }, "xlsx"), {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
+    return createAuthoredQuotationWorkbookFile(quote, quotationRegion(quote));
   }
 
   async function storeQuotationFiles(quote: AuthoredQuotation, options: { replaceExisting?: boolean; sourceFile?: File | null } = {}) {
@@ -2354,54 +2311,62 @@ export default function QuotationManagementPage({
   }
 
   async function viewSavedPdf(quote: AuthoredQuotation) {
-    if (!quote.pdfUrl) {
-      setMessage("저장된 PDF 파일이 없습니다. 견적 수정에서 최종 저장하면 현재 PDF가 생성됩니다.");
-      return;
-    }
-    const tab = window.open(quote.pdfUrl, "_blank");
-    if (tab) tab.opener = null;
-    if (!tab) setMessage("새 탭이 차단되었습니다. 브라우저의 팝업 및 리디렉션 허용 후 PDF 보기를 다시 눌러 주세요.");
-  }
-
-  async function downloadSavedExcel(quote: AuthoredQuotation) {
-    if (!quote.excelUrl) {
-      setMessage("저장된 Excel 파일이 없습니다. 견적 수정에서 최종 저장하면 현재 Excel이 생성됩니다.");
+    const tab = reservePdfTab();
+    if (!tab) {
+      setMessage("새 탭이 차단되었습니다. 브라우저의 팝업 및 리디렉션 허용 후 PDF 보기를 다시 눌러 주세요.");
       return;
     }
     try {
-      const response = await fetch(quote.excelUrl, { cache: "no-store" });
-      if (!response.ok) throw new Error("저장된 Excel을 내려받지 못했습니다.");
-      const url = URL.createObjectURL(await response.blob());
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = quote.driveXlsxName || quotationDownloadName({
-        ...quote,
-        region: quotationRegion(quote),
-      }, "xlsx");
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "저장된 Excel을 내려받지 못했습니다.");
+      const file = quote.pdfUrl
+        ? await storedQuotationFile(quote.pdfUrl, "저장된 PDF를 불러오지 못했습니다.")
+        : await createAuthoredQuotationPdf(quote);
+      if (!openPdfBlobInReservedTab(file, tab)) {
+        setMessage("새 탭에서 PDF를 열지 못했습니다. PDF 다운로드를 이용해 주세요.");
+        return;
+      }
+      setMessage(quote.pdfUrl ? "" : "저장 파일이 없어 현재 견적 내용으로 PDF를 만들었습니다.");
+    } catch (storageError) {
+      try {
+        const generated = await createAuthoredQuotationPdf(quote);
+        if (!openPdfBlobInReservedTab(generated, tab)) throw new Error("새 탭에서 PDF를 열지 못했습니다.");
+        setMessage("저장소 연결이 원활하지 않아 현재 최종 견적 내용으로 PDF를 다시 만들었습니다.");
+      } catch (generationError) {
+        tab.close();
+        setMessage(generationError instanceof Error ? generationError.message : storageError instanceof Error ? storageError.message : "견적서 PDF를 열지 못했습니다.");
+      }
+    }
+  }
+
+  async function downloadSavedExcel(quote: AuthoredQuotation) {
+    try {
+      if (!quote.excelUrl) throw new Error("저장된 Excel 파일이 없습니다.");
+      const stored = await storedQuotationFile(quote.excelUrl, "저장된 Excel을 내려받지 못했습니다.");
+      downloadBlob(stored, quote.driveXlsxName || quotationDownloadName({ ...quote, region: quotationRegion(quote) }, "xlsx"));
+      setMessage("견적서 Excel을 다운로드했습니다.");
+    } catch {
+      try {
+        downloadBlob(await quotationWorkbookFile(quote), quotationDownloadName({ ...quote, region: quotationRegion(quote) }, "xlsx"));
+        setMessage("저장소 연결이 원활하지 않아 현재 최종 견적 내용으로 Excel을 다시 만들어 다운로드했습니다.");
+      } catch (generationError) {
+        setMessage(generationError instanceof Error ? generationError.message : "견적서 Excel을 만들지 못했습니다.");
+      }
     }
   }
 
   async function downloadSavedPdf(quote: AuthoredQuotation) {
-    if (!quote.pdfUrl) {
-      setMessage("저장된 PDF 파일이 없습니다. 견적 수정에서 최종 저장하면 현재 PDF가 생성됩니다.");
-      return;
-    }
     try {
-      const response = await fetch(quote.pdfUrl, { cache: "no-store" });
-      if (!response.ok) throw new Error("저장된 PDF를 내려받지 못했습니다.");
-      downloadBlob(await response.blob(), quote.drivePdfName || quotationDownloadName({
-        ...quote,
-        region: quotationRegion(quote),
-      }, "pdf"));
+      if (!quote.pdfUrl) throw new Error("저장된 PDF 파일이 없습니다.");
+      const stored = await storedQuotationFile(quote.pdfUrl, "저장된 PDF를 내려받지 못했습니다.");
+      downloadBlob(stored, quote.drivePdfName || quotationDownloadName({ ...quote, region: quotationRegion(quote) }, "pdf"));
       setMessage("견적서 PDF를 다운로드했습니다.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "저장된 PDF를 내려받지 못했습니다.");
+    } catch {
+      try {
+        const generated = await createAuthoredQuotationPdf(quote);
+        downloadBlob(generated, quotationDownloadName({ ...quote, region: quotationRegion(quote) }, "pdf"));
+        setMessage("저장소 연결이 원활하지 않아 현재 최종 견적 내용으로 PDF를 다시 만들어 다운로드했습니다.");
+      } catch (generationError) {
+        setMessage(generationError instanceof Error ? generationError.message : "견적서 PDF를 만들지 못했습니다.");
+      }
     }
   }
 
@@ -2790,11 +2755,11 @@ export default function QuotationManagementPage({
             {!embedded && <details className="quotation-output-menu">
               <summary>PDF</summary>
               <div className="quotation-output-menu-panel">
-                <button type="button" disabled={!quote.pdfUrl || quote.driveSyncStatus !== "ready"} onClick={() => void viewSavedPdf(quote)}>보기</button>
-                <button type="button" disabled={!quote.pdfUrl || quote.driveSyncStatus !== "ready"} onClick={() => void downloadSavedPdf(quote)}>다운로드</button>
+                <button type="button" disabled={!quote.items.length} onClick={() => void viewSavedPdf(quote)}>보기</button>
+                <button type="button" disabled={!quote.items.length} onClick={() => void downloadSavedPdf(quote)}>다운로드</button>
               </div>
             </details>}
-            {!embedded && <button className="app-button app-button-secondary app-button-small" type="button" disabled={!quote.excelUrl || quote.driveSyncStatus !== "ready"} onClick={() => void downloadSavedExcel(quote)}>Excel 다운로드</button>}
+            {!embedded && <button className="app-button app-button-secondary app-button-small" type="button" disabled={!quote.items.length} onClick={() => void downloadSavedExcel(quote)}>Excel 다운로드</button>}
             {!embedded && <details className="quotation-output-menu quotation-output-menu-inspection">
               <summary>현장 검수서류</summary>
               <div className="quotation-output-menu-panel">
@@ -2845,7 +2810,7 @@ export default function QuotationManagementPage({
                 <summary>견적서 PDF</summary>
                 <div className="quotation-output-menu-panel">
                   <button type="button" onClick={printQuotation} disabled={!draft.items.length}>보기·출력</button>
-                  <button type="button" onClick={() => { const saved = draft.id ? quotes.find((quote) => quote.id === draft.id) : undefined; if (saved) void downloadSavedPdf(saved); }} disabled={!draft.id || !quotes.some((quote) => quote.id === draft.id && Boolean(quote.pdfUrl))}>다운로드</button>
+                  <button type="button" onClick={() => { const saved = draft.id ? quotes.find((quote) => quote.id === draft.id) : undefined; if (saved) void downloadSavedPdf(saved); }} disabled={!draft.id || !quotes.some((quote) => quote.id === draft.id && quote.items.length > 0)}>다운로드</button>
                 </div>
               </details>
               {draft.id && draft.status === "final" && <details className="quotation-output-menu quotation-output-menu-topbar quotation-output-menu-inspection">

@@ -13,6 +13,8 @@ test("root layout installs one common save failure notifier", async () => {
   assert.match(feedback, /MUTATION_METHODS = new Set\(\["POST", "PUT", "PATCH", "DELETE"\]\)/);
   assert.match(feedback, /response\.clone\(\)/);
   assert.match(feedback, /NON_SAVE_API_PREFIXES/);
+  assert.match(feedback, /X-WHIZZUP-Request-Mode/);
+  assert.match(feedback, /!readOnly/);
   assert.match(feedback, /\/api\/standby-sync/);
   assert.match(feedback, /document\.addEventListener\("invalid", handleInvalid, true\)/);
   assert.match(feedback, /role="alertdialog" aria-modal="true"/);
