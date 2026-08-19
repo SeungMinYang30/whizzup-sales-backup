@@ -1,6 +1,5 @@
 import { getD1, isPostgresDatabase } from "../db";
 import { getPostgresObjectStorage } from "./postgres-object-storage";
-import { RESOURCE_UPLOAD_CHUNK_BYTES } from "./resource-upload-config";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
@@ -8,7 +7,6 @@ const ROOT_FOLDER_NAME = "WHIZZUP 자료실";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const LOCAL_FILE_PREFIX = "postgres-object:";
 const LOCAL_FOLDER_ID = "postgres-object-storage";
-const LOCAL_UPLOAD_CHUNK_BYTES = RESOURCE_UPLOAD_CHUNK_BYTES;
 
 export type GoogleDriveStorageErrorCode =
   | "DRIVE_NOT_CONFIGURED"
@@ -154,109 +152,13 @@ export function isGoogleDriveConfigured() {
 }
 
 export function isResourceStorageConfigured() {
-  return isGoogleDriveConfigured() || isPostgresDatabase();
+  return isGoogleDriveConfigured();
 }
 
 function localFileKey(fileId: string) {
   return fileId.startsWith(LOCAL_FILE_PREFIX)
     ? fileId.slice(LOCAL_FILE_PREFIX.length)
     : "";
-}
-
-function localUploadSession(input: {
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
-  contextType: string;
-  contextId?: string;
-  createdBy: number;
-}) {
-  const key = `resource-files/${crypto.randomUUID()}`;
-  const url = new URL("postgres-object://upload");
-  url.searchParams.set("key", key);
-  url.searchParams.set("name", input.fileName.slice(0, 240));
-  url.searchParams.set("mimeType", input.mimeType || "application/octet-stream");
-  url.searchParams.set("sizeBytes", String(input.sizeBytes));
-  url.searchParams.set("contextType", input.contextType.slice(0, 60));
-  url.searchParams.set("contextId", text(input.contextId).slice(0, 180));
-  url.searchParams.set("createdBy", String(input.createdBy));
-  url.searchParams.set("chunkBytes", String(LOCAL_UPLOAD_CHUNK_BYTES));
-  return { uploadUrl: url.toString(), folderId: LOCAL_FOLDER_ID };
-}
-
-async function uploadLocalResumableChunk(input: {
-  uploadUrl: string;
-  body: ArrayBuffer;
-  contentRange: string;
-  mimeType: string;
-}) {
-  const session = new URL(input.uploadUrl);
-  const key = session.searchParams.get("key") || "";
-  const expectedSize = Number(session.searchParams.get("sizeBytes"));
-  const chunkBytes = Number(session.searchParams.get("chunkBytes")) || LOCAL_UPLOAD_CHUNK_BYTES;
-  const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(input.contentRange);
-  if (
-    session.protocol !== "postgres-object:" ||
-    session.hostname !== "upload" ||
-    !key.startsWith("resource-files/") ||
-    !Number.isSafeInteger(expectedSize) ||
-    !range ||
-    Number(range[3]) !== expectedSize
-  ) {
-    throw new Error("올바르지 않은 독립 저장소 업로드 정보입니다.");
-  }
-  const start = Number(range[1]);
-  const end = Number(range[2]);
-  if (start < 0 || end < start || end >= expectedSize) {
-    throw new Error("독립 저장소 업로드 범위를 확인해 주세요.");
-  }
-  const storage = getPostgresObjectStorage();
-  const partKey = `${key}.part.${start}`;
-  await storage.put(partKey, input.body, {
-    httpMetadata: { contentType: input.mimeType || "application/octet-stream" },
-  });
-  if (end + 1 < expectedSize) {
-    return { complete: false as const, range: `bytes=0-${end}` };
-  }
-
-  const parts: Array<{ key: string; bytes: Uint8Array }> = [];
-  for (let offset = 0; offset < expectedSize; offset += chunkBytes) {
-    const currentKey = `${key}.part.${offset}`;
-    const stored = await storage.get(currentKey);
-    if (!stored) throw new Error("업로드한 파일 조각을 찾지 못했습니다.");
-    parts.push({ key: currentKey, bytes: new Uint8Array(await stored.arrayBuffer()) });
-  }
-  const combined = new Uint8Array(expectedSize);
-  let writeOffset = 0;
-  for (const part of parts) {
-    combined.set(part.bytes, writeOffset);
-    writeOffset += part.bytes.byteLength;
-  }
-  if (writeOffset !== expectedSize) throw new Error("업로드한 파일 크기가 일치하지 않습니다.");
-  const appProperties = {
-    whizzup: "1",
-    contextType: session.searchParams.get("contextType") || "resource-library",
-    contextId: session.searchParams.get("contextId") || "",
-    createdBy: session.searchParams.get("createdBy") || "",
-  };
-  const fileName = session.searchParams.get("name") || "file";
-  const mimeType = session.searchParams.get("mimeType") || input.mimeType || "application/octet-stream";
-  await storage.put(key, combined, {
-    httpMetadata: { contentType: mimeType },
-    customMetadata: { fileName, folderId: LOCAL_FOLDER_ID, ...appProperties },
-  });
-  await storage.delete(parts.map((part) => part.key));
-  return {
-    complete: true as const,
-    file: {
-      id: `${LOCAL_FILE_PREFIX}${key}`,
-      name: fileName,
-      mimeType,
-      size: String(expectedSize),
-      parents: [LOCAL_FOLDER_ID],
-      appProperties,
-    },
-  };
 }
 
 function requireConfig() {
@@ -911,21 +813,13 @@ export async function createDriveResumableUpload(input: {
   createdBy: number;
 }) {
   if (!isGoogleDriveConfigured()) {
-    if (!isPostgresDatabase()) {
-      throw new Error("Google Drive 자료실 연결 정보가 등록되지 않았습니다.");
-    }
-    return localUploadSession(input);
+    throw new GoogleDriveStorageError(
+      "DRIVE_NOT_CONFIGURED",
+      "Google Drive 연결 정보가 없어 파일을 저장하지 않았습니다. 관리자 센터에서 Drive 연결을 확인해 주세요.",
+      503,
+    );
   }
-  let folderId = "";
-  try {
-    folderId = await ensureDrivePath(input.folderSegments);
-  } catch (error) {
-    if (!isPostgresDatabase()) throw error;
-    console.warn("Google Drive upload fell back to independent storage", {
-      code: error instanceof GoogleDriveStorageError ? error.code : "temporary",
-    });
-    return localUploadSession(input);
-  }
+  const folderId = await ensureDrivePath(input.folderSegments);
   const metadata = {
     name: input.fileName.slice(0, 240),
     parents: [folderId],
@@ -968,8 +862,11 @@ export async function uploadDriveResumableChunk(input: {
   mimeType: string;
 }) {
   if (input.uploadUrl.startsWith("postgres-object://")) {
-    if (!isPostgresDatabase()) throw new Error("독립 파일 저장소를 사용할 수 없습니다.");
-    return uploadLocalResumableChunk(input);
+    throw new GoogleDriveStorageError(
+      "DRIVE_SESSION_EXPIRED",
+      "이전 업로드 세션은 더 이상 사용할 수 없습니다. Google Drive 연결을 확인한 뒤 업로드를 다시 시작해 주세요.",
+      410,
+    );
   }
   if (!input.uploadUrl.startsWith(`${DRIVE_UPLOAD_API}/files?`)) {
     throw new Error("올바르지 않은 Google Drive 업로드 주소입니다.");

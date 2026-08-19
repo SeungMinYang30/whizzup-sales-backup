@@ -50,10 +50,11 @@ test("quotation and resource downloads preserve actionable Drive errors", async 
   assert.match(resourceRoute, /downloadDriveFile\(row\.drive_file_id\)/);
 });
 
-test("new resource uploads fall back to independent Vercel storage during Drive outages", async () => {
+test("new resource uploads fail closed when Drive is unavailable", async () => {
   const source = await read("lib/google-drive-storage.ts");
-  assert.match(source, /Google Drive upload fell back to independent storage/);
-  assert.match(source, /if \(!isPostgresDatabase\(\)\) throw error/);
-  assert.match(source, /return localUploadSession\(input\)/);
-  assert.match(source, /postgres-object:\/\/upload/);
+  assert.match(source, /return isGoogleDriveConfigured\(\)/);
+  assert.match(source, /Google Drive 연결 정보가 없어 파일을 저장하지 않았습니다/);
+  assert.match(source, /이전 업로드 세션은 더 이상 사용할 수 없습니다/);
+  assert.doesNotMatch(source, /return localUploadSession\(input\)/);
+  assert.doesNotMatch(source, /Google Drive upload fell back to independent storage/);
 });

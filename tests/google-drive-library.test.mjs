@@ -12,14 +12,17 @@ test("keeps Google Drive credentials in runtime environment variables", async ()
   assert.doesNotMatch(source, /4\/0A[A-Za-z0-9_-]{20,}/);
 });
 
-test("Vercel keeps resource uploads available through independent Postgres storage", async () => {
+test("Vercel stores new resource uploads only in Google Drive", async () => {
   const [driveStorage, uploadRoute, resourceRoute] = await Promise.all([
     read("lib/google-drive-storage.ts"),
     read("app/api/resources/upload-session/route.ts"),
     read("app/api/resources/route.ts"),
   ]);
   assert.match(driveStorage, /export function isResourceStorageConfigured/);
-  assert.match(driveStorage, /postgres-object:\/\/upload/);
+  assert.match(driveStorage, /return isGoogleDriveConfigured\(\)/);
+  assert.doesNotMatch(driveStorage, /postgres-object:\/\/upload/);
+  assert.doesNotMatch(driveStorage, /uploadLocalResumableChunk/);
+  // 과거 PostgreSQL 객체 파일의 열람·보관 호환은 유지합니다.
   assert.match(driveStorage, /getPostgresObjectStorage\(\)/);
   assert.match(driveStorage, /resource-archive\//);
   assert.match(uploadRoute, /isResourceStorageConfigured\(\)/);
@@ -47,6 +50,18 @@ test("preserves XLSX quotations while keeping PDF previews", async () => {
   assert.match(client, /formData\.set\("sourceFile", pdfFile\)/);
   assert.match(route, /sourceFile instanceof File \? sourceFile : pdf/);
   assert.match(route, /01_기관자료/);
+  assert.match(route, /institution-quotation-preview/);
+  assert.match(route, /pageKeys\.push\(driveObjectKey\(preview\.fileId\)\)/);
+  assert.doesNotMatch(route, /bucket\.put\(pageKeys/);
+});
+
+test("stores new award vendor documents in Drive while preserving legacy reads", async () => {
+  const route = await read("app/api/award-vendors/documents/route.ts");
+  assert.match(route, /contextType: "award-vendor-document"/);
+  assert.match(route, /const objectKey = driveObjectKey\(uploaded\.fileId\)/);
+  assert.match(route, /driveFileIdFromKey\(row\.object_key\)/);
+  assert.match(route, /getAwardVendorBucket\(\)\.get\(row\.object_key\)/);
+  assert.doesNotMatch(route, /getAwardVendorBucket\(\)\.put/);
 });
 
 test("automatically lists unmanaged Drive videos and never cleans up referenced files", async () => {

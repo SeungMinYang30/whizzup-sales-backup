@@ -21,7 +21,7 @@ import {
   downloadDriveFile,
   driveFileIdFromKey,
   driveObjectKey,
-  isGoogleDriveConfigured,
+  googleDriveStorageErrorResponse,
   moveDriveFile,
   removeDriveFile,
   rollbackDriveMoves,
@@ -77,7 +77,9 @@ async function serveStoredFile(request: Request, id: number) {
         ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         : "application/pdf");
     const disposition =
-      searchParams.get("download") === "1" || contentType !== "application/pdf"
+      kind === "page"
+        ? "inline"
+        : searchParams.get("download") === "1" || contentType !== "application/pdf"
         ? "attachment"
         : "inline";
     return new Response(stored.body, {
@@ -149,8 +151,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const uploadedKeys: string[] = [];
-  let uploadedDriveFileId = "";
+  const uploadedDriveFileIds: string[] = [];
   try {
     const member = await requirePrimaryOwner();
     const formData = await request.formData();
@@ -229,65 +230,47 @@ export async function POST(request: Request) {
       }).format(new Date());
 
     const d1 = await ensureQuotationDocumentsReady();
-    const storage = await quotationStorageStats(d1);
-    const originalFile =
-      isGoogleDriveConfigured() && sourceFile instanceof File ? sourceFile : pdf;
+    const originalFile = sourceFile instanceof File ? sourceFile : pdf;
     const totalSize = originalFile.size + pages.reduce((sum, page) => sum + page.size, 0);
-    if (!isGoogleDriveConfigured() && totalSize > storage.remainingBytes) {
-      return Response.json(
-        { error: "견적서 저장공간이 부족합니다. 기존 파일을 정리해 주세요." },
-        { status: 413 },
-      );
-    }
-
-    const prefix = `quotation-documents/${crypto.randomUUID()}`;
-    let originalKey = `${prefix}/original.pdf`;
-    const pageKeys = pages.map(
-      (_, index) => `${prefix}/page-${String(index + 1).padStart(3, "0")}.webp`,
-    );
-    const bucket = getQuotationBucket();
-    if (isGoogleDriveConfigured()) {
-      const regionRow = await d1
-        .prepare(
-          `SELECT region FROM activities
-           WHERE organization = ? AND business_round = ? AND TRIM(region) <> ''
-           ORDER BY updated_at DESC, id DESC LIMIT 1`,
-        )
-        .bind(organization, businessRound)
-        .first<{ region: string }>();
-      const stored = await uploadDriveFile({
-        file: originalFile,
-        folderSegments: [
-          "01_기관자료",
-          safeDriveFolderName(regionRow?.region, "지역 미분류"),
-          safeDriveFolderName(organization),
-          "견적서",
-          quoteDate.slice(0, 4),
-        ],
-        contextType: "institution-quotation",
-        contextId: `${organization}|${businessRound}`,
-      });
-      uploadedDriveFileId = stored.fileId;
-      originalKey = driveObjectKey(stored.fileId);
-    } else {
-      await bucket.put(originalKey, pdf, {
-        httpMetadata: {
-          contentType: "application/pdf",
-          contentDisposition: "inline",
-        },
-        customMetadata: { organization, originalName: pdf.name.slice(0, 240) },
-      });
-      uploadedKeys.push(originalKey);
-    }
+    const regionRow = await d1
+      .prepare(
+        `SELECT region FROM activities
+         WHERE organization = ? AND business_round = ? AND TRIM(region) <> ''
+         ORDER BY updated_at DESC, id DESC LIMIT 1`,
+      )
+      .bind(organization, businessRound)
+      .first<{ region: string }>();
+    const folderSegments = [
+      "01_기관자료",
+      safeDriveFolderName(regionRow?.region, "지역 미분류"),
+      safeDriveFolderName(organization),
+      "견적서",
+      quoteDate.slice(0, 4),
+    ];
+    const stored = await uploadDriveFile({
+      file: originalFile,
+      folderSegments,
+      contextType: "institution-quotation",
+      contextId: `${organization}|${businessRound}`,
+    });
+    uploadedDriveFileIds.push(stored.fileId);
+    const originalKey = driveObjectKey(stored.fileId);
+    const pageKeys: string[] = [];
     for (let index = 0; index < pages.length; index += 1) {
-      await bucket.put(pageKeys[index], pages[index], {
-        httpMetadata: { contentType: pages[index].type || "image/webp" },
-        customMetadata: {
-          organization,
-          page: String(index + 1),
-        },
+      const page = pages[index];
+      const previewFile = new File(
+        [page],
+        `preview-${String(index + 1).padStart(3, "0")}.webp`,
+        { type: page.type || "image/webp" },
+      );
+      const preview = await uploadDriveFile({
+        file: previewFile,
+        folderSegments,
+        contextType: "institution-quotation-preview",
+        contextId: `${organization}|${businessRound}|${index + 1}`,
       });
-      uploadedKeys.push(pageKeys[index]);
+      uploadedDriveFileIds.push(preview.fileId);
+      pageKeys.push(driveObjectKey(preview.fileId));
     }
 
     const row = await d1
@@ -326,22 +309,15 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
-    if (uploadedDriveFileId) {
-      await removeDriveFile(uploadedDriveFileId).catch(() => undefined);
-    }
-    if (uploadedKeys.length) {
-      try {
-        await getQuotationBucket().delete(uploadedKeys);
-      } catch {
-        // The database row is not created, so a later storage cleanup can remove these keys.
-      }
-    }
-    return accessErrorResponse(error);
+    await Promise.all(
+      uploadedDriveFileIds.map((fileId) => removeDriveFile(fileId).catch(() => undefined)),
+    );
+    return googleDriveStorageErrorResponse(error) ?? accessErrorResponse(error);
   }
 }
 
 export async function DELETE(request: Request) {
-  let archivedDriveMove: Awaited<ReturnType<typeof moveDriveFile>> | null = null;
+  const archivedDriveMoves: Awaited<ReturnType<typeof moveDriveFile>>[] = [];
   try {
     const member = await requirePrimaryOwner();
     const payload = (await request.json()) as { id?: unknown };
@@ -354,15 +330,19 @@ export async function DELETE(request: Request) {
       return Response.json({ error: "견적서를 찾지 못했습니다." }, { status: 404 });
     }
     await ensureTrashReady();
-    const driveFileId = driveFileIdFromKey(row.original_key);
-    if (driveFileId) {
-      archivedDriveMove = await moveDriveFile(driveFileId, [
-        "99_보관",
-        "기관자료",
-        safeDriveFolderName(row.organization),
-        "견적서",
-        String(new Date().getFullYear()),
-      ]);
+    const archiveFolder = [
+      "99_보관",
+      "기관자료",
+      safeDriveFolderName(row.organization),
+      "견적서",
+      String(new Date().getFullYear()),
+    ];
+    const driveFileIds = [
+      driveFileIdFromKey(row.original_key),
+      ...parseStoredStringList(row.page_keys_json).map(driveFileIdFromKey),
+    ].filter((fileId): fileId is string => Boolean(fileId));
+    for (const driveFileId of driveFileIds) {
+      archivedDriveMoves.push(await moveDriveFile(driveFileId, archiveFolder));
     }
     const trashBatchId = await createTrashBatch(
       d1,
@@ -379,9 +359,9 @@ export async function DELETE(request: Request) {
       storage: await quotationStorageStats(d1),
     });
   } catch (error) {
-    if (archivedDriveMove) {
-      await rollbackDriveMoves([archivedDriveMove]).catch(() => undefined);
+    if (archivedDriveMoves.length) {
+      await rollbackDriveMoves(archivedDriveMoves).catch(() => undefined);
     }
-    return accessErrorResponse(error);
+    return googleDriveStorageErrorResponse(error) ?? accessErrorResponse(error);
   }
 }

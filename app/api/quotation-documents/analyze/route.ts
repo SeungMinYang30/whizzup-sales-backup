@@ -9,6 +9,11 @@ import {
   type QuotationDocumentRow,
 } from "../../../../lib/quotation-documents";
 import {
+  downloadDriveFile,
+  driveFileIdFromKey,
+  googleDriveStorageErrorResponse,
+} from "../../../../lib/google-drive-storage";
+import {
   hasProcurementSignal,
   procurementNumbersFromText,
 } from "../../../../lib/procurement-product";
@@ -130,12 +135,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const stored = await getQuotationBucket().get(document.original_key);
+    const driveFileId = driveFileIdFromKey(document.original_key);
+    const stored = driveFileId
+      ? await downloadDriveFile(driveFileId)
+      : await getQuotationBucket().get(document.original_key);
     if (!stored) {
-      return Response.json(
-        { error: "저장된 PDF 파일을 찾지 못했습니다." },
-        { status: 404 },
-      );
+      return Response.json({ error: "저장된 PDF 파일을 찾지 못했습니다." }, { status: 404 });
     }
 
     const { apiKey, model, configured } = await getOpenAIConfig();
@@ -147,7 +152,7 @@ export async function POST(request: Request) {
     }
 
     const fileData = bytesToDataUrl(
-      new Uint8Array(await stored.arrayBuffer()),
+      new Uint8Array(await new Response(stored.body).arrayBuffer()),
     );
     const openAIResponse = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -290,6 +295,6 @@ quoteAmount에는 문서의 최종 견적 합계 금액을 적으세요.
         { status: 504 },
       );
     }
-    return accessErrorResponse(error);
+    return googleDriveStorageErrorResponse(error) ?? accessErrorResponse(error);
   }
 }
