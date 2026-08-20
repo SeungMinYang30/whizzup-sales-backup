@@ -166,6 +166,31 @@ test("과거 위즈업 수주 뒤 최신 협력사 수주가 있으면 회계 �
   assert.deepEqual(upcomingWhizzupAwardRows(rows), []);
 });
 
+test("사용자가 최신 활동을 미정으로 저장하면 과거 위즈업 수주는 회계 대상에서 제외한다", () => {
+  const rows = [
+    {
+      activity_id: 45,
+      activity_date: "2026-08-13",
+      organization: "웨스포어린이집",
+      business_round: 1,
+      award_status: "위즈업 수주",
+      award_stage: "납품 완료",
+    },
+    {
+      activity_id: 46,
+      activity_date: "2026-08-20",
+      organization: "웨스포어린이집",
+      business_round: 1,
+      award_status: "미정",
+      award_status_explicit: 1,
+      award_stage: "미정",
+    },
+  ];
+
+  assert.deepEqual(completedWhizzupAwardRows(rows), []);
+  assert.deepEqual(upcomingWhizzupAwardRows(rows), []);
+});
+
 test("과거 협력사 수주 뒤 최신 위즈업 납품 완료면 회계 대상에 포함한다", () => {
   const rows = [
     {

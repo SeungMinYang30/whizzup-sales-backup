@@ -1,5 +1,10 @@
 import { institutionAliasKey } from "./institution-names";
 import { normalizeAwardCompletedDate } from "./award-completion";
+import {
+  awardBusinessKey,
+  awardStatusForRecord,
+  latestAwardStateRecords,
+} from "./award-state";
 
 export type AnalyticsAwardRow = Record<string, unknown>;
 
@@ -171,7 +176,17 @@ export function groupAnalyticsAwardRows(rows: AnalyticsAwardRow[]) {
 export function groupLatestAuthoritativeAwardRows(
   rows: AnalyticsAwardRow[],
 ) {
-  return groupAnalyticsAwardRows(rows.filter(isAuthoritativeAwardRow));
+  const activeKeys = new Set(
+    latestAwardStateRecords(rows)
+      .filter((row) => awardStatusForRecord(row) !== "미정")
+      .map(awardBusinessKey),
+  );
+  return groupAnalyticsAwardRows(
+    rows.filter(
+      (row) =>
+        isAuthoritativeAwardRow(row) && activeKeys.has(awardBusinessKey(row)),
+    ),
+  );
 }
 
 export function completedWhizzupAwardRows(rows: AnalyticsAwardRow[]) {

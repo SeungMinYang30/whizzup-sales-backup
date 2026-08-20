@@ -62,6 +62,7 @@ import {
   resolveUniqueExistingInstitutionName,
 } from "../lib/institution-names";
 import { analyticsBusinessRoundKey } from "../lib/analytics-business-rounds";
+import { latestAwardRecords as resolveLatestAwardRecords } from "../lib/award-state";
 import GlobalInstitutionSearch from "./global-institution-search";
 import {
   DEFAULT_PROCUREMENT_FEE_RATE,
@@ -184,6 +185,7 @@ type Activity = {
   statusManual: boolean;
   temperature: string;
   awardStatus: string;
+  awardStatusExplicit: boolean;
   awardCompany: string;
   executionType: string;
   consortiumCompany: string;
@@ -1647,6 +1649,7 @@ const emptyForm: FormState = {
   statusManual: false,
   temperature: "중간",
   awardStatus: "미정",
+  awardStatusExplicit: false,
   awardCompany: "",
   executionType: "직영",
   consortiumCompany: "",
@@ -2070,6 +2073,9 @@ function normalize(row: Record<string, unknown>): Activity {
     statusManual: Boolean(Number(value("statusManual", "status_manual"))),
     temperature: String(row.temperature ?? ""),
     awardStatus,
+    awardStatusExplicit: Boolean(
+      Number(value("awardStatusExplicit", "award_status_explicit")),
+    ),
     awardCompany: String(value("awardCompany", "award_company")),
     executionType: isOtherCompanyAward
       ? "해당 없음"
@@ -2656,6 +2662,7 @@ function activityToForm(record: Activity): FormState {
     statusManual: record.statusManual,
     temperature: record.temperature,
     awardStatus: record.awardStatus,
+    awardStatusExplicit: record.awardStatusExplicit,
     awardCompany: record.awardCompany,
     executionType: record.executionType,
     consortiumCompany: record.consortiumCompany,
@@ -7665,30 +7672,13 @@ export default function CrmApp({
     );
   }, [partnerCompanySearch, registeredPartnerRecords]);
 
-  const latestAwardRecords = useMemo(() => {
-    const byBusinessRound = new Map<string, Activity>();
-    [...records]
-      .sort(
-        (a, b) =>
-          b.activityDate.localeCompare(a.activityDate) || b.id - a.id,
-      )
-      .forEach((record) => {
-        const organization = record.organization.trim();
-        const businessKey = analyticsBusinessRoundKey(
-          organization,
-          record.businessRound,
-        );
-        if (
-          !institutionAliasKey(organization) ||
-          record.awardStatus === "미정" ||
-          byBusinessRound.has(businessKey)
-        ) {
-          return;
-        }
-        byBusinessRound.set(businessKey, record);
-      });
-    return [...byBusinessRound.values()];
-  }, [records]);
+  const latestAwardRecords = useMemo(
+    () =>
+      resolveLatestAwardRecords(
+        records as unknown as Record<string, unknown>[],
+      ) as unknown as Activity[],
+    [records],
+  );
   const meaningfulActivitySortMetaByBusinessKey = useMemo(() => {
     const values = new Map<string, { activityDate: string; id: number }>();
     records.forEach((record) => {
@@ -10674,6 +10664,8 @@ export default function CrmApp({
       businessRound,
       status: businessRound > record.businessRound ? "신규 접촉" : "상담 진행",
       awardStatus: businessRound > record.businessRound ? "미정" : record.awardStatus,
+      awardStatusExplicit:
+        businessRound > record.businessRound ? false : record.awardStatusExplicit,
       awardCompany: businessRound > record.businessRound ? "" : record.awardCompany,
       awardStage: businessRound > record.businessRound ? "미정" : record.awardStage,
       awardCompletedDate:
@@ -11125,6 +11117,8 @@ export default function CrmApp({
               ? { action: "save-institution-budgets" }
               : { id: record.id }),
             ...synchronizedNextForm,
+            awardStatusExplicit:
+              field === "award" ? true : synchronizedNextForm.awardStatusExplicit,
             awardStageManual: editsAward ? true : undefined,
             syncBusinessRoundBudgets: field === "budget",
           }),
@@ -21991,6 +21985,7 @@ export default function CrmApp({
                             const awardStatus = event.target.value;
                             updateDetailInlineDraft({
                               awardStatus,
+                              awardStatusExplicit: true,
                               awardCompany:
                                 awardStatus === "위즈업 수주"
                                   ? "위즈업"
@@ -24931,6 +24926,7 @@ export default function CrmApp({
                       setForm({
                         ...form,
                         awardStatus,
+                        awardStatusExplicit: true,
                         statusManual: false,
                         status:
                           ["위즈업 수주", "협력사 수주"].includes(awardStatus)

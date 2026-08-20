@@ -49,6 +49,9 @@ export const activities = sqliteTable(
       .default(false),
     temperature: text("temperature").notNull().default("중간"),
     awardStatus: text("award_status").notNull().default("미정"),
+    awardStatusExplicit: integer("award_status_explicit", { mode: "boolean" })
+      .notNull()
+      .default(false),
     awardCompany: text("award_company").notNull().default(""),
     executionType: text("execution_type").notNull().default("미정"),
     consortiumCompany: text("consortium_company").notNull().default(""),

@@ -524,6 +524,8 @@ ALTER TABLE public.activities
   ADD COLUMN IF NOT EXISTS budgets_json text NOT NULL DEFAULT '[]';
 ALTER TABLE public.activities
   ADD COLUMN IF NOT EXISTS award_stage_manual smallint NOT NULL DEFAULT 0;
+ALTER TABLE public.activities
+  ADD COLUMN IF NOT EXISTS award_status_explicit smallint NOT NULL DEFAULT 0;
 
 ALTER TABLE public.organization_schedules
   ADD COLUMN IF NOT EXISTS complex_delivery_id bigint;

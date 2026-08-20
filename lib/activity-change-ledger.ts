@@ -26,6 +26,7 @@ export const ACTIVITY_CHANGE_TRACKED_COLUMNS = [
   "next_action",
   "status",
   "award_status",
+  "award_status_explicit",
   "award_company",
   "execution_type",
   "consortium_company",

@@ -97,6 +97,7 @@ const createTableSql = `
     status_manual INTEGER NOT NULL DEFAULT 0,
     temperature TEXT NOT NULL DEFAULT '중간',
     award_status TEXT NOT NULL DEFAULT '미정',
+    award_status_explicit INTEGER NOT NULL DEFAULT 0,
     award_company TEXT NOT NULL DEFAULT '',
     execution_type TEXT NOT NULL DEFAULT '직영',
     consortium_company TEXT NOT NULL DEFAULT '',
@@ -1284,6 +1285,13 @@ async function initializeRecords() {
       ),
     );
   }
+  if (!existingColumns.has("award_status_explicit")) {
+    upgrades.push(
+      d1.prepare(
+        "ALTER TABLE activities ADD COLUMN award_status_explicit INTEGER NOT NULL DEFAULT 0",
+      ),
+    );
+  }
   if (!existingColumns.has("award_company")) {
     upgrades.push(
       d1.prepare(
@@ -1762,13 +1770,13 @@ export async function insertActivity(
         budget_amount_mode, budget_amount_override, budgets_json,
         topic, summary, detail_level, detail_summary, detail_key_facts_json,
         detail_sections_json, raw_input,
-        status, status_manual, temperature, award_status, award_company, execution_type,
+        status, status_manual, temperature, award_status, award_status_explicit, award_company, execution_type,
         consortium_company, award_stage, award_completed_date, progress_manager,
         progress_manager_locked,
         follow_up_required, follow_up_date, next_action, progress_schedule,
         contact_role, contact_name, contact_phone, contact_email, contacts_json,
         source_chat, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING *
     `)
       .bind(
@@ -1803,6 +1811,7 @@ export async function insertActivity(
       payload.statusManual === true ? 1 : 0,
       clean(inheritedPayload.temperature) || "중간",
       award.awardStatus,
+      payload.awardStatusExplicit === true ? 1 : 0,
       award.awardCompany,
       awardManagement.executionType,
       awardManagement.consortiumCompany,

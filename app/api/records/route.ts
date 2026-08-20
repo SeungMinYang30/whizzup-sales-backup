@@ -391,10 +391,10 @@ export async function GET(request: Request) {
     if (searchParams.get("scope") === "award-summary") {
       const result = await d1
         .prepare(
-          `SELECT id, organization, business_round, award_status, award_stage, activity_date
+          `SELECT id, organization, business_round, award_status,
+                  award_status_explicit, award_stage, activity_date
            FROM activities
            WHERE TRIM(COALESCE(organization, '')) <> ''
-             AND COALESCE(award_status, '미정') <> '미정'
            ORDER BY activity_date DESC, id DESC`,
         )
         .all<Record<string, unknown>>();
@@ -442,13 +442,21 @@ export async function GET(request: Request) {
               AND activity_type IN ('협력사 등록', '협력사 등록 해제')
             )
         ),
-        award_records AS (
+        award_state_records AS (
           SELECT DISTINCT ON (organization, business_round)
-            id
+            id, award_status
           FROM activities
           WHERE TRIM(COALESCE(organization, '')) <> ''
-            AND COALESCE(award_status, '미정') <> '미정'
+            AND (
+              COALESCE(award_status, '미정') <> '미정'
+              OR COALESCE(award_status_explicit, 0) = 1
+            )
           ORDER BY organization, business_round, activity_date DESC, id DESC
+        ),
+        award_records AS (
+          SELECT id
+          FROM award_state_records
+          WHERE COALESCE(award_status, '미정') <> '미정'
         ),
         ranked_schedules AS (
           SELECT
@@ -1045,8 +1053,8 @@ export async function PUT(request: Request) {
 
     const previous = await d1
       .prepare(
-        `SELECT organization, business_round, award_completed_date,
-                award_stage_manual,
+        `SELECT organization, business_round, award_status, award_completed_date,
+                award_stage_manual, award_status_explicit,
                 progress_manager, progress_manager_locked,
                 budget_type, budget_amount, budget_original_name,
                 budget_group_id, budget_match_status, budget_match_method,
@@ -1192,7 +1200,7 @@ export async function PUT(request: Request) {
            topic = ?, summary = ?, detail_level = ?, detail_summary = ?,
            detail_key_facts_json = ?, detail_sections_json = ?, raw_input = ?,
            status = ?, status_manual = ?, temperature = ?,
-          award_status = ?, award_company = ?, execution_type = ?,
+          award_status = ?, award_status_explicit = ?, award_company = ?, execution_type = ?,
           consortium_company = ?, award_stage = ?, award_stage_manual = ?, award_completed_date = ?,
           progress_manager = ?, progress_manager_locked = ?,
           follow_up_required = ?,
@@ -1235,6 +1243,12 @@ export async function PUT(request: Request) {
         payload.statusManual === true ? 1 : 0,
         clean(payload.temperature) || "중간",
         award.awardStatus,
+        payload.awardStatusExplicit === true ||
+        clean(previous?.award_status) !== award.awardStatus
+          ? 1
+          : Number(previous?.award_status_explicit ?? 0) === 1
+            ? 1
+            : 0,
         award.awardCompany,
         awardManagement.executionType,
         awardManagement.consortiumCompany,
@@ -1720,6 +1734,9 @@ export async function PATCH(request: Request) {
               WHEN ? = 1 THEN ?
               ELSE status END,
             award_status = CASE WHEN ? = 1 THEN ? ELSE award_status END,
+            award_status_explicit = CASE
+              WHEN ? = 1 THEN 1
+              ELSE award_status_explicit END,
             award_company = CASE
               WHEN ? = 0 THEN award_company
               WHEN ? = '위즈업 수주' THEN '위즈업'
@@ -1795,6 +1812,7 @@ export async function PATCH(request: Request) {
             requestedStatus,
             applyFields.has("awardStatus") ? 1 : 0,
             requestedAwardStatus,
+            applyFields.has("awardStatus") ? 1 : 0,
             applyFields.has("awardStatus") ? 1 : 0,
             requestedAwardStatus,
             requestedAwardStatus,

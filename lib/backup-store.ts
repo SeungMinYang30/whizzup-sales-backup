@@ -245,6 +245,7 @@ export const BACKUP_TABLES = [
       "status_manual",
       "temperature",
       "award_status",
+      "award_status_explicit",
       "award_company",
       "execution_type",
       "consortium_company",

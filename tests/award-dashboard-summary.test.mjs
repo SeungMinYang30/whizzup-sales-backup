@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
+import { register } from "node:module";
 import test from "node:test";
 
-import { summarizeWhizzupAwards } from "../lib/award-dashboard-summary.ts";
+register(new URL("./typescript-resolver.mjs", import.meta.url));
+
+const { summarizeWhizzupAwards } = await import(
+  "../lib/award-dashboard-summary.ts"
+);
 
 const rows = [
   {
@@ -65,6 +70,27 @@ test("latest non-pending business result controls the whizzup count", () => {
       activity_date: "2026-08-16",
     },
   ];
+  assert.deepEqual(summarizeWhizzupAwards(changed), {
+    total: 1,
+    active: 0,
+    completed: 1,
+  });
+});
+
+test("an explicitly saved pending result removes the previous award", () => {
+  const changed = [
+    ...rows,
+    {
+      id: 6,
+      organization: "명천 실버복지관",
+      business_round: 1,
+      award_status: "미정",
+      award_status_explicit: 1,
+      award_stage: "미정",
+      activity_date: "2026-08-20",
+    },
+  ];
+
   assert.deepEqual(summarizeWhizzupAwards(changed), {
     total: 1,
     active: 0,
