@@ -827,7 +827,7 @@ export default function ResourceLibraryPage({
         {visiblePosts.map(({ post, attachments }) => {
           const expanded = expandedPosts.has(post.id);
           return (
-            <article key={post.id} className="resource-post-card">
+            <article key={post.id} className={`resource-post-card${editing === post.id ? " editing" : ""}`}>
               {editing === post.id ? (
                 <div className="resource-edit-form">
                   <select disabled={busy || attachmentBusy} value={editDraft.category} onChange={(event) => setEditDraft({ ...editDraft, category: event.target.value })}>
@@ -873,9 +873,15 @@ export default function ResourceLibraryPage({
                       </div>
                     )}
                   </div>
-                  <div>
-                    <button type="button" onClick={closeEditForm}>{attachmentBusy ? "업로드 취소" : "취소"}</button>
-                    <button type="button" className="primary-button" disabled={busy || attachmentBusy} onClick={() => void saveEdit(post)}>저장</button>
+                  <div className="resource-edit-actions">
+                    <span className="resource-edit-actions-copy">
+                      <strong>수정 내용을 확인하셨나요?</strong>
+                      <small>변경한 내용은 저장 버튼을 눌러야 반영됩니다.</small>
+                    </span>
+                    <span className="resource-edit-action-buttons">
+                      <button type="button" onClick={closeEditForm}>{attachmentBusy ? "업로드 취소" : "취소"}</button>
+                      <button type="button" className="primary-button" disabled={busy || attachmentBusy} onClick={() => void saveEdit(post)}>변경사항 저장</button>
+                    </span>
                   </div>
                 </div>
               ) : (

@@ -49,3 +49,9 @@ test("Google 일정 연결창은 일반 편집창보다 조밀하게 한 화면�
   assert.match(styles, /\.google-link-editor > label textarea \{ min-height: 64px;[\s\S]*resize: none;/);
   assert.match(styles, /\.google-link-editor footer \{ margin-top: 10px; padding-top: 10px; \}/);
 });
+
+test("통합 일정 시작 시간을 선택하면 종료 시간을 한 시간 뒤로 자동 설정한다", () => {
+  assert.match(calendar, /const oneHourLater = \(time: string\) =>/);
+  assert.match(calendar, /startTime, endTime: startTime \? oneHourLater\(startTime\) : ""/);
+  assert.match(calendar, /value=\{editor\.endTime\}[\s\S]*onChange=\{\(event\) => setEditor/);
+});
