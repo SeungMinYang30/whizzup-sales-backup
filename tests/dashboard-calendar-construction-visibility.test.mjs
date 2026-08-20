@@ -109,6 +109,8 @@ test("시공 일정표 기관 추가 upsert는 PostgreSQL과 D1에서 대상 열
 });
 test("시공 일정표 기관 순서는 기본 운영자만 저장하고 일반 사용자도 같은 순서를 본다", () => {
   assert.match(schedules, /manual_sort_order INTEGER NOT NULL DEFAULT 0/);
+  assert.match(schedules, /ensureConstructionScheduleManualOrderColumn\(d1\)/);
+  assert.match(schedules, /PRAGMA table_info\(construction_schedule_projects\)/);
   assert.match(schedules, /saveConstructionScheduleProjectOrder/);
   assert.match(schedules, /SET manual_sort_order=0/);
   assert.match(scheduleRoute, /reorder-construction-projects/);

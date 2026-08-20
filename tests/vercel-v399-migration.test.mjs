@@ -7,6 +7,14 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("Vercel v399 schema contains every newly introduced operational area", async () => {
   const schema = await read("db/vercel-schema.ts");
+  assert.match(
+    schema,
+    /VERCEL_SCHEMA_VERSION\s*=\s*\n?\s*"202608210001_construction_manual_sort_order"/,
+  );
+  assert.match(
+    schema,
+    /VERCEL_PREVIOUS_SCHEMA_VERSION\s*=\s*\n?\s*"202608200001_explicit_award_status"/,
+  );
   for (const table of [
     "joint_projects",
     "joint_project_members",
@@ -58,6 +66,19 @@ test("Vercel v399 schema contains every newly introduced operational area", asyn
     schema,
     /construction_schedule_projects[\s\S]*?ADD COLUMN IF NOT EXISTS business_round/,
   );
+  const localAuthSchema = schema.slice(
+    schema.indexOf("export const VERCEL_LOCAL_AUTH_SCHEMA_SQL"),
+    schema.indexOf("export const VERCEL_SCHEMA_SQL"),
+  );
+  const incrementalSchema = schema.slice(
+    schema.indexOf("export const VERCEL_INCREMENTAL_SCHEMA_SQL"),
+  );
+  for (const migrationPath of [localAuthSchema, incrementalSchema]) {
+    assert.match(
+      migrationPath,
+      /ALTER TABLE public\.construction_schedule_projects[\s\S]*?ADD COLUMN IF NOT EXISTS manual_sort_order integer NOT NULL DEFAULT 0/,
+    );
+  }
   assert.match(
     schema,
     /joint_project_members[\s\S]*?ADD COLUMN IF NOT EXISTS business_round/,

@@ -418,9 +418,7 @@ async function initializeOrganizationSchedules() {
   if (!projectColumns.results.some((column) => column.name === "hidden_at")) {
     await d1.prepare("ALTER TABLE construction_schedule_projects ADD COLUMN hidden_at TEXT NOT NULL DEFAULT ''").run();
   }
-  if (!projectColumns.results.some((column) => column.name === "manual_sort_order")) {
-    await d1.prepare("ALTER TABLE construction_schedule_projects ADD COLUMN manual_sort_order INTEGER NOT NULL DEFAULT 0").run();
-  }
+  await ensureConstructionScheduleManualOrderColumn(d1, projectColumns.results);
   // AI 기록에서 일반 일정과 시공 일정이 함께 만들어진 과거 중복도 원본을
   // 지우지 않고 deleted_at으로 보관해 복구 가능하게 정리합니다.
   await archiveConstructionDuplicateSalesSchedules(d1);
@@ -1398,12 +1396,38 @@ export async function setConstructionScheduleProjectHidden(input: {
   return listConstructionScheduleBoard();
 }
 
+async function ensureConstructionScheduleManualOrderColumn(
+  d1: Awaited<ReturnType<typeof getD1>>,
+  knownColumns?: Array<{ name: string }>,
+) {
+  const hasColumn = (columns: Array<{ name: string }>) =>
+    columns.some((column) => column.name === "manual_sort_order");
+  const columns = knownColumns ?? (
+    await d1.prepare("PRAGMA table_info(construction_schedule_projects)").all<{ name: string }>()
+  ).results;
+  if (hasColumn(columns)) return;
+  try {
+    await d1.prepare(
+      "ALTER TABLE construction_schedule_projects ADD COLUMN manual_sort_order INTEGER NOT NULL DEFAULT 0",
+    ).run();
+  } catch (error) {
+    // Another cold start may have completed the same idempotent repair first.
+    const refreshed = await d1.prepare(
+      "PRAGMA table_info(construction_schedule_projects)",
+    ).all<{ name: string }>();
+    if (!hasColumn(refreshed.results)) throw error;
+  }
+}
+
 export async function saveConstructionScheduleProjectOrder(input: {
   scopes: unknown;
   memberId: number;
   memberName: string;
 }) {
   const d1 = await ensureOrganizationSchedulesReady();
+  // Keep the write path self-healing even if an older deployment marked its
+  // schema version current before this column was introduced.
+  await ensureConstructionScheduleManualOrderColumn(d1);
   const rawScopes = Array.isArray(input.scopes) ? input.scopes.slice(0, 500) : [];
   const seen = new Set<string>();
   const scopes = rawScopes.map((value) => {
