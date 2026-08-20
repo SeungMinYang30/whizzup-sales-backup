@@ -1,7 +1,7 @@
 export const VERCEL_SCHEMA_VERSION =
-  "202608170004_budget_name_admin_audit_reconcile";
+  "202608200001_explicit_award_status";
 export const VERCEL_PREVIOUS_SCHEMA_VERSION =
-  "202608170003_budget_name_admin_audit";
+  "202608170004_budget_name_admin_audit_reconcile";
 export const VERCEL_BASE_SCHEMA_VERSION = "202608060007_full_backup_columns";
 
 const CONSTRUCTION_SCHEDULE_DUPLICATE_ARCHIVE_SQL = `
@@ -435,6 +435,8 @@ ALTER TABLE public.equipment_projects
 export const VERCEL_LOCAL_AUTH_SCHEMA_SQL = `
 ALTER TABLE public.organization_schedules
   ADD COLUMN IF NOT EXISTS content text NOT NULL DEFAULT '';
+ALTER TABLE public.activities
+  ADD COLUMN IF NOT EXISTS award_status_explicit smallint NOT NULL DEFAULT 0;
 ALTER TABLE public.members ADD COLUMN IF NOT EXISTS username text;
 ALTER TABLE public.members ADD COLUMN IF NOT EXISTS password_hash text;
 ALTER TABLE public.members ADD COLUMN IF NOT EXISTS password_salt text;

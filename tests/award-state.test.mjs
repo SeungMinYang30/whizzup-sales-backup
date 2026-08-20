@@ -67,14 +67,19 @@ test("a newer explicit award replaces the previous award", () => {
 });
 
 test("explicit award state is persisted by single and bulk updates and backups", async () => {
-  const [route, ledger, backup] = await Promise.all([
+  const [route, ledger, backup, vercelSchema] = await Promise.all([
     readFile(new URL("../app/api/records/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/activity-change-ledger.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/backup-store.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/vercel-schema.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(route, /award_status = \?, award_status_explicit = \?/);
   assert.match(route, /award_status_explicit = CASE[\s\S]*WHEN \? = 1 THEN 1/);
   assert.match(ledger, /"award_status_explicit"/);
   assert.match(backup, /"award_status",\s*"award_status_explicit",\s*"award_company"/);
+  assert.match(
+    vercelSchema,
+    /VERCEL_LOCAL_AUTH_SCHEMA_SQL = `[\s\S]*ALTER TABLE public\.activities[\s\S]*ADD COLUMN IF NOT EXISTS award_status_explicit/,
+  );
 });
