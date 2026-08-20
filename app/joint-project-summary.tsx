@@ -1,0 +1,232 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+type JointProject = {
+  id: number;
+  name: string;
+  sponsor_organization: string;
+  budget_group_id: number | null;
+  budget_type: string;
+  project_year: number;
+  joint_round: number;
+};
+
+type JointMember = {
+  id: number;
+  project_id: number;
+  organization: string;
+  business_round: number;
+  role: "sponsor" | "site";
+  budget_amount: number | null;
+  budget_type: string;
+  budget_group_id: number | null;
+  activity_budget_amount: string;
+  budgets_json: string;
+  award_status: string;
+  award_stage: string;
+  progress_manager: string;
+  resolved_activity_id: number | null;
+};
+
+function money(value: unknown) {
+  if (
+    value === null ||
+    value === undefined ||
+    (typeof value === "string" && value.trim() === "")
+  ) {
+    return null;
+  }
+  const parsed = Number(String(value ?? "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : null;
+}
+
+function formatWon(value: number | null) {
+  return value === null ? "금액 미입력" : `${value.toLocaleString("ko-KR")}원`;
+}
+
+function memberBudgets(
+  member: JointMember,
+  fallbackBudgetType: string,
+  fallbackBudgetGroupId: number | null,
+) {
+  if (member.role === "sponsor") return [];
+  return [
+    {
+      name: fallbackBudgetType || "예산 미정",
+      groupId: fallbackBudgetGroupId,
+      amount: money(member.budget_amount),
+    },
+  ];
+}
+
+export default function JointProjectSummary({
+  projectId,
+  organization,
+  selectedActivityId,
+  onSelectMember,
+}: {
+  projectId: number | null | undefined;
+  organization: string;
+  selectedActivityId?: number | null;
+  onSelectMember?: (member: {
+    organization: string;
+    businessRound: number;
+    resolvedActivityId: number | null;
+    role: "sponsor" | "site";
+  }) => void;
+}) {
+  const [projects, setProjects] = useState<JointProject[]>([]);
+  const [members, setMembers] = useState<JointMember[]>([]);
+  const [failed, setFailed] = useState(false);
+  const [expanded, setExpanded] = useState(true);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    void fetch("/api/joint-projects", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          projects?: JointProject[];
+          members?: JointMember[];
+        };
+        if (!response.ok) throw new Error("공동사업을 불러오지 못했습니다.");
+        if (!cancelled) {
+          setProjects(payload.projects ?? []);
+          setMembers(payload.members ?? []);
+          setFailed(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  useEffect(() => {
+    if (projectId) setExpanded(true);
+  }, [projectId]);
+
+  const project = projects.find((item) => Number(item.id) === Number(projectId));
+  const projectMembers = useMemo(
+    () =>
+      members.filter((member) => Number(member.project_id) === Number(projectId)),
+    [members, projectId],
+  );
+  const budgetTracks = useMemo(() => {
+    const totals = new Map<string, { name: string; amount: number; missing: number }>();
+    projectMembers
+      .filter((member) => member.role === "site")
+      .flatMap((member) =>
+        memberBudgets(
+          member,
+          project?.budget_type || "",
+          project?.budget_group_id ?? null,
+        ),
+      )
+      .forEach((budget) => {
+        const key = budget.groupId ? `group:${budget.groupId}` : `name:${budget.name}`;
+        const current = totals.get(key) ?? { name: budget.name, amount: 0, missing: 0 };
+        if (budget.amount === null) current.missing += 1;
+        else current.amount += budget.amount;
+        totals.set(key, current);
+      });
+    return [...totals.values()];
+  }, [project?.budget_group_id, project?.budget_type, projectMembers]);
+
+  if (!projectId || failed || !project || !projectMembers.length) return null;
+  const current =
+    projectMembers.find(
+      (member) =>
+        selectedActivityId &&
+        Number(member.resolved_activity_id) === Number(selectedActivityId),
+    ) ?? projectMembers.find((member) => member.organization === organization);
+  const siteMembers = projectMembers.filter((member) => member.role === "site");
+  const hasEnteredAmount = projectMembers.some(
+    (member) => member.role === "site" && money(member.budget_amount) !== null,
+  );
+  const total = hasEnteredAmount
+    ? budgetTracks.reduce((sum, track) => sum + track.amount, 0)
+    : null;
+
+  return (
+    <details
+      className="joint-project-summary"
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary>
+        <span className="joint-project-summary-role">
+          {current?.role === "sponsor" ? "공동사업 주관" : "공동사업 설치"}
+        </span>
+        <strong>예산 · {project.budget_type || project.name}</strong>
+        <small>
+          {project.project_year > 0 ? `${project.project_year}년 · ` : ""}
+          {Math.max(1, Number(project.joint_round) || 1)}차 · 주관 {project.sponsor_organization} · 설치 {siteMembers.length}곳 · {formatWon(total)}
+          {current?.role === "site"
+            ? ` · 현재 보기 ${current.organization} ${formatWon(money(current.budget_amount))}`
+            : ""}
+        </small>
+      </summary>
+      <div className="joint-project-summary-body">
+        <section>
+          <h4>예산 구성</h4>
+          {budgetTracks.map((track) => (
+            <div key={track.name}>
+              <strong>{track.name}</strong>
+              <span>{formatWon(track.amount)}</span>
+              {track.missing > 0 && <small>금액 미입력 {track.missing}곳</small>}
+            </div>
+          ))}
+        </section>
+        <section>
+          <h4>연결 기관</h4>
+          {projectMembers.map((member) => (
+            <button
+              type="button"
+              className={member.id === current?.id ? "current" : ""}
+              key={member.id}
+              aria-pressed={member.id === current?.id}
+              onClick={() =>
+                onSelectMember?.({
+                  organization: member.organization,
+                  businessRound: member.business_round,
+                  resolvedActivityId: member.resolved_activity_id,
+                  role: member.role,
+                })
+              }
+            >
+              <span>{member.role === "sponsor" ? "주관" : "설치"}</span>
+              <strong>{member.organization}</strong>
+              <small>
+                기관 사업 {member.business_round}차
+                {!member.resolved_activity_id ? " · 수주 기록 미연결" : ""}
+                {member.progress_manager ? ` · 담당 ${member.progress_manager}` : " · 담당 미지정"}
+                {member.award_stage || member.award_status
+                  ? ` · ${member.award_stage || member.award_status}`
+                  : ""}
+              </small>
+              <em>
+                {member.role === "sponsor"
+                  ? "공동사업 합계 제외"
+                  : memberBudgets(
+                      member,
+                      project.budget_type,
+                      project.budget_group_id,
+                    )
+                      .map(
+                        (budget) =>
+                          `${budget.name} ${formatWon(budget.amount)}`,
+                      )
+                      .join(" · ")}
+              </em>
+            </button>
+          ))}
+        </section>
+        <p>기관별 연락처·지도·영업·수주·회계 기록은 각각 유지되며, 합계는 설치기관만 계산합니다.</p>
+      </div>
+    </details>
+  );
+}

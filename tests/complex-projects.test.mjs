@@ -1,0 +1,174 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
+
+test("complex projects reuse canonical budgets and items across accounting and analytics", async () => {
+  const [store, page, crm] = await Promise.all([
+    read("../lib/complex-projects.ts"),
+    read("../app/complex-project-page.tsx"),
+    read("../app/crm-app.tsx"),
+  ]);
+
+  assert.match(store, /JOIN equipment_projects ep ON ep\.id = link\.equipment_project_id/);
+  assert.match(store, /JOIN equipment_items item ON item\.project_id = link\.equipment_project_id/);
+  assert.match(store, /LEFT JOIN complex_project_item_details detail ON detail\.equipment_item_id = item\.id/);
+  assert.match(store, /linkBudgetNameEntity/);
+  assert.match(store, /INSERT OR IGNORE INTO complex_project_item_details[\s\S]*JOIN equipment_items item/);
+  assert.match(store, /institutionIdentityKey\(row\.organization, aliasSetting\) === projectInstitutionKey/);
+  assert.match(store, /await syncAllWhizzupBudgetLinks\(d1\);[\s\S]*const \[projectResult/);
+  assert.match(store, /INSERT OR IGNORE INTO complex_project_budget_links/);
+  assert.match(store, /UPDATE activities SET progress_manager = \?, progress_manager_locked = \?/);
+  assert.match(page, /기관 상세의 같은 차수에 등록된 예산을 자동으로 불러옵니다/);
+  assert.match(page, /기관 상세와 같은 사업 기록을 사용합니다/);
+  assert.match(page, /어느 화면에서 수정해도 함께 반영됩니다/);
+  assert.match(crm, /"complex-projects": "공간재구조화 사업 관리"/);
+  assert.match(store, /readCanonicalBusinessRoundBudgets/);
+  assert.match(store, /summarizeActivityBudgets/);
+  assert.match(store, /equipmentSettlementQuantity/);
+  assert.match(store, /calculateEquipmentFinance/);
+  assert.match(store, /quotation_amount: finance\.quotationAmount/);
+  assert.match(store, /const project = await requireProject\(d1, projectId\);/);
+  assert.match(store, /resolvedProtectionState/);
+  assert.match(store, /synchronizeBusinessRoundBudgets/);
+  assert.match(page, /<summary>기본정보 수정<\/summary>/);
+  assert.match(page, /if \(ok\) \{[\s\S]{0,100}setBasicInfoOpen\(false\)/);
+  assert.match(page, /await props\.onRecordsChanged\?\.\(\)/);
+  assert.doesNotMatch(page, /name="totalBudget"/);
+  assert.doesNotMatch(page, /name="allocatedAmount"/);
+  assert.match(page, /<small>전체예산<\/small>/);
+  assert.match(page, /setSummaryDialog\("protection"\)/);
+  assert.match(page, /complex-summary-dialog/);
+});
+
+test("complex project workbook exports the unified institution budget and item values", async () => {
+  const workbook = await read("../app/complex-project-xlsx.ts");
+
+  assert.match(workbook, /budget\.budget_amount/);
+  assert.match(workbook, /item\.quotation_amount/);
+  assert.match(workbook, /item\.settlement_quantity/);
+  assert.match(workbook, /계약·집행금액/);
+  assert.match(workbook, /등록된 품목이 없습니다/);
+  assert.match(workbook, /cachedValue/);
+  assert.doesNotMatch(workbook, /money\(budget\.allocated_amount\)/);
+  assert.doesNotMatch(workbook, /money\(project\.total_budget\).*총 관리예산/);
+});
+
+test("partial delivery changes stay linked to the schedule board and remain editable", async () => {
+  const [store, page, schema] = await Promise.all([
+    read("../lib/complex-projects.ts"),
+    read("../app/complex-project-page.tsx"),
+    read("../db/schema.ts"),
+  ]);
+
+  assert.match(store, /complex_delivery_id/);
+  assert.match(store, /sync_status = 'pending', sync_operation = 'upsert'/);
+  assert.match(store, /refreshOrganizationScheduleMirror/);
+  assert.match(store, /plannedQty < settlementQuantity[\s\S]*"수량 미배정"/);
+  assert.match(store, /plannedQty > settlementQuantity[\s\S]*"수량 초과"/);
+  assert.match(store, /refreshDeliveredQuantity/);
+  assert.match(page, /deliveryId: editDelivery\?\.id/);
+  assert.match(page, />수정<\/button><button type="button" onClick=\{\(\) => void removeEntity\("delivery"/);
+  assert.match(schema, /complexDeliveryId: integer\("complex_delivery_id"\)/);
+});
+
+test("complex project activation uses searched institution rounds and approved sales managers", async () => {
+  const [store, page, crm, records] = await Promise.all([
+    read("../lib/complex-projects.ts"),
+    read("../app/complex-project-page.tsx"),
+    read("../app/crm-app.tsx"),
+    read("../app/api/records/route.ts"),
+  ]);
+
+  assert.match(store, /query\.replace\(\/\\s\+\/g, ""\)\.length < 2/);
+  assert.match(store, /a\.award_status = '위즈업 수주'/);
+  assert.match(store, /rememberedInstitutionAliasCandidates/);
+  assert.match(store, /institutionIdentityKey/);
+  assert.match(store, /organization_locations search_location/);
+  assert.match(store, /같은 기관·/);
+  assert.match(store, /const sourceType = "whizzup" as const/);
+  assert.doesNotMatch(page, /외부 사업 수기 등록/);
+  assert.doesNotMatch(page, /sourceAwardStatus/);
+  assert.match(store, /ORDER BY location\.updated_at DESC LIMIT 1/);
+  assert.match(store, /status = 'approved' AND is_sales = 1/);
+  assert.match(store, /const existingProject = await d1\.prepare/);
+  assert.match(store, /manager_member_id = COALESCE\(\?, manager_member_id\)/);
+  assert.match(store, /TRIM\(construction_schedule_projects\.work_summary\)/);
+  assert.match(store, /ELSE construction_schedule_projects\.work_summary/);
+  assert.match(page, /두 글자부터 검색합니다/);
+  assert.match(page, /<form className="complex-inline-form" onSubmit=\{createProject\} noValidate>/);
+  assert.match(page, /<button type="submit" className="primary"/);
+  assert.match(page, /whizzup\.complexProjectTarget/);
+  assert.match(crm, /공간재구조화 사업 관리/);
+  assert.match(crm, /operationScope: "pre_awards"/);
+  assert.match(crm, /attempt <= 2/);
+  assert.match(records, /existingActivityChangeItemIds/);
+});
+
+test("new rounds keep institution identity without copying old round budgets or items", async () => {
+  const [store, page] = await Promise.all([
+    read("../lib/complex-projects.ts"),
+    read("../app/complex-project-page.tsx"),
+  ]);
+
+  assert.match(store, /const createNewRound = payload\.createNewRound === true/);
+  assert.match(store, /WHERE organization = \? AND business_round = \?/);
+  assert.match(store, /await d1\.batch\(statements\)/);
+  assert.doesNotMatch(store, /d1\.transaction/);
+  assert.match(page, /새 차수 만들기/);
+  assert.match(page, /기관 정보만 이어받고 과거 예산·품목은 복사하지 않습니다/);
+  assert.match(page, /기존 차수 연결/);
+  assert.match(page, /진행 담당자/);
+});
+
+test("complex project items preserve selection protection and site requirements", async () => {
+  const [store, page, schema] = await Promise.all([
+    read("../lib/complex-projects.ts"),
+    read("../app/complex-project-page.tsx"),
+    read("../db/schema.ts"),
+  ]);
+  for (const field of [
+    "selection_round",
+    "selection_status",
+    "change_reason",
+    "electrical_requirements",
+    "network_requirements",
+    "protection_vendor_name",
+    "protection_state",
+    "protection_expires_at",
+  ]) {
+    assert.match(store, new RegExp(field));
+  }
+  assert.match(page, /나라장터·학교장터·수의계약/);
+  assert.match(page, /전기·배선 요구사항/);
+  assert.match(page, /네트워크 요구사항/);
+  assert.match(schema, /protectionExpiresAt: text\("protection_expires_at"\)/);
+});
+
+test("merge and full backup preserve every complex-project relation", async () => {
+  const [merge, backup] = await Promise.all([
+    read("../lib/institution-merge.ts"),
+    read("../lib/backup-store.ts"),
+  ]);
+  for (const table of [
+    "complex_projects",
+    "complex_project_budget_links",
+    "complex_project_zones",
+    "complex_project_item_details",
+    "complex_project_deliveries",
+    "complex_project_events",
+  ]) {
+    assert.match(backup, new RegExp(table));
+  }
+  assert.match(backup, /2026-08-07-complex-project-controls/);
+  assert.match(backup, /"complex_delivery_id"/);
+  assert.match(backup, /"manager_member_id"/);
+  assert.match(backup, /"source_type"/);
+  assert.match(backup, /row\[column\] \?\? "whizzup"/);
+  assert.match(backup, /"protection_expires_at"/);
+  assert.match(merge, /UPDATE complex_project_zones SET complex_project_id/);
+  assert.match(merge, /UPDATE complex_project_item_details SET complex_project_id/);
+  assert.match(merge, /UPDATE complex_project_deliveries SET complex_project_id/);
+  assert.match(merge, /UPDATE complex_project_events SET complex_project_id/);
+});
