@@ -26,6 +26,10 @@ const authoredPdf = await readFile(
   new URL("../app/authored-quotation-pdf.ts", import.meta.url),
   "utf8",
 );
+const authoredDownloads = await readFile(
+  new URL("../app/authored-quotation-downloads.ts", import.meta.url),
+  "utf8",
+);
 const workbook = await readFile(
   new URL("../lib/quotation-xlsx.ts", import.meta.url),
   "utf8",
@@ -85,11 +89,11 @@ test("내부 수익 보고는 복사·Excel·PDF를 제공하고 고객 출력�
   assert.match(styles, /quote-internal-report-dialog/);
 });
 
-test("저장된 PDF는 원래 파일 주소로 새 탭에서 열고 Excel은 의미 있는 이름으로 내려받는다", () => {
-  assert.match(page, /window\.open\(quote\.pdfUrl, "_blank"\)/);
-  assert.match(page, /if \(tab\) tab\.opener = null/);
-  assert.match(page, /await fetch\(quote\.excelUrl, \{ cache: "no-store" \}\)/);
-  assert.match(page, /URL\.createObjectURL\(await response\.blob\(\)\)/);
+test("저장된 PDF와 Excel은 저장소 파일을 받아 안전한 이름으로 열거나 내려받는다", () => {
+  assert.match(page, /await storedQuotationFile\(quote\.pdfUrl/);
+  assert.match(page, /openPdfBlobInReservedTab\(file, tab\)/);
+  assert.match(page, /await storedQuotationFile\(quote\.excelUrl/);
+  assert.match(authoredDownloads, /if \(response\.ok\) return response\.blob\(\)/);
   assert.match(page, /quote\.driveXlsxName \|\| quotationDownloadName/);
 });
 
@@ -116,7 +120,7 @@ test("institution history uses the exact organization round query and exposes lo
   assert.match(institutionQuotationHistory, />다시 불러오기<\/button>/);
 });
 
-test("teaching aids imports match by normalized item text and output only contract labels", () => {
+test("teaching aids imports match by normalized item text and output supplier plus contract labels", () => {
   assert.match(page, /function normalizedEquipmentKitName/);
   assert.match(page, /normalizedEquipmentKitName\(line\.name\) === normalizedEquipmentKitName\(imported\.name\)/);
   const teachingAidsImport = page.slice(
@@ -128,8 +132,10 @@ test("teaching aids imports match by normalized item text and output only contra
   assert.doesNotMatch(teachingAidsImport, /quantity \+ imported\.quantity/);
   assert.match(page, /\? \(isS2BChannel\(item\.procurementChannel\) \? "학교장터" : "조달 계약"\)/);
   assert.match(page, /: "수의계약"/);
-  assert.match(page, /if \(item\.equipmentKit\) return AIRPASS_EQUIPMENT_CONTRACT_NOTE/);
-  assert.match(workbook, /if \(line\.equipmentKit\) return AIRPASS_EQUIPMENT_CONTRACT_NOTE/);
+  assert.match(page, /formatQuotationRemark\(/);
+  assert.match(workbook, /formatQuotationRemark\(/);
+  assert.match(page, /supplierVendorName: item\.supplierVendorName/);
+  assert.match(authoredDownloads, /supplierVendorName: item\.supplierVendorName/);
 });
 
 test("quotation editor uses responsive item cards without exposing internal settlement in print", () => {

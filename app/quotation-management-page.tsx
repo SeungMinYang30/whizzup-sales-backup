@@ -12,7 +12,11 @@ import type {
 import type { ProductCatalogItem } from "../lib/product-catalog";
 import { parseBudgetMoney } from "../lib/activity-budgets";
 import { createQuotationWorkbook } from "../lib/quotation-xlsx";
-import { AIRPASS_COMPANY, AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "../lib/airpass-company";
+import { AIRPASS_COMPANY } from "../lib/airpass-company";
+import {
+  formatQuotationProcurementIdentifier,
+  formatQuotationRemark,
+} from "../lib/quotation-output-text";
 import { calculateConsortiumSettlement } from "../lib/consortium-settlement";
 import { createConsortiumSettlementWorkbook, type ConsortiumSettlementWorkbookInput } from "../lib/consortium-settlement-xlsx";
 import { createInternalProfitReportWorkbook, type InternalProfitReportWorkbookInput } from "../lib/internal-profit-report-xlsx";
@@ -174,8 +178,10 @@ function contractLabel(item: DraftItem) {
 
 function outputNote(item: DraftItem) {
   if (item.complimentary) return "무상 제공";
-  if (item.equipmentKit) return AIRPASS_EQUIPMENT_CONTRACT_NOTE;
-  return contractLabel(item);
+  return formatQuotationRemark(
+    item.supplierVendorName || (item.equipmentKit ? AIRPASS_COMPANY.name : ""),
+    contractLabel(item),
+  );
 }
 
 function constructionDraftItem(amount = 0, projectTitle = "") : DraftItem {
@@ -280,8 +286,12 @@ function amountInKoreanLabel(value: number) {
 }
 
 function procurementDisplay(item: DraftItem) {
-  if (!item.procurement) return "-";
-  return [item.procurementChannel || "G2B", item.procurementNumber].filter(Boolean).join(" · ") || "-";
+  return formatQuotationProcurementIdentifier({
+    procurement: item.procurement,
+    channel: item.procurementChannel,
+    number: item.procurementNumber,
+    fallbackChannel: isS2BChannel(item.procurementChannel) ? "S2B" : "G2B",
+  });
 }
 const emptyDraft = (): Draft => ({
   organization: "",
@@ -2600,6 +2610,9 @@ export default function QuotationManagementPage({
         unit: item.unit,
         unitPrice: item.unitPrice,
         note: item.note,
+        productId: item.productId,
+        supplyType: item.supplyType,
+        supplierVendorName: item.supplierVendorName,
         procurement: item.procurement,
         procurementChannel: item.procurementChannel,
         procurementNumber: item.procurementNumber,

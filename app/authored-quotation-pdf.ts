@@ -1,8 +1,12 @@
 import type { AuthoredQuotation, AuthoredQuotationItem } from "../lib/authored-quotations";
 import { airpassEquipmentKitOutputLines, airpassEquipmentKitTotal } from "../lib/airpass-equipment-kit";
 import { fieldInspectionDownloadName, quotationDownloadName, quotationFileStem } from "../lib/quotation-file-name";
-import { AIRPASS_COMPANY, AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "../lib/airpass-company";
-import { formatQuotationItemNameForOutput } from "../lib/quotation-output-text";
+import { AIRPASS_COMPANY } from "../lib/airpass-company";
+import {
+  formatQuotationItemNameForOutput,
+  formatQuotationProcurementIdentifier,
+  formatQuotationRemark,
+} from "../lib/quotation-output-text";
 import {
   FIELD_SUPPORT_COMPANY,
   fieldInspectionEquipmentLines,
@@ -21,7 +25,7 @@ const PDF_HEIGHT = 841.89;
 
 type AuthoredQuotationPdfItem = Pick<
   AuthoredQuotationItem,
-  "name" | "specification" | "quantity" | "unit" | "unitPrice" | "note" | "contractType" | "procurement" | "procurementChannel" | "procurementNumber" | "procurementFee" | "equipmentKit" | "complimentary"
+  "name" | "specification" | "quantity" | "unit" | "unitPrice" | "note" | "contractType" | "procurement" | "procurementChannel" | "procurementNumber" | "procurementFee" | "equipmentKit" | "complimentary" | "supplierVendorName"
 >;
 
 export type AuthoredQuotationPdfInput = Pick<
@@ -96,15 +100,19 @@ function contractLabel(item: AuthoredQuotationPdfItem) {
 
 function outputNote(item: AuthoredQuotationPdfItem) {
   if (item.complimentary) return "무상 제공";
-  if (item.equipmentKit) return AIRPASS_EQUIPMENT_CONTRACT_NOTE;
-  return contractLabel(item);
+  return formatQuotationRemark(
+    item.supplierVendorName || (item.equipmentKit ? AIRPASS_COMPANY.name : ""),
+    contractLabel(item),
+  );
 }
 
 function identifier(item: AuthoredQuotationPdfItem) {
-  if (!item.procurement) return "-";
-  return [item.procurementChannel || (isS2B(item) ? "S2B" : "G2B"), item.procurementNumber]
-    .filter(Boolean)
-    .join(" · ");
+  return formatQuotationProcurementIdentifier({
+    procurement: item.procurement,
+    channel: item.procurementChannel,
+    number: item.procurementNumber,
+    fallbackChannel: isS2B(item) ? "S2B" : "G2B",
+  });
 }
 
 function amounts(quote: AuthoredQuotationPdfInput) {
@@ -120,17 +128,17 @@ function measuredItemRowHeight(
   item: AuthoredQuotationPdfItem,
 ) {
   const measurements = [
-    [formatQuotationItemNameForOutput(item.name), 188, 3, 15],
-    [item.specification, 224, 4, 15],
-    [identifier(item), 128, 3, 15],
-    [outputNote(item), 65, 3, 15],
+    [formatQuotationItemNameForOutput(item.name), 168, 3, 15],
+    [item.specification, 200, 4, 15],
+    [identifier(item), 122, 2, 14],
+    [outputNote(item), 116, 4, 15],
   ] as const;
   const lineCounts = measurements.map(([value, width, maxLines, fontSize]) => {
     context.font = `400 ${fontSize}px "Malgun Gothic", "Noto Sans KR", sans-serif`;
     return splitText(context, value, width, maxLines).length;
   });
   const lines = Math.max(1, ...lineCounts);
-  return Math.min(132, Math.max(64, 22 + lines * 20));
+  return Math.min(142, Math.max(64, 22 + lines * 20));
 }
 
 function paginateItems(
@@ -315,7 +323,7 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
       tableTop = totalY + 90;
     }
 
-    const columns = [72, 112, 318, 560, 706, 768, 828, 968, 1085, 1168];
+    const columns = [72, 112, 298, 516, 656, 718, 778, 918, 1034, 1168];
     const headings = ["No", "품명", "규격", "식별번호", "수량", "단위", "단가", "금액", "비고"];
     context.fillStyle = "#eaf0ff";
     context.fillRect(columns[0], tableTop, columns.at(-1)! - columns[0], 48);
@@ -334,9 +342,9 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
         item.complimentary ? "무상" : `${won.format(itemAmount)}원`, outputNote(item),
       ];
       values.forEach((value, index) => drawCell(context, value, columns[index], y, columns[index + 1] - columns[index], rowHeight, {
-        align: [0, 4, 5].includes(index) ? "center" : [6, 7].includes(index) ? "right" : "left",
-        maxLines: index === 2 ? 4 : 3,
-        fontSize: index >= 6 ? 14 : 15,
+        align: [0, 3, 4, 5, 8].includes(index) ? "center" : [6, 7].includes(index) ? "right" : "left",
+        maxLines: index === 2 || index === 8 ? 4 : index === 3 ? 2 : 3,
+        fontSize: index === 3 || index >= 6 ? 14 : 15,
       }));
       context.strokeStyle = "#cfd8ea";
       context.strokeRect(columns[0], y, columns.at(-1)! - columns[0], rowHeight);

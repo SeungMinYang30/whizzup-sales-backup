@@ -6,7 +6,11 @@ import { strFromU8, unzipSync } from "fflate";
 
 register(new URL("./typescript-resolver.mjs", import.meta.url));
 
-const { formatQuotationItemNameForOutput } = await import("../lib/quotation-output-text.ts");
+const {
+  formatQuotationItemNameForOutput,
+  formatQuotationProcurementIdentifier,
+  formatQuotationRemark,
+} = await import("../lib/quotation-output-text.ts");
 const { createQuotationWorkbook } = await import("../lib/quotation-xlsx.ts");
 const { createConsortiumSettlementWorkbook } = await import("../lib/consortium-settlement-xlsx.ts");
 
@@ -23,7 +27,43 @@ test("long descriptive product suffixes wrap consistently in quotation output", 
   });
   const sheet = strFromU8(unzipSync(workbook)["xl/worksheets/sheet1.xml"]);
   assert.match(sheet, /가상스포츠시스템\n\(터치스크린\)/);
-  assert.match(sheet, /<row r="18" ht="43"/);
+  assert.match(sheet, /<row r="18" ht="46"/);
+});
+
+test("quotation output keeps supplier and contract unique and splits procurement identifiers", () => {
+  assert.equal(formatQuotationRemark("(주)에어패스", "조달 계약"), "(주)에어패스\n조달 계약");
+  assert.equal(formatQuotationRemark("수의계약", "수의계약"), "수의계약");
+  assert.equal(formatQuotationRemark("", "학교장터"), "학교장터");
+  assert.equal(formatQuotationProcurementIdentifier({ procurement: true, channel: "G2B", number: "24563902" }), "G2B\n24563902");
+  assert.equal(formatQuotationProcurementIdentifier({ procurement: true, channel: "S2B", number: "202507143379297" }), "S2B\n202507143379297");
+  assert.equal(formatQuotationProcurementIdentifier({ procurement: true, channel: "디지털서비스몰", number: "25221033" }), "디지털서비스몰\n25221033");
+  assert.equal(formatQuotationProcurementIdentifier({ procurement: false, channel: "", number: "" }), "-");
+});
+
+test("official quotation workbook wraps supplier remarks and procurement identifiers in widened columns", () => {
+  const workbook = createQuotationWorkbook({
+    customerName: "출력 검증 기관",
+    quoteDate: "2026-08-20",
+    projectTitle: "긴 품명과 규격 및 공급처 출력 검증",
+    lines: [
+      { name: "가상스포츠시스템 (터치스크린)", specification: "멀티미디어학습장치와 에어패스 교육 콘텐츠를 포함하는 긴 규격", quantity: 1, unit: "대", unitPrice: 27_000_000, note: "", procurement: true, procurementChannel: "G2B", procurementNumber: "24563902", supplierVendorName: "(주)에어패스" },
+      { name: "교구 세트", specification: "전면 스크린형 전용 교구 세트", quantity: 1, unit: "SET", unitPrice: 1_500_000, note: "", supplierVendorName: "(주)트리엠" },
+      { name: "교육 콘텐츠", specification: "디지털서비스몰 등록 제품", quantity: 1, unit: "식", unitPrice: 15_000_000, note: "", procurement: true, procurementChannel: "디지털서비스몰", procurementNumber: "25221033", supplierVendorName: "아주 긴 한글 협력업체 주식회사 테스트 공급사" },
+      { name: "일반 제품", specification: "식별번호 없음", quantity: 1, unit: "대", unitPrice: 100_000, note: "" },
+    ],
+  });
+  const files = unzipSync(workbook);
+  const sheet = strFromU8(files["xl/worksheets/sheet1.xml"]);
+  const styles = strFromU8(files["xl/styles.xml"]);
+  assert.match(sheet, /\(주\)에어패스\n조달 계약/);
+  assert.match(sheet, /\(주\)트리엠\n수의계약/);
+  assert.match(sheet, /G2B\n24563902/);
+  assert.match(sheet, /디지털서비스몰\n25221033/);
+  assert.doesNotMatch(sheet, /G2B · 24563902|디지털서비스몰 · 25221033/);
+  assert.match(sheet, /<col min="5" max="5" width="17"/);
+  assert.match(sheet, /<col min="10" max="10" width="17"/);
+  assert.match(sheet, /<row r="20" ht="61" customHeight="1">/);
+  assert.match(styles, /horizontal="center" vertical="center" wrapText="1"/);
 });
 
 test("settlement workbook uses a clean merged signature block", () => {

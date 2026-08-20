@@ -1,7 +1,11 @@
 import { zipSync } from "fflate";
 import { airpassEquipmentKitOutputLines, airpassEquipmentKitTotal, type AirpassEquipmentKit } from "./airpass-equipment-kit";
-import { AIRPASS_COMPANY, AIRPASS_EQUIPMENT_CONTRACT_NOTE } from "./airpass-company";
-import { formatQuotationItemNameForOutput } from "./quotation-output-text";
+import { AIRPASS_COMPANY } from "./airpass-company";
+import {
+  formatQuotationItemNameForOutput,
+  formatQuotationProcurementIdentifier,
+  formatQuotationRemark,
+} from "./quotation-output-text";
 import {
   FIELD_SUPPORT_COMPANY,
   fieldInspectionEquipmentLines,
@@ -107,8 +111,10 @@ function contractLabel(line: QuotationLine) {
 
 function outputNote(line: QuotationLine) {
   if (line.complimentary) return "무상 제공";
-  if (line.equipmentKit) return AIRPASS_EQUIPMENT_CONTRACT_NOTE;
-  return contractLabel(line);
+  return formatQuotationRemark(
+    line.supplierVendorName || (line.equipmentKit ? AIRPASS_COMPANY.name : ""),
+    contractLabel(line),
+  );
 }
 
 function calculations(input: QuotationWorkbookInput) {
@@ -125,9 +131,18 @@ function calculations(input: QuotationWorkbookInput) {
 }
 
 function procurementLabel(line: QuotationLine) {
-  if (!line.procurement) return "-";
-  const channel = line.procurementChannel || "조달";
-  return [channel, line.procurementNumber].filter(Boolean).join(" · ") || "조달";
+  return formatQuotationProcurementIdentifier({
+    procurement: line.procurement,
+    channel: line.procurementChannel,
+    number: line.procurementNumber,
+    fallbackChannel: isS2B(line) ? "S2B" : "G2B",
+  });
+}
+
+function estimatedWrappedLines(value: string, charactersPerLine: number) {
+  return String(value ?? "").split(/\r?\n/u).reduce((total, part) => (
+    total + Math.max(1, Math.ceil(Array.from(part).length / charactersPerLine))
+  ), 0);
 }
 
 function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
@@ -162,7 +177,14 @@ function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
     const specification = line.specification || "-";
     const procurement = procurementLabel(line);
     const outputName = formatQuotationItemNameForOutput(line.name);
-    const rowHeight = outputName.includes("\n") || specification.length > 42 || procurement.length > 18 ? 43 : 34;
+    const remark = outputNote(line);
+    const contentLines = Math.max(
+      estimatedWrappedLines(outputName, 16),
+      estimatedWrappedLines(specification, 20),
+      estimatedWrappedLines(procurement, 14),
+      estimatedWrappedLines(remark, 13),
+    );
+    const rowHeight = Math.min(76, Math.max(34, 16 + contentLines * 15));
     return `<row r="${row}" ht="${rowHeight}" customHeight="1">
       ${numeric(`A${row}`, index + 1, 7)}
       ${inline(`B${row}`, outputName, 8)}
@@ -173,7 +195,7 @@ function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
       ${inline(`G${row}`, line.unit || "대", 7)}
       ${line.complimentary ? inline(`H${row}`, "무상", 9) : numeric(`H${row}`, unitPrice, 9)}
       ${line.complimentary ? inline(`I${row}`, "무상", 9) : formula(`I${row}`, `F${row}*H${row}`, amount, 9)}
-      ${inline(`J${row}`, outputNote(line), 7)}
+      ${inline(`J${row}`, remark, 7)}
       ${numeric(`K${row}`, fee, 0)}
     </row>`;
   }).join("");
@@ -236,15 +258,15 @@ function sheetXml(input: QuotationWorkbookInput, hasDrawing: boolean) {
   <sheetFormatPr defaultRowHeight="20"/>
   <cols>
     <col min="1" max="1" width="5.5" customWidth="1"/>
-    <col min="2" max="2" width="16" customWidth="1"/>
-    <col min="3" max="3" width="10" customWidth="1"/>
-    <col min="4" max="4" width="21" customWidth="1"/>
-    <col min="5" max="5" width="15" customWidth="1"/>
-    <col min="6" max="6" width="7" customWidth="1"/>
-    <col min="7" max="7" width="12" customWidth="1"/>
+    <col min="2" max="2" width="14" customWidth="1"/>
+    <col min="3" max="3" width="8" customWidth="1"/>
+    <col min="4" max="4" width="17" customWidth="1"/>
+    <col min="5" max="5" width="17" customWidth="1"/>
+    <col min="6" max="6" width="6" customWidth="1"/>
+    <col min="7" max="7" width="8" customWidth="1"/>
     <col min="8" max="8" width="13" customWidth="1"/>
-    <col min="9" max="9" width="15" customWidth="1"/>
-    <col min="10" max="10" width="13" customWidth="1"/>
+    <col min="9" max="9" width="14" customWidth="1"/>
+    <col min="10" max="10" width="17" customWidth="1"/>
     <col min="11" max="11" width="2" hidden="1" customWidth="1"/>
   </cols>
   <sheetData>

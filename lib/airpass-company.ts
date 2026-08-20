@@ -7,4 +7,4 @@ export const AIRPASS_COMPANY = {
   businessItems: "멀티미디어학습장치 · 소프트웨어개발 · 스크린스포츠 시뮬레이터 설치",
 } as const;
 
-export const AIRPASS_EQUIPMENT_CONTRACT_NOTE = `수의계약\n${AIRPASS_COMPANY.name}`;
+export const AIRPASS_EQUIPMENT_CONTRACT_NOTE = `${AIRPASS_COMPANY.name}\n수의계약`;

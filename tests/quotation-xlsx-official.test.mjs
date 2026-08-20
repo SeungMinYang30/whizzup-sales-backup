@@ -34,8 +34,8 @@ test("관공서 견적서는 VAT 포함 금액, 조달 수수료, 세로 한 페
   assert.match(sheet, />VAT 포함</);
   assert.match(sheet, />조달수수료</);
   assert.match(sheet, />별도</);
-  assert.match(sheet, /G2B · 26172954/);
-  assert.match(sheet, /S2B · 2025071433792973/);
+  assert.match(sheet, /G2B\n26172954/);
+  assert.match(sheet, /S2B\n2025071433792973/);
   assert.match(sheet, /학교장터/);
   assert.match(sheet, /수의계약/);
   assert.match(sheet, /식별번호/);
@@ -105,7 +105,7 @@ test("교구 견적은 에어패스 공급자 정보와 직인을 사용하고 �
   const files = unzipSync(workbook);
   const mainSheet = strFromU8(files["xl/worksheets/sheet1.xml"]);
   const detailSheet = strFromU8(files["xl/worksheets/sheet2.xml"]);
-  assert.match(mainSheet, /수의계약\n\(주\)에어패스/);
+  assert.match(mainSheet, /\(주\)에어패스\n수의계약/);
   assert.match(detailSheet, /220-86-23479/);
   assert.match(detailSheet, /임종호/);
   assert.match(detailSheet, /하남테크노밸리 U1 CENTER/);
