@@ -15,6 +15,7 @@ import {
   listOrganizationSchedules,
   removeConstructionScheduleProject,
   replaceOrganizationSchedules,
+  saveConstructionScheduleProjectOrder,
   saveConstructionSchedules,
   setConstructionScheduleCandidateHidden,
   setConstructionScheduleProjectHidden,
@@ -358,6 +359,16 @@ export async function POST(request: Request) {
         organization: payload.organization,
         businessRound: payload.businessRound,
         hidden: payload.action === "hide-construction-project",
+        memberId: member.id,
+        memberName: member.displayName,
+      }));
+    }
+    if (payload.action === "reorder-construction-projects" || payload.action === "reset-construction-project-order") {
+      if (!(await isPrimaryOwner(member))) {
+        return Response.json({ error: "시공 일정표 기관 순서는 기본 운영자만 변경할 수 있습니다." }, { status: 403 });
+      }
+      return Response.json(await saveConstructionScheduleProjectOrder({
+        scopes: payload.action === "reset-construction-project-order" ? [] : payload.scopes,
         memberId: member.id,
         memberName: member.displayName,
       }));

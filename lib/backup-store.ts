@@ -938,6 +938,7 @@ export const BACKUP_TABLES = [
       "business_round",
       "work_summary",
       "work_summary_mode",
+      "manual_sort_order",
       "completed",
       "hidden_at",
       "created_by",

@@ -239,6 +239,7 @@ export const constructionScheduleProjects = sqliteTable(
     businessRound: integer("business_round").notNull().default(1),
     workSummary: text("work_summary").notNull().default(""),
     workSummaryMode: text("work_summary_mode").notNull().default("auto"),
+    manualSortOrder: integer("manual_sort_order").notNull().default(0),
     completed: integer("completed", { mode: "boolean" })
       .notNull()
       .default(false),

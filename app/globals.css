@@ -11441,6 +11441,70 @@ tr:hover .row-actions { opacity: 1; }
   font-size: 11px;
   text-align: left;
 }
+
+.construction-order-hint {
+  padding: 7px 20px;
+  border-top: 1px solid #e6ebf3;
+  border-bottom: 1px solid #e6ebf3;
+  background: #f8faff;
+  color: #65738c;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.construction-schedule-search > button {
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid #cbd6eb;
+  border-radius: 9px;
+  background: #fff;
+  color: #4155b5;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.construction-timeline-row.is-dragging {
+  opacity: .5;
+}
+
+.construction-order-handle {
+  align-self: center;
+  padding: 4px 2px !important;
+  border: 0 !important;
+  color: #7180a2;
+  font-weight: 900;
+  letter-spacing: -3px;
+  cursor: grab;
+  user-select: none;
+}
+
+.construction-institution-cell:has(.construction-order-handle) {
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+}
+
+.construction-mobile-order {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.construction-mobile-order button {
+  width: 30px;
+  min-height: 30px;
+  border: 1px solid #cdd7eb !important;
+  border-radius: 7px;
+  background: #f7f9ff !important;
+  color: #4056bd !important;
+}
+
+.construction-mobile-order button:disabled {
+  opacity: .35;
+}
+
+@media (max-width: 1000px) {
+  .construction-order-hint { padding: 7px 14px; }
+  .construction-mobile-list header { flex-wrap: wrap; }
+  .construction-schedule-search > button { grid-column: 1 / -1; }
+}
 .joint-project-summary-body section > h4 + div,
 .joint-project-summary-body section > h4 + button { border-top: 0; }
 .joint-project-summary-body section > button { cursor: pointer; }

@@ -107,4 +107,18 @@ test("시공 일정표 기관 추가 upsert는 PostgreSQL과 D1에서 대상 열
     /WHEN excluded\.work_summary <> '' THEN excluded\.work_summary ELSE work_summary END/,
   );
 });
-
+test("시공 일정표 기관 순서는 기본 운영자만 저장하고 일반 사용자도 같은 순서를 본다", () => {
+  assert.match(schedules, /manual_sort_order INTEGER NOT NULL DEFAULT 0/);
+  assert.match(schedules, /saveConstructionScheduleProjectOrder/);
+  assert.match(schedules, /SET manual_sort_order=0/);
+  assert.match(scheduleRoute, /reorder-construction-projects/);
+  assert.match(scheduleRoute, /reset-construction-project-order/);
+  assert.match(scheduleRoute, /if \(!\(await isPrimaryOwner\(member\)\)\)/);
+  assert.match(constructionPage, /project\.manualSortOrder/);
+  assert.match(constructionPage, /draggable=\{canReorder && !saving\}/);
+  assert.match(constructionPage, /moveProjectBy\(project, -1\)/);
+  assert.match(constructionPage, /moveProjectBy\(project, 1\)/);
+  assert.match(constructionPage, /기관 순서를 기본 일정순으로 되돌렸습니다/);
+  assert.match(styles, /\.construction-order-handle/);
+  assert.match(backupStore, /"construction_schedule_projects",[\s\S]*?"manual_sort_order"/);
+});

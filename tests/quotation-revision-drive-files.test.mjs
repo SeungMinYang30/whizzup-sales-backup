@@ -17,6 +17,7 @@ const quotationsRoute = await readFile(new URL("../app/api/quotations/route.ts",
 const quotationReconcileRoute = await readFile(new URL("../app/api/quotations/reconcile/route.ts", import.meta.url), "utf8");
 const quotationDownloads = await readFile(new URL("../app/authored-quotation-downloads.ts", import.meta.url), "utf8");
 const quotationHistory = await readFile(new URL("../app/organization-quotation-history.tsx", import.meta.url), "utf8");
+const driveStorage = await readFile(new URL("../lib/google-drive-storage.ts", import.meta.url), "utf8");
 
 test("quotation actions distinguish drafts, current final files and same-number editing", () => {
   assert.match(page, /이어서 작성/);
@@ -184,6 +185,13 @@ test("quotation deletion uses a recoverable trash before Drive-backed permanent 
   assert.match(quotationsRoute, /action === "restore"/);
   assert.match(quotationsRoute, /action === "purge"/);
   assert.match(quotationsRoute, /removeDriveFile/);
+  assert.match(quotationsRoute, /archiveQuotationDriveFiles/);
+  assert.match(quotationsRoute, /restoreQuotationDriveFiles/);
+  assert.match(quotationsRoute, /QUOTATION_ARCHIVE_CATEGORY = "삭제 견적서"/);
+  assert.match(quotationsRoute, /await restoreAuthoredQuotation\(id, member\)[\s\S]*?await restoreQuotationDriveFiles/);
+  assert.match(quotationsRoute, /await trashAuthoredQuotation\(id, member\)\.catch/);
+  assert.match(driveStorage, /appProperties has \{ key='contextId' and value=/);
+  assert.match(driveStorage, /export async function archiveDriveFilesByContext/);
   assert.match(trashMigration, /deleted_at/);
   assert.match(trashMigration, /authored_quotations_deleted_idx/);
 });

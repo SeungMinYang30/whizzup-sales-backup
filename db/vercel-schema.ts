@@ -875,6 +875,7 @@ CREATE TABLE IF NOT EXISTS public.construction_schedule_projects (
   business_round integer NOT NULL DEFAULT 1,
   work_summary text NOT NULL DEFAULT '',
   work_summary_mode text NOT NULL DEFAULT 'auto',
+  manual_sort_order integer NOT NULL DEFAULT 0,
   completed smallint NOT NULL DEFAULT 0,
   hidden_at text NOT NULL DEFAULT '',
   created_by bigint,
@@ -890,6 +891,8 @@ ALTER TABLE public.construction_schedule_projects
   ADD COLUMN IF NOT EXISTS work_summary_mode text NOT NULL DEFAULT 'auto';
 ALTER TABLE public.construction_schedule_projects
   ADD COLUMN IF NOT EXISTS hidden_at text NOT NULL DEFAULT '';
+ALTER TABLE public.construction_schedule_projects
+  ADD COLUMN IF NOT EXISTS manual_sort_order integer NOT NULL DEFAULT 0;
 CREATE UNIQUE INDEX IF NOT EXISTS construction_schedule_projects_scope_idx
   ON public.construction_schedule_projects (organization, business_round);
 

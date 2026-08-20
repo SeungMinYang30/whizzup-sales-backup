@@ -797,14 +797,58 @@ export async function removeDriveFilesByContext(input: {
   contextTypes: string[];
   contextId: string;
 }) {
-  const folderId = await ensureDrivePath(input.folderSegments);
-  const types = new Set(input.contextTypes);
-  const matches = (await listDriveChildren(folderId)).filter((item) =>
-    !isDriveFolder(item)
-    && types.has(String(item.appProperties?.contextType || ""))
-    && item.appProperties?.contextId === input.contextId
-  );
+  const matches = await listDriveFilesByContext(input);
   for (const file of matches) await removeDriveFile(file.id);
+  return matches.length;
+}
+
+export async function listDriveFilesByContext(input: {
+  folderSegments?: string[];
+  contextTypes: string[];
+  contextId: string;
+}) {
+  if (!isGoogleDriveConfigured()) return [];
+  const types = new Set(input.contextTypes);
+  const files: DriveFile[] = [];
+  let pageToken = "";
+  do {
+    const url = new URL(`${DRIVE_API}/files`);
+    url.searchParams.set("q", [
+      "trashed = false",
+      `appProperties has { key='contextId' and value='${escapeQueryValue(input.contextId)}' }`,
+    ].join(" and "));
+    url.searchParams.set("fields", "nextPageToken,files(id,name,mimeType,size,parents,appProperties)");
+    url.searchParams.set("pageSize", "1000");
+    url.searchParams.set("supportsAllDrives", "true");
+    url.searchParams.set("includeItemsFromAllDrives", "true");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    const response = await driveFetch(url.toString());
+    const payload = (await response.json().catch(() => ({}))) as {
+      files?: DriveFile[];
+      nextPageToken?: string;
+      error?: { message?: string };
+    };
+    if (!response.ok) {
+      throw driveReadError(response.status, "Google Drive에서 연결된 견적 파일을 찾지 못했습니다.");
+    }
+    files.push(...(payload.files ?? []).filter((item) =>
+      !isDriveFolder(item)
+      && types.has(String(item.appProperties?.contextType || ""))
+      && item.appProperties?.contextId === input.contextId
+    ));
+    pageToken = payload.nextPageToken || "";
+  } while (pageToken);
+  return files;
+}
+
+export async function archiveDriveFilesByContext(input: {
+  folderSegments?: string[];
+  contextTypes: string[];
+  contextId: string;
+  category: string;
+}) {
+  const matches = await listDriveFilesByContext(input);
+  for (const file of matches) await archiveDriveFile(file.id, input.category);
   return matches.length;
 }
 

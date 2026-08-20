@@ -33,6 +33,7 @@ type ConstructionProject = {
   workSummary: string;
   workSummaryMode: "auto" | "manual";
   sourceProductNames: string[];
+  manualSortOrder: number;
   completed: boolean;
   hidden: boolean;
   hiddenCandidate: boolean;
@@ -141,6 +142,7 @@ export default function ConstructionSchedulePage({
   const [addQuery, setAddQuery] = useState("");
   const [addVisibleCount, setAddVisibleCount] = useState(30);
   const [hiddenManagerOpen, setHiddenManagerOpen] = useState(false);
+  const [draggedScope, setDraggedScope] = useState("");
   const [mobileStatusFilter, setMobileStatusFilter] = useState<
     "all" | "active" | "missingSchedule" | "completed" | "missingManager"
   >("all");
@@ -360,6 +362,13 @@ export default function ConstructionSchedulePage({
           .includes(keyword),
       )
       .sort((a, b) => {
+        const leftManual = a.project.manualSortOrder || 0;
+        const rightManual = b.project.manualSortOrder || 0;
+        if (leftManual || rightManual) {
+          if (!leftManual) return 1;
+          if (!rightManual) return -1;
+          if (leftManual !== rightManual) return leftManual - rightManual;
+        }
         const firstRelevantDate = (items: ConstructionSchedule[]) => {
           const item = items.find((candidate) => (candidate.endDate || candidate.scheduledDate) >= start);
           if (!item) return "9999-12-31";
@@ -370,6 +379,9 @@ export default function ConstructionSchedulePage({
         return left.localeCompare(right) || a.project.organization.localeCompare(b.project.organization, "ko-KR");
       });
   }, [hideCompleted, latestByScope, mobileStatusFilter, projects, query, schedulesByScope, start]);
+
+  const canReorder = isPrimaryOwner && !query.trim() && mobileStatusFilter === "all";
+  const hasManualOrder = projects.some((project) => !project.hidden && project.manualSortOrder > 0);
 
   const mobileSummary = useMemo(() => {
     const visibleProjects = projects.filter((project) => !project.hidden);
@@ -727,6 +739,60 @@ export default function ConstructionSchedulePage({
     }
   }
 
+  async function persistProjectOrder(ordered: ConstructionProject[], reset = false) {
+    if (!isPrimaryOwner || saving) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: reset ? "reset-construction-project-order" : "reorder-construction-projects",
+          scopes: ordered.map((project) => ({
+            organization: project.organization,
+            businessRound: project.businessRound,
+          })),
+        }),
+      });
+      const payload = (await response.json()) as {
+        projects?: ConstructionProject[];
+        schedules?: ConstructionSchedule[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || "기관 순서를 저장하지 못했습니다.");
+      setProjects(payload.projects ?? []);
+      setSchedules(payload.schedules ?? []);
+      setMessage(reset ? "기관 순서를 기본 일정순으로 되돌렸습니다." : "기관 순서를 저장했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "기관 순서를 저장하지 못했습니다.");
+    } finally {
+      setSaving(false);
+      setDraggedScope("");
+    }
+  }
+
+  function moveProject(sourceScope: string, targetScope: string) {
+    if (!canReorder || !sourceScope || sourceScope === targetScope) return;
+    const ordered = rows.map(({ project }) => project);
+    const sourceIndex = ordered.findIndex((project) => scopeKey(project.organization, project.businessRound) === sourceScope);
+    const targetIndex = ordered.findIndex((project) => scopeKey(project.organization, project.businessRound) === targetScope);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const [moved] = ordered.splice(sourceIndex, 1);
+    ordered.splice(targetIndex, 0, moved);
+    void persistProjectOrder(ordered);
+  }
+
+  function moveProjectBy(project: ConstructionProject, offset: -1 | 1) {
+    if (!canReorder) return;
+    const ordered = rows.map(({ project: rowProject }) => rowProject);
+    const currentIndex = ordered.findIndex((candidate) => scopeKey(candidate.organization, candidate.businessRound) === scopeKey(project.organization, project.businessRound));
+    const targetIndex = currentIndex + offset;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= ordered.length) return;
+    const [moved] = ordered.splice(currentIndex, 1);
+    ordered.splice(targetIndex, 0, moved);
+    void persistProjectOrder(ordered);
+  }
+
   function exportExcel() {
     const exportRows = rows.map(({ project, record, items }) => [
       record?.region || "지역 미등록",
@@ -844,8 +910,11 @@ export default function ConstructionSchedulePage({
         <div className="construction-schedule-search">
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="기관명·지역·담당자·공사 내용 검색" />
           <span>{rows.length.toLocaleString()}개 기관</span>
+          {isPrimaryOwner && hasManualOrder ? <button type="button" disabled={saving} onClick={() => void persistProjectOrder([], true)}>기본 순서</button> : null}
         </div>
       </div>
+
+      {isPrimaryOwner ? <div className="construction-order-hint">{canReorder ? "기관명 왼쪽 손잡이를 끌거나 화살표로 순서를 바꿀 수 있습니다." : "기관 순서 변경은 검색·상태 필터를 해제한 전체 보기에서 가능합니다."}</div> : null}
 
       {message ? <div className="quotation-workspace-message">{message}</div> : null}
 
@@ -864,9 +933,26 @@ export default function ConstructionSchedulePage({
         </div>
         {loading ? <div className="empty-state">일정표를 불러오는 중입니다.</div> : null}
         {!loading && rows.map(({ project, record, items }) => (
-          <article className="construction-timeline-row" key={scopeKey(project.organization, project.businessRound)}>
+          <article
+            className={`construction-timeline-row${draggedScope === scopeKey(project.organization, project.businessRound) ? " is-dragging" : ""}`}
+            key={scopeKey(project.organization, project.businessRound)}
+            draggable={canReorder && !saving}
+            onDragStart={(event) => {
+              const key = scopeKey(project.organization, project.businessRound);
+              setDraggedScope(key);
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", key);
+            }}
+            onDragOver={(event) => { if (canReorder) event.preventDefault(); }}
+            onDrop={(event) => {
+              event.preventDefault();
+              moveProject(event.dataTransfer.getData("text/plain") || draggedScope, scopeKey(project.organization, project.businessRound));
+            }}
+            onDragEnd={() => setDraggedScope("")}
+          >
             <div className="construction-fixed-cells">
               <span className="construction-institution-cell">
+                {isPrimaryOwner ? <span className="construction-order-handle" aria-hidden="true" title={canReorder ? "끌어서 순서 변경" : "검색·필터 해제 후 순서 변경"}>⋮⋮</span> : null}
                 <button type="button" className="construction-institution-main" onClick={() => onOpenOrganization(project.organization, project.businessRound)}><strong>{project.organization}</strong><small>{record?.region || "지역 미등록"} · {project.businessRound}차 사업</small><small className="construction-mobile-row-meta">{formatManagerName(record?.progressManager || "")} · {displayWorkSummary(project) || "공사·품목 미등록"}</small></button>
                 {isPrimaryOwner ? <button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표에서 숨김`} title="일정표에서 숨김" disabled={saving} onClick={() => void removeProjectFromBoard(project)}>−</button> : null}
               </span>
@@ -910,9 +996,9 @@ export default function ConstructionSchedulePage({
       </div>
 
       <div className="construction-mobile-list">
-        {rows.map(({ project, record, items }) => (
+        {rows.map(({ project, record, items }, rowIndex) => (
           <article key={scopeKey(project.organization, project.businessRound)}>
-            <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{formatManagerName(record?.progressManager || "")}</span>{isPrimaryOwner ? <button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표에서 숨김`} title="일정표에서 숨김" disabled={saving} onClick={() => void removeProjectFromBoard(project)}>−</button> : null}</header>
+            <header><button type="button" onClick={() => onOpenOrganization(project.organization, project.businessRound)}>{project.organization}</button><span>{formatManagerName(record?.progressManager || "")}</span>{isPrimaryOwner && canReorder ? <span className="construction-mobile-order"><button type="button" aria-label={`${project.organization} 위로 이동`} disabled={saving || rowIndex === 0} onClick={() => moveProjectBy(project, -1)}>↑</button><button type="button" aria-label={`${project.organization} 아래로 이동`} disabled={saving || rowIndex === rows.length - 1} onClick={() => moveProjectBy(project, 1)}>↓</button></span> : null}{isPrimaryOwner ? <button type="button" className="construction-row-remove" aria-label={`${project.organization} 일정표에서 숨김`} title="일정표에서 숨김" disabled={saving} onClick={() => void removeProjectFromBoard(project)}>−</button> : null}</header>
             <p>{record?.region || "지역 미등록"} · {displayWorkSummary(project) || "공사·품목 미등록"}</p>
             <div>{items.map((item) => {
               const day = dayMetaByDate.get(item.scheduledDate);

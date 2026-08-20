@@ -80,6 +80,7 @@ export type ConstructionScheduleProject = {
   workSummary: string;
   workSummaryMode: "auto" | "manual";
   sourceProductNames: string[];
+  manualSortOrder: number;
   completed: boolean;
   hidden: boolean;
   hiddenCandidate: boolean;
@@ -150,6 +151,7 @@ const schemaStatements = [
     business_round INTEGER NOT NULL DEFAULT 1,
     work_summary TEXT NOT NULL DEFAULT '',
     work_summary_mode TEXT NOT NULL DEFAULT 'auto',
+    manual_sort_order INTEGER NOT NULL DEFAULT 0,
     completed INTEGER NOT NULL DEFAULT 0,
     hidden_at TEXT NOT NULL DEFAULT '',
     created_by INTEGER,
@@ -416,6 +418,9 @@ async function initializeOrganizationSchedules() {
   if (!projectColumns.results.some((column) => column.name === "hidden_at")) {
     await d1.prepare("ALTER TABLE construction_schedule_projects ADD COLUMN hidden_at TEXT NOT NULL DEFAULT ''").run();
   }
+  if (!projectColumns.results.some((column) => column.name === "manual_sort_order")) {
+    await d1.prepare("ALTER TABLE construction_schedule_projects ADD COLUMN manual_sort_order INTEGER NOT NULL DEFAULT 0").run();
+  }
   // AI 기록에서 일반 일정과 시공 일정이 함께 만들어진 과거 중복도 원본을
   // 지우지 않고 deleted_at으로 보관해 복구 가능하게 정리합니다.
   await archiveConstructionDuplicateSalesSchedules(d1);
@@ -587,6 +592,7 @@ function constructionProjectJson(
       : String(row.work_summary ?? ""),
     workSummaryMode: mode,
     sourceProductNames,
+    manualSortOrder: Math.max(0, Number(row.manual_sort_order) || 0),
     completed: Number(row.completed) === 1,
     hidden: clean(row.hidden_at) !== "",
     hiddenCandidate: clean(row.work_summary_mode) === "candidate-hidden",
@@ -1389,6 +1395,37 @@ export async function setConstructionScheduleProjectHidden(input: {
     businessRound,
   ).run();
   if (!result.meta.changes) throw new Error("일정표 기관을 찾지 못했습니다.");
+  return listConstructionScheduleBoard();
+}
+
+export async function saveConstructionScheduleProjectOrder(input: {
+  scopes: unknown;
+  memberId: number;
+  memberName: string;
+}) {
+  const d1 = await ensureOrganizationSchedulesReady();
+  const rawScopes = Array.isArray(input.scopes) ? input.scopes.slice(0, 500) : [];
+  const seen = new Set<string>();
+  const scopes = rawScopes.map((value) => {
+    const scope = value && typeof value === "object" ? value as Record<string, unknown> : {};
+    const organization = clean(scope.organization);
+    const businessRound = Math.max(1, Number(scope.businessRound) || 1);
+    const key = `${organization}\u001f${businessRound}`;
+    if (!organization || seen.has(key)) throw new Error("기관 순서 정보가 올바르지 않습니다.");
+    seen.add(key);
+    return { organization, businessRound };
+  });
+  const statements = [
+    d1.prepare(`UPDATE construction_schedule_projects
+      SET manual_sort_order=0, updated_by=?, updated_by_name=?, updated_at=CURRENT_TIMESTAMP
+      WHERE COALESCE(work_summary_mode, 'auto') <> 'candidate-hidden'`)
+      .bind(input.memberId, clean(input.memberName)),
+    ...scopes.map((scope, index) => d1.prepare(`UPDATE construction_schedule_projects
+      SET manual_sort_order=?, updated_by=?, updated_by_name=?, updated_at=CURRENT_TIMESTAMP
+      WHERE organization=? AND business_round=? AND TRIM(COALESCE(hidden_at, ''))=''`)
+      .bind(index + 1, input.memberId, clean(input.memberName), scope.organization, scope.businessRound)),
+  ];
+  await d1.batch(statements);
   return listConstructionScheduleBoard();
 }
 
