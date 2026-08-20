@@ -4,7 +4,7 @@ import test from "node:test";
 import { strFromU8, unzipSync } from "fflate";
 
 register(new URL("./typescript-resolver.mjs", import.meta.url));
-const { calculateConsortiumSettlement } = await import("../lib/consortium-settlement.ts");
+const { calculateConsortiumSettlement, calculateTeachingAidSupportSettlementAmount } = await import("../lib/consortium-settlement.ts");
 const { createConsortiumSettlementWorkbook } = await import("../lib/consortium-settlement-xlsx.ts");
 const { createInternalProfitReportWorkbook } = await import("../lib/internal-profit-report-xlsx.ts");
 
@@ -71,6 +71,63 @@ test("무상 제공 품목은 컨소 지급 계산에서 제외하고 별도 내
   assert.equal(result.grossPayment, 0);
   assert.equal(result.finalPayment, 0);
   assert.equal(result.whizzupCost, 100_000);
+});
+
+test("컨소 무상 교구는 저장 지급률을 보존하고 실제 지급률 0%와 순부담액만 정산 차감한다", () => {
+  const item = {
+    name: "교구 세트",
+    quantity: 1,
+    unitPrice: 1_244_000,
+    complimentary: true,
+    earningRate: 0.15,
+    consortiumRate: 0.1,
+    teachingAidSupportAmount: 1_244_000,
+    teachingAidSupportBearer: "consortium",
+    equipmentKit: { templateName: "표준 1세트" },
+  };
+  assert.equal(calculateTeachingAidSupportSettlementAmount(item), 1_057_400);
+  const result = calculateConsortiumSettlement([item], "컨소");
+  assert.equal(result.items[0].consortiumRate, 0);
+  assert.equal(result.items[0].grossPayment, 0);
+  assert.equal(result.consortiumSupportCost, 1_057_400);
+  assert.equal(result.whizzupSupportCost, 0);
+  assert.equal(result.whizzupCost, 0);
+  assert.equal(result.finalPayment, -1_057_400);
+  assert.equal(result.costs[0].source, "teaching-aid-support");
+});
+
+test("무상 교구 부담을 위즈업으로 바꾸면 컨소 지급은 0원이고 순부담액은 내부 원가가 된다", () => {
+  const result = calculateConsortiumSettlement([{
+    name: "교구 세트",
+    quantity: 1,
+    unitPrice: 1_244_000,
+    complimentary: true,
+    earningRate: 0.15,
+    consortiumRate: 0.1,
+    teachingAidSupportAmount: 1_244_000,
+    teachingAidSupportBearer: "whizzup",
+    equipmentKit: { templateName: "표준 1세트" },
+  }], "컨소");
+  assert.equal(result.finalPayment, 0);
+  assert.equal(result.consortiumSupportCost, 0);
+  assert.equal(result.whizzupSupportCost, 1_057_400);
+  assert.equal(result.whizzupCost, 1_057_400);
+});
+
+test("부담 주체가 없는 기존 무상 교구는 소급 변경 없이 위즈업 부담으로 읽는다", () => {
+  const result = calculateConsortiumSettlement([{
+    name: "교구 세트",
+    quantity: 1,
+    unitPrice: 1_500_000,
+    complimentary: true,
+    earningRate: 0.15,
+    consortiumRate: 0.1,
+    teachingAidSupportAmount: 1_500_000,
+    equipmentKit: { templateName: "표준 1세트" },
+  }], "컨소");
+  assert.equal(result.consortiumSupportCost, 0);
+  assert.equal(result.whizzupSupportCost, 1_275_000);
+  assert.equal(result.finalPayment, 0);
 });
 
 test("컨소 정산서 Excel은 내부 마진 없이 품목·비용 처리 방식·최종 지급액을 표시한다", () => {

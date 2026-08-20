@@ -18,15 +18,19 @@ const pdf = await readFile(new URL("../app/authored-quotation-pdf.ts", import.me
 const workbook = await readFile(new URL("../lib/quotation-xlsx.ts", import.meta.url), "utf8");
 const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
-test("teaching-aid support is stored as an internal margin deduction only", () => {
+test("teaching-aid support stores an explicit bearer and keeps it out of customer documents", () => {
   assert.match(store, /teachingAidSupportAmount/);
-  assert.match(store, /marginAmount[\s\S]*- teachingAidSupportCost/);
+  assert.match(store, /teachingAidSupportBearer/);
+  assert.match(store, /settlement\.consortiumSupportCost/);
   assert.match(page, /교구 할인·지원 차감/);
   assert.match(page, /teachingAidSupportLabel \|\| "교구 할인 차감"/);
-  assert.match(page, /고객 견적금액과 PDF·Excel에는 반영하지 않고 내부 마진에서만 차감합니다/);
+  assert.match(page, /고객 견적금액과 PDF·Excel에는 표시되지 않습니다/);
   assert.match(page, /quotation-teaching-aid-support[\s\S]*?item\.equipmentKit \? <label className=\{\`quotation-complimentary-toggle/);
   assert.equal(page.match(/quotation-complimentary-toggle/g)?.length, 1);
   assert.match(page, /교구 세트 무상 제공/);
+  assert.match(page, /컨소 정산에서 차감/);
+  assert.match(page, /위즈업 내부비용/);
+  assert.match(page, /실제 부담액/);
   assert.match(page, /<dt>교구 제공<\/dt>/);
   assert.match(page, /numbers\.teachingAidSupportCost/);
   assert.match(page, /<dt>기타 내부 원가<\/dt>/);
@@ -35,7 +39,7 @@ test("teaching-aid support is stored as an internal margin deduction only", () =
   assert.match(page, /const complimentaryAmount = Math\.max\(0, item\.quantity\) \* Math\.max\(0, item\.unitPrice\)/);
   assert.match(page, /currentSupportAmount > 0 \? currentSupportAmount : complimentaryAmount/);
   assert.match(page, /currentSupportAmount === complimentaryAmount \? 0 : currentSupportAmount/);
-  assert.match(page, /수량 × 단가는 내부 차감 금액에 자동 반영합니다/);
+  assert.match(page, /고객 견적은 0원, 컨소 지급률은 0%로 적용하며 해제하면 기존 지급률을 복원합니다/);
   assert.doesNotMatch(pdf, /teachingAidSupport/);
   assert.doesNotMatch(workbook, /teachingAidSupport/);
 });

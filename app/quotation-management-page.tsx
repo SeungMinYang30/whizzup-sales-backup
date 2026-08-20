@@ -17,7 +17,10 @@ import {
   formatQuotationProcurementIdentifier,
   formatQuotationRemark,
 } from "../lib/quotation-output-text";
-import { calculateConsortiumSettlement } from "../lib/consortium-settlement";
+import {
+  calculateConsortiumSettlement,
+  calculateTeachingAidSupportSettlementAmount,
+} from "../lib/consortium-settlement";
 import { createConsortiumSettlementWorkbook, type ConsortiumSettlementWorkbookInput } from "../lib/consortium-settlement-xlsx";
 import { createInternalProfitReportWorkbook, type InternalProfitReportWorkbookInput } from "../lib/internal-profit-report-xlsx";
 import { createConsortiumSettlementPdf, createInternalProfitReportPdf } from "./consortium-settlement-pdf";
@@ -1017,7 +1020,7 @@ export default function QuotationManagementPage({
   const editingTargetLabel = draft?.id ? "현재 견적" : "";
 
   const numbers = useMemo(() => {
-    if (!draft) return { subtotal: 0, adjusted: 0, supply: 0, tax: 0, procurementFee: 0, total: 0, earning: 0, consortiumGross: 0, consortiumCost: 0, consortiumAdjustmentAdditions: 0, consortiumAdjustmentDeductions: 0, consortium: 0, projectorInstallationCost: 0, yogaMatServiceCost: 0, teachingAidSupportCost: 0, itemInternalCost: 0, additionalConstructionCost: 0, otherInternalCost: 0, internalCost: 0, margin: 0, marginRate: 0 };
+    if (!draft) return { subtotal: 0, adjusted: 0, supply: 0, tax: 0, procurementFee: 0, total: 0, earning: 0, consortiumGross: 0, consortiumCost: 0, consortiumTeachingAidSupportCost: 0, consortiumAdjustmentAdditions: 0, consortiumAdjustmentDeductions: 0, consortium: 0, profitConsortium: 0, projectorInstallationCost: 0, yogaMatServiceCost: 0, teachingAidSupportCost: 0, itemInternalCost: 0, additionalConstructionCost: 0, otherInternalCost: 0, internalCost: 0, margin: 0, marginRate: 0 };
     const subtotal = draft.items.reduce((sum, item) => sum + (item.complimentary ? 0 : Math.max(0, item.quantity) * Math.max(0, item.unitPrice)), 0);
     const adjusted = Math.max(0, subtotal - Math.max(0, draft.discountAmount) + Math.max(0, draft.extraAmount));
     const supply = Math.round(adjusted / 1.1);
@@ -1041,12 +1044,17 @@ export default function QuotationManagementPage({
         : 0
     ), 0);
     const itemInternalCost = settlement.whizzupCost;
-    const teachingAidSupportCost = draft.items.reduce((sum, item) => sum + Math.max(0, item.teachingAidSupportAmount ?? 0), 0);
+    const teachingAidSupportCost = settlement.whizzupSupportCost;
+    const consortiumTeachingAidSupportCost = settlement.consortiumSupportCost;
     const additionalConstructionCost = Math.max(0, draft.additionalInternalConstructionCost);
-    const internalCost = itemInternalCost + teachingAidSupportCost + additionalConstructionCost;
+    const internalCost = itemInternalCost + additionalConstructionCost;
     const otherInternalCost = Math.max(0, internalCost - projectorInstallationCost - yogaMatServiceCost - teachingAidSupportCost - additionalConstructionCost);
-    const margin = earning - consortium - internalCost;
-    return { subtotal, adjusted, supply, tax, procurementFee, total: adjusted + procurementFee, earning, consortiumGross, consortiumCost, consortiumAdjustmentAdditions: settlement.adjustmentAdditions, consortiumAdjustmentDeductions: settlement.adjustmentDeductions, consortium, projectorInstallationCost, yogaMatServiceCost, teachingAidSupportCost, itemInternalCost, additionalConstructionCost, otherInternalCost, internalCost, margin, marginRate: subtotal ? margin / subtotal : 0 };
+    // A consortium-borne complimentary kit is offset against its settlement. The
+    // negative settlement is not WHIZZUP revenue, so neutralize that offset only
+    // in the profit report while preserving the real payable amount elsewhere.
+    const profitConsortium = consortium + consortiumTeachingAidSupportCost;
+    const margin = earning - profitConsortium - internalCost;
+    return { subtotal, adjusted, supply, tax, procurementFee, total: adjusted + procurementFee, earning, consortiumGross, consortiumCost, consortiumTeachingAidSupportCost, consortiumAdjustmentAdditions: settlement.adjustmentAdditions, consortiumAdjustmentDeductions: settlement.adjustmentDeductions, consortium, profitConsortium, projectorInstallationCost, yogaMatServiceCost, teachingAidSupportCost, itemInternalCost, additionalConstructionCost, otherInternalCost, internalCost, margin, marginRate: subtotal ? margin / subtotal : 0 };
   }, [draft]);
 
   const internalReportRows = useMemo(() => (draft?.items ?? []).map((item, index) => {
@@ -1055,18 +1063,12 @@ export default function QuotationManagementPage({
     const baseRate = contentSubstitution ? contentSubstitutionBaseEarningRate(item) : Math.max(0, item.earningRate);
     const baseEarning = Math.floor(lineAmount * baseRate / 10) * 10;
     const earning = item.complimentary ? 0 : draftItemExpectedEarning(item);
-    const grossConsortium = draft?.executionType === "컨소" && !contentSubstitution
-      ? Math.min(earning, Math.floor(lineAmount * Math.max(0, item.consortiumRate) / 10) * 10)
-      : 0;
-    const consortiumCost = draft?.executionType === "컨소" && item.internalCostEnabled && item.internalCostBearer === "consortium"
-      ? Math.max(0, item.internalCostAmount)
-      : 0;
-    const consortium = grossConsortium - consortiumCost;
-    const teachingAidSupportCost = Math.max(0, item.teachingAidSupportAmount ?? 0);
+    const itemSettlement = calculateConsortiumSettlement([item], draft?.executionType ?? "직영");
+    const consortiumTeachingAidSupportCost = itemSettlement.consortiumSupportCost;
+    const consortium = itemSettlement.finalPayment + consortiumTeachingAidSupportCost;
+    const teachingAidSupportCost = calculateTeachingAidSupportSettlementAmount(item);
     const internalCostDisplay = (item.internalCostEnabled ? Math.max(0, item.internalCostAmount) : 0) + teachingAidSupportCost;
-    const internalCost = (!contentSubstitution && item.internalCostEnabled && (draft?.executionType !== "컨소" || item.internalCostBearer === "whizzup")
-      ? Math.max(0, item.internalCostAmount)
-      : 0) + teachingAidSupportCost;
+    const internalCost = itemSettlement.whizzupCost;
     const remaining = lineAmount - internalCostDisplay;
     const formula = contentSubstitution
       ? remaining > 0
@@ -1081,7 +1083,7 @@ export default function QuotationManagementPage({
       unit: item.unit,
       unitPrice: Math.max(0, item.unitPrice),
       earningRate: Math.max(0, item.earningRate),
-      consortiumRate: Math.max(0, item.consortiumRate),
+      consortiumRate: itemSettlement.items[0]?.consortiumRate ?? 0,
       complimentary: Boolean(item.complimentary),
       amount: lineAmount,
       baseRate,
@@ -1092,7 +1094,11 @@ export default function QuotationManagementPage({
       internalCostDisplay,
       netProfit: earning - consortium - internalCost,
       formula,
-      status: contentSubstitution ? "콘텐츠 대체" : teachingAidSupportCost > 0 ? "교구 할인·지원" : internalCostDisplay > 0 ? "내부 비용 반영" : "일반",
+      status: contentSubstitution
+        ? "콘텐츠 대체"
+        : teachingAidSupportCost > 0
+          ? itemSettlement.consortiumSupportCost > 0 ? "컨소 교구 부담" : "위즈업 교구 부담"
+          : internalCostDisplay > 0 ? "내부 비용 반영" : "일반",
     };
   }), [draft]);
 
@@ -1127,13 +1133,14 @@ export default function QuotationManagementPage({
           category: "internal-cost",
         });
       }
-      const teachingAidSupport = Math.max(0, item.teachingAidSupportAmount ?? 0);
-      if (teachingAidSupport > 0) {
+      const teachingAidSupport = calculateTeachingAidSupportSettlementAmount(item);
+      const whizzupBearsTeachingAidSupport = draft?.executionType !== "컨소" || item.teachingAidSupportBearer !== "consortium";
+      if (teachingAidSupport > 0 && whizzupBearsTeachingAidSupport) {
         details.push({
           label: item.equipmentKit ? "교구 제공 비용" : "교구 할인·지원 차감",
           itemName: item.name,
           amount: teachingAidSupport,
-          note: "내부 마진 차감",
+          note: "위즈업 내부 마진 차감",
           category: "support",
         });
       }
@@ -1153,11 +1160,9 @@ export default function QuotationManagementPage({
 
   function internalProfitReportText() {
     if (!draft) return "";
-    const consortiumText = numbers.consortium === 0
+    const consortiumText = numbers.profitConsortium === 0
       ? "0원"
-      : numbers.consortium > 0
-        ? `-${won.format(numbers.consortium)}원`
-        : `+${won.format(Math.abs(numbers.consortium))}원 (상계)`;
+      : `-${won.format(numbers.profitConsortium)}원`;
     const internalCostText = numbers.internalCost > 0 ? `-${won.format(numbers.internalCost)}원` : "0원";
     const costDetailLines = internalCostDetails.map((detail) =>
       `- ${detail.label} · ${detail.itemName}${detail.note ? ` · ${detail.note}` : ""}: -${won.format(detail.amount)}원`
@@ -1170,6 +1175,9 @@ export default function QuotationManagementPage({
       `협업 구분: ${draft.executionType}${draft.executionType === "컨소" && draft.consortiumCompany ? ` · ${draft.consortiumCompany}` : ""}`,
       `예상 수익: ${won.format(numbers.earning)}원`,
       `컨소 지급: ${consortiumText}`,
+      ...(numbers.consortiumTeachingAidSupportCost > 0
+        ? [`컨소 무상 교구 부담: ${won.format(numbers.consortiumTeachingAidSupportCost)}원 (정산에서 상계)`]
+        : []),
       ...(costDetailLines.length ? ["내부 비용 상세:", ...costDetailLines] : []),
       `내부 원가 합계: ${internalCostText}`,
       `최종 총이익: ${won.format(numbers.margin)}원`,
@@ -1207,7 +1215,7 @@ export default function QuotationManagementPage({
       consortiumCompany: draft.consortiumCompany,
       total: numbers.total,
       earning: numbers.earning,
-      consortium: numbers.consortium,
+      consortium: numbers.profitConsortium,
       internalCost: numbers.internalCost,
       margin: numbers.margin,
       marginRate: numbers.marginRate,
@@ -1744,6 +1752,7 @@ export default function QuotationManagementPage({
       consortiumRate: draft?.executionType === "컨소" ? Math.min(earningRate, consortiumSuggestion?.rate ?? 0) : 0,
       teachingAidSupportAmount: 0,
       teachingAidSupportLabel: "",
+      teachingAidSupportBearer: "whizzup",
       ...internalCostFields(product.name, product.specification, quantity),
     };
   }
@@ -2094,6 +2103,7 @@ export default function QuotationManagementPage({
       supplierVendorId: null, supplierVendorName: "",
       procurement: false, procurementChannel: "", procurementNumber: "", procurementFeeRate: 0, consortiumRate: 0,
       internalCostEnabled: false, internalCostAmount: 0, internalCostBearer: "consortium",
+      teachingAidSupportAmount: 0, teachingAidSupportLabel: "", teachingAidSupportBearer: "whizzup",
     };
   }
 
@@ -2125,6 +2135,7 @@ export default function QuotationManagementPage({
       internalCostAutoQuantity: undefined,
       teachingAidSupportAmount: 0,
       teachingAidSupportLabel: "",
+      teachingAidSupportBearer: "whizzup",
     });
     setMessage("직접 입력 행으로 전환했습니다. 품명과 규격은 계속 수정할 수 있습니다.");
   }
@@ -3070,22 +3081,16 @@ export default function QuotationManagementPage({
                   const procurementFee = appliesProcurementFee(item) ? Math.floor(productAmount * item.procurementFeeRate / 10) * 10 : 0;
                   const quotationAmount = productAmount + procurementFee;
                   const contentSubstitution = isContentSubstitutionItem(item);
-                  const expectedEarning = draftItemExpectedEarning(item);
-                  const consortiumPayment = draft.executionType === "컨소" && !contentSubstitution ? Math.min(expectedEarning, Math.floor(productAmount * item.consortiumRate / 10) * 10) : 0;
+                  const expectedEarning = item.complimentary ? 0 : draftItemExpectedEarning(item);
+                  const itemSettlement = calculateConsortiumSettlement([item], draft.executionType);
+                  const consortiumPayment = itemSettlement.finalPayment;
                   const internalCost = item.internalCostEnabled ? Math.max(0, item.internalCostAmount) : 0;
-                  const teachingAidSupportCost = Math.max(0, item.teachingAidSupportAmount ?? 0);
+                  const teachingAidSupportCost = calculateTeachingAidSupportSettlementAmount(item);
                   const internalCostDefaults = quotationInternalCostDefaults(item.name, item.specification, item.quantity);
-                  const consortiumBearsInternalCost = draft.executionType === "컨소"
-                    && !contentSubstitution
-                    && item.internalCostEnabled
-                    && item.internalCostBearer === "consortium";
-                  const settledConsortiumPayment = consortiumBearsInternalCost
-                    ? consortiumPayment - internalCost
-                    : consortiumPayment;
-                  const companyMarginBeforeTeachingAidSupport = contentSubstitution
-                    ? expectedEarning
-                    : expectedEarning - settledConsortiumPayment - (consortiumBearsInternalCost ? 0 : internalCost);
-                  const companyMargin = companyMarginBeforeTeachingAidSupport - teachingAidSupportCost;
+                  const companyMargin = expectedEarning
+                    - consortiumPayment
+                    - itemSettlement.whizzupCost
+                    - itemSettlement.consortiumSupportCost;
                   return <section className="quotation-item-slot" key={item.id}>
                     <div className="quotation-item-insert-control">
                       <button type="button" onClick={() => setInsertMenuIndex((current) => current === index ? null : index)}>+ 품목 추가</button>
@@ -3148,13 +3153,13 @@ export default function QuotationManagementPage({
                       {item.contractType === "g2b" ? <label><span>공급처</span><input value={item.supplierVendorName ?? ""} onChange={(event) => updateItem(item.id, { supplierVendorId: null, supplierVendorName: event.target.value })} placeholder="조달 공급처명" /></label> : null}
                       <label><span>조달 수수료율</span><div className="quotation-rate-input"><EditableRateInput label="조달 수수료율" value={item.procurementFeeRate} step={0.01} disabled={!appliesProcurementFee(item)} onChange={(procurementFeeRate) => updateItem(item.id, { procurementFeeRate })} /><b>%</b></div></label>
                       <label><span>당사 수수료율</span><div className="quotation-rate-input"><EditableRateInput label="당사 수수료율" value={item.earningRate} disabled={contentSubstitution} onChange={(earningRate) => updateItem(item.id, { earningRate, consortiumRate: Math.min(item.consortiumRate, earningRate) })} /><b>%</b></div>{contentSubstitution ? <small>바이패스 100% · 잔액에는 기존 {(contentSubstitutionBaseEarningRate(item) * 100).toFixed(2).replace(/\.00$/, "")}% 적용</small> : null}</label>
-                      {draft.executionType === "컨소" ? <label><span>컨소 지급률</span><div className="quotation-rate-input"><EditableRateInput label="컨소 지급률" value={item.consortiumRate} max={item.earningRate * 100} onChange={(consortiumRate) => updateItem(item.id, { consortiumRate })} /><b>%</b></div>{(() => {
+                      {draft.executionType === "컨소" ? <label><span>컨소 지급률</span><div className="quotation-rate-input"><EditableRateInput label="컨소 지급률" value={item.complimentary ? 0 : item.consortiumRate} disabled={Boolean(item.complimentary)} max={item.earningRate * 100} onChange={(consortiumRate) => updateItem(item.id, { consortiumRate })} /><b>%</b></div>{item.complimentary ? <small>무상 제공 적용 0% · 해제 시 기존 {(item.consortiumRate * 100).toFixed(2).replace(/\.00$/, "")}% 복원</small> : (() => {
                         const recent = draftItemLookupKeys(item).map((key) => recentConsortiumRates[key]).find(Boolean);
                         return recent && Math.abs(recent.rate - item.consortiumRate) < 0.000001
                           ? <small className="quotation-recent-rate">최근 적용 {(recent.rate * 100).toFixed(2).replace(/\.00$/, "")}% · {recent.quoteDate}</small>
                           : null;
                       })()}</label> : null}
-                      <div className="quotation-item-margin"><span>당사 마진</span><strong>{won.format(companyMargin)}원</strong>{teachingAidSupportCost > 0 ? <small>교구 할인·지원 {won.format(teachingAidSupportCost)}원 차감</small> : contentSubstitution ? <small>대체 후 잔액 × 기존 수수료율</small> : internalCost > 0 ? <small>내부 원가 {won.format(internalCost)}원 반영</small> : draft.executionType === "컨소" ? <small>컨소 지급 {won.format(consortiumPayment)}원 차감</small> : <small>예상 수익 기준</small>}</div>
+                      <div className="quotation-item-margin"><span>당사 마진</span><strong>{won.format(companyMargin)}원</strong>{teachingAidSupportCost > 0 ? <small>{draft.executionType === "컨소" && item.teachingAidSupportBearer === "consortium" ? "컨소 정산에서" : "위즈업 내부 원가로"} 교구 지원 {won.format(teachingAidSupportCost)}원 처리</small> : contentSubstitution ? <small>대체 후 잔액 × 기존 수수료율</small> : internalCost > 0 ? <small>내부 원가 {won.format(internalCost)}원 반영</small> : draft.executionType === "컨소" ? <small>컨소 지급 {won.format(consortiumPayment)}원 차감</small> : <small>예상 수익 기준</small>}</div>
                       {internalCostDefaults.kind && <div className="quotation-item-internal-cost">
                         <label><input type="checkbox" checked={item.internalCostEnabled} onChange={(event) => {
                           if (internalCostDefaults.kind === "content-substitution") {
@@ -3189,8 +3194,8 @@ export default function QuotationManagementPage({
                         <small>{internalCostDefaults.kind === "content-substitution" ? "체크 시 바이패스 100%로 표시하고, 대체 후 남은 금액에 기존 수수료율을 적용합니다. 초과 비용은 음수 마진으로 반영됩니다." : draft.executionType === "컨소" && item.internalCostBearer === "consortium" ? "컨소 정산서의 비용 내역과 최종 지급 예정액에 반영됩니다." : "위즈업 내부 비용으로 처리되며 고객 견적 금액에는 반영되지 않습니다."}</small>
                       </div>}
                       {supportsTeachingAidDiscount(item) && <div className="quotation-teaching-aid-support">
-                        <label><span>교구 할인·지원 차감</span><input value={item.teachingAidSupportLabel || "교구 할인 차감"} onChange={(event) => updateItem(item.id, { teachingAidSupportLabel: event.target.value })} placeholder="교구 할인 차감" /></label>
-                        <label><span>내부 차감 금액</span><span className="quotation-money-input"><FormattedMoneyInput value={item.teachingAidSupportAmount ?? 0} onChange={(teachingAidSupportAmount) => updateItem(item.id, { teachingAidSupportAmount })} label="교구 할인·지원 차감 금액" /><b>원</b></span></label>
+                        <label><span>교구 할인·지원 항목</span><input value={item.teachingAidSupportLabel || "교구 할인 차감"} onChange={(event) => updateItem(item.id, { teachingAidSupportLabel: event.target.value })} placeholder="교구 할인 차감" /></label>
+                        <label><span>지원 기준 금액</span><span className="quotation-money-input"><FormattedMoneyInput value={item.teachingAidSupportAmount ?? 0} onChange={(teachingAidSupportAmount) => updateItem(item.id, { teachingAidSupportAmount })} label="교구 할인·지원 기준 금액" /><b>원</b></span></label>
                         {item.equipmentKit ? <label className={`quotation-complimentary-toggle${item.complimentary ? " active" : ""}`}><input type="checkbox" checked={Boolean(item.complimentary)} onChange={(event) => {
                           const complimentary = event.target.checked;
                           const complimentaryAmount = Math.max(0, item.quantity) * Math.max(0, item.unitPrice);
@@ -3198,12 +3203,15 @@ export default function QuotationManagementPage({
                           updateItem(item.id, {
                             complimentary,
                             teachingAidSupportLabel: item.teachingAidSupportLabel || "교구 할인 차감",
+                            ...(complimentary ? { teachingAidSupportBearer: draft.executionType === "컨소" ? "consortium" as const : "whizzup" as const } : {}),
                             teachingAidSupportAmount: complimentary
                               ? (currentSupportAmount > 0 ? currentSupportAmount : complimentaryAmount)
                               : (currentSupportAmount === complimentaryAmount ? 0 : currentSupportAmount),
                           });
-                        }} /><span><b>교구 세트 무상 제공</b><small>고객 견적에서는 0원으로 처리하고, 수량 × 단가는 내부 차감 금액에 자동 반영합니다.</small></span></label> : null}
-                        <small>고객 견적금액과 PDF·Excel에는 반영하지 않고 내부 마진에서만 차감합니다.</small>
+                        }} /><span><b>교구 세트 무상 제공</b><small>고객 견적은 0원, 컨소 지급률은 0%로 적용하며 해제하면 기존 지급률을 복원합니다.</small></span></label> : null}
+                        {item.complimentary && draft.executionType === "컨소" ? <div className="quotation-cost-bearer"><span>무상 교구 비용 처리</span><div><button type="button" className={item.teachingAidSupportBearer === "consortium" ? "active" : ""} onClick={() => updateItem(item.id, { teachingAidSupportBearer: "consortium" })}>컨소 정산에서 차감</button><button type="button" className={item.teachingAidSupportBearer !== "consortium" ? "active" : ""} onClick={() => updateItem(item.id, { teachingAidSupportBearer: "whizzup" })}>위즈업 내부비용</button></div></div> : null}
+                        {item.complimentary && teachingAidSupportCost > 0 ? <small>실제 부담액 {won.format(teachingAidSupportCost)}원 · 지원 기준 금액에서 당사 기준 수수료를 제외한 금액입니다.</small> : null}
+                        <small>{draft.executionType === "컨소" && item.complimentary && item.teachingAidSupportBearer === "consortium" ? "컨소 정산서의 차감 내역과 다음 정산 상계액에 반영됩니다." : "위즈업 내부 원가로 처리되며 고객 견적금액과 PDF·Excel에는 표시되지 않습니다."}</small>
                       </div>}
                     </div>
                     <label className="quotation-item-card-note"><span>비고</span><input value={item.note} onChange={(event) => updateItem(item.id, { note: event.target.value })} placeholder="품목별 비고" /></label>
@@ -3239,7 +3247,7 @@ export default function QuotationManagementPage({
             <div><span className="section-kicker">SALES INFO</span><h4>영업 정보</h4></div>
             <label>협업 구분<select value={draft.executionType} onChange={(event) => setExecutionType(event.target.value === "컨소" ? "컨소" : "직영")}><option>직영</option><option>컨소</option></select></label>
             {draft.executionType === "컨소" && <><label>컨소 업체<input value={draft.consortiumCompany} onChange={(event) => { collaborationTouchedRef.current = true; setDraft({ ...draft, consortiumCompany: event.target.value }); }} placeholder="업체명" /></label><p>컨소 지급률은 품목마다 다르게 입력합니다. 각 품목의 지급률은 위즈업 수수료율을 넘을 수 없습니다.</p></>}
-            <section className="quote-profit-box"><header><strong>수익 분석</strong><small>내부용</small></header><dl><dt>예상 수익</dt><dd>{won.format(numbers.earning)}원</dd><dt>컨소 지급</dt><dd>{numbers.consortium === 0 ? "0원" : numbers.consortium > 0 ? `-${won.format(numbers.consortium)}원` : `+${won.format(Math.abs(numbers.consortium))}원 (상계)`}</dd>{numbers.projectorInstallationCost > 0 && <><dt>빔프로젝터 설치</dt><dd className="deduction">-{won.format(numbers.projectorInstallationCost)}원</dd></>}{numbers.yogaMatServiceCost > 0 && <><dt>요가매트 제공</dt><dd className="deduction">-{won.format(numbers.yogaMatServiceCost)}원</dd></>}{numbers.teachingAidSupportCost > 0 && <><dt>교구 제공</dt><dd className="deduction">-{won.format(numbers.teachingAidSupportCost)}원</dd></>}{numbers.additionalConstructionCost > 0 && <><dt>추가 공사비</dt><dd className="deduction">-{won.format(numbers.additionalConstructionCost)}원</dd></>}{numbers.otherInternalCost > 0 && <><dt>기타 내부 원가</dt><dd className="deduction">-{won.format(numbers.otherInternalCost)}원</dd></>}{numbers.internalCost > 0 && <><dt>내부 원가 합계</dt><dd className="deduction">-{won.format(numbers.internalCost)}원</dd></>}<dt>최종 총이익</dt><dd>{won.format(numbers.margin)}원</dd><dt>마진%</dt><dd>{(numbers.marginRate * 100).toFixed(1)}%</dd></dl></section>
+            <section className="quote-profit-box"><header><strong>수익 분석</strong><small>내부용</small></header><dl><dt>예상 수익</dt><dd>{won.format(numbers.earning)}원</dd><dt>컨소 지급</dt><dd>{numbers.consortium === 0 ? "0원" : numbers.consortium > 0 ? `-${won.format(numbers.consortium)}원` : `+${won.format(Math.abs(numbers.consortium))}원 (상계)`}</dd>{numbers.consortiumTeachingAidSupportCost > 0 && <><dt>컨소 무상 교구 부담</dt><dd>{won.format(numbers.consortiumTeachingAidSupportCost)}원 (정산 차감)</dd></>}{numbers.projectorInstallationCost > 0 && <><dt>빔프로젝터 설치</dt><dd className="deduction">-{won.format(numbers.projectorInstallationCost)}원</dd></>}{numbers.yogaMatServiceCost > 0 && <><dt>요가매트 제공</dt><dd className="deduction">-{won.format(numbers.yogaMatServiceCost)}원</dd></>}{numbers.teachingAidSupportCost > 0 && <><dt>교구 제공</dt><dd className="deduction">-{won.format(numbers.teachingAidSupportCost)}원</dd></>}{numbers.additionalConstructionCost > 0 && <><dt>추가 공사비</dt><dd className="deduction">-{won.format(numbers.additionalConstructionCost)}원</dd></>}{numbers.otherInternalCost > 0 && <><dt>기타 내부 원가</dt><dd className="deduction">-{won.format(numbers.otherInternalCost)}원</dd></>}{numbers.internalCost > 0 && <><dt>내부 원가 합계</dt><dd className="deduction">-{won.format(numbers.internalCost)}원</dd></>}<dt>최종 총이익</dt><dd>{won.format(numbers.margin)}원</dd><dt>마진%</dt><dd>{(numbers.marginRate * 100).toFixed(1)}%</dd></dl></section>
             {draft.executionType === "컨소" && <section className="quote-consortium-settlement">
               <header><div><strong>정산서</strong><small>업체 공유용 · 내부 마진 제외</small></div><span>Excel · PDF</span></header>
               <dl><dt>기본 정산액</dt><dd>{won.format(numbers.consortiumGross)}원</dd><dt>정산 반영 비용</dt><dd>{numbers.consortiumCost ? `-${won.format(numbers.consortiumCost)}원` : "0원"}</dd>{numbers.consortiumAdjustmentDeductions > 0 && <><dt>추가 정산 차감</dt><dd>-{won.format(numbers.consortiumAdjustmentDeductions)}원</dd></>}{numbers.consortiumAdjustmentAdditions > 0 && <><dt>추가 지급</dt><dd>+{won.format(numbers.consortiumAdjustmentAdditions)}원</dd></>}<dt>최종 지급 예정액</dt><dd>{numbers.consortium < 0 ? `${won.format(numbers.consortium)}원 (다음 정산 상계)` : `${won.format(numbers.consortium)}원`}</dd></dl>
@@ -3285,12 +3293,12 @@ export default function QuotationManagementPage({
             <header><div><span className="section-kicker">INTERNAL PROFIT REPORT</span><h3 id="internal-profit-report-title">내부 수익표</h3><p>{draft.organization} · {draft.projectTitle || `${draft.businessRound}차 사업`} · {draft.quoteNumber || "저장 전"}</p></div><button type="button" aria-label="닫기" onClick={() => setInternalReportOpen(false)}>×</button></header>
             <div className="quote-internal-report-body">
             <div className="quote-internal-report-summary">
-              <span>견적금액<b>{won.format(numbers.total)}원</b></span><span>예상 수익<b>{won.format(numbers.earning)}원</b></span><span>컨소 지급<b>{numbers.consortium ? `-${won.format(numbers.consortium)}원` : "0원"}</b></span><span>내부 원가<b>{numbers.internalCost ? `-${won.format(numbers.internalCost)}원` : "0원"}</b></span><span className="result">최종 총이익<b>{won.format(numbers.margin)}원</b></span><span>마진율<b>{(numbers.marginRate * 100).toFixed(1)}%</b></span>
+              <span>견적금액<b>{won.format(numbers.total)}원</b></span><span>예상 수익<b>{won.format(numbers.earning)}원</b></span><span>컨소 지급<b>{numbers.profitConsortium ? `-${won.format(numbers.profitConsortium)}원` : "0원"}</b></span><span>내부 원가<b>{numbers.internalCost ? `-${won.format(numbers.internalCost)}원` : "0원"}</b></span><span className="result">최종 총이익<b>{won.format(numbers.margin)}원</b></span><span>마진율<b>{(numbers.marginRate * 100).toFixed(1)}%</b></span>
             </div>
-            <div className="quote-internal-report-formula"><span>예상 수익 <b>{won.format(numbers.earning)}원</b></span><i>−</i><span>컨소·내부 원가 <b>{won.format(numbers.consortium + numbers.internalCost)}원</b></span><i>=</i><span className="result">최종 총이익 <b>{won.format(numbers.margin)}원</b></span></div>
+            <div className="quote-internal-report-formula"><span>예상 수익 <b>{won.format(numbers.earning)}원</b></span><i>−</i><span>컨소·내부 원가 <b>{won.format(numbers.profitConsortium + numbers.internalCost)}원</b></span><i>=</i><span className="result">최종 총이익 <b>{won.format(numbers.margin)}원</b></span></div>
             <div className="quote-internal-report-items">{internalReportRows.map((row) => <details key={`${row.number}-${row.name}`} className={row.complimentary ? "complimentary" : ""}>
               <summary><span className="number">{row.number}</span><span className="title"><b>{row.name}</b><small>{row.specification || `${row.quantity}${row.unit}`}</small></span>{row.complimentary && <em>무상 제공</em>}<span className="profit"><small>품목 순이익</small><b>{won.format(row.netProfit)}원</b></span></summary>
-              <div><dl><dt>견적금액</dt><dd>{row.complimentary ? "무상" : `${won.format(row.amount)}원`}</dd><dt>예상 수익</dt><dd>{won.format(row.earning)}원</dd><dt>컨소 지급</dt><dd>{row.consortium ? `-${won.format(row.consortium)}원` : "0원"}</dd><dt>내부 원가</dt><dd>{row.internalCost ? `-${won.format(row.internalCost)}원` : "0원"}</dd></dl><p>{row.complimentary ? `기준 단가 ${won.format(row.unitPrice)}원은 보존되며 견적 합계와 수익 계산에서 제외됩니다.` : `${row.quantity}${row.unit} × ${won.format(row.unitPrice)}원 · 수익률 ${(row.earningRate * 100).toFixed(1)}%${draft.executionType === "컨소" ? ` · 컨소 지급률 ${(row.consortiumRate * 100).toFixed(1)}%` : ""}`}</p></div>
+              <div><dl><dt>견적금액</dt><dd>{row.complimentary ? "무상" : `${won.format(row.amount)}원`}</dd><dt>예상 수익</dt><dd>{won.format(row.earning)}원</dd><dt>컨소 지급</dt><dd>{row.consortium === 0 ? "0원" : row.consortium > 0 ? `-${won.format(row.consortium)}원` : `+${won.format(Math.abs(row.consortium))}원 (상계)`}</dd><dt>내부 원가</dt><dd>{row.internalCost ? `-${won.format(row.internalCost)}원` : "0원"}</dd></dl><p>{row.complimentary ? `기준 단가 ${won.format(row.unitPrice)}원은 보존되며 고객 견적 합계에서 제외됩니다. 실제 컨소 지급률은 0%입니다.` : `${row.quantity}${row.unit} × ${won.format(row.unitPrice)}원 · 수익률 ${(row.earningRate * 100).toFixed(1)}%${draft.executionType === "컨소" ? ` · 컨소 지급률 ${(row.consortiumRate * 100).toFixed(1)}%` : ""}`}</p></div>
             </details>)}</div>
             {internalCostDetails.length > 0 && <section className="quote-internal-report-cost-details" aria-label="내부 비용 상세">
               <h4>내부 비용·지원·콘텐츠 대체 상세</h4>
@@ -3315,12 +3323,12 @@ export default function QuotationManagementPage({
             <div className="internal-profit-print-summary">
               <span>견적금액<b>{won.format(numbers.total)}원</b></span>
               <span>기준·반영 수익<b>{won.format(numbers.earning)}원</b></span>
-              <span>컨소 지급<b>{numbers.consortium ? `-${won.format(numbers.consortium)}원` : "0원"}</b></span>
+              <span>컨소 지급<b>{numbers.profitConsortium ? `-${won.format(numbers.profitConsortium)}원` : "0원"}</b></span>
               <span className="cost">내부 비용<b>{numbers.internalCost ? `-${won.format(numbers.internalCost)}원` : "0원"}</b></span>
               <span className="result">최종 총이익<b>{won.format(numbers.margin)}원</b></span>
               <span>마진율<b>{(numbers.marginRate * 100).toFixed(1)}%</b></span>
             </div>
-            <div className="internal-profit-print-formula"><span>예상 수익<b>{won.format(numbers.earning)}원</b></span><i>−</i><span>컨소·내부 비용<b>{won.format(numbers.consortium + numbers.internalCost)}원</b></span><i>=</i><span className="result">최종 총이익<b>{won.format(numbers.margin)}원</b></span></div>
+            <div className="internal-profit-print-formula"><span>예상 수익<b>{won.format(numbers.earning)}원</b></span><i>−</i><span>컨소·내부 비용<b>{won.format(numbers.profitConsortium + numbers.internalCost)}원</b></span><i>=</i><span className="result">최종 총이익<b>{won.format(numbers.margin)}원</b></span></div>
             <div className="internal-profit-print-section-heading"><h2>품목별 수익 내역</h2><span>{internalReportRows.length}개 품목 · VAT 포함 기준</span></div>
             <div className="internal-profit-print-items">{internalReportRows.map((row) => <article key={`internal-print-${row.number}-${row.name}`} className={row.complimentary ? "complimentary" : ""}>
               <header><span className="number">{row.number}</span><span className="title"><b>{row.name}</b><small>{row.specification || `${row.quantity}${row.unit} · ${won.format(row.unitPrice)}원`}</small></span>{row.complimentary && <em>무상 제공</em>}<strong>{won.format(row.netProfit)}원</strong></header>

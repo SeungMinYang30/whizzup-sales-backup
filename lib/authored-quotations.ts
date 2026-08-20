@@ -48,6 +48,7 @@ export type AuthoredQuotationItem = {
   internalCostAutoQuantity?: boolean;
   teachingAidSupportAmount?: number;
   teachingAidSupportLabel?: string;
+  teachingAidSupportBearer?: InternalCostBearer;
   equipmentKit?: AirpassEquipmentKit;
 };
 
@@ -305,6 +306,8 @@ function parseItems(value: unknown) {
     const internalCostAutoQuantity = item.internalCostAutoQuantity === true;
     const teachingAidSupportAmount = amount(item.teachingAidSupportAmount);
     const teachingAidSupportLabel = text(item.teachingAidSupportLabel, 200);
+    // 필드 도입 전 견적은 소급 변경을 막기 위해 기존 위즈업 부담으로 읽습니다.
+    const teachingAidSupportBearer = item.teachingAidSupportBearer === "consortium" ? "consortium" as const : "whizzup" as const;
     const contentSubstitutionEnabled = internalCostEnabled && quotationInternalCostKind(name, text(item.specification, 1_000)) === "content-substitution";
     const internalCostBaseEarningRate = contentSubstitutionEnabled
       ? contentSubstitutionBaseEarningRate({
@@ -354,6 +357,7 @@ function parseItems(value: unknown) {
       internalCostAutoQuantity,
       teachingAidSupportAmount,
       teachingAidSupportLabel,
+      teachingAidSupportBearer,
       ...(equipmentKit ? { equipmentKit } : {}),
     }];
   });
@@ -519,8 +523,8 @@ function normalized(value: Record<string, unknown>) {
   const consortiumRate = 0;
   const settlement = calculateConsortiumSettlement(items, executionType, settlementAdjustments);
   const consortiumPayment = settlement.finalPayment;
-  const teachingAidSupportCost = items.reduce((sum, item) => sum + Math.max(0, item.teachingAidSupportAmount ?? 0), 0);
-  const marginAmount = expectedEarning - consortiumPayment - settlement.whizzupCost - additionalInternalConstructionCost - teachingAidSupportCost;
+  // 컨소 부담 무상 교구는 지급액에서 상계되지만 위즈업 수익으로 잡히지 않도록 같은 금액을 중립화한다.
+  const marginAmount = expectedEarning - consortiumPayment - settlement.whizzupCost - additionalInternalConstructionCost - settlement.consortiumSupportCost;
   return {
     organization, businessRound: Math.max(1, Number(value.businessRound) || 1),
     projectTitle: text(value.projectTitle, 500), quoteDate,
