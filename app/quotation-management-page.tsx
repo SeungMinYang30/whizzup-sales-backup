@@ -141,7 +141,13 @@ type Draft = {
 type EquipmentKitEditor = {
   item: DraftItem;
   editingItemId?: string;
+  insertingIndex?: number;
 };
+
+type ProductPickerTarget =
+  | { kind: "append" }
+  | { kind: "insert"; index: number }
+  | { kind: "replace"; itemId: string };
 
 type RecentConsortiumRate = {
   rate: number;
@@ -600,6 +606,8 @@ export default function QuotationManagementPage({
   const [favoriteProductIds, setFavoriteProductIds] = useState<string[]>([]);
   const [productListMode, setProductListMode] = useState<"all" | "favorites" | null>(null);
   const [productResultsOpen, setProductResultsOpen] = useState(false);
+  const [productPickerTarget, setProductPickerTarget] = useState<ProductPickerTarget>({ kind: "append" });
+  const [insertMenuIndex, setInsertMenuIndex] = useState<number | null>(null);
   const [outputBlankRows, setOutputBlankRows] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -689,6 +697,8 @@ export default function QuotationManagementPage({
     setDraft(null);
     setProductQuery("");
     setProductListMode(null);
+    setProductPickerTarget({ kind: "append" });
+    setInsertMenuIndex(null);
     setOutputBlankRows(0);
     setLoadedInstitutionKey("");
     setEquipmentKitEditor(null);
@@ -1675,7 +1685,111 @@ export default function QuotationManagementPage({
   function closeEquipmentKitEditor() {
     setEquipmentKitEditor(null);
     setEquipmentKitHideZero(false);
+    if (productPickerTarget.kind !== "append") {
+      reopenProductResultsAfterEquipmentRef.current = false;
+      setProductPickerTarget({ kind: "append" });
+    }
     restoreProductResultsAfterEquipment();
+  }
+
+  function catalogDraftItem(product: ProductCatalogItem, current?: DraftItem): DraftItem {
+    const earningRate = product.supplyType === "direct" ? product.marginRate ?? 0 : product.commissionRate ?? 0;
+    const procurement = product.procurement === true || hasProcurementSignal(product.note, product.specification);
+    const procurementChannel = procurement ? product.procurementChannel || (/S\s*2\s*B/iu.test(product.note) ? "S2B" : /디지털서비스몰/iu.test(product.note) ? "디지털서비스몰" : /혁신장터/iu.test(product.note) ? "혁신장터" : "G2B") : "";
+    const procurementNumber = procurement ? product.procurementNumber || procurementNumbersFromText(product.note, product.specification)[0] || "" : "";
+    const consortiumSuggestion = draftItemLookupKeys({
+      productId: product.id,
+      procurementNumber,
+      name: product.name,
+      specification: product.specification,
+    }).map((key) => recentConsortiumRates[key]).find(Boolean);
+    const quantity = current?.quantity ?? 1;
+    return {
+      id: current?.id ?? crypto.randomUUID(),
+      productId: product.id,
+      name: product.name,
+      specification: product.specification,
+      quantity,
+      unit: "대",
+      unitPrice: product.unitPrice ?? 0,
+      note: current?.note ?? "",
+      supplyType: product.supplyType,
+      supplierVendorId: product.supplierVendorId ?? null,
+      supplierVendorName: product.supplierVendorName ?? "",
+      earningRate,
+      contractType: isS2BChannel(procurementChannel) ? "s2b" : procurement ? "g2b" : "direct",
+      procurement,
+      procurementChannel,
+      procurementNumber,
+      procurementFeeRate: procurement && !isS2BChannel(procurementChannel) ? product.procurementFeeRate ?? 0.0054 : 0,
+      consortiumRate: draft?.executionType === "컨소" ? Math.min(earningRate, consortiumSuggestion?.rate ?? 0) : 0,
+      teachingAidSupportAmount: 0,
+      teachingAidSupportLabel: "",
+      ...internalCostFields(product.name, product.specification, quantity),
+    };
+  }
+
+  function insertRegularItemAt(item: DraftItem, index: number) {
+    if (!draft) return;
+    const regularItems = draft.items.filter((line) => !isConstructionItem(line));
+    const construction = draft.items.find(isConstructionItem);
+    const nextItems = [...regularItems];
+    nextItems.splice(Math.max(0, Math.min(index, nextItems.length)), 0, item);
+    setDraft({ ...draft, items: [...nextItems, ...(construction ? [construction] : [])] });
+  }
+
+  function openProductPicker(target: ProductPickerTarget) {
+    setProductPickerTarget(target);
+    setInsertMenuIndex(null);
+    setProductQuery("");
+    setProductListMode("all");
+    setProductResultsOpen(true);
+  }
+
+  function selectProductForTarget(product: ProductCatalogItem) {
+    if (!draft) return;
+    if (productPickerTarget.kind === "append") {
+      addProduct(product);
+      return;
+    }
+    const replaced = productPickerTarget.kind === "replace"
+      ? draft.items.find((item) => item.id === productPickerTarget.itemId)
+      : undefined;
+    const duplicate = draft.items.find((item) => item.productId === product.id && item.id !== replaced?.id);
+    if (duplicate) {
+      setMessage(`이미 견적에 있는 ‘${product.name}’ 제품입니다. 기존 행의 수량을 조정해 주세요.`);
+      return;
+    }
+    const nextItem = catalogDraftItem(product, replaced);
+    if (isAirpassEquipmentKitProduct(product.name)) {
+      reopenProductResultsAfterEquipmentRef.current = false;
+      const defaultPlan = equipmentKitPlans.find((plan) => plan.active) ?? equipmentKitPlans[0];
+      const equipmentKit = defaultPlan ? createAirpassEquipmentKitFromPlan(defaultPlan) : createAirpassEquipmentKit("one");
+      setEquipmentKitEditor({
+        item: {
+          ...nextItem,
+          unit: "SET",
+          unitPrice: airpassEquipmentKitTotal(equipmentKit),
+          specification: "가상현실스포츠실 운영 물품 · 별첨 교구 세부견적",
+          equipmentKit,
+        },
+        ...(productPickerTarget.kind === "replace"
+          ? { editingItemId: productPickerTarget.itemId }
+          : { insertingIndex: productPickerTarget.index }),
+      });
+      setEquipmentKitHideZero(false);
+      setProductResultsOpen(false);
+      return;
+    }
+    if (productPickerTarget.kind === "replace") {
+      setDraft({ ...draft, items: draft.items.map((item) => item.id === productPickerTarget.itemId ? nextItem : item) });
+      setMessage(`‘${product.name}’ 제품으로 교체했습니다. 수량과 비고는 유지했습니다.`);
+    } else {
+      insertRegularItemAt(nextItem, productPickerTarget.index);
+      setMessage(`‘${product.name}’ 제품을 ${productPickerTarget.index + 1}번째 위치에 추가했습니다.`);
+    }
+    setProductResultsOpen(false);
+    setProductPickerTarget({ kind: "append" });
   }
 
   function addProduct(product: ProductCatalogItem) {
@@ -1698,38 +1812,7 @@ export default function QuotationManagementPage({
       updateItem(existing.id, { quantity: existing.quantity + 1 });
       return;
     }
-    const earningRate = product.supplyType === "direct" ? product.marginRate ?? 0 : product.commissionRate ?? 0;
-    const procurement = product.procurement === true || hasProcurementSignal(product.note, product.specification);
-    const procurementChannel = procurement ? product.procurementChannel || (/S\s*2\s*B/iu.test(product.note) ? "S2B" : /디지털서비스몰/iu.test(product.note) ? "디지털서비스몰" : /혁신장터/iu.test(product.note) ? "혁신장터" : "G2B") : "";
-    const consortiumSuggestion = draftItemLookupKeys({
-      productId: product.id,
-      procurementNumber: product.procurementNumber || procurementNumbersFromText(product.note, product.specification)[0] || "",
-      name: product.name,
-      specification: product.specification,
-    }).map((key) => recentConsortiumRates[key]).find(Boolean);
-    const nextItem: DraftItem = {
-        id: crypto.randomUUID(),
-        productId: product.id,
-        name: product.name,
-        specification: product.specification,
-        quantity: 1,
-        unit: "대",
-        unitPrice: product.unitPrice ?? 0,
-        note: "",
-        supplyType: product.supplyType,
-        supplierVendorId: product.supplierVendorId ?? null,
-        supplierVendorName: product.supplierVendorName ?? "",
-        earningRate,
-        contractType: isS2BChannel(procurementChannel) ? "s2b" : procurement ? "g2b" : "direct",
-        procurement,
-        procurementChannel,
-        procurementNumber: procurement ? product.procurementNumber || procurementNumbersFromText(product.note, product.specification)[0] || "" : "",
-        procurementFeeRate: procurement && !isS2BChannel(procurementChannel) ? product.procurementFeeRate ?? 0.0054 : 0,
-        consortiumRate: draft.executionType === "컨소"
-          ? Math.min(earningRate, consortiumSuggestion?.rate ?? 0)
-          : 0,
-        ...internalCostFields(product.name, product.specification, 1),
-      };
+    const nextItem = catalogDraftItem(product);
     if (isAirpassEquipmentKitProduct(product.name)) {
       const equipmentKit = createAirpassEquipmentKit("one");
       setEquipmentKitEditor({
@@ -1963,33 +2046,61 @@ export default function QuotationManagementPage({
     }
     const item = {
       ...equipmentKitEditor.item,
-      quantity: 1,
-      unit: "SET",
       unitPrice: airpassEquipmentKitTotal(equipmentKitEditor.item.equipmentKit),
       specification: "가상현실스포츠실 운영 물품 · 별첨 교구 세부견적",
-      note: "",
     };
     const construction = draft.items.find(isConstructionItem);
-    const regularItems = equipmentKitEditor.editingItemId
-      ? draft.items.filter((line) => !isConstructionItem(line)).map((line) => line.id === equipmentKitEditor.editingItemId ? item : line)
-      : [...draft.items.filter((line) => !isConstructionItem(line)), item];
+    const regularItems = draft.items.filter((line) => !isConstructionItem(line));
+    if (equipmentKitEditor.editingItemId) {
+      const targetIndex = regularItems.findIndex((line) => line.id === equipmentKitEditor.editingItemId);
+      if (targetIndex >= 0) regularItems[targetIndex] = item;
+    } else {
+      regularItems.splice(Math.max(0, Math.min(equipmentKitEditor.insertingIndex ?? regularItems.length, regularItems.length)), 0, item);
+    }
     setDraft({ ...draft, items: [...regularItems, ...(construction ? [construction] : [])] });
     closeEquipmentKitEditor();
   }
 
-  function addBlankItem() {
+  function blankDraftItem(): DraftItem {
+    return {
+      id: crypto.randomUUID(), productId: "", name: "", specification: "", quantity: 1,
+      unit: "EA", unitPrice: 0, note: "", supplyType: "direct", earningRate: 0, contractType: "direct",
+      supplierVendorId: null, supplierVendorName: "",
+      procurement: false, procurementChannel: "", procurementNumber: "", procurementFeeRate: 0, consortiumRate: 0,
+      internalCostEnabled: false, internalCostAmount: 0, internalCostBearer: "consortium",
+    };
+  }
+
+  function addBlankItem(index?: number) {
     if (!draft) return;
-    const construction = draft.items.find(isConstructionItem);
-    setDraft({
-      ...draft,
-      items: [...draft.items.filter((item) => !isConstructionItem(item)), {
-        id: crypto.randomUUID(), productId: "", name: "", specification: "", quantity: 1,
-        unit: "EA", unitPrice: 0, note: "", supplyType: "direct", earningRate: 0, contractType: "direct",
-        supplierVendorId: null, supplierVendorName: "",
-        procurement: false, procurementChannel: "", procurementNumber: "", procurementFeeRate: 0, consortiumRate: 0,
-        internalCostEnabled: false, internalCostAmount: 0, internalCostBearer: "consortium",
-      }, ...(construction ? [construction] : [])],
+    insertRegularItemAt(blankDraftItem(), index ?? draft.items.filter((item) => !isConstructionItem(item)).length);
+    setInsertMenuIndex(null);
+  }
+
+  function switchItemToManual(item: DraftItem) {
+    if (!draft || !item.productId || item.equipmentKit) return;
+    if (!window.confirm(`‘${item.name}’ 행을 직접 입력으로 전환할까요? 제품 연결·공급처·조달 식별정보는 해제되고 입력한 품명·규격·수량·금액·비고는 유지됩니다.`)) return;
+    updateItem(item.id, {
+      productId: "",
+      supplyType: "direct",
+      supplierVendorId: null,
+      supplierVendorName: "",
+      earningRate: 0,
+      contractType: "direct",
+      procurement: false,
+      procurementChannel: "",
+      procurementNumber: "",
+      procurementFeeRate: 0,
+      consortiumRate: 0,
+      internalCostEnabled: false,
+      internalCostAmount: 0,
+      internalCostQuantity: undefined,
+      internalCostUnitAmount: undefined,
+      internalCostAutoQuantity: undefined,
+      teachingAidSupportAmount: 0,
+      teachingAidSupportLabel: "",
     });
+    setMessage("직접 입력 행으로 전환했습니다. 품명과 규격은 계속 수정할 수 있습니다.");
   }
 
   async function syncConstructionCost(targetDraft: Draft) {
@@ -2894,19 +3005,19 @@ export default function QuotationManagementPage({
                 <div><h4>견적 품목 {draft.items.length}개</h4><p>제품 DB의 조달정보와 품목별 수수료율을 자동 적용합니다.</p></div>
                 <div className="quotation-item-toolbar">
                   <div className="quotation-product-search" ref={productSearchRef}>
-                    <input data-save-field="product-search" value={productQuery} onFocus={() => { if (productQuery) setProductResultsOpen(true); }} onChange={(event) => { setProductQuery(event.target.value); setProductResultsOpen(Boolean(event.target.value)); }} placeholder={`물품 검색 (${favoriteProductsOnly ? favoriteProductIds.length : products.length}개)`} aria-label="견적에 추가할 물품 검색" />
+                    <input data-save-field="product-search" value={productQuery} onFocus={() => { setProductPickerTarget({ kind: "append" }); if (productQuery) setProductResultsOpen(true); }} onChange={(event) => { setProductPickerTarget({ kind: "append" }); setProductQuery(event.target.value); setProductResultsOpen(Boolean(event.target.value)); }} placeholder={`물품 검색 (${favoriteProductsOnly ? favoriteProductIds.length : products.length}개)`} aria-label="견적에 추가할 물품 검색" />
                     <div className="quotation-product-filters" role="group" aria-label="견적 제품 표시 범위">
                       <button className={productListMode === "all" ? "active" : ""} type="button" aria-pressed={productListMode === "all"} onClick={() => toggleProductList("all")}>전체 제품</button>
                       <button className={productListMode === "favorites" ? "active" : ""} type="button" aria-pressed={productListMode === "favorites"} onClick={() => toggleProductList("favorites")}>★ 즐겨찾기 {favoriteProductIds.length}</button>
                     </div>
                   </div>
                   <div className="quotation-item-toolbar-actions">
-                    <button type="button" onClick={addBlankItem}>+ 직접 입력</button>
+                    <button type="button" onClick={() => addBlankItem()}>+ 직접 입력</button>
                     <button type="button" className="quotation-external-import-button" onClick={() => setImportMode("general")}>외부 견적 불러오기</button>
                   </div>
                 </div>
               </header>
-              {productResultsOpen && <div className="quotation-item-search-results" ref={productSearchResultsRef}><header><span>물품을 연속으로 선택할 수 있습니다.</span><button type="button" onClick={() => setProductResultsOpen(false)}>선택 완료</button></header>{filteredProducts.map((product) => <button type="button" key={product.id} onClick={() => addProduct(product)}><span><b>{favoriteProductIds.includes(product.id) ? "★ " : ""}{product.name}</b><small>{product.specification || "규격 미등록"}</small></span><em>{product.unitPrice === null ? "금액 미등록" : `${won.format(product.unitPrice)}원`}</em></button>)}{!filteredProducts.length && <p className="quotation-product-empty">표시할 {favoriteProductsOnly ? "즐겨찾기 " : ""}제품이 없습니다.</p>}</div>}
+              {productResultsOpen && <div className="quotation-item-search-results" ref={productSearchResultsRef}><header><span>{productPickerTarget.kind === "replace" ? "교체할 제품을 선택해 주세요." : productPickerTarget.kind === "insert" ? `${productPickerTarget.index + 1}번째 위치에 넣을 제품을 선택해 주세요.` : "물품을 연속으로 선택할 수 있습니다."}</span><button type="button" onClick={() => { setProductResultsOpen(false); setProductPickerTarget({ kind: "append" }); }}>선택 완료</button></header>{filteredProducts.map((product) => <button type="button" key={product.id} onClick={() => selectProductForTarget(product)}><span><b>{favoriteProductIds.includes(product.id) ? "★ " : ""}{product.name}</b><small>{product.specification || "규격 미등록"}</small></span><em>{product.unitPrice === null ? "금액 미등록" : `${won.format(product.unitPrice)}원`}</em></button>)}{!filteredProducts.length && <p className="quotation-product-empty">표시할 {favoriteProductsOnly ? "즐겨찾기 " : ""}제품이 없습니다.</p>}</div>}
               <div className="quotation-item-card-guide">제품 기준정보 연계 · 수의계약/G2B/S2B 선택 · 식별번호 · G2B 조달수수료율 0.54%</div>
               <div className="quotation-item-cards">
                 {regularDraftItems.map((item, index) => {
@@ -2930,9 +3041,13 @@ export default function QuotationManagementPage({
                     ? expectedEarning
                     : expectedEarning - settledConsortiumPayment - (consortiumBearsInternalCost ? 0 : internalCost);
                   const companyMargin = companyMarginBeforeTeachingAidSupport - teachingAidSupportCost;
-                  return <article
+                  return <section className="quotation-item-slot" key={item.id}>
+                    <div className="quotation-item-insert-control">
+                      <button type="button" onClick={() => setInsertMenuIndex((current) => current === index ? null : index)}>+ 품목 추가</button>
+                      {insertMenuIndex === index && <div><button type="button" onClick={() => openProductPicker({ kind: "insert", index })}>제품 검색</button><button type="button" onClick={() => addBlankItem(index)}>직접 입력</button></div>}
+                    </div>
+                    <article
                     className={`quotation-item-card${dragOverItemId === item.id ? " drag-over" : ""}`}
-                    key={item.id}
                     onDragOver={(event) => {
                       if (!draggedItemIdRef.current || draggedItemIdRef.current === item.id) return;
                       event.preventDefault();
@@ -2967,7 +3082,7 @@ export default function QuotationManagementPage({
                         <button type="button" disabled={index === 0} aria-label={`${item.name || `${index + 1}번 품목`} 위로 이동`} onClick={() => moveItem(item.id, -1)}>↑</button>
                         <button type="button" disabled={index === regularDraftItems.length - 1} aria-label={`${item.name || `${index + 1}번 품목`} 아래로 이동`} onClick={() => moveItem(item.id, 1)}>↓</button>
                       </div>
-                      <div className="quotation-item-card-title"><input data-save-item-id={item.id} value={item.name} onChange={(event) => updateItem(item.id, { name: event.target.value })} placeholder="품명" /><input value={item.specification} onChange={(event) => updateItem(item.id, { specification: event.target.value })} placeholder="규격/모델명" /></div>
+                      <div className="quotation-item-card-title"><div className="quotation-item-name-editor"><input data-save-item-id={item.id} value={item.name} onChange={(event) => updateItem(item.id, { name: event.target.value })} placeholder="품명" />{!item.equipmentKit && <span>{item.productId ? <><button type="button" onClick={() => openProductPicker({ kind: "replace", itemId: item.id })}>제품 변경</button><button type="button" onClick={() => switchItemToManual(item)}>직접 입력 전환</button></> : <button type="button" onClick={() => openProductPicker({ kind: "replace", itemId: item.id })}>제품 연결</button>}</span>}</div><input value={item.specification} onChange={(event) => updateItem(item.id, { specification: event.target.value })} placeholder="규격/모델명" /></div>
                       <em className={item.procurement ? "" : "general"}>{contractLabel(item)}{item.procurementNumber ? ` · ${item.procurementNumber}` : ""}</em>
                       <button type="button" aria-label={`${item.name || `${index + 1}번 품목`} 삭제`} onClick={() => setDraft({ ...draft, items: draft.items.filter((line) => line.id !== item.id) })}>×</button>
                     </header>
@@ -3047,8 +3162,12 @@ export default function QuotationManagementPage({
                       </div>}
                     </div>
                     <label className="quotation-item-card-note"><span>비고</span><input value={item.note} onChange={(event) => updateItem(item.id, { note: event.target.value })} placeholder="품목별 비고" /></label>
-                  </article>;
+                  </article></section>;
                 })}
+                <div className="quotation-item-insert-control quotation-item-insert-control-last">
+                  <button type="button" onClick={() => setInsertMenuIndex((current) => current === regularDraftItems.length ? null : regularDraftItems.length)}>+ 품목 추가</button>
+                  {insertMenuIndex === regularDraftItems.length && <div><button type="button" onClick={() => openProductPicker({ kind: "insert", index: regularDraftItems.length })}>제품 검색</button><button type="button" onClick={() => addBlankItem(regularDraftItems.length)}>직접 입력</button></div>}
+                </div>
                 {!regularDraftItems.length && <div className="quotation-items-empty">물품을 검색하거나 행을 추가해 견적을 작성해 주세요.</div>}
               </div>
               <section className="quotation-construction-cost">

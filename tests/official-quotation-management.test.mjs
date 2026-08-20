@@ -261,7 +261,8 @@ test("quotation composer can filter product search to personal favorites", () =>
   assert.match(page, /productListMode/);
   assert.match(page, /toggleProductList\("all"\)/);
   assert.match(page, /toggleProductList\("favorites"\)/);
-  assert.match(page, /onClick=\{\(\) => addProduct\(product\)\}/);
+  assert.match(page, /onClick=\{\(\) => selectProductForTarget\(product\)\}/);
+  assert.match(page, /productPickerTarget\.kind === "append"[\s\S]*?addProduct\(product\)/);
   assert.doesNotMatch(page, /addProduct\(product\); setProductQuery\(""\)/);
 });
 

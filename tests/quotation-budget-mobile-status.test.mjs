@@ -36,7 +36,9 @@ test("one budget auto-links while multiple budgets support explicit allocation",
 });
 
 test("mobile product picker remains open after selection until the user finishes", () => {
-  assert.match(page, /setProductResultsOpen\(true\);[\s\S]{0,180}const existing/);
+  const addProduct = page.slice(page.indexOf("function addProduct"), page.indexOf("function addBlankItem"));
+  assert.match(addProduct, /const existing/);
+  assert.match(addProduct, /setProductResultsOpen\(true\)/);
   assert.match(page, /물품을 연속으로 선택할 수 있습니다/);
   assert.match(page, />선택 완료<\/button>/);
   assert.match(page, /matchMedia\("\(max-width: 720px\)"\)\.matches\) return/);

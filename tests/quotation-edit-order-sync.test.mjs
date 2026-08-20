@@ -12,7 +12,8 @@ test("견적 품목은 버튼과 드래그로 순서를 바꾸고 배열 순서�
   assert.match(page, /위로 이동/);
   assert.match(page, /아래로 이동/);
   assert.match(page, /lines: draft\.items\.map\(\(item\) => \(\{/);
-  assert.match(page, /lines: quote\.items\.map\(\(item\) => \(\{/);
+  assert.match(page, /items: quote\.items\.map\(\(\{ amount: _amount, expectedEarning: _earning, \.\.\.item \}\) => \(\{/);
+  assert.match(page, /nextItems\.splice\(Math\.max\(0, Math\.min\(index, nextItems\.length\)\), 0, item\)/);
 });
 
 test("최종 견적은 같은 번호로 직접 수정하고 기존 출력 파일을 새로 교체한다", async () => {

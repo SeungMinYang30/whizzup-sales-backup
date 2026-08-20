@@ -12,6 +12,7 @@ import {
   uploadResourceFilesSequentially,
   type UploadedResourceFile,
 } from "../lib/resource-upload-client";
+import { mergePendingResourceFiles } from "../lib/resource-pending-files";
 
 type ResourceAttachment = {
   id: number;
@@ -95,6 +96,7 @@ export default function ResourceLibraryPage({
   const [uploadProgress, setUploadProgress] = useState("");
   const [uploadPercent, setUploadPercent] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [attachmentProgress, setAttachmentProgress] = useState("");
@@ -234,7 +236,35 @@ export default function ResourceLibraryPage({
       uploadAbortRef.current.abort();
       return;
     }
-    if (!busy) setUploadOpen(false);
+    if (!busy) {
+      setUploadOpen(false);
+      setPendingFiles([]);
+      if (filesRef.current) filesRef.current.value = "";
+    }
+  }
+
+  function addPendingFiles(files: File[]) {
+    if (!files.length) return;
+    const expectsVideo = libraryKind === "videos";
+    const mismatched = files.find((file) => isVideoFile(file) !== expectsVideo);
+    if (mismatched) {
+      setMessage(expectsVideo
+        ? "영상 자료에는 영상 파일만 추가해 주세요."
+        : "문서 자료에는 영상 파일을 추가할 수 없습니다.");
+      return;
+    }
+    setPendingFiles((current) => {
+      const merged = mergePendingResourceFiles(current, files, 10);
+      if (merged.overflow > 0) {
+        setMessage("첨부 파일은 최대 10개까지 추가할 수 있습니다.");
+      } else if (merged.added === 0 && merged.duplicates > 0) {
+        setMessage("이미 추가한 파일입니다.");
+      } else {
+        setMessage("");
+      }
+      return merged.files;
+    });
+    if (filesRef.current) filesRef.current.value = "";
   }
 
   function closeEditForm() {
@@ -278,8 +308,12 @@ export default function ResourceLibraryPage({
 
   async function upload(event: FormEvent) {
     event.preventDefault();
-    const files = Array.from(filesRef.current?.files ?? []);
-    if (!files.length || busy || uploadLockRef.current) return;
+    const files = pendingFiles;
+    if (!files.length) {
+      setMessage("첨부할 파일을 한 개 이상 추가해 주세요.");
+      return;
+    }
+    if (busy || uploadLockRef.current) return;
     uploadLockRef.current = true;
     setBusy(true);
     setMessage("");
@@ -327,6 +361,7 @@ export default function ResourceLibraryPage({
       if (!response.ok || !payload.post) throw new Error(payload.error || "자료를 등록하지 못했습니다.");
       databaseCommitted = true;
       setDraft({ title: "", category: categories[0], content: "" });
+      setPendingFiles([]);
       if (filesRef.current) filesRef.current.value = "";
       setUploadOpen(false);
       setMessage("자료를 등록했습니다.");
@@ -565,7 +600,7 @@ export default function ResourceLibraryPage({
               type="button"
               className="primary-button"
               disabled={busy || attachmentBusy}
-              onClick={() => setUploadOpen((value) => !value)}
+              onClick={() => uploadOpen ? closeUploadForm() : setUploadOpen(true)}
             >
               {uploadOpen ? "등록 닫기" : "+ 문서 등록"}
             </button>
@@ -616,25 +651,34 @@ export default function ResourceLibraryPage({
             <span>설명</span>
             <textarea disabled={busy} value={draft.content} onChange={(event) => setDraft({ ...draft, content: event.target.value })} placeholder="사용처나 참고 내용을 적어 주세요." />
           </label>
-          <label className="wide resource-file-picker">
-            <span>첨부 파일</span>
+          <div className="wide resource-file-picker">
+            <div className="resource-file-picker-heading"><span>첨부 파일</span><strong>{pendingFiles.length}/10개</strong></div>
+            <label className="resource-file-add-button">
+              <span>+ 파일 추가</span>
             <input
               ref={filesRef}
-              required
               disabled={busy}
               type="file"
               multiple
+              onChange={(event) => addPendingFiles(Array.from(event.target.files ?? []))}
             />
+            </label>
             <small>
-              문서 자료에는 영상 파일을 함께 등록할 수 없습니다 · 최대 10개
+              한 번에 선택하거나 한 개씩 반복해서 추가할 수 있습니다 · 최대 10개
             </small>
+            {pendingFiles.length > 0 && <div className="resource-pending-files" aria-live="polite">
+              {pendingFiles.map((file) => {
+                const key = `${file.name}-${file.size}-${file.lastModified}`;
+                return <div key={key}><span><b>{file.name}</b><small>{formatBytes(file.size)}</small></span><button type="button" disabled={busy} aria-label={`${file.name} 첨부 제거`} onClick={() => setPendingFiles((current) => current.filter((candidate) => candidate !== file))}>제거</button></div>;
+              })}
+            </div>}
             {uploadProgress && (
               <div className="resource-upload-progress" role="status" aria-live="polite">
                 <span style={{ width: `${uploadPercent}%` }} />
                 <small>{uploadProgress}</small>
               </div>
             )}
-          </label>
+          </div>
           <div className="resource-form-actions">
             <button type="button" className="secondary-button" onClick={closeUploadForm}>{busy ? "업로드 취소" : "취소"}</button>
             <button type="submit" className="primary-button" disabled={busy || !configured}>{busy ? "등록 중…" : "자료 등록"}</button>
