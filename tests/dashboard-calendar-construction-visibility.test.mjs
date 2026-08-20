@@ -96,3 +96,15 @@ test("시공 일정표 목록 삭제는 원본을 보존하고 기관 추가로 
   assert.doesNotMatch(constructionPage, /일정표에서 빼기|일정표에서 제외/);
   assert.match(backupStore, /name: "construction_schedule_projects",[\s\S]*?"hidden_at"/);
 });
+
+test("시공 일정표 기관 추가 upsert는 PostgreSQL과 D1에서 대상 열을 명확히 구분한다", () => {
+  assert.match(
+    schedules,
+    /WHEN excluded\.work_summary <> '' THEN excluded\.work_summary[\s\S]*?ELSE construction_schedule_projects\.work_summary/,
+  );
+  assert.doesNotMatch(
+    schedules,
+    /WHEN excluded\.work_summary <> '' THEN excluded\.work_summary ELSE work_summary END/,
+  );
+});
+
