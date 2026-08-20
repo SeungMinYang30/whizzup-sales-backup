@@ -83,3 +83,20 @@ test("explicit award state is persisted by single and bulk updates and backups",
     /VERCEL_LOCAL_AUTH_SCHEMA_SQL = `[\s\S]*ALTER TABLE public\.activities[\s\S]*ADD COLUMN IF NOT EXISTS award_status_explicit/,
   );
 });
+
+test("reviewed AI forms record a pending choice even when pending was already selected", async () => {
+  const crm = await readFile(
+    new URL("../app/crm-app.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    crm,
+    /value=\{form\.awardStatus\}[\s\S]*onPointerDown=\{\(\) => \{[\s\S]*awardStatusExplicit: true/,
+  );
+  assert.match(
+    crm,
+    /\["ArrowDown", "ArrowUp", "Enter", " "\]\.includes[\s\S]*awardStatusExplicit: true/,
+  );
+  assert.match(crm, /이 사업은 수주 전 상태로 명시 저장됩니다\./);
+});

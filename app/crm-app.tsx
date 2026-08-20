@@ -24921,6 +24921,27 @@ export default function CrmApp({
                   <span>수주 구분</span>
                   <select
                     value={form.awardStatus}
+                    onPointerDown={() => {
+                      if (!form.awardStatusExplicit) {
+                        setForm((current) => ({
+                          ...current,
+                          awardStatusExplicit: true,
+                        }));
+                      }
+                    }}
+                    onKeyDown={(event) => {
+                      if (
+                        !form.awardStatusExplicit &&
+                        ["ArrowDown", "ArrowUp", "Enter", " "].includes(
+                          event.key,
+                        )
+                      ) {
+                        setForm((current) => ({
+                          ...current,
+                          awardStatusExplicit: true,
+                        }));
+                      }
+                    }}
                     onChange={(event) => {
                       const awardStatus = event.target.value;
                       setForm({
@@ -24978,6 +24999,12 @@ export default function CrmApp({
                     <option>협력사 수주</option>
                     <option>타업체 수주</option>
                   </select>
+                  {form.awardStatus === "미정" &&
+                    form.awardStatusExplicit && (
+                      <small className="automatic-field-note">
+                        이 사업은 수주 전 상태로 명시 저장됩니다.
+                      </small>
+                    )}
                 </label>
                 <label>
                   <span>수주업체</span>
