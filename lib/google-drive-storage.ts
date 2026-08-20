@@ -399,18 +399,24 @@ async function serviceAccountCanUseRoot(token: DriveAccessToken, force = false) 
 
 async function accessToken(force = false, oauthOnly = false): Promise<DriveAccessToken> {
   const value = requireConfig();
+  if (oauthConfigured(value)) {
+    try {
+      return await oauthAccessToken(force);
+    } catch (error) {
+      if (oauthOnly || !serviceAccountConfigured(value)) throw error;
+      console.warn("Google Drive OAuth is unavailable; trying the server account", {
+        code: error instanceof GoogleDriveStorageError ? error.code : "unknown",
+      });
+    }
+  }
   if (!oauthOnly && serviceAccountConfigured(value)) {
     try {
       const token = await serviceAccountAccessToken(force);
       if (await serviceAccountCanUseRoot(token, force)) return token;
     } catch (error) {
-      if (!oauthConfigured(value)) throw error;
-      console.warn("Google Drive server-account fallback is unavailable", {
-        code: error instanceof GoogleDriveStorageError ? error.code : "unknown",
-      });
+      throw error;
     }
   }
-  if (oauthConfigured(value)) return oauthAccessToken(force);
   throw new GoogleDriveStorageError(
     "DRIVE_ACCESS",
     `Google Drive 서버 계정(${value.serviceAccountEmail})에 백업 폴더 쓰기 권한이 없습니다. 공유 드라이브 권한을 확인해 주세요.`,
@@ -503,8 +509,8 @@ export async function getGoogleDriveConnectionStatus(
       issue: "",
       message:
         auth.mode === "service-account"
-          ? "서버 계정으로 안정적으로 연결되어 주기적인 사용자 재승인이 필요하지 않습니다."
-          : "사용자 승인 방식으로 연결되어 있습니다. OAuth 앱이 테스트 상태이면 장기 인증이 만료될 수 있습니다.",
+          ? "OAuth 연결을 사용할 수 없어 서버 계정 보조 경로로 연결했습니다. 새 파일 저장 권한을 확인해 주세요."
+          : "운영용 Google OAuth로 연결되었습니다. 새 파일은 Google Drive에만 저장됩니다.",
     };
   } catch (error) {
     return {

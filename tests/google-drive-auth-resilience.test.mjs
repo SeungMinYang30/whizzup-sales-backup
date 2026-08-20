@@ -14,13 +14,15 @@ test("Drive authentication retries temporary failures and classifies permanent f
   assert.doesNotMatch(source, /error_description[^\n]*console\./);
 });
 
-test("Drive prefers a write-capable server account and safely falls back to OAuth", async () => {
+test("Drive prefers durable OAuth for writes and keeps the server account as a fallback", async () => {
   const source = await read("lib/google-drive-storage.ts");
   assert.match(source, /GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON/);
   assert.match(source, /WHIZZUP_GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON/);
   assert.match(source, /GOOGLE_DRIVE_IMPERSONATED_USER/);
   assert.match(source, /serviceAccountCanUseRoot/);
   assert.match(source, /capabilities\(canAddChildren\)/);
+  assert.match(source, /return await oauthAccessToken\(force\)/);
+  assert.match(source, /OAuth is unavailable; trying the server account/);
   assert.match(source, /auth\.mode === "service-account" && oauthConfigured\(\)/);
   assert.match(source, /isPostgresDatabase\(\) \? \("vercel" as const\) : \("sites" as const\)/);
   assert.match(source, /Sites 대기판은 Google Drive 대신 D1\/R2 독립 저장소/);
