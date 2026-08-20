@@ -475,7 +475,7 @@ export function normalizeScheduleSemanticLabel(organization: unknown, label: unk
     .replace(/특별자치도|특별자치시|광역시|특별시|도|시|군|구/g, "");
   let compactLabel = normalizeScheduleLabel(label)
     .toLocaleLowerCase("ko-KR")
-    .replace(/^\s*\[[^\]]{1,10}\]\s*/u, "")
+    .replace(/^\s*\[[^\]]{1,60}\]\s*/u, "")
     .replace(/^\s*(?:영업|회의|시공|쇼룸|기타|내\s*일정)\s*[·•:\-]\s*/u, "")
     .replace(/\s+/g, "");
   if (compactOrganization) compactLabel = compactLabel.replaceAll(compactOrganization, "");

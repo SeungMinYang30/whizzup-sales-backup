@@ -56,15 +56,17 @@ test("물품 수의계약 2,200만원은 수의계약과 학교장터만 합산�
   ]), { totalAmount: 22_000_001, itemCount: 2, threshold: 22_000_000 });
 });
 
-test("일반 Google 일정은 입력한 일정 제목을 그대로 사용하고 시공 제목 규칙은 유지한다", () => {
-  assert.equal(googleCalendarTitle({ organization: "선영어린이집", label: "영업 · 인제 선영어린이집 협상", category: "general" }).summary, "인제 선영어린이집 협상");
-  assert.equal(googleCalendarTitle({ organization: "A학교", label: "회의 · 예산 협의", category: "meeting" }).summary, "예산 협의");
+test("공유 Google 일정은 축약 기관명과 입력한 일정 제목을 함께 사용한다", () => {
+  assert.equal(googleCalendarTitle({ organization: "선영어린이집", label: "영업 · 인제 선영어린이집 협상", category: "general" }).summary, "[선영어린이집] 인제 선영어린이집 협상");
+  assert.equal(googleCalendarTitle({ organization: "A학교", label: "회의 · 예산 협의", category: "meeting" }).summary, "[A학교] 예산 협의");
   assert.equal(googleCalendarTitle({ organization: "A학교", label: "착공", category: "construction", productSummary: "VR실 구축" }).summary, "[A학교] 착공");
   assert.equal(googleCalendarTitle({ organization: "A학교", label: "검수", category: "construction", productSummary: "VR실 구축" }).summary, "[A학교] 검수");
-  assert.equal(googleCalendarTitle({ organization: "경기도 광주 도수초등학교", label: "도장", category: "construction" }).summary, "[도수초] 도장");
-  assert.equal(googleCalendarTitle({ organization: "충청북도 청주시 덕벌초등학교", label: "청소", category: "construction" }).summary, "[덕벌초] 청소");
-  assert.equal(googleCalendarTitle({ organization: "A학교", label: "쇼룸 · 제품 시연", category: "showroom" }).summary, "제품 시연");
-  assert.equal(googleCalendarTitle({ organization: "A학교", label: "기타 · 설명회", category: "other" }).summary, "설명회");
+  assert.equal(googleCalendarTitle({ organization: "의정부 중앙초등학교", label: "현장 방문 실측", category: "general" }).summary, "[의정부 중앙초] 현장 방문 실측");
+  assert.equal(googleCalendarTitle({ organization: "의정부 중앙초등학교", label: "의정부 중앙초 현장 실측", category: "general" }).summary, "[의정부 중앙초] 현장 실측");
+  assert.equal(googleCalendarTitle({ organization: "경기도 광주 도수초등학교", label: "도장", category: "construction" }).summary, "[광주 도수초] 도장");
+  assert.equal(googleCalendarTitle({ organization: "충청북도 청주시 덕벌초등학교", label: "청소", category: "construction" }).summary, "[청주 덕벌초] 청소");
+  assert.equal(googleCalendarTitle({ organization: "A학교", label: "쇼룸 · 제품 시연", category: "showroom" }).summary, "[A학교] 제품 시연");
+  assert.equal(googleCalendarTitle({ organization: "A학교", label: "기타 · 설명회", category: "other" }).summary, "[A학교] 설명회");
 });
 
 test("Google 설명에서 중복 원본 제목 문구를 제거한다", () => {

@@ -1102,7 +1102,7 @@ export async function reconcileGoogleCalendarRange(start: string, end: string) {
       const organization = (properties.whizzupOrganization || suggestedOrganization(event)).trim().slice(0, 120);
       const businessRound = Math.max(0, Number(properties.whizzupBusinessRound) || 0);
       const structured = googleStructuredDescription(event.description || "");
-      const eventLabel = (event.summary || "").replace(/^\s*\[[^\]]{1,10}\]\s*/u, "").trim()
+      const eventLabel = (event.summary || "").replace(/^\s*\[[^\]]{1,60}\]\s*/u, "").trim()
         || structured.content.trim();
       if (organization && eventLabel) {
         const candidates = await d1.prepare(

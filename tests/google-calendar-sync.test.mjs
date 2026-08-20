@@ -215,9 +215,9 @@ test("Google에서 가져온 일정은 팀 연결함에서 기관에 연결하�
 test("공유 업무만 Google로 보내고 입력 제목과 개인 일정 정책을 적용한다", () => {
   assert.match(api, /googleCalendarTitle\(schedule\)/);
   assert.match(title, /scheduleTitleForGoogle\(input\.label\)/);
-  assert.match(title, /: scheduleTitle \|\| input\.organization/);
-  assert.match(title, /const constructionStage = cleanLabel \|\| scheduleTitle \|\| "시공"/);
   assert.match(title, /compactGoogleCalendarOrganization\(input\.organization\)/);
+  assert.match(title, /\[\$\{compactOrganization\}\]/);
+  assert.match(title, /const constructionStage = cleanLabel \|\| scheduleTitle \|\| "시공"/);
   assert.match(api, /optional\(cleanMemo\(schedule\.details\)\)/);
   assert.doesNotMatch(sync, /`원본 Google 제목: \$\{/);
   assert.match(sync, /event\.summary\.trim\(\) !== expectedSummary/);
