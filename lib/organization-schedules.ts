@@ -919,7 +919,10 @@ export async function addConstructionScheduleProject(input: {
        created_by, created_by_name, updated_by, updated_by_name
      ) VALUES (?, ?, ?, 0, ?, ?, ?, ?)
      ON CONFLICT(organization, business_round) DO UPDATE SET
-       work_summary = CASE WHEN excluded.work_summary <> '' THEN excluded.work_summary ELSE work_summary END,
+       work_summary = CASE
+         WHEN excluded.work_summary <> '' THEN excluded.work_summary
+         ELSE construction_schedule_projects.work_summary
+       END,
        work_summary_mode = 'auto',
        completed = 0,
        hidden_at = '',
@@ -2001,4 +2004,5 @@ export async function mergeActivityProgressSchedule(input: {
     );
   }
 }
+
 
