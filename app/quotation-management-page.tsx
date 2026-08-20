@@ -647,6 +647,7 @@ export default function QuotationManagementPage({
   const quotationFileJobsRef = useRef(new Set<number>());
   const productSearchRef = useRef<HTMLDivElement | null>(null);
   const productSearchResultsRef = useRef<HTMLDivElement | null>(null);
+  const contextualProductSearchInputRef = useRef<HTMLInputElement | null>(null);
 
   function quotationRegion(quote: Pick<Draft, "organization" | "businessRound">) {
     return institutions.find((item) =>
@@ -665,10 +666,17 @@ export default function QuotationManagementPage({
 
   useEffect(() => {
     if (!productResultsOpen) return;
-    const closeProductList = () => setProductResultsOpen(false);
+    const closeProductList = () => {
+      setProductResultsOpen(false);
+      if (productPickerTarget.kind === "append") return;
+      setProductPickerTarget({ kind: "append" });
+      setProductQuery("");
+      setProductListMode(null);
+    };
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (target && (productSearchRef.current?.contains(target) || productSearchResultsRef.current?.contains(target))) return;
+      if (productPickerTarget.kind !== "append") return;
       if (window.matchMedia("(max-width: 720px)").matches) return;
       closeProductList();
     };
@@ -682,7 +690,18 @@ export default function QuotationManagementPage({
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [productResultsOpen]);
+  }, [productPickerTarget.kind, productResultsOpen]);
+
+  useEffect(() => {
+    if (!productResultsOpen || productPickerTarget.kind === "append") return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusTimer = window.setTimeout(() => contextualProductSearchInputRef.current?.focus(), 0);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [productPickerTarget.kind, productResultsOpen]);
 
   function beginEditor(nextDraft: Draft) {
     if (!draftRef.current && !editorHistoryActiveRef.current) {
@@ -1738,6 +1757,14 @@ export default function QuotationManagementPage({
     setDraft({ ...draft, items: [...nextItems, ...(construction ? [construction] : [])] });
   }
 
+  function closeProductPicker() {
+    setProductResultsOpen(false);
+    if (productPickerTarget.kind === "append") return;
+    setProductPickerTarget({ kind: "append" });
+    setProductQuery("");
+    setProductListMode(null);
+  }
+
   function openProductPicker(target: ProductPickerTarget) {
     setProductPickerTarget(target);
     setInsertMenuIndex(null);
@@ -1788,8 +1815,7 @@ export default function QuotationManagementPage({
       insertRegularItemAt(nextItem, productPickerTarget.index);
       setMessage(`‘${product.name}’ 제품을 ${productPickerTarget.index + 1}번째 위치에 추가했습니다.`);
     }
-    setProductResultsOpen(false);
-    setProductPickerTarget({ kind: "append" });
+    closeProductPicker();
   }
 
   function addProduct(product: ProductCatalogItem) {
@@ -3017,7 +3043,26 @@ export default function QuotationManagementPage({
                   </div>
                 </div>
               </header>
-              {productResultsOpen && <div className="quotation-item-search-results" ref={productSearchResultsRef}><header><span>{productPickerTarget.kind === "replace" ? "교체할 제품을 선택해 주세요." : productPickerTarget.kind === "insert" ? `${productPickerTarget.index + 1}번째 위치에 넣을 제품을 선택해 주세요.` : "물품을 연속으로 선택할 수 있습니다."}</span><button type="button" onClick={() => { setProductResultsOpen(false); setProductPickerTarget({ kind: "append" }); }}>선택 완료</button></header>{filteredProducts.map((product) => <button type="button" key={product.id} onClick={() => selectProductForTarget(product)}><span><b>{favoriteProductIds.includes(product.id) ? "★ " : ""}{product.name}</b><small>{product.specification || "규격 미등록"}</small></span><em>{product.unitPrice === null ? "금액 미등록" : `${won.format(product.unitPrice)}원`}</em></button>)}{!filteredProducts.length && <p className="quotation-product-empty">표시할 {favoriteProductsOnly ? "즐겨찾기 " : ""}제품이 없습니다.</p>}</div>}
+              {productResultsOpen && productPickerTarget.kind === "append" && <div className="quotation-item-search-results" ref={productSearchResultsRef}><header><span>물품을 연속으로 선택할 수 있습니다.</span><button type="button" onClick={closeProductPicker}>선택 완료</button></header>{filteredProducts.map((product) => <button type="button" key={product.id} onClick={() => selectProductForTarget(product)}><span><b>{favoriteProductIds.includes(product.id) ? "★ " : ""}{product.name}</b><small>{product.specification || "규격 미등록"}</small></span><em>{product.unitPrice === null ? "금액 미등록" : `${won.format(product.unitPrice)}원`}</em></button>)}{!filteredProducts.length && <p className="quotation-product-empty">표시할 {favoriteProductsOnly ? "즐겨찾기 " : ""}제품이 없습니다.</p>}</div>}
+              {productResultsOpen && productPickerTarget.kind !== "append" && <div className="quotation-product-picker-modal" onPointerDown={(event) => { if (event.target === event.currentTarget) closeProductPicker(); }}>
+                <section className="quotation-product-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="quotation-product-picker-title" ref={productSearchResultsRef}>
+                  <header>
+                    <div><small>PRODUCT CATALOG</small><h4 id="quotation-product-picker-title">{productPickerTarget.kind === "replace" ? "제품 변경" : "품목 추가"}</h4><p>{productPickerTarget.kind === "replace" ? "현재 품목을 선택한 제품으로 교체합니다. 수량과 비고는 유지됩니다." : `${productPickerTarget.index + 1}번째 위치에 넣을 제품을 선택해 주세요.`}</p></div>
+                    <button type="button" onClick={closeProductPicker} aria-label="제품 선택창 닫기">×</button>
+                  </header>
+                  <div className="quotation-product-picker-tools">
+                    <input ref={contextualProductSearchInputRef} value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder={`제품명·규격 검색 (${products.length}개)`} aria-label="추가하거나 교체할 제품 검색" />
+                    <div role="group" aria-label="제품 선택 범위">
+                      <button className={productListMode === "all" ? "active" : ""} type="button" aria-pressed={productListMode === "all"} onClick={() => setProductListMode("all")}>전체 제품 {products.length}</button>
+                      <button className={productListMode === "favorites" ? "active" : ""} type="button" aria-pressed={productListMode === "favorites"} onClick={() => setProductListMode("favorites")}>★ 즐겨찾기 {favoriteProductIds.length}</button>
+                    </div>
+                  </div>
+                  <div className="quotation-product-picker-list">
+                    {filteredProducts.map((product) => <button type="button" key={product.id} onClick={() => selectProductForTarget(product)}><span><b>{favoriteProductIds.includes(product.id) ? "★ " : ""}{product.name}</b><small>{product.specification || "규격 미등록"}</small></span><em>{product.unitPrice === null ? "금액 미등록" : `${won.format(product.unitPrice)}원`}</em></button>)}
+                    {!filteredProducts.length && <p className="quotation-product-empty">검색 조건에 맞는 {favoriteProductsOnly ? "즐겨찾기 " : ""}제품이 없습니다.</p>}
+                  </div>
+                </section>
+              </div>}
               <div className="quotation-item-card-guide">제품 기준정보 연계 · 수의계약/G2B/S2B 선택 · 식별번호 · G2B 조달수수료율 0.54%</div>
               <div className="quotation-item-cards">
                 {regularDraftItems.map((item, index) => {

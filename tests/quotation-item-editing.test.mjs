@@ -36,4 +36,16 @@ test("manual transition clears stale catalog supplier and procurement linkage wh
 test("mobile insertion and product picker panels are full-width touch targets", () => {
   assert.match(styles, /\.quotation-item-insert-control>div\{position:fixed/);
   assert.match(styles, /\.quotation-item-search-results \{ position: fixed/);
+  assert.match(styles, /\.quotation-product-picker-dialog \{ width: 100%; max-height: none; height: 100dvh/);
+});
+
+test("contextual insert and replacement use a visible searchable dialog instead of the editor top list", () => {
+  assert.match(page, /productResultsOpen && productPickerTarget\.kind === "append"/);
+  assert.match(page, /productResultsOpen && productPickerTarget\.kind !== "append"/);
+  assert.match(page, /className="quotation-product-picker-dialog" role="dialog" aria-modal="true"/);
+  assert.match(page, /ref=\{contextualProductSearchInputRef\}/);
+  assert.match(page, /placeholder=\{`제품명·규격 검색 \(\$\{products\.length\}개\)`\}/);
+  assert.match(page, /document\.body\.style\.overflow = "hidden"/);
+  assert.match(page, /event\.target === event\.currentTarget\) closeProductPicker\(\)/);
+  assert.match(styles, /\.quotation-product-picker-modal \{ position: fixed; inset: 0; z-index: 220/);
 });
