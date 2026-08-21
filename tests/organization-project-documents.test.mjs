@@ -59,10 +59,10 @@ test("도면과 조감도는 통합본 또는 파일별 종류를 확인해 한 
 });
 
 test("대용량 도면 창은 배경을 가리지 않는 일반 팝업이고 인라인 입력의 띄어쓰기를 유지한다", () => {
-  assert.match(styles, /\.project-documents-modal-shell\{[\s\S]*?background:rgba\(20,34,58,\.18\)/);
+  assert.match(styles, /\.history-summary-grid > \.project-documents-modal-shell\{[\s\S]*?background:rgba\(20,34,58,\.18\)/);
   const modalShell = styles.slice(
-    styles.indexOf(".project-documents-modal-shell{"),
-    styles.indexOf(".project-documents-modal{", styles.indexOf(".project-documents-modal-shell{")),
+    styles.indexOf(".project-documents-modal-shell,"),
+    styles.indexOf(".project-documents-modal{", styles.indexOf(".project-documents-modal-shell,")),
   );
   assert.doesNotMatch(modalShell, /backdrop-filter/);
   assert.match(

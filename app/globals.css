@@ -15394,7 +15394,8 @@ button:is(
   font-weight:850;
 }
 
-.project-documents-modal-shell{
+.project-documents-modal-shell,
+.history-summary-grid > .project-documents-modal-shell{
   position:fixed;
   inset:0;
   z-index:175;
@@ -15603,7 +15604,8 @@ button:is(
     padding-bottom:max(10px,env(safe-area-inset-bottom));
   }
 
-  .project-documents-modal-shell{align-items:center;padding:18px 12px;background:rgba(20,34,58,.2)}
+  .project-documents-modal-shell,
+  .history-summary-grid > .project-documents-modal-shell{align-items:center;padding:18px 12px;background:rgba(20,34,58,.2)}
   .project-documents-modal{width:100%;max-height:calc(100dvh - 36px);border-radius:16px}
   .project-documents-modal>header{padding:16px}
   .project-documents-upload{grid-template-columns:1fr;padding:14px 16px 11px}
