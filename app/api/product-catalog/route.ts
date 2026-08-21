@@ -8,6 +8,7 @@ import {
   PRODUCT_CATALOG,
   type ProductCatalogItem,
 } from "../../../lib/product-catalog";
+import { ensureAwardVendorsReady } from "../../../lib/award-vendors";
 import {
   ensureProductVendorLinksReady,
   readActiveProductVendors,
@@ -18,7 +19,7 @@ import {
 } from "../../../lib/product-vendor-links";
 import { hasProcurementSignal, procurementNumbersFromText, resolveProcurementFeeRate } from "../../../lib/procurement-product";
 import { normalizeProductSupplyType } from "../../../lib/product-supply-classification";
-import { procurementCatalogId, procurementProductIdentity } from "../../../lib/procurement-products";
+import { procurementCatalogId } from "../../../lib/procurement-products";
 
 export const dynamic = "force-dynamic";
 
@@ -160,6 +161,103 @@ function productForStorage(product: ProductCatalogItem) {
     procurementFeeRate: product.procurementFeeRate ?? null,
     procurementSupplierName: product.procurementSupplierName ?? "",
     procurementUnit: product.procurementUnit ?? "",
+  };
+}
+
+function normalizedProcurementIdentifier(value: unknown) {
+  return cleanText(value, 80).replace(/[^0-9A-Z]/giu, "").toLocaleUpperCase("ko-KR");
+}
+
+function normalizedVendorLookup(value: unknown) {
+  return cleanText(value, 300).normalize("NFKC").toLocaleLowerCase("ko-KR")
+    .replace(/(?:주식회사|\(주\)|㈜)/gu, "")
+    .replace(/[^0-9a-z가-힣]/giu, "");
+}
+
+type ProcurementSupplierVendor = {
+  id: number;
+  companyName: string;
+  created: boolean;
+};
+
+async function ensureProcurementSupplierVendor(
+  product: ProductCatalogItem,
+  memberId: number,
+): Promise<ProcurementSupplierVendor | null> {
+  const companyName = cleanText(product.procurementSupplierName, 300);
+  const lookup = normalizedVendorLookup(companyName);
+  if (!lookup) return null;
+
+  const d1 = await ensureAwardVendorsReady();
+  const vendors = await d1
+    .prepare("SELECT id, company_name, is_active FROM award_vendors")
+    .all<{ id: number; company_name: string; is_active: number }>();
+  const matching = vendors.results.find((vendor) => normalizedVendorLookup(vendor.company_name) === lookup);
+  let vendorId = Number(matching?.id || 0);
+  let savedCompanyName = cleanText(matching?.company_name || companyName, 300);
+  let created = false;
+
+  if (matching) {
+    if (Number(matching.is_active) !== 1) {
+      await d1
+        .prepare("UPDATE award_vendors SET is_active = 1, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(memberId, vendorId)
+        .run();
+    }
+  } else {
+    const inserted = await d1
+      .prepare(
+        `INSERT INTO award_vendors (company_name, notes, created_by, updated_by)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(company_name) DO NOTHING
+         RETURNING id, company_name`,
+      )
+      .bind(companyName, "나라장터 제품 등록에서 자동 생성 · 업체정보 확인 필요", memberId, memberId)
+      .first<{ id: number; company_name: string }>();
+    if (inserted) {
+      vendorId = Number(inserted.id);
+      savedCompanyName = cleanText(inserted.company_name || companyName, 300);
+      created = true;
+    } else {
+      const raced = await d1
+        .prepare("SELECT id, company_name FROM award_vendors WHERE lower(company_name) = lower(?) LIMIT 1")
+        .bind(companyName)
+        .first<{ id: number; company_name: string }>();
+      if (!raced) throw new Error("협력사를 자동 등록하지 못했습니다.");
+      vendorId = Number(raced.id);
+      savedCompanyName = cleanText(raced.company_name || companyName, 300);
+    }
+  }
+
+  await setProductVendorLinks([product.id], vendorId, memberId);
+  return { id: vendorId, companyName: savedCompanyName, created };
+}
+
+async function productWithAutomaticSupplier(
+  product: ProductCatalogItem,
+  memberId: number,
+  enabled: boolean,
+) {
+  if (!enabled) return { product, vendor: null };
+  const existingLink = (await readProductVendorLinkMap()).get(product.id);
+  if (existingLink) {
+    return {
+      product: {
+        ...product,
+        supplierVendorId: existingLink.supplierVendorId,
+        supplierVendorName: existingLink.supplierVendorName,
+      },
+      vendor: {
+        id: existingLink.supplierVendorId,
+        companyName: existingLink.supplierVendorName,
+        created: false,
+      } satisfies ProcurementSupplierVendor,
+    };
+  }
+  const vendor = await ensureProcurementSupplierVendor(product, memberId);
+  return {
+    product: vendor ? { ...product, supplierVendorId: vendor.id, supplierVendorName: vendor.companyName } : product,
+    vendor,
   };
 }
 
@@ -377,15 +475,14 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const member = await requirePrimaryOwner();
-    const body = (await request.json()) as { product?: unknown };
+    const body = (await request.json()) as { product?: unknown; autoRegisterSupplier?: unknown };
     const requested = normalizeProduct(body.product, 0);
     if (!requested?.procurement || !requested.procurementNumber) {
       return Response.json({ error: "등록할 조달 물품의 식별번호가 필요합니다." }, { status: 400 });
     }
-    const identity = procurementProductIdentity(requested.procurementChannel, requested.procurementNumber);
-    if (!identity) {
-      return Response.json({ error: "조달 채널과 식별번호를 확인해 주세요." }, { status: 400 });
-    }
+    const identifier = normalizedProcurementIdentifier(requested.procurementNumber);
+    if (!identifier) return Response.json({ error: "조달 식별번호를 확인해 주세요." }, { status: 400 });
+    const autoRegisterSupplier = body.autoRegisterSupplier === true;
     requested.id = procurementCatalogId(requested.procurementChannel, requested.procurementNumber);
     requested.sourceRow = 1;
     requested.supplyType = "partner";
@@ -409,10 +506,23 @@ export async function POST(request: Request) {
         }
       }
       const existing = current.find((product) =>
-        procurementProductIdentity(product.procurementChannel, product.procurementNumber) === identity
+        normalizedProcurementIdentifier(product.procurementNumber) === identifier
       );
       if (existing) {
-        return Response.json({ product: existing, created: false });
+        const linked = await productWithAutomaticSupplier(
+          {
+            ...existing,
+            procurementSupplierName: existing.procurementSupplierName || requested.procurementSupplierName,
+          },
+          member.id,
+          autoRegisterSupplier,
+        );
+        return Response.json({
+          product: linked.product,
+          created: false,
+          vendor: linked.vendor ? { id: linked.vendor.id, companyName: linked.vendor.companyName } : undefined,
+          vendorCreated: linked.vendor?.created === true,
+        });
       }
       if (current.length >= MAX_PRODUCTS) {
         return Response.json({ error: `제품은 최대 ${MAX_PRODUCTS.toLocaleString("ko-KR")}개까지 저장할 수 있습니다.` }, { status: 409 });
@@ -439,7 +549,13 @@ export async function POST(request: Request) {
             .bind(SETTING_KEY, nextValue, member.id)
             .run();
       if ((write.meta.changes ?? 0) > 0 || write.results.length > 0) {
-        return Response.json({ product: requested, created: true }, { status: 201 });
+        const linked = await productWithAutomaticSupplier(requested, member.id, autoRegisterSupplier);
+        return Response.json({
+          product: linked.product,
+          created: true,
+          vendor: linked.vendor ? { id: linked.vendor.id, companyName: linked.vendor.companyName } : undefined,
+          vendorCreated: linked.vendor?.created === true,
+        }, { status: 201 });
       }
     }
     return Response.json({ error: "다른 사용자가 제품 목록을 수정 중입니다. 잠시 후 다시 시도해 주세요." }, { status: 409 });

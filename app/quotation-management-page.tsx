@@ -11,7 +11,6 @@ import type {
 } from "../lib/authored-quotations";
 import type { ProductCatalogItem } from "../lib/product-catalog";
 import {
-  procurementProductIdentity,
   procurementSearchItemToCatalogProduct,
   type ProcurementSearchItem,
 } from "../lib/procurement-products";
@@ -165,6 +164,8 @@ type ProductPickerSource = "catalog" | "procurement";
 
 type ProcurementSort = "relevance" | "priceAsc" | "priceDesc" | "recent";
 type ProcurementFacet = { number: string; name: string; count: number };
+type ProcurementNamedFacet = { name: string; count: number };
+type ProcurementVendorOption = { id: number; companyName: string };
 type ProcurementRegistrationMode = "catalog-only" | "catalog-and-quotation";
 type ProcurementRegistrationDraft = {
   item: ProcurementSearchItem;
@@ -177,6 +178,8 @@ type ProcurementRegistrationDraft = {
 function procurementFacetsForItems(items: ProcurementSearchItem[]) {
   const detailMap = new Map<string, ProcurementFacet>();
   const contractMap = new Map<string, number>();
+  const supplierMap = new Map<string, number>();
+  const marketplaceMap = new Map<string, number>();
   items.forEach((item) => {
     const number = item.detailClassificationNumber || "unclassified";
     const name = item.detailClassificationName || item.classificationName || "세부품명 미분류";
@@ -184,11 +187,26 @@ function procurementFacetsForItems(items: ProcurementSearchItem[]) {
     detailMap.set(number, { number, name, count: (current?.count || 0) + 1 });
     const contract = item.contractMethod || item.sourceLabel || "계약 구분 미확인";
     contractMap.set(contract, (contractMap.get(contract) || 0) + 1);
+    const supplier = item.supplierName || "계약업체 미확인";
+    supplierMap.set(supplier, (supplierMap.get(supplier) || 0) + 1);
+    const marketplace = item.marketplaceLabel || "종합쇼핑몰";
+    marketplaceMap.set(marketplace, (marketplaceMap.get(marketplace) || 0) + 1);
   });
+  const namedFacets = (values: Map<string, number>): ProcurementNamedFacet[] => [...values.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, "ko"));
   return {
     detailClassifications: [...detailMap.values()].sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, "ko")),
-    contractMethods: [...contractMap.entries()].map(([name, count]) => ({ name, count })).sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, "ko")),
+    contractMethods: namedFacets(contractMap),
+    suppliers: namedFacets(supplierMap),
+    marketplaces: namedFacets(marketplaceMap),
   };
+}
+
+function normalizedProcurementVendorName(value: string) {
+  return value.normalize("NFKC").toLocaleLowerCase("ko-KR")
+    .replace(/(?:주식회사|\(주\)|㈜)/gu, "")
+    .replace(/[^0-9a-z가-힣]/giu, "");
 }
 
 type RecentConsortiumRate = {
@@ -646,6 +664,7 @@ export default function QuotationManagementPage({
   const [quotes, setQuotes] = useState<AuthoredQuotation[]>([]);
   const [trashedQuotes, setTrashedQuotes] = useState<AuthoredQuotation[]>([]);
   const [products, setProducts] = useState<ProductCatalogItem[]>([]);
+  const [productVendors, setProductVendors] = useState<ProcurementVendorOption[]>([]);
   const [recentConsortiumRates, setRecentConsortiumRates] = useState<Record<string, RecentConsortiumRate>>({});
   const [draft, setDraft] = useState<Draft | null>(null);
   const [query, setQuery] = useState("");
@@ -668,6 +687,9 @@ export default function QuotationManagementPage({
   const [procurementSelectedIdentities, setProcurementSelectedIdentities] = useState<string[]>([]);
   const [procurementDetailFilters, setProcurementDetailFilters] = useState<string[]>([]);
   const [procurementContractFilters, setProcurementContractFilters] = useState<string[]>([]);
+  const [procurementSupplierFilters, setProcurementSupplierFilters] = useState<string[]>([]);
+  const [procurementMarketplace, setProcurementMarketplace] = useState<"shopping" | "digital-service">("shopping");
+  const [procurementVisibleCount, setProcurementVisibleCount] = useState(30);
   const procurementFacets = useMemo(() => procurementFacetsForItems(procurementResults), [procurementResults]);
   const [procurementQuantities, setProcurementQuantities] = useState<Record<string, number>>({});
   const [procurementRegistrationMode, setProcurementRegistrationMode] = useState<ProcurementRegistrationMode | null>(null);
@@ -915,7 +937,7 @@ export default function QuotationManagementPage({
       ]);
       const quotePayload = await quoteResponse.json() as { quotations?: AuthoredQuotation[]; recentConsortiumRates?: Record<string, RecentConsortiumRate>; error?: string };
       const trashPayload = await trashResponse.json() as { quotations?: AuthoredQuotation[]; error?: string };
-      const productPayload = await productResponse.json() as { products?: ProductCatalogItem[]; favoriteProductIds?: unknown[]; error?: string };
+      const productPayload = await productResponse.json() as { products?: ProductCatalogItem[]; favoriteProductIds?: unknown[]; vendors?: ProcurementVendorOption[]; error?: string };
       const equipmentKitPlansPayload = await equipmentKitPlansResponse.json() as { plans?: AirpassEquipmentKitPlan[]; canManage?: boolean; error?: string };
       if (!quoteResponse.ok) throw new Error(quotePayload.error || "견적서를 불러오지 못했습니다.");
       if (!trashResponse.ok) throw new Error(trashPayload.error || "삭제된 견적서를 불러오지 못했습니다.");
@@ -924,6 +946,7 @@ export default function QuotationManagementPage({
       setRecentConsortiumRates(quotePayload.recentConsortiumRates ?? {});
       setTrashedQuotes(trashPayload.quotations ?? []);
       setProducts(productPayload.products ?? []);
+      setProductVendors(productPayload.vendors ?? []);
       setFavoriteProductIds((productPayload.favoriteProductIds ?? []).map(String));
       if (equipmentKitPlansResponse.ok && equipmentKitPlansPayload.plans?.length) {
         setEquipmentKitPlans(equipmentKitPlansPayload.plans);
@@ -1902,13 +1925,16 @@ export default function QuotationManagementPage({
     setProcurementSelectedIdentities([]);
     setProcurementDetailFilters([]);
     setProcurementContractFilters([]);
+    setProcurementSupplierFilters([]);
+    setProcurementMarketplace("shopping");
+    setProcurementVisibleCount(30);
     setProcurementQuantities({});
     setProcurementLoading(false);
     if (value.trim().length >= 2) {
       procurementSearchDebounceRef.current = window.setTimeout(() => {
         procurementSearchDebounceRef.current = null;
         void searchProcurement(1, false, procurementSort, value);
-      }, 450);
+      }, 350);
     }
   }
 
@@ -1931,13 +1957,14 @@ export default function QuotationManagementPage({
       setProcurementResults([]);
       setProcurementTotal(0);
       setProcurementPage(1);
+      setProcurementVisibleCount(30);
       setProcurementHasSearched(false);
       setProcurementDetail(null);
     }
     setProcurementLoading(true);
     setProcurementError("");
     try {
-      const response = await fetch(`/api/procurement-products?q=${encodeURIComponent(key)}&page=${page}&pageSize=30&sort=${encodeURIComponent(requestedSort)}`, {
+      const response = await fetch(`/api/procurement-products?q=${encodeURIComponent(key)}&page=${page}&pageSize=120&sort=${encodeURIComponent(requestedSort)}`, {
         cache: "no-store",
         signal: controller.signal,
       });
@@ -1970,7 +1997,8 @@ export default function QuotationManagementPage({
   }
 
   function existingProcurementProduct(item: ProcurementSearchItem) {
-    return products.find((product) => procurementProductIdentity(product.procurementChannel, product.procurementNumber) === item.identity);
+    const identifier = item.procurementNumber.replace(/[^0-9A-Z]/giu, "").toLocaleUpperCase("ko-KR");
+    return products.find((product) => product.procurementNumber?.replace(/[^0-9A-Z]/giu, "").toLocaleUpperCase("ko-KR") === identifier);
   }
 
   function filteredProcurementResults() {
@@ -1978,7 +2006,10 @@ export default function QuotationManagementPage({
       const matchesDetail = !procurementDetailFilters.length || procurementDetailFilters.includes(item.detailClassificationNumber || "unclassified");
       const contractMethod = item.contractMethod || item.sourceLabel || "계약 구분 미확인";
       const matchesContract = !procurementContractFilters.length || procurementContractFilters.includes(contractMethod);
-      return matchesDetail && matchesContract;
+      const supplier = item.supplierName || "계약업체 미확인";
+      const matchesSupplier = !procurementSupplierFilters.length || procurementSupplierFilters.includes(supplier);
+      const matchesMarketplace = (item.marketplace || "shopping") === procurementMarketplace;
+      return matchesDetail && matchesContract && matchesSupplier && matchesMarketplace;
     });
   }
 
@@ -2082,6 +2113,7 @@ export default function QuotationManagementPage({
     const savedProducts = new Map<string, ProductCatalogItem>();
     let created = 0;
     let reused = 0;
+    let vendorsCreated = 0;
     try {
       for (const entry of procurementRegistrationDrafts) {
         const existing = existingProcurementProduct(entry.item);
@@ -2102,18 +2134,31 @@ export default function QuotationManagementPage({
         const response = await fetch("/api/product-catalog", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ product }),
+          body: JSON.stringify({ product, autoRegisterSupplier: true }),
         });
-        const payload = await response.json().catch(() => ({})) as { product?: ProductCatalogItem; created?: boolean; error?: string };
+        const payload = await response.json().catch(() => ({})) as {
+          product?: ProductCatalogItem;
+          created?: boolean;
+          vendor?: ProcurementVendorOption;
+          vendorCreated?: boolean;
+          error?: string;
+        };
         if (!response.ok || !payload.product) throw new Error(payload.error || `‘${entry.item.name}’ 제품을 등록하지 못했습니다.`);
         savedProducts.set(entry.item.identity, payload.product);
+        if (payload.vendor) {
+          setProductVendors((current) => current.some((vendor) => vendor.id === payload.vendor?.id)
+            ? current
+            : [...current, payload.vendor as ProcurementVendorOption].sort((left, right) => left.companyName.localeCompare(right.companyName, "ko-KR")));
+        }
+        if (payload.vendorCreated) vendorsCreated += 1;
         if (payload.created) created += 1;
         else reused += 1;
       }
       setProducts((current) => {
         const next = [...current];
         for (const saved of savedProducts.values()) {
-          const index = next.findIndex((product) => procurementProductIdentity(product.procurementChannel, product.procurementNumber) === procurementProductIdentity(saved.procurementChannel, saved.procurementNumber));
+          const identifier = saved.procurementNumber?.replace(/[^0-9A-Z]/giu, "").toLocaleUpperCase("ko-KR");
+          const index = next.findIndex((product) => product.procurementNumber?.replace(/[^0-9A-Z]/giu, "").toLocaleUpperCase("ko-KR") === identifier);
           if (index < 0) next.push(saved);
           else next[index] = saved;
         }
@@ -2126,7 +2171,7 @@ export default function QuotationManagementPage({
       if (mode === "catalog-and-quotation") addProcurementItemsToQuotation(selectedItems, savedProducts);
       else {
         setProcurementSelectedIdentities([]);
-        setMessage(`제품 DB 등록을 마쳤습니다. 신규 ${created}개${reused ? ` · 기존 제품 사용 ${reused}개` : ""}`);
+        setMessage(`제품 DB 등록을 마쳤습니다. 신규 ${created}개${reused ? ` · 기존 제품 사용 ${reused}개` : ""}${vendorsCreated ? ` · 신규 협력사 ${vendorsCreated}곳 자동 등록` : ""}`);
       }
     } catch (error) {
       setProcurementError(error instanceof Error ? error.message : "제품 DB에 등록하지 못했습니다.");
@@ -2147,6 +2192,8 @@ export default function QuotationManagementPage({
         <div className="quotation-procurement-registration-list">
           {procurementRegistrationDrafts.map((entry, index) => {
             const alreadyRegistered = Boolean(existingProcurementProduct(entry.item));
+            const supplierName = entry.product.procurementSupplierName || "";
+            const registeredVendor = productVendors.find((vendor) => normalizedProcurementVendorName(vendor.companyName) === normalizedProcurementVendorName(supplierName));
             return <article key={entry.item.identity} className={alreadyRegistered ? "registered" : ""}>
               <div className="quotation-procurement-registration-heading"><span>{index + 1}</span><div><b>{entry.item.name}</b><small>{entry.item.supplierName || "공급업체 정보 없음"} · 식별번호 {entry.item.procurementNumber}</small></div>{alreadyRegistered && <em>기존 등록 제품 사용</em>}</div>
               <div className="quotation-procurement-registration-fields">
@@ -2154,7 +2201,7 @@ export default function QuotationManagementPage({
                 <label className="wide"><span>규격</span><input disabled={alreadyRegistered} value={entry.product.specification} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { product: { specification: event.target.value } })} /></label>
                 <label><span>기준 단가</span><input disabled={alreadyRegistered} inputMode="numeric" value={entry.unitPriceText} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { unitPriceText: event.target.value })} placeholder="금액 미등록" /></label>
                 <label><span>단위</span><input disabled={alreadyRegistered} value={entry.product.procurementUnit || ""} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { product: { procurementUnit: event.target.value } })} /></label>
-                <label><span>공급업체</span><input disabled={alreadyRegistered} value={entry.product.procurementSupplierName || ""} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { product: { procurementSupplierName: event.target.value } })} /></label>
+                <label><span>공급업체</span><input disabled={alreadyRegistered} value={supplierName} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { product: { procurementSupplierName: event.target.value } })} />{!alreadyRegistered && supplierName && <small className={`quotation-procurement-registration-vendor-status ${registeredVendor ? "registered" : "pending"}`}>{registeredVendor ? `등록 협력사 연결 · ${registeredVendor.companyName}` : "미등록 업체 · 저장 시 협력사에 자동 등록"}</small>}</label>
                 <label><span>조달 채널</span><input disabled={alreadyRegistered} value={entry.product.procurementChannel || "G2B"} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { product: { procurementChannel: event.target.value } })} /></label>
                 <label><span>식별번호</span><input disabled value={entry.product.procurementNumber || ""} /></label>
                 <label><span>조달수수료율</span><div className="quotation-procurement-registration-rate"><input disabled={alreadyRegistered} inputMode="decimal" value={entry.procurementFeePercent} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { procurementFeePercent: event.target.value })} /><b>%</b></div></label>
@@ -2171,7 +2218,8 @@ export default function QuotationManagementPage({
 
   function renderProcurementMarketModal() {
     if (!productResultsOpen || productPickerSource !== "procurement" || typeof document === "undefined") return null;
-    const results = filteredProcurementResults();
+    const filteredResults = filteredProcurementResults();
+    const results = filteredResults.slice(0, procurementVisibleCount);
     const selectedItems = selectedProcurementItems();
     const selectedSet = new Set(procurementSelectedIdentities);
     const allVisibleSelected = results.length > 0 && results.every((item) => selectedSet.has(item.identity));
@@ -2189,19 +2237,20 @@ export default function QuotationManagementPage({
             <input ref={contextualProductSearchInputRef} value={procurementQuery} onChange={(event) => changeProcurementQuery(event.target.value)} placeholder="업체명·제품명·식별번호를 입력하세요" aria-label="나라장터 업체명 제품명 식별번호 검색" />
             <button type="submit" disabled={procurementLoading}>{procurementLoading ? "검색 중…" : "검색"}</button>
           </form>
-          <nav aria-label="조달 검색 채널"><button type="button" className="active">종합쇼핑몰 <b>{procurementHasSearched ? procurementTotal : 0}</b></button><button type="button" disabled title="추후 연동 예정">벤처나라</button><button type="button" disabled title="추후 연동 예정">혁신장터</button><button type="button" disabled title="추후 연동 예정">디지털서비스몰</button></nav>
+          <nav aria-label="조달 검색 채널"><button type="button" className={procurementMarketplace === "shopping" ? "active" : ""} onClick={() => { setProcurementMarketplace("shopping"); setProcurementVisibleCount(30); }}>종합쇼핑몰 <b>{procurementHasSearched ? procurementFacets.marketplaces.find((facet) => facet.name === "종합쇼핑몰")?.count || 0 : 0}</b></button><button type="button" disabled title="추후 연동 예정">벤처나라</button><button type="button" disabled title="추후 연동 예정">혁신장터</button><button type="button" className={procurementMarketplace === "digital-service" ? "active" : ""} onClick={() => { setProcurementMarketplace("digital-service"); setProcurementVisibleCount(30); }}>디지털서비스몰 <b>{procurementHasSearched ? procurementFacets.marketplaces.find((facet) => facet.name === "디지털서비스몰")?.count || 0 : 0}</b></button></nav>
         </div>
         <div className="quotation-procurement-market-content">
           <aside className="quotation-procurement-market-filters">
-            <button className="quotation-procurement-filter-reset" type="button" onClick={() => { setProcurementDetailFilters([]); setProcurementContractFilters([]); }}>↻ 전체 필터 초기화</button>
+            <button className="quotation-procurement-filter-reset" type="button" onClick={() => { setProcurementDetailFilters([]); setProcurementContractFilters([]); setProcurementSupplierFilters([]); setProcurementVisibleCount(30); }}>↻ 전체 필터 초기화</button>
             <section><header><b>세부품명</b><span>{procurementFacets.detailClassifications.length}</span></header>{procurementFacets.detailClassifications.length ? procurementFacets.detailClassifications.map((facet) => {
               const key = facet.number || "unclassified";
-              return <label key={`${key}-${facet.name}`}><input type="checkbox" checked={procurementDetailFilters.includes(key)} onChange={() => setProcurementDetailFilters((current) => current.includes(key) ? current.filter((value) => value !== key) : [...current, key])} /><span>{facet.name || "미분류"}</span><em>{facet.count}</em></label>;
+              return <label key={`${key}-${facet.name}`}><input type="checkbox" checked={procurementDetailFilters.includes(key)} onChange={() => { setProcurementVisibleCount(30); setProcurementDetailFilters((current) => current.includes(key) ? current.filter((value) => value !== key) : [...current, key]); }} /><span>{facet.name || "미분류"}</span><em>{facet.count}</em></label>;
             }) : <p>검색 후 세부품명 필터가 표시됩니다.</p>}</section>
-            <section><header><b>계약구분</b><span>{procurementFacets.contractMethods.length}</span></header>{procurementFacets.contractMethods.length ? procurementFacets.contractMethods.map((facet) => <label key={facet.name}><input type="checkbox" checked={procurementContractFilters.includes(facet.name)} onChange={() => setProcurementContractFilters((current) => current.includes(facet.name) ? current.filter((value) => value !== facet.name) : [...current, facet.name])} /><span>{facet.name || "기타"}</span><em>{facet.count}</em></label>) : <p>검색 후 계약구분 필터가 표시됩니다.</p>}</section>
+            <section><header><b>계약구분</b><span>{procurementFacets.contractMethods.length}</span></header>{procurementFacets.contractMethods.length ? procurementFacets.contractMethods.map((facet) => <label key={facet.name}><input type="checkbox" checked={procurementContractFilters.includes(facet.name)} onChange={() => { setProcurementVisibleCount(30); setProcurementContractFilters((current) => current.includes(facet.name) ? current.filter((value) => value !== facet.name) : [...current, facet.name]); }} /><span>{facet.name || "기타"}</span><em>{facet.count}</em></label>) : <p>검색 후 계약구분 필터가 표시됩니다.</p>}</section>
+            <section><header><b>계약업체</b><span>{procurementFacets.suppliers.length}</span></header>{procurementFacets.suppliers.length ? procurementFacets.suppliers.map((facet) => <label key={facet.name}><input type="checkbox" checked={procurementSupplierFilters.includes(facet.name)} onChange={() => { setProcurementVisibleCount(30); setProcurementSupplierFilters((current) => current.includes(facet.name) ? current.filter((value) => value !== facet.name) : [...current, facet.name]); }} /><span>{facet.name}</span><em>{facet.count}</em></label>) : <p>검색 후 계약업체 필터가 표시됩니다.</p>}</section>
           </aside>
           <main className="quotation-procurement-market-results">
-            <header className="quotation-procurement-result-toolbar"><div>{procurementHasSearched ? <><b>검색결과 {won.format(procurementTotal)}건</b><small>{results.length !== procurementResults.length ? ` · 현재 필터 ${results.length}건` : ` · 현재 ${procurementResults.length}건 표시`}</small></> : <b>나라장터 물품 검색</b>}</div><label>정렬<select value={procurementSort} onChange={(event) => void searchProcurement(1, false, event.target.value as ProcurementSort)} disabled={!procurementHasSearched || procurementLoading}><option value="relevance">관련도순</option><option value="priceAsc">낮은가격순</option><option value="priceDesc">높은가격순</option><option value="recent">최신등록순</option></select></label></header>
+            <header className="quotation-procurement-result-toolbar"><div>{procurementHasSearched ? <><b>검색결과 {won.format(procurementTotal)}건</b><small> · 현재 필터 {won.format(filteredResults.length)}건 · {won.format(results.length)}건 표시</small></> : <b>나라장터 물품 검색</b>}</div><label>정렬<select value={procurementSort} onChange={(event) => void searchProcurement(1, false, event.target.value as ProcurementSort)} disabled={!procurementHasSearched || procurementLoading}><option value="relevance">관련도순</option><option value="priceAsc">낮은가격순</option><option value="priceDesc">높은가격순</option><option value="recent">최신등록순</option></select></label></header>
             {procurementError && <p className="quotation-procurement-error">{procurementError}</p>}
             {procurementLoading && !procurementResults.length && <div className="quotation-procurement-market-empty"><b>나라장터 상품을 검색하고 있습니다.</b><span>회사명 검색은 여러 조달 계약 자료를 함께 확인해 조금 걸릴 수 있습니다.</span></div>}
             {!procurementLoading && !procurementHasSearched && <div className="quotation-procurement-market-empty"><b>업체명·제품명·식별번호로 검색해 주세요.</b><span>검색 결과에서 여러 제품을 선택해 한 번에 견적이나 제품 DB에 넣을 수 있습니다.</span></div>}
@@ -2215,10 +2264,10 @@ export default function QuotationManagementPage({
                 <label className="quotation-procurement-result-check"><input type={contextual ? "radio" : "checkbox"} name={contextual ? "procurement-target" : undefined} checked={selected} onChange={() => toggleProcurementSelection(item)} /><span>선택</span></label>
                 <div className="quotation-procurement-result-image">{item.imageUrl ? <img src={item.imageUrl} alt="" referrerPolicy="no-referrer" /> : <span>이미지<br />없음</span>}</div>
                 <div className="quotation-procurement-result-info"><div className="quotation-procurement-result-badges"><span>{item.detailClassificationName || item.classificationName || "조달 물품"}</span>{registered && <em>제품 DB 등록됨</em>}</div><h4>{item.name}</h4><p>{item.specification || "규격 정보 미등록"}</p><dl><div><dt>계약업체</dt><dd>{item.supplierName || "미등록"}</dd></div><div><dt>식별번호</dt><dd>{item.procurementNumber}</dd></div><div><dt>계약구분</dt><dd>{item.contractMethod || item.sourceLabel}</dd></div><div><dt>판매상태</dt><dd>{item.saleStatus}</dd></div></dl></div>
-                <div className="quotation-procurement-result-actions"><strong>{item.unitPrice === null ? "가격 정보 없음" : `${won.format(item.unitPrice)}원`}</strong><small>{item.unit ? `단위 ${item.unit}` : "단위 미등록"}</small><div className="quotation-procurement-quantity"><button type="button" onClick={() => setProcurementQuantities((current) => ({ ...current, [item.identity]: Math.max(1, quantity - 1) }))}>−</button><input inputMode="numeric" aria-label={`${item.name} 수량`} value={quantity} onChange={(event) => setProcurementQuantities((current) => ({ ...current, [item.identity]: Math.max(1, Math.min(999, Number(event.target.value) || 1)) }))} /><button type="button" onClick={() => setProcurementQuantities((current) => ({ ...current, [item.identity]: Math.min(999, quantity + 1) }))}>+</button></div><button type="button" onClick={() => setProcurementDetail(item)}>상세보기</button><button className="primary" type="button" onClick={() => addProcurementItemsToQuotation([item])}>{contextual ? "이 위치에 적용" : "견적에만 넣기"}</button>{canRegisterProcurementProduct && <button type="button" onClick={() => openProcurementRegistrationReview([item], "catalog-and-quotation")}>등록 검토 후 견적</button>}</div>
+                <div className="quotation-procurement-result-actions"><strong>{item.unitPrice === null ? "가격 정보 없음" : `${won.format(item.unitPrice)}원`}</strong><small>{item.unit ? `단위 ${item.unit}` : "단위 미등록"}</small><div className="quotation-procurement-quantity"><button type="button" onClick={() => setProcurementQuantities((current) => ({ ...current, [item.identity]: Math.max(1, quantity - 1) }))}>−</button><input inputMode="numeric" aria-label={`${item.name} 수량`} value={quantity} onChange={(event) => setProcurementQuantities((current) => ({ ...current, [item.identity]: Math.max(1, Math.min(999, Number(event.target.value) || 1)) }))} /><button type="button" onClick={() => setProcurementQuantities((current) => ({ ...current, [item.identity]: Math.min(999, quantity + 1) }))}>+</button></div><button type="button" onClick={() => setProcurementDetail(item)}>상세보기</button><button className="primary" type="button" onClick={() => addProcurementItemsToQuotation([item])}>{contextual ? "이 위치에 적용" : "견적에만 넣기"}</button>{canRegisterProcurementProduct && (registered ? <button className="registered" type="button" disabled>제품 DB 등록됨</button> : <button type="button" onClick={() => openProcurementRegistrationReview([item], "catalog-only")}>제품 DB에만 등록</button>)}</div>
               </article>;
             })}</div>
-            {procurementResults.length < procurementTotal && <button className="quotation-procurement-market-more" type="button" disabled={procurementLoading} onClick={() => void searchProcurement(procurementPage + 1, true)}>{procurementLoading ? "불러오는 중…" : `더 보기 (${won.format(procurementResults.length)} / ${won.format(procurementTotal)})`}</button>}
+            {(results.length < filteredResults.length || procurementResults.length < procurementTotal) && <button className="quotation-procurement-market-more" type="button" disabled={procurementLoading} onClick={() => { if (results.length < filteredResults.length) setProcurementVisibleCount((current) => current + 30); else void searchProcurement(procurementPage + 1, true).then(() => setProcurementVisibleCount((current) => current + 30)); }}>{procurementLoading ? "불러오는 중…" : results.length < filteredResults.length ? `더 보기 (${won.format(results.length)} / ${won.format(filteredResults.length)})` : "추가 결과 검색"}</button>}
           </main>
         </div>
         <footer className="quotation-procurement-market-footer"><div><b>{selectedItems.length}개 선택</b><span>{contextual ? "선택한 한 제품을 현재 위치에 적용합니다." : "수량과 세부정보를 확인한 뒤 원하는 방식으로 추가하세요."}</span></div><button type="button" onClick={closeProductPicker}>닫기</button>{selectedItems.length > 0 && <button type="button" onClick={() => addProcurementItemsToQuotation(selectedItems)}>{contextual ? "선택 제품 적용" : "선택 품목 견적에만 넣기"}</button>}{canRegisterProcurementProduct && selectedItems.length > 0 && !contextual && <><button type="button" onClick={() => openProcurementRegistrationReview(selectedItems, "catalog-only")}>제품 DB에만 등록</button><button className="primary" type="button" onClick={() => openProcurementRegistrationReview(selectedItems, "catalog-and-quotation")}>제품 DB에 등록 후 견적에 넣기</button></>}</footer>
@@ -2229,6 +2278,7 @@ export default function QuotationManagementPage({
 
   function renderProcurementDetail() {
     if (!procurementDetail || typeof document === "undefined") return null;
+    const registered = existingProcurementProduct(procurementDetail);
     return createPortal(<div className="quotation-procurement-detail-modal" onPointerDown={(event) => { if (event.target === event.currentTarget) setProcurementDetail(null); }}>
       <section role="dialog" aria-modal="true" aria-labelledby="procurement-detail-title" onPointerDown={(event) => event.stopPropagation()}>
         <header><div><small>G2B PRODUCT DETAIL</small><h4 id="procurement-detail-title">나라장터 상품 상세</h4></div><button type="button" onClick={() => setProcurementDetail(null)} aria-label="상세정보 닫기">×</button></header>
@@ -2248,7 +2298,7 @@ export default function QuotationManagementPage({
             <div><dt>계약 단가</dt><dd>{procurementDetail.unitPrice === null ? "가격 정보 없음" : `${won.format(procurementDetail.unitPrice)}원${procurementDetail.unit ? ` / ${procurementDetail.unit}` : ""}`}</dd></div>
           </dl></div>
         </div>
-        <footer><a href={procurementDetail.sourceUrl} target="_blank" rel="noopener noreferrer">나라장터 원문 열기</a><button type="button" onClick={() => addProcurementItemsToQuotation([procurementDetail])}>견적에 넣기</button>{canRegisterProcurementProduct && <button className="primary" type="button" onClick={() => openProcurementRegistrationReview([procurementDetail], "catalog-and-quotation")}>제품 DB 등록 검토</button>}</footer>
+        <footer><a href={procurementDetail.sourceUrl} target="_blank" rel="noopener noreferrer">나라장터 원문 열기</a><button type="button" onClick={() => addProcurementItemsToQuotation([procurementDetail])}>견적에 넣기</button>{canRegisterProcurementProduct && (registered ? <button className="registered" type="button" disabled>제품 DB 등록됨</button> : <button className="primary" type="button" onClick={() => openProcurementRegistrationReview([procurementDetail], "catalog-only")}>제품 DB에만 등록</button>)}</footer>
       </section>
     </div>, document.body);
   }

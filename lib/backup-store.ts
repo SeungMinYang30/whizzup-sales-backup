@@ -150,6 +150,7 @@ export const EXCLUDED_DATABASE_TABLES = new Set([
   "oauth_tokens",
   "object_storage_files",
   "official_school_cache",
+  "procurement_search_cache",
   "official_school_directory",
   "official_school_sync_state",
   "organization_schedule_import_state",

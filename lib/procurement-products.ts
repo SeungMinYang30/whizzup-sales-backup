@@ -9,6 +9,8 @@ export type ProcurementSearchItem = {
   supplierName: string;
   manufacturerName: string;
   procurementChannel: string;
+  marketplace: "shopping" | "digital-service";
+  marketplaceLabel: string;
   procurementNumber: string;
   contractMethod: string;
   contractNumber: string;
@@ -90,6 +92,23 @@ function procurementSourceUrl(classificationNumber: string, procurementNumber: s
   return `https://goods.g2b.go.kr/search/productSearchView.do?${params.toString()}`;
 }
 
+function procurementMarketplace(source: Record<string, unknown>) {
+  const classificationText = [
+    source.dtilPrdctClsfcNoNm,
+    source.prdctClsfcNoNm,
+    source.prdctIdntNoNm,
+    source.prdctNm,
+    source.prdctSpecNm,
+  ]
+    .map((value) => text(value, 1_000).normalize("NFKC"))
+    .join(" ")
+    .replace(/\s+/g, "");
+  const digitalService = /교육용소프트웨어|디지털서비스몰/iu.test(classificationText);
+  return digitalService
+    ? { marketplace: "digital-service" as const, marketplaceLabel: "디지털서비스몰", procurementChannel: "디지털서비스몰" }
+    : { marketplace: "shopping" as const, marketplaceLabel: "종합쇼핑몰", procurementChannel: "G2B" };
+}
+
 export function mapProcurementSearchItem(value: unknown, options: ProcurementSearchMapOptions = {}): ProcurementSearchItem | null {
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
@@ -98,7 +117,8 @@ export function mapProcurementSearchItem(value: unknown, options: ProcurementSea
   const rawSpecification = text(source.prdctSpecNm, 1_000);
   const name = catalogueName || rawSpecification || text(source.dtilPrdctClsfcNoNm || source.prdctClsfcNoNm, 300);
   if (!procurementNumber || !name) return null;
-  const procurementChannel = "G2B";
+  const marketplace = procurementMarketplace(source);
+  const procurementChannel = marketplace.procurementChannel;
   const contractEndDate = text(source.cntrctEndDate, 20);
   const classificationNumber = text(source.prdctClsfcNo, 100);
   const classificationSummary = [text(source.dtilPrdctClsfcNoNm, 300), text(source.prdctClsfcNoNm, 300)]
@@ -113,6 +133,8 @@ export function mapProcurementSearchItem(value: unknown, options: ProcurementSea
     supplierName: text(source.cntrctCorpNm, 300),
     manufacturerName: text(source.prdctMakrNm, 300),
     procurementChannel,
+    marketplace: marketplace.marketplace,
+    marketplaceLabel: marketplace.marketplaceLabel,
     procurementNumber,
     contractMethod: text(source.cntrctMthdNm || options.contractMethod, 160),
     contractNumber: text(source.shopngCntrctNo, 100),

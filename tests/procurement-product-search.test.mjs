@@ -6,6 +6,7 @@ import ts from "typescript";
 const librarySource = await readFile(new URL("../lib/procurement-products.ts", import.meta.url), "utf8");
 const routeSource = await readFile(new URL("../app/api/procurement-products/route.ts", import.meta.url), "utf8");
 const catalogRouteSource = await readFile(new URL("../app/api/product-catalog/route.ts", import.meta.url), "utf8");
+const backupSource = await readFile(new URL("../lib/backup-store.ts", import.meta.url), "utf8");
 const quotationSource = await readFile(new URL("../app/quotation-management-page.tsx", import.meta.url), "utf8");
 const globalCssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -51,6 +52,22 @@ test("contract results use their detailed specification as the visible product n
   }, { contractMethod: "다수공급자계약", sourceLabel: "다수공급자계약" });
   assert.equal(item.name, "멀티미디어학습장치, 에어패스, AP-EDUVR-01, 가상체육시스템");
   assert.equal(item.specification, "멀티미디어학습장치 · 영상·음향장비");
+  assert.equal(item.marketplace, "shopping");
+  assert.equal(item.marketplaceLabel, "종합쇼핑몰");
+  assert.equal(item.procurementChannel, "G2B");
+});
+
+test("educational software is separated into the digital service marketplace", () => {
+  const item = procurement.mapProcurementSearchItem({
+    prdctIdntNo: "23674379",
+    prdctIdntNoNm: "교육용소프트웨어, 에어패스, AP-EDU-CNTS5, 체육",
+    dtilPrdctClsfcNoNm: "교육용소프트웨어",
+    cntrctCorpNm: "(주)에어패스",
+  });
+  assert.equal(item.marketplace, "digital-service");
+  assert.equal(item.marketplaceLabel, "디지털서비스몰");
+  assert.equal(item.procurementChannel, "디지털서비스몰");
+  assert.equal(procurement.procurementSearchItemToCatalogProduct(item).procurementChannel, "디지털서비스몰");
 });
 
 test("procurement catalog identity is stable by channel and identifier", () => {
@@ -77,12 +94,18 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /inqryBgnDate: startDate/);
   assert.match(routeSource, /body\["nkoneps\.com\.response\.ResponseError"\]/);
   assert.match(routeSource, /serviceKey: key/);
-  assert.match(routeSource, /CACHE_VERSION = "v5-market-picker"/);
-  assert.match(routeSource, /CACHE_TTL_MS = 3 \* 60/);
+  assert.match(routeSource, /CACHE_VERSION = "v6-market-picker"/);
+  assert.match(routeSource, /CACHE_TTL_MS = 30 \* 60/);
+  assert.match(routeSource, /CREATE TABLE IF NOT EXISTS procurement_search_cache/);
+  assert.match(backupSource, /"procurement_search_cache"/);
+  assert.match(routeSource, /readSharedCache\(cacheKey\)/);
+  assert.match(routeSource, /Math\.min\(120,/);
   assert.match(routeSource, /collectFirstUseful/);
   assert.match(routeSource, /PROCUREMENT_SEARCH_GRACE_MS = 800/);
   assert.match(routeSource, /controller\.abort\(\)/);
   assert.match(routeSource, /detailClassifications/);
+  assert.match(routeSource, /suppliers: namedFacets\(suppliers\)/);
+  assert.match(routeSource, /marketplaces: namedFacets\(marketplaces\)/);
   assert.match(routeSource, /sort === "priceAsc"/);
   assert.doesNotMatch(routeSource, /20000101/);
   assert.doesNotMatch(quotationSource, /NEXT_PUBLIC_PROCUREMENT_DATA_SERVICE_KEY/);
@@ -105,16 +128,28 @@ test("quotation picker supports quote-only and owner-only catalog registration i
   assert.match(quotationSource, /procurementSearchAbortRef\.current\?\.abort\(\)/);
   assert.match(quotationSource, /requestId !== procurementSearchRequestRef\.current/);
   assert.match(quotationSource, /window\.setTimeout\(\(\) => \{/);
-  assert.match(quotationSource, /\}, 450\)/);
+  assert.match(quotationSource, /\}, 350\)/);
   assert.match(quotationSource, /setProcurementResults\(\[\]\)/);
   assert.match(quotationSource, /procurementContractFilters\.includes\(facet\.name\)/);
   assert.match(quotationSource, /setProcurementContractFilters\(\[\]\)/);
+  assert.match(quotationSource, /setProcurementSupplierFilters\(\[\]\)/);
+  assert.match(quotationSource, /procurementSupplierFilters\.includes\(facet\.name\)/);
+  assert.match(quotationSource, /setProcurementMarketplace\("digital-service"\)/);
+  assert.match(quotationSource, /pageSize=120/);
+  assert.match(quotationSource, /filteredResults\.slice\(0, procurementVisibleCount\)/);
+  assert.match(quotationSource, /setProcurementVisibleCount\(\(current\) => current \+ 30\)/);
+  assert.match(quotationSource, /제품 DB 등록됨/);
+  assert.match(quotationSource, /JSON\.stringify\(\{ product, autoRegisterSupplier: true \}\)/);
   assert.match(quotationSource, /onChange=\{\(event\) => changeProcurementQuery\(event\.target\.value\)\}/);
   assert.match(quotationSource, /<a href=\{procurementDetail\.sourceUrl\} target="_blank" rel="noopener noreferrer">나라장터 원문 열기<\/a>/);
   assert.match(globalCssSource, /\.quotation-procurement-market-dialog \{[^}]*width: min\(95vw, 1800px\);[^}]*height: min\(95dvh, 1040px\)/);
-  assert.match(globalCssSource, /\.quotation-procurement-result-info h4 \{[^}]*font-size: 15px/);
+  assert.match(globalCssSource, /\.quotation-procurement-result-info h4 \{[^}]*font-size: 17px/);
+  assert.match(globalCssSource, /\.quotation-procurement-market-search-area form button \{[^}]*font-size: 16px/);
   assert.doesNotMatch(globalCssSource, /quotation-procurement-market-filters section:nth-of-type\(2\) \{ display: none/);
   assert.match(catalogRouteSource, /requirePrimaryOwner\(\)/);
-  assert.match(catalogRouteSource, /procurementProductIdentity/);
+  assert.match(catalogRouteSource, /normalizedProcurementIdentifier/);
+  assert.match(catalogRouteSource, /ensureProcurementSupplierVendor/);
+  assert.match(catalogRouteSource, /setProductVendorLinks\(\[product\.id\], vendorId, memberId\)/);
+  assert.match(catalogRouteSource, /나라장터 제품 등록에서 자동 생성/);
   assert.doesNotMatch(catalogRouteSource, /requested\.commissionRate = null/);
 });
