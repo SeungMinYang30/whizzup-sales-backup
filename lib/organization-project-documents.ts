@@ -1,6 +1,8 @@
 import { getD1 } from "../db";
 
-export const ORGANIZATION_PROJECT_DOCUMENT_MAX_BYTES = 50 * 1024 * 1024;
+// Files are streamed to Google Drive in Vercel-safe chunks, so combined
+// drawings no longer need to stay below the old single-request 50 MiB limit.
+export const ORGANIZATION_PROJECT_DOCUMENT_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 
 export type OrganizationProjectDocumentRow = {
   id: number;

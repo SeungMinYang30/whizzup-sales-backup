@@ -15401,21 +15401,20 @@ button:is(
   display:flex;
   align-items:center;
   justify-content:center;
-  padding:20px;
-  background:rgba(13,25,51,.58);
-  backdrop-filter:blur(3px);
+  padding:clamp(32px,6vh,72px) clamp(24px,5vw,80px);
+  background:rgba(20,34,58,.18);
 }
 
 .project-documents-modal{
   display:flex;
-  width:min(920px,100%);
-  max-height:min(860px,calc(100dvh - 40px));
+  width:min(940px,100%);
+  max-height:min(820px,calc(100dvh - clamp(64px,12vh,144px)));
   flex-direction:column;
   overflow:hidden;
   border:1px solid #d2dceb;
   border-radius:18px;
   background:#fff;
-  box-shadow:0 26px 70px rgba(18,35,68,.32);
+  box-shadow:0 24px 64px rgba(18,35,68,.28);
 }
 
 .project-documents-modal>header{
@@ -15604,8 +15603,8 @@ button:is(
     padding-bottom:max(10px,env(safe-area-inset-bottom));
   }
 
-  .project-documents-modal-shell{align-items:flex-end;padding:0}
-  .project-documents-modal{width:100%;max-height:92dvh;border-radius:18px 18px 0 0}
+  .project-documents-modal-shell{align-items:center;padding:18px 12px;background:rgba(20,34,58,.2)}
+  .project-documents-modal{width:100%;max-height:calc(100dvh - 36px);border-radius:16px}
   .project-documents-modal>header{padding:16px}
   .project-documents-upload{grid-template-columns:1fr;padding:14px 16px 11px}
   .project-documents-queue{margin-right:16px;margin-left:16px}

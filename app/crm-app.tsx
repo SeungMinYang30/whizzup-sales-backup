@@ -21742,6 +21742,7 @@ export default function CrmApp({
                   }}
                   onKeyDown={(event) => {
                     if (
+                      event.target === event.currentTarget &&
                       !detailDisplayRecord.jointProjectId &&
                       (event.key === "Enter" || event.key === " ")
                     ) {
@@ -21895,7 +21896,10 @@ export default function CrmApp({
                     beginDetailInlineEdit("contact", detailDisplayRecord)
                   }
                   onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
+                    if (
+                      event.target === event.currentTarget &&
+                      (event.key === "Enter" || event.key === " ")
+                    ) {
                       beginDetailInlineEdit("contact", detailDisplayRecord);
                     }
                   }}
@@ -21971,7 +21975,10 @@ export default function CrmApp({
                     beginDetailInlineEdit("award", detailDisplayRecord)
                   }
                   onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
+                    if (
+                      event.target === event.currentTarget &&
+                      (event.key === "Enter" || event.key === " ")
+                    ) {
                       beginDetailInlineEdit("award", detailDisplayRecord);
                     }
                   }}
@@ -22126,7 +22133,10 @@ export default function CrmApp({
                     beginDetailInlineEdit("execution", detailDisplayRecord)
                   }
                   onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
+                    if (
+                      event.target === event.currentTarget &&
+                      (event.key === "Enter" || event.key === " ")
+                    ) {
                       beginDetailInlineEdit("execution", detailDisplayRecord);
                     }
                   }}
@@ -22191,6 +22201,7 @@ export default function CrmApp({
                   }}
                   onKeyDown={(event) => {
                     if (
+                      event.target === event.currentTarget &&
                       canEditProgressManager &&
                       (event.key === "Enter" || event.key === " ")
                     ) {

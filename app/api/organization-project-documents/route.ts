@@ -22,6 +22,7 @@ export const dynamic = "force-dynamic";
 
 const allowedKinds = new Set(["도면", "조감도", "통합본", "기타"]);
 const allowedExtensions = new Set(["pdf", "jpg", "jpeg", "png", "webp", "dwg", "dxf", "zip", "ppt", "pptx"]);
+const projectDocumentUploadHelp = "PDF, 이미지, DWG, DXF, ZIP, PPT 파일을 최대 2GB까지 올려 주세요.";
 
 function positiveInteger(value: unknown) {
   const parsed = Number(value);
@@ -119,7 +120,7 @@ export async function POST(request: Request) {
     if (request.headers.get("content-type")?.includes("application/json")) {
       const metadata = validUploadMetadata(await request.json() as Record<string, unknown>);
       if (!metadata.valid) {
-        return Response.json({ error: "PDF, 이미지, DWG, DXF, ZIP, PPT 파일을 50MB 이하로 올려 주세요." }, { status: 400 });
+        return Response.json({ error: projectDocumentUploadHelp }, { status: 400 });
       }
       const session = await createDriveResumableUpload({
         fileName: metadata.fileName,
@@ -146,7 +147,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "기관·사업 차수와 자료 종류를 확인해 주세요." }, { status: 400 });
     }
     if (!(file instanceof File) || file.size < 1 || file.size > ORGANIZATION_PROJECT_DOCUMENT_MAX_BYTES || !allowedExtensions.has(extensionOf(file.name))) {
-      return Response.json({ error: "PDF, 이미지, DWG, DXF, ZIP, PPT 파일을 50MB 이하로 올려 주세요." }, { status: 400 });
+      return Response.json({ error: projectDocumentUploadHelp }, { status: 400 });
     }
 
     const uploaded = await uploadDriveFile({
