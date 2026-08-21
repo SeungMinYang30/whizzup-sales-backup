@@ -14222,6 +14222,108 @@ button:is(
 .quotation-procurement-result footer button:disabled { opacity: .55; cursor: wait; }
 .quotation-procurement-error { margin: 0; padding: 10px 12px; border: 1px solid #efbbb4; border-radius: 8px; background: #fff3f1; color: #b7473d; font-size: 10px; }
 .quotation-procurement-more { min-height: 38px; border: 1px solid #b9c7df; border-radius: 8px; background: #f7f9fd; color: #3654a8; font-weight: 850; cursor: pointer; }
+.quotation-procurement-market-modal { position: fixed; inset: 0; z-index: 250; display: grid; place-items: center; padding: 2.5dvh 2.5vw; background: rgba(14, 25, 47, .68); backdrop-filter: blur(4px); }
+.quotation-procurement-market-dialog { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; width: min(95vw, 1800px); height: min(95dvh, 1040px); overflow: hidden; border: 1px solid #cdd8e8; border-radius: 18px; background: #fff; box-shadow: 0 30px 90px rgba(12, 27, 55, .35); }
+.quotation-procurement-market-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 18px 24px 14px; border-bottom: 1px solid #dfe6f0; background: linear-gradient(135deg, #f9fbff, #eef3ff); }
+.quotation-procurement-market-header small { color: #6c86d3; font-size: 10px; font-weight: 900; letter-spacing: .15em; }
+.quotation-procurement-market-header h3 { margin: 4px 0; color: #1c3154; font-size: 25px; }
+.quotation-procurement-market-header p { margin: 0; color: #6c7b92; font-size: 11px; }
+.quotation-procurement-market-header > button { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; border: 1px solid #d2dceb; border-radius: 10px; background: #fff; color: #52647e; font-size: 25px; cursor: pointer; }
+.quotation-procurement-market-search-area { display: grid; gap: 10px; padding: 14px 24px; border-bottom: 1px solid #dfe6f0; }
+.quotation-procurement-market-search-area form { display: grid; grid-template-columns: 150px minmax(0, 1fr) 88px; width: min(900px, 100%); margin: auto; }
+.quotation-procurement-market-search-area select,
+.quotation-procurement-market-search-area input,
+.quotation-procurement-market-search-area form button { min-height: 46px; border: 1px solid #aebbd0; background: #fff; color: #263a58; font: inherit; }
+.quotation-procurement-market-search-area select { padding: 0 12px; border-radius: 9px 0 0 9px; }
+.quotation-procurement-market-search-area input { min-width: 0; padding: 0 14px; border-inline: 0; outline: 0; }
+.quotation-procurement-market-search-area form button { border-color: #3157e6; border-radius: 0 9px 9px 0; background: #3157e6; color: #fff; font-weight: 900; cursor: pointer; }
+.quotation-procurement-market-search-area form button:disabled { opacity: .6; cursor: wait; }
+.quotation-procurement-market-search-area nav { display: flex; justify-content: center; gap: 7px; }
+.quotation-procurement-market-search-area nav button { min-height: 34px; padding: 0 18px; border: 1px solid #d6deea; border-radius: 999px; background: #f6f8fb; color: #64748c; font-size: 10px; font-weight: 850; }
+.quotation-procurement-market-search-area nav button.active { border-color: #2857bf; background: #2857bf; color: #fff; }
+.quotation-procurement-market-content { display: grid; grid-template-columns: 230px minmax(0, 1fr); min-height: 0; }
+.quotation-procurement-market-filters { min-height: 0; overflow: auto; padding: 14px; border-right: 1px solid #dde4ee; background: #fafbfd; }
+.quotation-procurement-filter-reset { width: 100%; min-height: 38px; border: 0; border-block: 1px solid #d8e0eb; background: transparent; color: #4f6078; font-weight: 800; cursor: pointer; }
+.quotation-procurement-market-filters section { margin-top: 15px; border-bottom: 1px solid #dde4ee; padding-bottom: 14px; }
+.quotation-procurement-market-filters section header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; color: #243752; font-size: 11px; }
+.quotation-procurement-market-filters section label,
+.quotation-procurement-facet-info { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 7px; min-height: 30px; color: #4e5f77; font-size: 10px; }
+.quotation-procurement-market-filters section label input { width: 16px; min-height: 16px; }
+.quotation-procurement-market-filters section em { color: #75839a; font-style: normal; }
+.quotation-procurement-market-filters section p { color: #8692a4; font-size: 10px; line-height: 1.5; }
+.quotation-procurement-market-results { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 18px 20px; }
+.quotation-procurement-result-toolbar { position: sticky; top: 0; z-index: 2; display: flex; min-height: 56px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #dfe5ee; background: rgba(255, 255, 255, .96); }
+.quotation-procurement-result-toolbar b { color: #203653; font-size: 12px; }
+.quotation-procurement-result-toolbar small { color: #78869a; font-size: 10px; }
+.quotation-procurement-result-toolbar label { display: flex; align-items: center; gap: 7px; color: #6b7990; font-size: 10px; }
+.quotation-procurement-result-toolbar select { min-height: 34px; padding: 0 28px 0 9px; border: 1px solid #d0d9e7; border-radius: 8px; background: #fff; }
+.quotation-procurement-market-empty { display: grid; min-height: 260px; place-content: center; gap: 8px; color: #718098; text-align: center; }
+.quotation-procurement-market-empty b { color: #334b6e; font-size: 14px; }
+.quotation-procurement-select-all { display: flex; min-height: 42px; align-items: center; justify-content: space-between; border-bottom: 1px solid #e3e8f0; color: #566780; font-size: 10px; }
+.quotation-procurement-select-all label { display: flex; align-items: center; gap: 7px; font-weight: 800; }
+.quotation-procurement-select-all input { width: 17px; min-height: 17px; }
+.quotation-procurement-market-list article { display: grid; grid-template-columns: 48px 105px minmax(0, 1fr) 205px; align-items: center; gap: 14px; padding: 16px 6px; border-bottom: 1px solid #dfe5ee; }
+.quotation-procurement-market-list article.selected { background: #f2f5ff; box-shadow: inset 3px 0 #3d60e4; }
+.quotation-procurement-result-check { display: grid; justify-items: center; gap: 3px; color: #75829a; font-size: 9px; }
+.quotation-procurement-result-check input { width: 18px; min-height: 18px; }
+.quotation-procurement-result-image { display: grid; width: 105px; height: 105px; place-items: center; border: 1px solid #e0e5ed; border-radius: 8px; background: #f8f9fb; color: #98a3b3; font-size: 9px; text-align: center; }
+.quotation-procurement-result-image img { width: 100%; height: 100%; object-fit: contain; }
+.quotation-procurement-result-info { min-width: 0; }
+.quotation-procurement-result-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.quotation-procurement-result-badges span,
+.quotation-procurement-result-badges em { padding: 3px 6px; border: 1px solid #b5c5e6; border-radius: 5px; color: #2e56af; font-size: 9px; font-style: normal; }
+.quotation-procurement-result-badges em { border-color: #9ed4c0; color: #08775d; }
+.quotation-procurement-result-info h4 { margin: 7px 0 4px; color: #172d4d; font-size: 13px; line-height: 1.45; }
+.quotation-procurement-result-info > p { margin: 0 0 9px; color: #748199; font-size: 10px; line-height: 1.45; }
+.quotation-procurement-result-info dl { display: flex; flex-wrap: wrap; gap: 5px 14px; margin: 0; }
+.quotation-procurement-result-info dl div { display: flex; gap: 5px; font-size: 9px; }
+.quotation-procurement-result-info dt { color: #8a96a7; }
+.quotation-procurement-result-info dd { margin: 0; color: #465873; font-weight: 750; }
+.quotation-procurement-result-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.quotation-procurement-result-actions strong,
+.quotation-procurement-result-actions small,
+.quotation-procurement-quantity { grid-column: 1 / -1; text-align: right; }
+.quotation-procurement-result-actions strong { color: #142c50; font-size: 18px; }
+.quotation-procurement-result-actions small { color: #7c899d; }
+.quotation-procurement-result-actions button { min-height: 34px; border: 1px solid #9fb2e5; border-radius: 7px; background: #fff; color: #3158bd; font-size: 9px; font-weight: 850; cursor: pointer; }
+.quotation-procurement-result-actions button.primary { border-color: #3157e6; background: #3157e6; color: #fff; }
+.quotation-procurement-quantity { display: grid; grid-template-columns: 32px 54px 32px; justify-content: end; }
+.quotation-procurement-quantity button,
+.quotation-procurement-quantity input { min-height: 30px; border: 1px solid #d4dce8; background: #fff; text-align: center; }
+.quotation-procurement-quantity input { min-width: 0; border-inline: 0; }
+.quotation-procurement-market-more { display: block; min-height: 42px; margin: 14px auto 0; padding: 0 24px; border: 1px solid #aebde0; border-radius: 9px; background: #f5f7fc; color: #3154b8; font-weight: 850; cursor: pointer; }
+.quotation-procurement-market-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid #d9e1ec; background: #fff; }
+.quotation-procurement-market-footer > div { display: grid; min-width: 220px; margin-right: auto; gap: 2px; }
+.quotation-procurement-market-footer b { color: #254cc3; font-size: 12px; }
+.quotation-procurement-market-footer span { color: #7b879a; font-size: 9px; }
+.quotation-procurement-market-footer button { min-height: 40px; padding: 0 14px; border: 1px solid #b6c3d8; border-radius: 8px; background: #fff; color: #36537f; font-size: 10px; font-weight: 850; cursor: pointer; }
+.quotation-procurement-market-footer button.primary { border-color: #3157e6; background: #3157e6; color: #fff; }
+.quotation-procurement-registration-modal { position: fixed; inset: 0; z-index: 290; display: grid; place-items: center; padding: 24px; background: rgba(14, 25, 47, .72); }
+.quotation-procurement-registration-modal > section { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: min(1100px, 100%); max-height: min(90dvh, 900px); overflow: hidden; border-radius: 17px; background: #fff; box-shadow: 0 30px 90px rgba(12, 27, 55, .36); }
+.quotation-procurement-registration-modal > section > header { display: flex; justify-content: space-between; gap: 16px; padding: 18px 20px; border-bottom: 1px solid #dfe6f0; background: #f7f9fd; }
+.quotation-procurement-registration-modal header small { color: #718bd0; font-size: 9px; font-weight: 900; letter-spacing: .13em; }
+.quotation-procurement-registration-modal header h4 { margin: 3px 0; color: #1e3150; font-size: 20px; }
+.quotation-procurement-registration-modal header p { margin: 0; color: #748198; font-size: 10px; }
+.quotation-procurement-registration-modal header > button { width: 38px; height: 38px; border: 1px solid #d4deeb; border-radius: 9px; background: #fff; color: #60708a; font-size: 22px; }
+.quotation-procurement-registration-list { min-height: 0; overflow: auto; padding: 14px; }
+.quotation-procurement-registration-list article { margin-bottom: 12px; border: 1px solid #dbe3ef; border-radius: 11px; overflow: hidden; }
+.quotation-procurement-registration-list article.registered { opacity: .72; }
+.quotation-procurement-registration-heading { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #f5f8fc; }
+.quotation-procurement-registration-heading > span { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 50%; background: #3157e6; color: #fff; font-weight: 900; }
+.quotation-procurement-registration-heading > div { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.quotation-procurement-registration-heading b { color: #2b3e5c; font-size: 11px; }
+.quotation-procurement-registration-heading small { color: #7d899c; font-size: 9px; }
+.quotation-procurement-registration-heading em { color: #08775d; font-size: 9px; font-style: normal; font-weight: 850; }
+.quotation-procurement-registration-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 12px; }
+.quotation-procurement-registration-fields label { display: grid; gap: 5px; color: #66758d; font-size: 9px; font-weight: 800; }
+.quotation-procurement-registration-fields label.wide { grid-column: span 2; }
+.quotation-procurement-registration-fields input { min-width: 0; min-height: 38px; padding: 0 10px; border: 1px solid #ccd7e6; border-radius: 7px; color: #2d405d; }
+.quotation-procurement-registration-rate { display: grid; grid-template-columns: minmax(0, 1fr) 28px; align-items: center; }
+.quotation-procurement-registration-rate b { margin-left: -28px; color: #65728a; pointer-events: none; }
+.quotation-procurement-registration-modal > section > footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 13px 18px; border-top: 1px solid #dfe6f0; }
+.quotation-procurement-registration-modal footer span { margin-right: auto; color: #718098; font-size: 10px; }
+.quotation-procurement-registration-modal footer button { min-height: 40px; padding: 0 15px; border: 1px solid #c6d1e1; border-radius: 8px; background: #fff; color: #405673; font-weight: 850; }
+.quotation-procurement-registration-modal footer button.primary { border-color: #3157e6; background: #3157e6; color: #fff; }
 .quotation-procurement-detail-modal { position: fixed; inset: 0; z-index: 260; display: grid; place-items: center; padding: 22px; background: rgba(18, 30, 54, .64); backdrop-filter: blur(3px); }
 .quotation-procurement-detail-modal > section { width: min(780px, 100%); max-height: min(88dvh, 800px); overflow: auto; border: 1px solid #d6dfed; border-radius: 18px; background: #fff; box-shadow: 0 30px 90px rgba(16, 30, 58, .32); }
 .quotation-procurement-detail-modal header { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 18px 20px; border-bottom: 1px solid #dfe6f1; background: #f8faff; }
@@ -14276,6 +14378,38 @@ button:is(
   .quotation-procurement-image-empty { width: 64px; height: 64px; }
   .quotation-procurement-result footer { min-width: 0; }
   .quotation-procurement-result footer button { min-height: 44px; }
+  .quotation-procurement-market-modal { place-items: stretch; padding: 0; }
+  .quotation-procurement-market-dialog { width: 100%; height: 100dvh; border: 0; border-radius: 0; }
+  .quotation-procurement-market-header { padding: max(14px, env(safe-area-inset-top)) 14px 12px; }
+  .quotation-procurement-market-header h3 { font-size: 19px; }
+  .quotation-procurement-market-header p { font-size: 9px; }
+  .quotation-procurement-market-search-area { padding: 10px 12px; }
+  .quotation-procurement-market-search-area form { grid-template-columns: minmax(0, 1fr) 70px; }
+  .quotation-procurement-market-search-area form select { display: none; }
+  .quotation-procurement-market-search-area input { border-left: 1px solid #aebbd0; border-radius: 8px 0 0 8px; }
+  .quotation-procurement-market-search-area nav { justify-content: flex-start; overflow-x: auto; }
+  .quotation-procurement-market-search-area nav button { padding: 0 12px; white-space: nowrap; }
+  .quotation-procurement-market-content { grid-template-columns: 1fr; overflow: auto; }
+  .quotation-procurement-market-filters { min-height: auto; overflow: visible; padding: 8px 12px; border-right: 0; border-bottom: 1px solid #dde4ee; }
+  .quotation-procurement-market-filters section { margin: 7px 0 0; padding-bottom: 7px; }
+  .quotation-procurement-market-filters section:nth-of-type(2) { display: none; }
+  .quotation-procurement-market-filters section label { display: inline-grid; grid-template-columns: auto minmax(0, 1fr) auto; width: calc(50% - 4px); padding-right: 8px; }
+  .quotation-procurement-market-results { overflow: visible; padding: 0 10px 16px; }
+  .quotation-procurement-result-toolbar { min-height: 48px; }
+  .quotation-procurement-market-list article { grid-template-columns: 36px 72px minmax(0, 1fr); gap: 8px; padding: 12px 2px; }
+  .quotation-procurement-result-image { width: 72px; height: 72px; }
+  .quotation-procurement-result-info h4 { font-size: 11px; }
+  .quotation-procurement-result-info dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .quotation-procurement-result-actions { grid-column: 2 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .quotation-procurement-market-footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .quotation-procurement-market-footer > div { grid-column: 1 / -1; min-width: 0; }
+  .quotation-procurement-market-footer button { min-height: 44px; padding: 0 8px; white-space: normal; }
+  .quotation-procurement-registration-modal { place-items: stretch; padding: 0; }
+  .quotation-procurement-registration-modal > section { width: 100%; max-height: 100dvh; border-radius: 0; }
+  .quotation-procurement-registration-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .quotation-procurement-registration-fields label.wide { grid-column: 1 / -1; }
+  .quotation-procurement-registration-modal > section > footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding-bottom: max(13px, env(safe-area-inset-bottom)); }
+  .quotation-procurement-registration-modal footer span { grid-column: 1 / -1; }
   .quotation-procurement-detail-modal { place-items: stretch; padding: 0; }
   .quotation-procurement-detail-modal > section { width: 100%; max-height: 100dvh; border: 0; border-radius: 0; }
   .quotation-procurement-detail-body { grid-template-columns: 1fr; padding: 14px; }

@@ -26,6 +26,7 @@ test("procurement result mapping exposes the fields used by the detailed product
     prdctClsfcNo: "12345678",
     prdctClsfcNoNm: "교육용장비",
     dtilPrdctClsfcNo: "1234567890",
+    dtilPrdctClsfcNoNm: "멀티미디어학습장치",
     cntrctCorpNm: "(주)에어패스",
     prdctMakrNm: "에어패스",
     cntrctEndDate: "20991231",
@@ -33,6 +34,7 @@ test("procurement result mapping exposes the fields used by the detailed product
   assert.equal(item.supplierName, "(주)에어패스");
   assert.equal(item.classificationNumber, "12345678");
   assert.equal(item.detailClassificationNumber, "1234567890");
+  assert.equal(item.detailClassificationName, "멀티미디어학습장치");
   assert.equal(item.contractMethod, "다수공급자계약");
   assert.equal(item.saleStatus, "계약 유효");
   assert.equal(item.sourceUrl, "https://goods.g2b.go.kr/search/productSearchView.do?goodsClsfcNo=12345678&goodsIdntfcNo=24563902");
@@ -74,8 +76,10 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /inqryBgnDate: startDate/);
   assert.match(routeSource, /body\["nkoneps\.com\.response\.ResponseError"\]/);
   assert.match(routeSource, /serviceKey: key/);
-  assert.match(routeSource, /CACHE_VERSION = "v3-valid-window"/);
+  assert.match(routeSource, /CACHE_VERSION = "v4-market-picker"/);
   assert.match(routeSource, /CACHE_TTL_MS = 10 \* 60/);
+  assert.match(routeSource, /detailClassifications/);
+  assert.match(routeSource, /sort === "priceAsc"/);
   assert.doesNotMatch(routeSource, /20000101/);
   assert.doesNotMatch(quotationSource, /NEXT_PUBLIC_PROCUREMENT_DATA_SERVICE_KEY/);
 });
@@ -83,16 +87,22 @@ test("official procurement search stays server-only and requires an approved mem
 test("quotation picker supports quote-only and owner-only catalog registration in append insert and replace flows", () => {
   assert.match(quotationSource, />나라장터 검색</);
   assert.match(quotationSource, /"견적에만 넣기"/);
-  assert.match(quotationSource, /"제품 DB에 등록 후 견적에 넣기"/);
+  assert.match(quotationSource, /제품 DB에 등록 후 견적에 넣기/);
+  assert.match(quotationSource, /제품 DB에만 등록/);
   assert.match(quotationSource, /productPickerTarget\.kind === "replace"/);
   assert.match(quotationSource, /kind: "insert", index/);
   assert.match(quotationSource, /나라장터 상품 상세/);
   assert.match(quotationSource, /업체명·제품명·식별번호 검색/);
+  assert.match(quotationSource, /나라장터 종합쇼핑몰 검색/);
+  assert.match(quotationSource, /세부품명/);
+  assert.match(quotationSource, /현재 결과 전체 선택/);
+  assert.match(quotationSource, /제품 DB 등록 검토/);
   assert.match(quotationSource, /function changeProcurementQuery\(value: string\)/);
   assert.match(quotationSource, /procurementSearchAbortRef\.current\?\.abort\(\)/);
   assert.match(quotationSource, /requestId !== procurementSearchRequestRef\.current/);
   assert.match(quotationSource, /onChange=\{\(event\) => changeProcurementQuery\(event\.target\.value\)\}/);
-  assert.match(quotationSource, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\} onClick=\{\(event\) => event\.stopPropagation\(\)\}>나라장터 원문 열기/);
+  assert.match(quotationSource, /<a href=\{procurementDetail\.sourceUrl\} target="_blank" rel="noopener noreferrer">나라장터 원문 열기<\/a>/);
   assert.match(catalogRouteSource, /requirePrimaryOwner\(\)/);
   assert.match(catalogRouteSource, /procurementProductIdentity/);
+  assert.doesNotMatch(catalogRouteSource, /requested\.commissionRate = null/);
 });

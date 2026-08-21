@@ -163,6 +163,17 @@ type ProductPickerTarget =
 
 type ProductPickerSource = "catalog" | "procurement";
 
+type ProcurementSort = "relevance" | "priceAsc" | "priceDesc" | "recent";
+type ProcurementFacet = { number: string; name: string; count: number };
+type ProcurementRegistrationMode = "catalog-only" | "catalog-and-quotation";
+type ProcurementRegistrationDraft = {
+  item: ProcurementSearchItem;
+  product: ProductCatalogItem;
+  unitPriceText: string;
+  procurementFeePercent: string;
+  commissionPercent: string;
+};
+
 type RecentConsortiumRate = {
   rate: number;
   quoteNumber: string;
@@ -633,10 +644,17 @@ export default function QuotationManagementPage({
   const [procurementTotal, setProcurementTotal] = useState(0);
   const [procurementPage, setProcurementPage] = useState(1);
   const [procurementLoading, setProcurementLoading] = useState(false);
-  const [procurementSavingIdentity, setProcurementSavingIdentity] = useState("");
   const [procurementError, setProcurementError] = useState("");
   const [procurementHasSearched, setProcurementHasSearched] = useState(false);
   const [procurementDetail, setProcurementDetail] = useState<ProcurementSearchItem | null>(null);
+  const [procurementSort, setProcurementSort] = useState<ProcurementSort>("relevance");
+  const [procurementSelectedIdentities, setProcurementSelectedIdentities] = useState<string[]>([]);
+  const [procurementDetailFilters, setProcurementDetailFilters] = useState<string[]>([]);
+  const [procurementFacets, setProcurementFacets] = useState<{ detailClassifications: ProcurementFacet[]; contractMethods: { name: string; count: number }[] }>({ detailClassifications: [], contractMethods: [] });
+  const [procurementQuantities, setProcurementQuantities] = useState<Record<string, number>>({});
+  const [procurementRegistrationMode, setProcurementRegistrationMode] = useState<ProcurementRegistrationMode | null>(null);
+  const [procurementRegistrationDrafts, setProcurementRegistrationDrafts] = useState<ProcurementRegistrationDraft[]>([]);
+  const [procurementRegistrationBusy, setProcurementRegistrationBusy] = useState(false);
   const [insertMenuIndex, setInsertMenuIndex] = useState<number | null>(null);
   const [outputBlankRows, setOutputBlankRows] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -709,6 +727,7 @@ export default function QuotationManagementPage({
     };
     const handlePointerDown = (event: PointerEvent) => {
       if (procurementDetail) return;
+      if (productPickerSource === "procurement") return;
       const target = event.target as Node | null;
       if (target && (productSearchRef.current?.contains(target) || productSearchResultsRef.current?.contains(target))) return;
       if (productPickerTarget.kind !== "append") return;
@@ -725,10 +744,10 @@ export default function QuotationManagementPage({
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [procurementDetail, productPickerTarget.kind, productResultsOpen]);
+  }, [procurementDetail, productPickerSource, productPickerTarget.kind, productResultsOpen]);
 
   useEffect(() => {
-    if (!productResultsOpen || productPickerTarget.kind === "append") return;
+    if (!productResultsOpen || (productPickerTarget.kind === "append" && productPickerSource !== "procurement")) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const focusTimer = window.setTimeout(() => contextualProductSearchInputRef.current?.focus(), 0);
@@ -758,6 +777,13 @@ export default function QuotationManagementPage({
     setProcurementTotal(0);
     setProcurementPage(1);
     setProcurementError("");
+    setProcurementSort("relevance");
+    setProcurementSelectedIdentities([]);
+    setProcurementDetailFilters([]);
+    setProcurementFacets({ detailClassifications: [], contractMethods: [] });
+    setProcurementQuantities({});
+    setProcurementRegistrationMode(null);
+    setProcurementRegistrationDrafts([]);
     setInsertMenuIndex(null);
     setOutputBlankRows(0);
     setLoadedInstitutionKey("");
@@ -1808,6 +1834,8 @@ export default function QuotationManagementPage({
     setProductResultsOpen(false);
     setProcurementError("");
     setProcurementDetail(null);
+    setProcurementRegistrationMode(null);
+    setProcurementRegistrationDrafts([]);
     if (productPickerTarget.kind === "append") return;
     setProductPickerTarget({ kind: "append" });
     setProductQuery("");
@@ -1834,10 +1862,14 @@ export default function QuotationManagementPage({
     setProcurementError("");
     setProcurementHasSearched(false);
     setProcurementDetail(null);
+    setProcurementSelectedIdentities([]);
+    setProcurementDetailFilters([]);
+    setProcurementFacets({ detailClassifications: [], contractMethods: [] });
+    setProcurementQuantities({});
     setProcurementLoading(false);
   }
 
-  async function searchProcurement(page = 1, append = false) {
+  async function searchProcurement(page = 1, append = false, requestedSort: ProcurementSort = procurementSort) {
     const key = procurementQuery.trim();
     if (key.length < 2) {
       setProcurementError("업체명, 조달 물품명 또는 식별번호를 두 글자 이상 입력해 주세요.");
@@ -1858,13 +1890,14 @@ export default function QuotationManagementPage({
     setProcurementLoading(true);
     setProcurementError("");
     try {
-      const response = await fetch(`/api/procurement-products?q=${encodeURIComponent(key)}&page=${page}&pageSize=20`, {
+      const response = await fetch(`/api/procurement-products?q=${encodeURIComponent(key)}&page=${page}&pageSize=30&sort=${encodeURIComponent(requestedSort)}`, {
         cache: "no-store",
         signal: controller.signal,
       });
       const payload = await response.json().catch(() => ({})) as {
         items?: ProcurementSearchItem[];
         total?: number;
+        facets?: { detailClassifications?: ProcurementFacet[]; contractMethods?: { name: string; count: number }[] };
         error?: string;
       };
       if (!response.ok) throw new Error(payload.error || "조달 물품을 불러오지 못했습니다.");
@@ -1874,7 +1907,12 @@ export default function QuotationManagementPage({
         ? [...current, ...nextItems.filter((item) => !current.some((saved) => saved.identity === item.identity))]
         : nextItems);
       setProcurementTotal(Math.max(nextItems.length, Number(payload.total) || 0));
+      setProcurementFacets({
+        detailClassifications: Array.isArray(payload.facets?.detailClassifications) ? payload.facets.detailClassifications : [],
+        contractMethods: Array.isArray(payload.facets?.contractMethods) ? payload.facets.contractMethods : [],
+      });
       setProcurementPage(page);
+      setProcurementSort(requestedSort);
       setProcurementHasSearched(true);
       setProductResultsOpen(true);
     } catch (error) {
@@ -1893,109 +1931,280 @@ export default function QuotationManagementPage({
     return products.find((product) => procurementProductIdentity(product.procurementChannel, product.procurementNumber) === item.identity);
   }
 
-  async function selectProcurementProduct(item: ProcurementSearchItem, registerInCatalog: boolean) {
-    const existing = existingProcurementProduct(item);
-    if (existing) {
-      if (selectProductForTarget(existing)) {
+  function filteredProcurementResults() {
+    if (!procurementDetailFilters.length) return procurementResults;
+    return procurementResults.filter((item) => procurementDetailFilters.includes(item.detailClassificationNumber || "unclassified"));
+  }
+
+  function selectedProcurementItems(fallback?: ProcurementSearchItem) {
+    const selected = new Set(procurementSelectedIdentities);
+    const items = procurementResults.filter((item) => selected.has(item.identity));
+    return items.length ? items : fallback ? [fallback] : [];
+  }
+
+  function procurementQuantity(item: ProcurementSearchItem) {
+    return Math.max(1, Math.min(999, Math.round(procurementQuantities[item.identity] || 1)));
+  }
+
+  function toggleProcurementSelection(item: ProcurementSearchItem) {
+    if (productPickerTarget.kind !== "append") {
+      setProcurementSelectedIdentities((current) => current.includes(item.identity) ? [] : [item.identity]);
+      return;
+    }
+    setProcurementSelectedIdentities((current) => current.includes(item.identity)
+      ? current.filter((identity) => identity !== item.identity)
+      : [...current, item.identity]);
+  }
+
+  function addProcurementItemsToQuotation(items: ProcurementSearchItem[], savedProducts = new Map<string, ProductCatalogItem>()) {
+    if (!draft || !items.length) return;
+    if (productPickerTarget.kind !== "append") {
+      const item = items[0];
+      const product = savedProducts.get(item.identity) || existingProcurementProduct(item) || procurementSearchItemToCatalogProduct(item);
+      if (selectProductForTarget(product)) {
         setProcurementDetail(null);
-        setMessage(`이미 제품 DB에 등록된 ‘${existing.name}’ 제품을 사용했습니다.`);
+        setMessage(`‘${item.name}’ 조달 물품을 선택한 위치에 적용했습니다.`);
       }
       return;
     }
-    const draftProduct = procurementSearchItemToCatalogProduct(item);
-    if (!registerInCatalog) {
-      if (selectProductForTarget(draftProduct)) {
-        setProcurementDetail(null);
-        setMessage(`‘${item.name}’ 조달 물품을 현재 견적에만 추가했습니다.`);
+    const kitItems = items.filter((item) => isAirpassEquipmentKitProduct(item.name));
+    const regularItems = items.filter((item) => !isAirpassEquipmentKitProduct(item.name));
+    let added = 0;
+    let duplicated = 0;
+    setDraft((current) => {
+      if (!current) return current;
+      const currentRegular = current.items.filter((line) => !isConstructionItem(line));
+      const construction = current.items.find(isConstructionItem);
+      const productIds = new Set(currentRegular.map((line) => line.productId));
+      const additions: DraftItem[] = [];
+      for (const item of regularItems) {
+        const product = savedProducts.get(item.identity) || existingProcurementProduct(item) || procurementSearchItemToCatalogProduct(item);
+        if (productIds.has(product.id)) {
+          duplicated += 1;
+          continue;
+        }
+        productIds.add(product.id);
+        additions.push({ ...catalogDraftItem(product), quantity: procurementQuantity(item) });
+        added += 1;
       }
-      return;
+      return { ...current, items: [...currentRegular, ...additions, ...(construction ? [construction] : [])] };
+    });
+    setProcurementSelectedIdentities([]);
+    setProcurementDetail(null);
+    if (kitItems.length) {
+      setMessage(`${added}개 품목을 견적에 넣었습니다. 교구 세트 ${kitItems.length}개는 세부 구성 확인이 필요해 개별 추가해 주세요.${duplicated ? ` 중복 ${duplicated}개는 제외했습니다.` : ""}`);
+    } else {
+      setMessage(`${added}개 조달 품목을 견적에 넣었습니다.${duplicated ? ` 이미 있는 제품 ${duplicated}개는 제외했습니다.` : ""}`);
+      closeProductPicker();
     }
-    setProcurementSavingIdentity(item.identity);
-    setProcurementError("");
-    try {
-      const response = await fetch("/api/product-catalog", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ product: draftProduct }),
-      });
-      const payload = await response.json().catch(() => ({})) as {
-        product?: ProductCatalogItem;
-        created?: boolean;
-        error?: string;
+  }
+
+  function openProcurementRegistrationReview(items: ProcurementSearchItem[], mode: ProcurementRegistrationMode) {
+    if (!items.length) return;
+    setProcurementRegistrationMode(mode);
+    setProcurementRegistrationDrafts(items.map((item) => {
+      const product = existingProcurementProduct(item) || procurementSearchItemToCatalogProduct(item);
+      return {
+        item,
+        product,
+        unitPriceText: product.unitPrice === null ? "" : String(product.unitPrice),
+        procurementFeePercent: String(Number(((product.procurementFeeRate ?? 0.0054) * 100).toFixed(2))),
+        commissionPercent: product.commissionRate === null ? "" : String(Number((product.commissionRate * 100).toFixed(2))),
       };
-      if (!response.ok || !payload.product) throw new Error(payload.error || "제품 DB에 등록하지 못했습니다.");
-      const savedProduct = payload.product;
-      setProducts((current) => current.some((product) => procurementProductIdentity(product.procurementChannel, product.procurementNumber) === item.identity)
-        ? current
-        : [...current, savedProduct]);
-      if (selectProductForTarget(savedProduct)) {
-        setProcurementDetail(null);
-        setMessage(payload.created ? `‘${savedProduct.name}’ 제품을 DB에 등록하고 견적에 넣었습니다.` : `이미 등록된 ‘${savedProduct.name}’ 제품을 견적에 넣었습니다.`);
+    }));
+  }
+
+  function updateProcurementRegistrationDraft(identity: string, values: {
+    product?: Partial<ProductCatalogItem>;
+    unitPriceText?: string;
+    procurementFeePercent?: string;
+    commissionPercent?: string;
+  }) {
+    setProcurementRegistrationDrafts((current) => current.map((entry) => entry.item.identity !== identity ? entry : {
+      ...entry,
+      product: { ...entry.product, ...(values.product ?? {}) },
+      ...(values.unitPriceText !== undefined ? { unitPriceText: values.unitPriceText } : {}),
+      ...(values.procurementFeePercent !== undefined ? { procurementFeePercent: values.procurementFeePercent } : {}),
+      ...(values.commissionPercent !== undefined ? { commissionPercent: values.commissionPercent } : {}),
+    }));
+  }
+
+  async function submitProcurementRegistration() {
+    if (!procurementRegistrationMode || !procurementRegistrationDrafts.length) return;
+    setProcurementRegistrationBusy(true);
+    setProcurementError("");
+    const savedProducts = new Map<string, ProductCatalogItem>();
+    let created = 0;
+    let reused = 0;
+    try {
+      for (const entry of procurementRegistrationDrafts) {
+        const existing = existingProcurementProduct(entry.item);
+        if (existing) {
+          savedProducts.set(entry.item.identity, existing);
+          reused += 1;
+          continue;
+        }
+        const money = entry.unitPriceText.trim() === "" ? null : Number(entry.unitPriceText.replace(/[^0-9.-]/g, ""));
+        const feePercent = Number(entry.procurementFeePercent.replace(",", "."));
+        const commissionPercent = entry.commissionPercent.trim() === "" ? null : Number(entry.commissionPercent.replace(",", "."));
+        const product: ProductCatalogItem = {
+          ...entry.product,
+          unitPrice: money === null || !Number.isFinite(money) ? null : Math.max(0, Math.round(money)),
+          procurementFeeRate: Number.isFinite(feePercent) ? Math.max(0, Math.min(100, feePercent)) / 100 : 0.0054,
+          commissionRate: commissionPercent === null || !Number.isFinite(commissionPercent) ? null : Math.max(0, Math.min(100, commissionPercent)) / 100,
+        };
+        const response = await fetch("/api/product-catalog", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ product }),
+        });
+        const payload = await response.json().catch(() => ({})) as { product?: ProductCatalogItem; created?: boolean; error?: string };
+        if (!response.ok || !payload.product) throw new Error(payload.error || `‘${entry.item.name}’ 제품을 등록하지 못했습니다.`);
+        savedProducts.set(entry.item.identity, payload.product);
+        if (payload.created) created += 1;
+        else reused += 1;
+      }
+      setProducts((current) => {
+        const next = [...current];
+        for (const saved of savedProducts.values()) {
+          const index = next.findIndex((product) => procurementProductIdentity(product.procurementChannel, product.procurementNumber) === procurementProductIdentity(saved.procurementChannel, saved.procurementNumber));
+          if (index < 0) next.push(saved);
+          else next[index] = saved;
+        }
+        return next;
+      });
+      const mode = procurementRegistrationMode;
+      const selectedItems = procurementRegistrationDrafts.map((entry) => entry.item);
+      setProcurementRegistrationMode(null);
+      setProcurementRegistrationDrafts([]);
+      if (mode === "catalog-and-quotation") addProcurementItemsToQuotation(selectedItems, savedProducts);
+      else {
+        setProcurementSelectedIdentities([]);
+        setMessage(`제품 DB 등록을 마쳤습니다. 신규 ${created}개${reused ? ` · 기존 제품 사용 ${reused}개` : ""}`);
       }
     } catch (error) {
       setProcurementError(error instanceof Error ? error.message : "제품 DB에 등록하지 못했습니다.");
     } finally {
-      setProcurementSavingIdentity("");
+      setProcurementRegistrationBusy(false);
     }
   }
 
-  function renderProcurementResults() {
-    return <div className="quotation-procurement-results">
-      {procurementError && <p className="quotation-procurement-error" role="alert">{procurementError}</p>}
-      {procurementHasSearched && !procurementLoading && !procurementError && <p className="quotation-procurement-count"><b>{procurementTotal.toLocaleString()}건</b> 중 관련도 높은 상품부터 표시합니다.</p>}
-      {procurementResults.map((item) => {
-        const existing = existingProcurementProduct(item);
-        const busy = procurementSavingIdentity === item.identity;
-        return <article className="quotation-procurement-result" key={item.identity}>
-          <div className="quotation-procurement-summary">
-            {item.imageUrl ? <img src={item.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span className="quotation-procurement-image-empty">이미지 없음</span>}
-            <div>
-            <strong>{item.name}</strong>
-            <p>{item.specification || "규격 정보 없음"}</p>
-            <dl>
-              <div><dt>식별번호</dt><dd>{item.procurementNumber}</dd></div>
-              <div><dt>계약업체</dt><dd>{item.supplierName || "업체 정보 없음"}</dd></div>
-              <div><dt>계약</dt><dd>{item.contractMethod || item.sourceLabel}</dd></div>
-              <div><dt>상태</dt><dd>{item.saleStatus}</dd></div>
-              <div><dt>단가</dt><dd>{item.unitPrice === null ? "가격 정보 없음" : `${won.format(item.unitPrice)}원${item.unit ? ` / ${item.unit}` : ""}`}</dd></div>
-            </dl>
-            </div>
-          </div>
-          <footer>
-            {existing && <span>제품 DB 등록됨</span>}
-            <button type="button" onClick={() => setProcurementDetail(item)}>상세보기</button>
-            <button type="button" disabled={busy} onClick={() => void selectProcurementProduct(item, false)}>{existing ? "등록 제품으로 견적에 넣기" : "견적에만 넣기"}</button>
-            {canRegisterProcurementProduct && !existing && <button className="primary" type="button" disabled={busy} onClick={() => void selectProcurementProduct(item, true)}>{busy ? "등록 중…" : "제품 DB에 등록 후 견적에 넣기"}</button>}
-          </footer>
-        </article>;
-      })}
-      {!procurementHasSearched && !procurementLoading && !procurementResults.length && !procurementError && <p className="quotation-product-empty">업체명, 조달 물품명 또는 식별번호를 검색해 주세요.</p>}
-      {procurementHasSearched && !procurementLoading && !procurementResults.length && !procurementError && <p className="quotation-product-empty">검색 결과가 없습니다. 업체명 일부, 제품명 또는 식별번호로 다시 검색해 주세요.</p>}
-      {procurementLoading && <p className="quotation-product-empty">나라장터 품목을 검색하고 있습니다…</p>}
-      {!procurementLoading && procurementResults.length < procurementTotal && <button className="quotation-procurement-more" type="button" onClick={() => void searchProcurement(procurementPage + 1, true)}>더 보기 ({procurementResults.length}/{procurementTotal})</button>}
-      {procurementDetail && typeof document !== "undefined" && createPortal(<div className="quotation-procurement-detail-modal" onPointerDown={(event) => { if (event.target === event.currentTarget) setProcurementDetail(null); }}>
-        <section role="dialog" aria-modal="true" aria-labelledby="procurement-detail-title" onPointerDown={(event) => event.stopPropagation()}>
-          <header><div><small>G2B PRODUCT DETAIL</small><h4 id="procurement-detail-title">나라장터 상품 상세</h4></div><button type="button" onClick={() => setProcurementDetail(null)} aria-label="상세정보 닫기">×</button></header>
-          <div className="quotation-procurement-detail-body">
-            {procurementDetail.imageUrl ? <img src={procurementDetail.imageUrl} alt={`${procurementDetail.name} 상품 이미지`} referrerPolicy="no-referrer" /> : <div className="quotation-procurement-detail-image-empty">등록된 상품 이미지가 없습니다.</div>}
-            <div><h5>{procurementDetail.name}</h5><p>{procurementDetail.specification || "규격·모델 정보가 제공되지 않았습니다."}</p><dl>
-              <div><dt>계약업체</dt><dd>{procurementDetail.supplierName || "정보 없음"}</dd></div>
-              <div><dt>제조사</dt><dd>{procurementDetail.manufacturerName || "정보 없음"}</dd></div>
-              <div><dt>품명 분류</dt><dd>{[procurementDetail.classificationName, procurementDetail.classificationNumber].filter(Boolean).join(" · ") || "정보 없음"}</dd></div>
-              <div><dt>물품식별번호</dt><dd>{procurementDetail.procurementNumber}</dd></div>
-              <div><dt>세부품명번호</dt><dd>{procurementDetail.detailClassificationNumber || "정보 없음"}</dd></div>
-              <div><dt>조달 방식</dt><dd>{procurementDetail.contractMethod || procurementDetail.sourceLabel}</dd></div>
-              <div><dt>계약 번호</dt><dd>{procurementDetail.contractNumber || "정보 없음"}</dd></div>
-              <div><dt>계약 기간</dt><dd>{procurementDetail.contractStartDate || procurementDetail.contractEndDate ? `${formatProcurementDate(procurementDetail.contractStartDate)} ~ ${formatProcurementDate(procurementDetail.contractEndDate)}` : "정보 없음"}</dd></div>
-              <div><dt>등록일</dt><dd>{formatProcurementDate(procurementDetail.registrationDate)}</dd></div>
-              <div><dt>판매 상태</dt><dd>{procurementDetail.saleStatus}</dd></div>
-              <div><dt>계약 단가</dt><dd>{procurementDetail.unitPrice === null ? "가격 정보 없음" : `${won.format(procurementDetail.unitPrice)}원${procurementDetail.unit ? ` / ${procurementDetail.unit}` : ""}`}</dd></div>
-            </dl></div>
-          </div>
-          <footer><a href={procurementDetail.sourceUrl} target="_blank" rel="noopener noreferrer" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>나라장터 원문 열기</a><button type="button" onClick={() => void selectProcurementProduct(procurementDetail, false)}>견적에 넣기</button>{canRegisterProcurementProduct && !existingProcurementProduct(procurementDetail) && <button className="primary" type="button" disabled={procurementSavingIdentity === procurementDetail.identity} onClick={() => void selectProcurementProduct(procurementDetail, true)}>제품 DB에 등록</button>}</footer>
-        </section>
-      </div>, document.body)}
-    </div>;
+  function renderProcurementRegistrationModal() {
+    if (!procurementRegistrationMode || !procurementRegistrationDrafts.length || typeof document === "undefined") return null;
+    const title = procurementRegistrationMode === "catalog-only" ? "제품 DB 등록 검토" : "제품 DB 등록 후 견적에 넣기";
+    return createPortal(<div className="quotation-procurement-registration-modal">
+      <section role="dialog" aria-modal="true" aria-labelledby="procurement-registration-title">
+        <header>
+          <div><small>PRODUCT REGISTRATION REVIEW</small><h4 id="procurement-registration-title">{title}</h4><p>조달 원문을 확인한 뒤 수수료와 내부 기준정보를 보완해 주세요. 기존 등록 제품은 덮어쓰지 않고 그대로 사용합니다.</p></div>
+          <button type="button" onClick={() => { if (!procurementRegistrationBusy) { setProcurementRegistrationMode(null); setProcurementRegistrationDrafts([]); } }} aria-label="제품 등록 검토창 닫기">×</button>
+        </header>
+        <div className="quotation-procurement-registration-list">
+          {procurementRegistrationDrafts.map((entry, index) => {
+            const alreadyRegistered = Boolean(existingProcurementProduct(entry.item));
+            return <article key={entry.item.identity} className={alreadyRegistered ? "registered" : ""}>
+              <div className="quotation-procurement-registration-heading"><span>{index + 1}</span><div><b>{entry.item.name}</b><small>{entry.item.supplierName || "공급업체 정보 없음"} · 식별번호 {entry.item.procurementNumber}</small></div>{alreadyRegistered && <em>기존 등록 제품 사용</em>}</div>
+              <div className="quotation-procurement-registration-fields">
+                <label><span>제품명</span><input disabled={alreadyRegistered} value={entry.product.name} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { product: { name: event.target.value } })} /></label>
+                <label className="wide"><span>규격</span><input disabled={alreadyRegistered} value={entry.product.specification} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { product: { specification: event.target.value } })} /></label>
+                <label><span>기준 단가</span><input disabled={alreadyRegistered} inputMode="numeric" value={entry.unitPriceText} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { unitPriceText: event.target.value })} placeholder="금액 미등록" /></label>
+                <label><span>단위</span><input disabled={alreadyRegistered} value={entry.product.procurementUnit || ""} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { product: { procurementUnit: event.target.value } })} /></label>
+                <label><span>공급업체</span><input disabled={alreadyRegistered} value={entry.product.procurementSupplierName || ""} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { product: { procurementSupplierName: event.target.value } })} /></label>
+                <label><span>조달 채널</span><input disabled={alreadyRegistered} value={entry.product.procurementChannel || "G2B"} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { product: { procurementChannel: event.target.value } })} /></label>
+                <label><span>식별번호</span><input disabled value={entry.product.procurementNumber || ""} /></label>
+                <label><span>조달수수료율</span><div className="quotation-procurement-registration-rate"><input disabled={alreadyRegistered} inputMode="decimal" value={entry.procurementFeePercent} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { procurementFeePercent: event.target.value })} /><b>%</b></div></label>
+                <label><span>협력사 수수료율 (선택)</span><div className="quotation-procurement-registration-rate"><input disabled={alreadyRegistered} inputMode="decimal" value={entry.commissionPercent} onChange={(event) => updateProcurementRegistrationDraft(entry.item.identity, { commissionPercent: event.target.value })} placeholder="미입력" /><b>%</b></div></label>
+              </div>
+            </article>;
+          })}
+        </div>
+        {procurementError && <p className="quotation-procurement-error">{procurementError}</p>}
+        <footer><span>검토 대상 <b>{procurementRegistrationDrafts.length}개</b></span><button type="button" disabled={procurementRegistrationBusy} onClick={() => { setProcurementRegistrationMode(null); setProcurementRegistrationDrafts([]); }}>취소</button><button className="primary" type="button" disabled={procurementRegistrationBusy} onClick={() => void submitProcurementRegistration()}>{procurementRegistrationBusy ? "등록 중…" : title}</button></footer>
+      </section>
+    </div>, document.body);
+  }
+
+  function renderProcurementMarketModal() {
+    if (!productResultsOpen || productPickerSource !== "procurement" || typeof document === "undefined") return null;
+    const results = filteredProcurementResults();
+    const selectedItems = selectedProcurementItems();
+    const selectedSet = new Set(procurementSelectedIdentities);
+    const allVisibleSelected = results.length > 0 && results.every((item) => selectedSet.has(item.identity));
+    const contextual = productPickerTarget.kind !== "append";
+    const pickerTitle = contextual ? (productPickerTarget.kind === "replace" ? "나라장터 제품으로 변경" : "나라장터 제품 끼워넣기") : "나라장터 종합쇼핑몰 검색";
+    return createPortal(<div className="quotation-procurement-market-modal">
+      <section className="quotation-procurement-market-dialog" role="dialog" aria-modal="true" aria-labelledby="procurement-market-title">
+        <header className="quotation-procurement-market-header">
+          <div><small>G2B SHOPPING MALL</small><h3 id="procurement-market-title">{pickerTitle}</h3><p>업체명·제품명·식별번호로 검색하고 세부품명으로 좁혀 견적이나 제품 DB에 바로 연결할 수 있습니다.</p></div>
+          <button type="button" onClick={closeProductPicker} aria-label="나라장터 검색창 닫기">×</button>
+        </header>
+        <div className="quotation-procurement-market-search-area">
+          <form onSubmit={(event) => { event.preventDefault(); void searchProcurement(1, false); }}>
+            <select aria-label="나라장터 검색 범위" defaultValue="all"><option value="all">통합 검색</option></select>
+            <input ref={contextualProductSearchInputRef} value={procurementQuery} onChange={(event) => changeProcurementQuery(event.target.value)} placeholder="업체명·제품명·식별번호를 입력하세요" aria-label="나라장터 업체명 제품명 식별번호 검색" />
+            <button type="submit" disabled={procurementLoading}>{procurementLoading ? "검색 중…" : "검색"}</button>
+          </form>
+          <nav aria-label="조달 검색 채널"><button type="button" className="active">종합쇼핑몰 <b>{procurementHasSearched ? procurementTotal : 0}</b></button><button type="button" disabled title="추후 연동 예정">벤처나라</button><button type="button" disabled title="추후 연동 예정">혁신장터</button><button type="button" disabled title="추후 연동 예정">디지털서비스몰</button></nav>
+        </div>
+        <div className="quotation-procurement-market-content">
+          <aside className="quotation-procurement-market-filters">
+            <button className="quotation-procurement-filter-reset" type="button" onClick={() => setProcurementDetailFilters([])}>↻ 전체 필터 초기화</button>
+            <section><header><b>세부품명</b><span>{procurementFacets.detailClassifications.length}</span></header>{procurementFacets.detailClassifications.length ? procurementFacets.detailClassifications.map((facet) => {
+              const key = facet.number || "unclassified";
+              return <label key={`${key}-${facet.name}`}><input type="checkbox" checked={procurementDetailFilters.includes(key)} onChange={() => setProcurementDetailFilters((current) => current.includes(key) ? current.filter((value) => value !== key) : [...current, key])} /><span>{facet.name || "미분류"}</span><em>{facet.count}</em></label>;
+            }) : <p>검색 후 세부품명 필터가 표시됩니다.</p>}</section>
+            <section><header><b>계약구분</b><span>{procurementFacets.contractMethods.length}</span></header>{procurementFacets.contractMethods.map((facet) => <div className="quotation-procurement-facet-info" key={facet.name}><span>{facet.name || "기타"}</span><em>{facet.count}</em></div>)}</section>
+          </aside>
+          <main className="quotation-procurement-market-results">
+            <header className="quotation-procurement-result-toolbar"><div>{procurementHasSearched ? <><b>검색결과 {won.format(procurementTotal)}건</b><small>{results.length !== procurementResults.length ? ` · 현재 필터 ${results.length}건` : ` · 현재 ${procurementResults.length}건 표시`}</small></> : <b>나라장터 물품 검색</b>}</div><label>정렬<select value={procurementSort} onChange={(event) => void searchProcurement(1, false, event.target.value as ProcurementSort)} disabled={!procurementHasSearched || procurementLoading}><option value="relevance">관련도순</option><option value="priceAsc">낮은가격순</option><option value="priceDesc">높은가격순</option><option value="recent">최신등록순</option></select></label></header>
+            {procurementError && <p className="quotation-procurement-error">{procurementError}</p>}
+            {procurementLoading && !procurementResults.length && <div className="quotation-procurement-market-empty"><b>나라장터 상품을 검색하고 있습니다.</b><span>회사명 검색은 여러 조달 계약 자료를 함께 확인해 조금 걸릴 수 있습니다.</span></div>}
+            {!procurementLoading && !procurementHasSearched && <div className="quotation-procurement-market-empty"><b>업체명·제품명·식별번호로 검색해 주세요.</b><span>검색 결과에서 여러 제품을 선택해 한 번에 견적이나 제품 DB에 넣을 수 있습니다.</span></div>}
+            {!procurementLoading && procurementHasSearched && !results.length && <div className="quotation-procurement-market-empty"><b>조건에 맞는 조달 물품이 없습니다.</b><span>검색어나 세부품명 필터를 바꿔 다시 검색해 주세요.</span></div>}
+            {results.length > 0 && <div className="quotation-procurement-select-all"><label><input type="checkbox" checked={allVisibleSelected} onChange={() => setProcurementSelectedIdentities((current) => allVisibleSelected ? current.filter((identity) => !results.some((item) => item.identity === identity)) : Array.from(new Set([...current, ...results.map((item) => item.identity)])))} disabled={contextual} /> 현재 결과 전체 선택</label><span>{procurementSelectedIdentities.length}개 선택</span></div>}
+            <div className="quotation-procurement-market-list">{results.map((item) => {
+              const registered = existingProcurementProduct(item);
+              const selected = selectedSet.has(item.identity);
+              const quantity = procurementQuantity(item);
+              return <article className={selected ? "selected" : ""} key={item.identity}>
+                <label className="quotation-procurement-result-check"><input type={contextual ? "radio" : "checkbox"} name={contextual ? "procurement-target" : undefined} checked={selected} onChange={() => toggleProcurementSelection(item)} /><span>선택</span></label>
+                <div className="quotation-procurement-result-image">{item.imageUrl ? <img src={item.imageUrl} alt="" referrerPolicy="no-referrer" /> : <span>이미지<br />없음</span>}</div>
+                <div className="quotation-procurement-result-info"><div className="quotation-procurement-result-badges"><span>{item.detailClassificationName || item.classificationName || "조달 물품"}</span>{registered && <em>제품 DB 등록됨</em>}</div><h4>{item.name}</h4><p>{item.specification || "규격 정보 미등록"}</p><dl><div><dt>계약업체</dt><dd>{item.supplierName || "미등록"}</dd></div><div><dt>식별번호</dt><dd>{item.procurementNumber}</dd></div><div><dt>계약구분</dt><dd>{item.contractMethod || item.sourceLabel}</dd></div><div><dt>판매상태</dt><dd>{item.saleStatus}</dd></div></dl></div>
+                <div className="quotation-procurement-result-actions"><strong>{item.unitPrice === null ? "가격 정보 없음" : `${won.format(item.unitPrice)}원`}</strong><small>{item.unit ? `단위 ${item.unit}` : "단위 미등록"}</small><div className="quotation-procurement-quantity"><button type="button" onClick={() => setProcurementQuantities((current) => ({ ...current, [item.identity]: Math.max(1, quantity - 1) }))}>−</button><input inputMode="numeric" aria-label={`${item.name} 수량`} value={quantity} onChange={(event) => setProcurementQuantities((current) => ({ ...current, [item.identity]: Math.max(1, Math.min(999, Number(event.target.value) || 1)) }))} /><button type="button" onClick={() => setProcurementQuantities((current) => ({ ...current, [item.identity]: Math.min(999, quantity + 1) }))}>+</button></div><button type="button" onClick={() => setProcurementDetail(item)}>상세보기</button><button className="primary" type="button" onClick={() => addProcurementItemsToQuotation([item])}>{contextual ? "이 위치에 적용" : "견적에만 넣기"}</button>{canRegisterProcurementProduct && <button type="button" onClick={() => openProcurementRegistrationReview([item], "catalog-and-quotation")}>등록 검토 후 견적</button>}</div>
+              </article>;
+            })}</div>
+            {procurementResults.length < procurementTotal && <button className="quotation-procurement-market-more" type="button" disabled={procurementLoading} onClick={() => void searchProcurement(procurementPage + 1, true)}>{procurementLoading ? "불러오는 중…" : `더 보기 (${won.format(procurementResults.length)} / ${won.format(procurementTotal)})`}</button>}
+          </main>
+        </div>
+        <footer className="quotation-procurement-market-footer"><div><b>{selectedItems.length}개 선택</b><span>{contextual ? "선택한 한 제품을 현재 위치에 적용합니다." : "수량과 세부정보를 확인한 뒤 원하는 방식으로 추가하세요."}</span></div><button type="button" onClick={closeProductPicker}>닫기</button>{selectedItems.length > 0 && <button type="button" onClick={() => addProcurementItemsToQuotation(selectedItems)}>{contextual ? "선택 제품 적용" : "선택 품목 견적에만 넣기"}</button>}{canRegisterProcurementProduct && selectedItems.length > 0 && !contextual && <><button type="button" onClick={() => openProcurementRegistrationReview(selectedItems, "catalog-only")}>제품 DB에만 등록</button><button className="primary" type="button" onClick={() => openProcurementRegistrationReview(selectedItems, "catalog-and-quotation")}>제품 DB에 등록 후 견적에 넣기</button></>}</footer>
+      </section>
+      {renderProcurementRegistrationModal()}
+    </div>, document.body);
+  }
+
+  function renderProcurementDetail() {
+    if (!procurementDetail || typeof document === "undefined") return null;
+    return createPortal(<div className="quotation-procurement-detail-modal" onPointerDown={(event) => { if (event.target === event.currentTarget) setProcurementDetail(null); }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="procurement-detail-title" onPointerDown={(event) => event.stopPropagation()}>
+        <header><div><small>G2B PRODUCT DETAIL</small><h4 id="procurement-detail-title">나라장터 상품 상세</h4></div><button type="button" onClick={() => setProcurementDetail(null)} aria-label="상세정보 닫기">×</button></header>
+        <div className="quotation-procurement-detail-body">
+          {procurementDetail.imageUrl ? <img src={procurementDetail.imageUrl} alt={`${procurementDetail.name} 상품 이미지`} referrerPolicy="no-referrer" /> : <div className="quotation-procurement-detail-image-empty">등록된 상품 이미지가 없습니다.</div>}
+          <div><h5>{procurementDetail.name}</h5><p>{procurementDetail.specification || "규격·모델 정보가 제공되지 않았습니다."}</p><dl>
+            <div><dt>계약업체</dt><dd>{procurementDetail.supplierName || "정보 없음"}</dd></div>
+            <div><dt>제조사</dt><dd>{procurementDetail.manufacturerName || "정보 없음"}</dd></div>
+            <div><dt>품명 분류</dt><dd>{[procurementDetail.classificationName, procurementDetail.classificationNumber].filter(Boolean).join(" · ") || "정보 없음"}</dd></div>
+            <div><dt>세부품명</dt><dd>{[procurementDetail.detailClassificationName, procurementDetail.detailClassificationNumber].filter(Boolean).join(" · ") || "정보 없음"}</dd></div>
+            <div><dt>물품식별번호</dt><dd>{procurementDetail.procurementNumber}</dd></div>
+            <div><dt>조달 방식</dt><dd>{procurementDetail.contractMethod || procurementDetail.sourceLabel}</dd></div>
+            <div><dt>계약 번호</dt><dd>{procurementDetail.contractNumber || "정보 없음"}</dd></div>
+            <div><dt>계약 기간</dt><dd>{procurementDetail.contractStartDate || procurementDetail.contractEndDate ? `${formatProcurementDate(procurementDetail.contractStartDate)} ~ ${formatProcurementDate(procurementDetail.contractEndDate)}` : "정보 없음"}</dd></div>
+            <div><dt>등록일</dt><dd>{formatProcurementDate(procurementDetail.registrationDate)}</dd></div>
+            <div><dt>판매 상태</dt><dd>{procurementDetail.saleStatus}</dd></div>
+            <div><dt>계약 단가</dt><dd>{procurementDetail.unitPrice === null ? "가격 정보 없음" : `${won.format(procurementDetail.unitPrice)}원${procurementDetail.unit ? ` / ${procurementDetail.unit}` : ""}`}</dd></div>
+          </dl></div>
+        </div>
+        <footer><a href={procurementDetail.sourceUrl} target="_blank" rel="noopener noreferrer">나라장터 원문 열기</a><button type="button" onClick={() => addProcurementItemsToQuotation([procurementDetail])}>견적에 넣기</button>{canRegisterProcurementProduct && <button className="primary" type="button" onClick={() => openProcurementRegistrationReview([procurementDetail], "catalog-and-quotation")}>제품 DB 등록 검토</button>}</footer>
+      </section>
+    </div>, document.body);
   }
 
   function selectProductForTarget(product: ProductCatalogItem) {
@@ -3322,8 +3531,8 @@ export default function QuotationManagementPage({
                   </div>
                 </div>
               </header>
-              {productResultsOpen && productPickerTarget.kind === "append" && <div className="quotation-item-search-results" ref={productSearchResultsRef}><header><span>{productPickerSource === "catalog" ? "물품을 연속으로 선택할 수 있습니다." : "검색한 조달 물품을 견적 또는 제품 DB에 넣을 수 있습니다."}</span><button type="button" onClick={closeProductPicker}>선택 완료</button></header>{productPickerSource === "procurement" ? renderProcurementResults() : <>{filteredProducts.map((product) => <button type="button" key={product.id} onClick={() => selectProductForTarget(product)}><span><b>{favoriteProductIds.includes(product.id) ? "★ " : ""}{product.name}</b><small>{product.specification || "규격 미등록"}</small></span><em>{product.unitPrice === null ? "금액 미등록" : `${won.format(product.unitPrice)}원`}</em></button>)}{!filteredProducts.length && <p className="quotation-product-empty">표시할 {favoriteProductsOnly ? "즐겨찾기 " : ""}제품이 없습니다.</p>}</>}</div>}
-              {productResultsOpen && productPickerTarget.kind !== "append" && <div className="quotation-product-picker-modal" onPointerDown={(event) => { if (event.target === event.currentTarget) closeProductPicker(); }}>
+              {productResultsOpen && productPickerTarget.kind === "append" && productPickerSource === "catalog" && <div className="quotation-item-search-results" ref={productSearchResultsRef}><header><span>물품을 연속으로 선택할 수 있습니다.</span><button type="button" onClick={closeProductPicker}>선택 완료</button></header>{filteredProducts.map((product) => <button type="button" key={product.id} onClick={() => selectProductForTarget(product)}><span><b>{favoriteProductIds.includes(product.id) ? "★ " : ""}{product.name}</b><small>{product.specification || "규격 미등록"}</small></span><em>{product.unitPrice === null ? "금액 미등록" : `${won.format(product.unitPrice)}원`}</em></button>)}{!filteredProducts.length && <p className="quotation-product-empty">표시할 {favoriteProductsOnly ? "즐겨찾기 " : ""}제품이 없습니다.</p>}</div>}
+              {productResultsOpen && productPickerTarget.kind !== "append" && productPickerSource === "catalog" && <div className="quotation-product-picker-modal" onPointerDown={(event) => { if (event.target === event.currentTarget) closeProductPicker(); }}>
                 <section className="quotation-product-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="quotation-product-picker-title" ref={productSearchResultsRef}>
                   <header>
                     <div><small>PRODUCT CATALOG</small><h4 id="quotation-product-picker-title">{productPickerTarget.kind === "replace" ? "제품 변경" : "품목 추가"}</h4><p>{productPickerTarget.kind === "replace" ? "현재 품목을 선택한 제품으로 교체합니다. 수량과 비고는 유지됩니다." : `${productPickerTarget.index + 1}번째 위치에 넣을 제품을 선택해 주세요.`}</p></div>
@@ -3332,25 +3541,22 @@ export default function QuotationManagementPage({
                   <div className="quotation-product-picker-tools">
                     <div className="quotation-product-picker-source-row quotation-product-source-tabs" role="tablist" aria-label="제품 검색 출처">
                       <button className={productPickerSource === "catalog" ? "active" : ""} type="button" role="tab" aria-selected={productPickerSource === "catalog"} onClick={() => { setProductPickerSource("catalog"); setProcurementError(""); }}>등록 제품</button>
-                      <button className={productPickerSource === "procurement" ? "active" : ""} type="button" role="tab" aria-selected={productPickerSource === "procurement"} onClick={() => setProductPickerSource("procurement")}>나라장터 검색</button>
+                      <button type="button" role="tab" aria-selected={false} onClick={() => setProductPickerSource("procurement")}>나라장터 검색</button>
                     </div>
-                    {productPickerSource === "catalog" ? <>
-                      <input ref={contextualProductSearchInputRef} value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder={`제품명·규격 검색 (${products.length}개)`} aria-label="추가하거나 교체할 제품 검색" />
-                      <div role="group" aria-label="제품 선택 범위">
-                        <button className={productListMode === "all" ? "active" : ""} type="button" aria-pressed={productListMode === "all"} onClick={() => setProductListMode("all")}>전체 제품 {products.length}</button>
-                        <button className={productListMode === "favorites" ? "active" : ""} type="button" aria-pressed={productListMode === "favorites"} onClick={() => setProductListMode("favorites")}>★ 즐겨찾기 {favoriteProductIds.length}</button>
-                      </div>
-                    </> : <form className="quotation-procurement-search quotation-product-picker-search" onSubmit={(event) => { event.preventDefault(); void searchProcurement(1, false); }}>
-                      <input ref={contextualProductSearchInputRef} value={procurementQuery} onChange={(event) => changeProcurementQuery(event.target.value)} placeholder="업체명·제품명·식별번호 검색" aria-label="나라장터 업체명 제품명 식별번호 검색" />
-                      <button type="submit" disabled={procurementLoading}>{procurementLoading ? "검색 중…" : "검색"}</button>
-                    </form>}
+                    <input ref={contextualProductSearchInputRef} value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder={`제품명·규격 검색 (${products.length}개)`} aria-label="추가하거나 교체할 제품 검색" />
+                    <div role="group" aria-label="제품 선택 범위">
+                      <button className={productListMode === "all" ? "active" : ""} type="button" aria-pressed={productListMode === "all"} onClick={() => setProductListMode("all")}>전체 제품 {products.length}</button>
+                      <button className={productListMode === "favorites" ? "active" : ""} type="button" aria-pressed={productListMode === "favorites"} onClick={() => setProductListMode("favorites")}>★ 즐겨찾기 {favoriteProductIds.length}</button>
+                    </div>
                   </div>
                   <div className="quotation-product-picker-list">
-                    {productPickerSource === "procurement" ? renderProcurementResults() : <>{filteredProducts.map((product) => <button type="button" key={product.id} onClick={() => selectProductForTarget(product)}><span><b>{favoriteProductIds.includes(product.id) ? "★ " : ""}{product.name}</b><small>{product.specification || "규격 미등록"}</small></span><em>{product.unitPrice === null ? "금액 미등록" : `${won.format(product.unitPrice)}원`}</em></button>)}
-                    {!filteredProducts.length && <p className="quotation-product-empty">검색 조건에 맞는 {favoriteProductsOnly ? "즐겨찾기 " : ""}제품이 없습니다.</p>}</>}
+                    {filteredProducts.map((product) => <button type="button" key={product.id} onClick={() => selectProductForTarget(product)}><span><b>{favoriteProductIds.includes(product.id) ? "★ " : ""}{product.name}</b><small>{product.specification || "규격 미등록"}</small></span><em>{product.unitPrice === null ? "금액 미등록" : `${won.format(product.unitPrice)}원`}</em></button>)}
+                    {!filteredProducts.length && <p className="quotation-product-empty">검색 조건에 맞는 {favoriteProductsOnly ? "즐겨찾기 " : ""}제품이 없습니다.</p>}
                   </div>
                 </section>
               </div>}
+              {renderProcurementMarketModal()}
+              {renderProcurementDetail()}
               <div className="quotation-item-card-guide">제품 기준정보 연계 · 수의계약/G2B/S2B 선택 · 식별번호 · G2B 조달수수료율 0.54%</div>
               <div className="quotation-item-cards">
                 {regularDraftItems.map((item, index) => {

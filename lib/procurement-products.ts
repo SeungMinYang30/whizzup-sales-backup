@@ -18,6 +18,7 @@ export type ProcurementSearchItem = {
   classificationNumber: string;
   classificationName: string;
   detailClassificationNumber: string;
+  detailClassificationName: string;
   registrationDate: string;
   saleStatus: string;
   sourceLabel: string;
@@ -121,6 +122,7 @@ export function mapProcurementSearchItem(value: unknown, options: ProcurementSea
     classificationNumber,
     classificationName: text(source.prdctClsfcNoNm, 300),
     detailClassificationNumber: text(source.dtilPrdctClsfcNo, 100),
+    detailClassificationName: text(source.dtilPrdctClsfcNoNm, 300),
     registrationDate: text(source.rgstDt || source.regDt, 30),
     saleStatus: procurementSaleStatus(source, contractEndDate),
     sourceLabel: text(options.sourceLabel || "나라장터 종합쇼핑몰", 100),

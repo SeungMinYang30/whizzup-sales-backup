@@ -6,9 +6,11 @@ export const maxDuration = 60;
 
 const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoService";
 const CACHE_TTL_MS = 10 * 60 * 1_000;
-const CACHE_VERSION = "v3-valid-window";
+const CACHE_VERSION = "v4-market-picker";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
-const cache = new Map<string, { expiresAt: number; items: ProcurementSearchItem[]; total: number }>();
+type ProcurementFacet = { number: string; name: string; count: number };
+type ProcurementFacets = { detailClassifications: ProcurementFacet[]; contractMethods: { name: string; count: number }[] };
+const cache = new Map<string, { expiresAt: number; items: ProcurementSearchItem[]; total: number; facets: ProcurementFacets }>();
 
 const CONTRACT_SOURCES = [
   { endpoint: "getMASCntrctPrdctInfoList", contractMethod: "다수공급자계약", sourceLabel: "다수공급자계약" },
@@ -144,6 +146,23 @@ function relevance(item: ProcurementSearchItem, query: string) {
     + (item.saleStatus === "계약 유효" ? 5 : 0);
 }
 
+function resultFacets(items: ProcurementSearchItem[]): ProcurementFacets {
+  const details = new Map<string, ProcurementFacet>();
+  const methods = new Map<string, number>();
+  for (const item of items) {
+    const number = item.detailClassificationNumber || "unclassified";
+    const name = item.detailClassificationName || item.classificationName || "세부품명 미분류";
+    const saved = details.get(number);
+    details.set(number, { number, name, count: (saved?.count || 0) + 1 });
+    const method = item.contractMethod || item.sourceLabel || "계약 구분 미확인";
+    methods.set(method, (methods.get(method) || 0) + 1);
+  }
+  return {
+    detailClassifications: [...details.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ko")),
+    contractMethods: [...methods.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ko")),
+  };
+}
+
 function fulfilledResults(settled: PromiseSettledResult<ProcurementApiResult>[]) {
   return settled
     .filter((result): result is PromiseFulfilledResult<ProcurementApiResult> => result.status === "fulfilled")
@@ -227,7 +246,8 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const query = String(url.searchParams.get("q") || "").trim().slice(0, 120);
     const page = Math.max(1, Math.min(100, Number(url.searchParams.get("page")) || 1));
-    const pageSize = Math.max(1, Math.min(20, Number(url.searchParams.get("pageSize")) || 20));
+    const pageSize = Math.max(1, Math.min(40, Number(url.searchParams.get("pageSize")) || 30));
+    const sort = String(url.searchParams.get("sort") || "relevance");
     if (query.length < 2) {
       return Response.json({ error: "업체명, 조달 물품명 또는 식별번호를 두 글자 이상 입력해 주세요." }, { status: 400 });
     }
@@ -235,21 +255,28 @@ export async function GET(request: Request) {
     if (!key) {
       return Response.json({ error: "조달 검색 인증키가 아직 설정되지 않았습니다. 관리자에게 확인해 주세요.", code: "PROCUREMENT_KEY_MISSING" }, { status: 503 });
     }
-    const cacheKey = `${CACHE_VERSION}:${query.toLocaleLowerCase("ko-KR")}:${page}:${pageSize}`;
+    const cacheKey = `${CACHE_VERSION}:${query.toLocaleLowerCase("ko-KR")}:${page}:${pageSize}:${sort}`;
     const cached = cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
-      return Response.json({ items: cached.items, total: cached.total, page, pageSize, cached: true });
+      return Response.json({ items: cached.items, total: cached.total, facets: cached.facets, page, pageSize, cached: true });
     }
 
     const sourceResults = await searchSources(query, page, pageSize, key);
-    const items = mergeSearchItems(sourceResults.flatMap((result) => result.items))
-      .sort((a, b) => relevance(b, query) - relevance(a, query) || a.name.localeCompare(b.name, "ko"))
+    const mergedItems = mergeSearchItems(sourceResults.flatMap((result) => result.items));
+    const items = mergedItems
+      .sort((a, b) => {
+        if (sort === "priceAsc") return (a.unitPrice ?? Number.MAX_SAFE_INTEGER) - (b.unitPrice ?? Number.MAX_SAFE_INTEGER) || relevance(b, query) - relevance(a, query);
+        if (sort === "priceDesc") return (b.unitPrice ?? -1) - (a.unitPrice ?? -1) || relevance(b, query) - relevance(a, query);
+        if (sort === "recent") return String(b.registrationDate).localeCompare(String(a.registrationDate)) || relevance(b, query) - relevance(a, query);
+        return relevance(b, query) - relevance(a, query) || a.name.localeCompare(b.name, "ko");
+      })
       .slice(0, pageSize);
+    const facets = resultFacets(items);
     // 같은 항목을 여러 공식 검색 필드에서 찾으므로 각 응답의 합계를 더해 중복 과장하지 않는다.
     const total = Math.max(items.length, ...sourceResults.map((result) => result.total));
-    cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, items, total });
+    cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, items, total, facets });
     if (cache.size > 100) cache.delete(cache.keys().next().value as string);
-    return Response.json({ items, total, page, pageSize, cached: false });
+    return Response.json({ items, total, facets, page, pageSize, cached: false });
   } catch (error) {
     const accessResponse = accessErrorResponse(error);
     if (accessResponse.status === 401 || accessResponse.status === 403) return accessResponse;

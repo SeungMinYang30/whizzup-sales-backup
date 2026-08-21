@@ -391,7 +391,6 @@ export async function POST(request: Request) {
     requested.supplyType = "partner";
     requested.supplierVendorId = null;
     requested.supplierVendorName = "";
-    requested.commissionRate = null;
     requested.marginRate = null;
 
     const d1 = await ensureCollaborationReady();
