@@ -86,6 +86,7 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /dtilPrdctClsfcNoNm: query/);
   assert.match(routeSource, /prdctIdntNoNm: query/);
   assert.match(routeSource, /PROCUREMENT_SEARCH_WINDOW_COUNT = 3/);
+  assert.match(routeSource, /PROCUREMENT_COMPANY_SEARCH_WINDOW_COUNT = 10/);
   assert.match(routeSource, /procurementSearchDateWindows/);
   assert.match(routeSource, /cntrctCorpNm: query/);
   assert.doesNotMatch(routeSource, /companyNameCandidates/);
@@ -95,7 +96,7 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /inqryBgnDate: startDate/);
   assert.match(routeSource, /body\["nkoneps\.com\.response\.ResponseError"\]/);
   assert.match(routeSource, /serviceKey: key/);
-  assert.match(routeSource, /CACHE_VERSION = "v9-multi-year-search-scope"/);
+  assert.match(routeSource, /CACHE_VERSION = "v10-active-contract-history"/);
   assert.match(routeSource, /GENERAL_CACHE_TTL_MS = 6 \* 60 \* 60/);
   assert.match(routeSource, /IDENTIFIER_CACHE_TTL_MS = 24 \* 60 \* 60/);
   assert.match(routeSource, /CACHE_RETENTION_MS = 30 \* 24 \* 60 \* 60/);
@@ -116,6 +117,7 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /controller\.abort\(\)/);
   assert.match(routeSource, /scope === "all" \|\| scope === "company"/);
   assert.match(routeSource, /CONTRACT_SOURCES\.flatMap/);
+  assert.match(routeSource, /item\.saleStatus === "계약 유효" \|\| item\.saleStatus === "등록 상품"/);
   assert.match(routeSource, /scope === "all" \|\| scope === "detail"/);
   assert.match(routeSource, /scope === "all" \|\| scope === "specification"/);
   assert.match(routeSource, /scope === "identifier"/);

@@ -9,10 +9,11 @@ const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoSe
 const GENERAL_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 const IDENTIFIER_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
-const CACHE_VERSION = "v9-multi-year-search-scope";
+const CACHE_VERSION = "v10-active-contract-history";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
 const PROCUREMENT_SEARCH_WINDOW_COUNT = 3;
-const PROCUREMENT_SEARCH_GROUP_TIMEOUT_MS = 18_000;
+const PROCUREMENT_COMPANY_SEARCH_WINDOW_COUNT = 10;
+const PROCUREMENT_SEARCH_GROUP_TIMEOUT_MS = 25_000;
 const PROCUREMENT_MAX_PAGE_SIZE = 300;
 const PROCUREMENT_SEARCH_SCOPES = ["all", "detail", "specification", "company", "identifier"] as const;
 type ProcurementSearchScope = typeof PROCUREMENT_SEARCH_SCOPES[number];
@@ -160,10 +161,10 @@ function procurementSearchDateParams(endpoint: string, end = new Date()): Record
   return { rgstDtBgnDt: `${startDate}0000`, rgstDtEndDt: `${endDate}2359` };
 }
 
-function procurementSearchDateWindows(endpoint: string) {
+function procurementSearchDateWindows(endpoint: string, count = PROCUREMENT_SEARCH_WINDOW_COUNT) {
   const windows: Record<string, string>[] = [];
   let end = new Date();
-  for (let index = 0; index < PROCUREMENT_SEARCH_WINDOW_COUNT; index += 1) {
+  for (let index = 0; index < count; index += 1) {
     windows.push(procurementSearchDateParams(endpoint, end));
     end = addUtcDays(end, -(PROCUREMENT_SEARCH_WINDOW_DAYS + 1));
   }
@@ -307,7 +308,7 @@ async function searchSources(query: string, scope: ProcurementSearchScope, page:
 
   if (scope === "identifier" || (scope === "all" && numericQuery)) {
     const controller = new AbortController();
-    const searched = await collectAllUseful(CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(source.endpoint).map((dateParams) => requestProcurementApi({
+    const searched = await collectAllUseful(CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(source.endpoint, PROCUREMENT_COMPANY_SEARCH_WINDOW_COUNT).map((dateParams) => requestProcurementApi({
         ...source,
         key,
         params: { ...common, ...dateParams, prdctIdntNo: normalizedNumber },
@@ -322,7 +323,7 @@ async function searchSources(query: string, scope: ProcurementSearchScope, page:
   const controller = new AbortController();
   const requests: Promise<ProcurementApiResult>[] = [];
   if (scope === "all" || scope === "company") {
-    requests.push(...CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(source.endpoint).map((dateParams) => requestProcurementApi({
+    requests.push(...CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(source.endpoint, PROCUREMENT_COMPANY_SEARCH_WINDOW_COUNT).map((dateParams) => requestProcurementApi({
         ...source,
         key,
         params: { ...common, ...dateParams, cntrctCorpNm: query },
@@ -381,7 +382,9 @@ async function refreshProcurementSearch(options: {
   if (existing) return existing;
   const refresh = (async () => {
     const sourceResults = await searchSources(options.query, options.scope, options.page, options.pageSize, options.key);
-    const mergedItems = mergeSearchItems(sourceResults.flatMap((result) => result.items));
+    const mergedItems = mergeSearchItems(sourceResults
+      .flatMap((result) => result.items)
+      .filter((item) => item.saleStatus === "계약 유효" || item.saleStatus === "등록 상품"));
     const items = mergedItems
       .sort((a, b) => {
         if (options.sort === "priceAsc") return (a.unitPrice ?? Number.MAX_SAFE_INTEGER) - (b.unitPrice ?? Number.MAX_SAFE_INTEGER) || relevance(b, options.query) - relevance(a, options.query);
