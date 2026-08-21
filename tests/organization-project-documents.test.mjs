@@ -45,9 +45,10 @@ test("기관 상세 요약 카드에서 사업별 파일을 보고 등록하고 
 test("PDF와 이미지는 기존 보기 버튼으로 내부 미리보기를 열고 대용량 PDF 구간 요청을 전달한다", () => {
   assert.match(card, /setPreviewDocument\(document\)/);
   assert.match(card, /project-documents-preview-frame/);
+  assert.match(card, /drivePreview=1/);
   assert.match(card, /새 탭에서 열기/);
   assert.match(route, /request\.headers\.get\("range"\)/);
-  assert.match(route, /bytes=0-1048575/);
+  assert.match(route, /drive\.google\.com\/file\/d\/\$\{encodeURIComponent\(row\.drive_file_id\)\}\/preview/);
   assert.match(route, /Content-Range/);
   assert.match(route, /Accept-Ranges/);
   assert.match(route, /"X-Frame-Options": "SAMEORIGIN"/);

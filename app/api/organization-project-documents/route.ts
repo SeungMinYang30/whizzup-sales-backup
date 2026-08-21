@@ -80,19 +80,23 @@ export async function GET(request: Request) {
     const id = positiveInteger(params.get("id"));
     const isDownload = params.get("download") === "1";
     const isPreview = params.get("preview") === "1";
-    if (id && (isDownload || isPreview)) {
+    const isDrivePreview = params.get("drivePreview") === "1";
+    if (id && (isDownload || isPreview || isDrivePreview)) {
       const { row } = await findDocument(id);
       if (!row || row.archived_at) {
         return Response.json({ error: "도면·조감도 파일을 찾지 못했습니다." }, { status: 404 });
       }
+      if (isDrivePreview && row.mime_type === "application/pdf" && !row.drive_file_id.startsWith("local:")) {
+        return Response.redirect(`https://drive.google.com/file/d/${encodeURIComponent(row.drive_file_id)}/preview`, 302);
+      }
       const previewable = row.mime_type === "application/pdf" || row.mime_type.startsWith("image/");
-      const requestedRange = isPreview
-        ? request.headers.get("range") || (row.mime_type === "application/pdf" ? "bytes=0-1048575" : undefined)
+      const requestedRange = isPreview || isDrivePreview
+        ? request.headers.get("range") || undefined
         : undefined;
       const stored = await downloadDriveFile(row.drive_file_id, { range: requestedRange });
       const headers = new Headers({
         "Content-Type": stored.headers.get("Content-Type") || row.mime_type || "application/octet-stream",
-        "Content-Disposition": `${isPreview && previewable ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(row.original_name)}`,
+        "Content-Disposition": `${(isPreview || isDrivePreview) && previewable ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(row.original_name)}`,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "SAMEORIGIN",
@@ -103,7 +107,7 @@ export async function GET(request: Request) {
       const acceptRanges = stored.headers.get("Accept-Ranges");
       if (contentLength) headers.set("Content-Length", contentLength);
       if (contentRange) headers.set("Content-Range", contentRange);
-      if (acceptRanges || requestedRange || (isPreview && row.mime_type === "application/pdf")) {
+      if (acceptRanges || requestedRange || ((isPreview || isDrivePreview) && row.mime_type === "application/pdf")) {
         headers.set("Accept-Ranges", acceptRanges || "bytes");
       }
       return new Response(stored.body, {

@@ -303,11 +303,12 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
                   {previewDocument.mime_type.startsWith("image/") ? (
                     <img src={`/api/organization-project-documents?id=${previewDocument.id}&preview=1`} alt={previewDocument.original_name} />
                   ) : (
-                    <iframe className="project-documents-preview-frame" src={`/api/organization-project-documents?id=${previewDocument.id}&preview=1`} title={`${previewDocument.original_name} PDF 미리보기`} />
+                    <iframe className="project-documents-preview-frame" src={`/api/organization-project-documents?id=${previewDocument.id}&drivePreview=1`} title={`${previewDocument.original_name} PDF 미리보기`} />
                   )}
                 </div>
                 <footer>
-                  <button type="button" onClick={() => window.open(`/api/organization-project-documents?id=${previewDocument.id}&preview=1`, "_blank", "noopener,noreferrer")}>새 탭에서 열기</button>
+                  <span>미리보기가 보이지 않으면 새 탭에서 열어 주세요.</span>
+                  <button type="button" onClick={() => window.open(`/api/organization-project-documents?id=${previewDocument.id}&drivePreview=1`, "_blank", "noopener,noreferrer")}>새 탭에서 열기</button>
                   <a href={`/api/organization-project-documents?id=${previewDocument.id}&download=1`}>다운로드</a>
                   <button type="button" className="primary" onClick={() => setPreviewDocument(null)}>닫기</button>
                 </footer>
