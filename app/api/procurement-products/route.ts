@@ -9,11 +9,11 @@ const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoSe
 const GENERAL_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 const IDENTIFIER_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
-const CACHE_VERSION = "v24-exact-offer-merge";
+const CACHE_VERSION = "v25-stable-mas-company-search";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
 const PROCUREMENT_SEARCH_WINDOW_COUNT = 3;
 const PROCUREMENT_SPEC_SEARCH_WINDOW_COUNT = 15;
-const PROCUREMENT_SEARCH_GROUP_TIMEOUT_MS = 25_000;
+const PROCUREMENT_SEARCH_GROUP_TIMEOUT_MS = 45_000;
 const PROCUREMENT_MAX_PAGE_SIZE = 300;
 const PROCUREMENT_SEARCH_SCOPES = ["all", "detail", "specification", "company", "identifier"] as const;
 type ProcurementSearchScope = typeof PROCUREMENT_SEARCH_SCOPES[number];
@@ -111,6 +111,7 @@ const CONTRACT_SOURCES = [
   { endpoint: "getUcntrctPrdctInfoList", contractMethod: "일반단가계약", sourceLabel: "일반단가계약" },
   { endpoint: "getThptyUcntrctPrdctInfoList", contractMethod: "제3자단가계약", sourceLabel: "제3자단가계약" },
 ] as const;
+const COMPANY_CONTRACT_SOURCES = CONTRACT_SOURCES.filter((source) => source.endpoint === "getMASCntrctPrdctInfoList");
 
 type ProcurementApiResult = {
   items: ProcurementSearchItem[];
@@ -355,7 +356,7 @@ async function searchSources(query: string, scope: ProcurementSearchScope, page:
   const controller = new AbortController();
   const requests: Promise<ProcurementApiResult>[] = [];
   if (scope === "all" || scope === "company") {
-    requests.push(...CONTRACT_SOURCES.flatMap((source) => companyNameCandidates(query).flatMap((companyName) => procurementSearchDateWindows(
+    requests.push(...COMPANY_CONTRACT_SOURCES.flatMap((source) => companyNameCandidates(query).flatMap((companyName) => procurementSearchDateWindows(
       source.endpoint,
     ).map((dateParams) => requestProcurementApi({
         ...source,

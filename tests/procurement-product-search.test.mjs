@@ -101,7 +101,8 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /inqryBgnDate: startDate/);
   assert.match(routeSource, /body\["nkoneps\.com\.response\.ResponseError"\]/);
   assert.match(routeSource, /serviceKey: key/);
-  assert.match(routeSource, /CACHE_VERSION = "v24-exact-offer-merge"/);
+  assert.match(routeSource, /CACHE_VERSION = "v25-stable-mas-company-search"/);
+  assert.match(routeSource, /PROCUREMENT_SEARCH_GROUP_TIMEOUT_MS = 45_000/);
   assert.match(routeSource, /GENERAL_CACHE_TTL_MS = 6 \* 60 \* 60/);
   assert.match(routeSource, /IDENTIFIER_CACHE_TTL_MS = 24 \* 60 \* 60/);
   assert.match(routeSource, /CACHE_RETENTION_MS = 30 \* 24 \* 60 \* 60/);
@@ -129,6 +130,8 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /`offer:\$\{signature\}`/);
   assert.match(routeSource, /companyNameCandidates\(query\)\.flatMap/);
   assert.match(routeSource, /cntrctCorpNm: companyName/);
+  assert.match(routeSource, /const COMPANY_CONTRACT_SOURCES = CONTRACT_SOURCES\.filter/);
+  assert.match(routeSource, /COMPANY_CONTRACT_SOURCES\.flatMap/);
   assert.match(routeSource, /scope === "all" \|\| scope === "detail"/);
   assert.match(routeSource, /scope === "all" \|\| scope === "specification"/);
   assert.match(routeSource, /scope === "identifier"/);
