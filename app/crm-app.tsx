@@ -64,6 +64,7 @@ import {
 import { analyticsBusinessRoundKey } from "../lib/analytics-business-rounds";
 import { latestAwardRecords as resolveLatestAwardRecords } from "../lib/award-state";
 import GlobalInstitutionSearch from "./global-institution-search";
+import OrganizationProjectDocumentsCard from "./organization-project-documents-card";
 import {
   DEFAULT_PROCUREMENT_FEE_RATE,
   hasProcurementSignal,
@@ -17470,48 +17471,6 @@ export default function CrmApp({
                 )}
               </section>
 
-              {!loading && !error ? (
-                <Suspense fallback={<DeferredPageFallback />}>
-                  <HomeCalendar
-                    key={scheduleReminderRefreshVersion}
-                    refreshVersion={scheduleReminderRefreshVersion}
-                    records={records}
-                    onRecordsChanged={() => loadRecords("full")}
-                    onOpenOrganization={(organization, businessRound) => {
-                      setDetailBusinessRound(businessRound);
-                      setDetailOrganization(organization);
-                    }}
-                    onOpenConstructionSchedule={() =>
-                      navigateTo("installation-schedule")
-                    }
-                  />
-                </Suspense>
-              ) : (
-                <DeferredPageFallback />
-              )}
-
-              {dashboardConstructionReady ? (
-                <Suspense fallback={<DeferredPageFallback />}>
-                  <ConstructionSchedulePage
-                    embedded
-                    records={records}
-                    isPrimaryOwner={isPrimaryOwner}
-                    formatManagerName={displayProgressManager}
-                    onDashboardCounts={setConstructionDashboardCounts}
-                    onSchedulesChanged={() => {
-                      setScheduleReminderRefreshVersion(
-                        (current) => current + 1,
-                      );
-                      void loadRecords("full");
-                    }}
-                    onOpenOrganization={(organization, businessRound) => {
-                      setDetailBusinessRound(businessRound);
-                      setDetailOrganization(organization);
-                    }}
-                  />
-                </Suspense>
-              ) : null}
-
               <section
                 className={`my-record-review-card ${
                   pendingActivityReviewGroups.length ||
@@ -17573,6 +17532,48 @@ export default function CrmApp({
                         : "점검 완료"}
                 </button>
               </section>
+
+              {!loading && !error ? (
+                <Suspense fallback={<DeferredPageFallback />}>
+                  <HomeCalendar
+                    key={scheduleReminderRefreshVersion}
+                    refreshVersion={scheduleReminderRefreshVersion}
+                    records={records}
+                    onRecordsChanged={() => loadRecords("full")}
+                    onOpenOrganization={(organization, businessRound) => {
+                      setDetailBusinessRound(businessRound);
+                      setDetailOrganization(organization);
+                    }}
+                    onOpenConstructionSchedule={() =>
+                      navigateTo("installation-schedule")
+                    }
+                  />
+                </Suspense>
+              ) : (
+                <DeferredPageFallback />
+              )}
+
+              {dashboardConstructionReady ? (
+                <Suspense fallback={<DeferredPageFallback />}>
+                  <ConstructionSchedulePage
+                    embedded
+                    records={records}
+                    isPrimaryOwner={isPrimaryOwner}
+                    formatManagerName={displayProgressManager}
+                    onDashboardCounts={setConstructionDashboardCounts}
+                    onSchedulesChanged={() => {
+                      setScheduleReminderRefreshVersion(
+                        (current) => current + 1,
+                      );
+                      void loadRecords("full");
+                    }}
+                    onOpenOrganization={(organization, businessRound) => {
+                      setDetailBusinessRound(businessRound);
+                      setDetailOrganization(organization);
+                    }}
+                  />
+                </Suspense>
+              ) : null}
 
               {false && <section className="my-schedule-panel" aria-labelledby="my-schedule-title">
                 <div className="my-schedule-heading">
@@ -21722,6 +21723,10 @@ export default function CrmApp({
                   <span>{detailLatest ? "최종 컨택일" : "캠페인 등록일"}</span>
                   <strong>{formatDate(detailDisplayRecord.activityDate)}</strong>
                 </div>
+                <OrganizationProjectDocumentsCard
+                  organization={detailDisplayRecord.organization}
+                  businessRound={selectedDetailBusinessRound}
+                />
                 <div
                   className={`${
                     detailDisplayRecord.jointProjectId

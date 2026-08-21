@@ -97,6 +97,15 @@ test("시공 일정표 목록 삭제는 원본을 보존하고 기관 추가로 
   assert.match(backupStore, /name: "construction_schedule_projects",[\s\S]*?"hidden_at"/);
 });
 
+test("내 기록 점검은 AI 입력 바로 아래와 통합 일정 위에 표시하고 영업보호 점검을 유지한다", () => {
+  const aiPanel = crmApp.indexOf("AI QUICK RECORD");
+  const reviewCard = crmApp.indexOf("my-record-review-card", aiPanel);
+  const calendarPanel = crmApp.indexOf("<HomeCalendar", reviewCard);
+  assert.ok(aiPanel > -1 && reviewCard > aiPanel && calendarPanel > reviewCard);
+  assert.match(crmApp, /영업보호 필요 <b>\{protectionReviewItems\.length\}<\/b>건/);
+  assert.match(crmApp, /protectionReviewItems\.length/);
+});
+
 test("시공 일정표 기관 추가 upsert는 PostgreSQL과 D1에서 대상 열을 명확히 구분한다", () => {
   assert.match(
     schedules,

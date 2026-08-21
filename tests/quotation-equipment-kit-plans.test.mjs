@@ -117,4 +117,5 @@ test("안내판넬은 고정 4종만 저장하고 수량이 있는 항목만 출
   assert.match(page, /고정 4종 · 수량 0은 PDF·Excel 별첨에서 제외/);
   assert.match(pdf, /안내판넬 체크/);
   assert.match(styles, /equipment-kit-print-guide-panels[\s\S]*?break-inside:avoid/);
+  assert.match(styles, /equipment-kit-guide-panels\{flex:0 0 auto;max-height:none\}/);
 });

@@ -7,6 +7,7 @@ const [calendar, recordsRoute, styles] = await Promise.all([
   readFile(new URL("../app/api/records/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
 ]);
+const scheduleRoute = await readFile(new URL("../app/api/schedules/route.ts", import.meta.url), "utf8");
 
 test("신규 기관 버튼 연속 클릭은 상태와 ref로 즉시 차단한다", () => {
   assert.match(calendar, /if \(institutionCreatingRef\.current \|\| scheduleSavingRef\.current \|\| saving\) return;/);
@@ -41,6 +42,23 @@ test("검색 결과와 신규 기관 버튼은 분리되고 작은 화면에서�
   assert.match(styles, /\.home-schedule-institution-results \{ position: static;/);
   assert.match(styles, /\.home-schedule-editor \{ width: min\(560px, 94vw\); max-height:/);
   assert.match(styles, /\.home-schedule-editor \{ width: 100%; max-height: calc\(100dvh - 16px\); padding: 18px 15px; overflow-y: auto;/);
+});
+
+test("기관명을 정확히 입력하면 단일 사업은 자동 연결하고 여러 사업은 직접 선택하게 한다", () => {
+  assert.match(calendar, /const exactCandidates = institutionIndex\.filter/);
+  assert.match(calendar, /if \(exactCandidates\.length === 1\) selectInstitution\(exactCandidates\[0\]\)/);
+  assert.match(calendar, /정확히 일치하는 기존 기관은 자동 연결/);
+  assert.match(calendar, /여러 사업 차수가 나오면 검색 결과에서 선택/);
+});
+
+test("일정 저장은 버튼을 숨기지 않고 정확한 누락 항목을 안내하며 DB 저장을 먼저 완료한다", () => {
+  assert.match(calendar, /function scheduleValidationMessage\(draft: CalendarEditor/);
+  assert.match(calendar, /연결할 기관 또는 일정 장소를 입력해 주세요/);
+  assert.match(calendar, /기존 기관을 검색해 선택한 뒤 연결해 주세요/);
+  assert.match(calendar, /className="primary-button" disabled=\{institutionCreating \|\| saving\}/);
+  const localWrite = scheduleRoute.indexOf("await addOrganizationSchedule({", scheduleRoute.indexOf('payload.action === "add-general-schedule"'));
+  const googleQueue = scheduleRoute.indexOf('queueGoogleCalendarSync({ limit: 25, source: "add-general-schedule" })');
+  assert.ok(localWrite > -1 && googleQueue > localWrite);
 });
 
 test("Google 일정 연결창은 일반 편집창보다 조밀하게 한 화면에 표시한다", () => {
