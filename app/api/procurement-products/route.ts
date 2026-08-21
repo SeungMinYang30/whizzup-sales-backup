@@ -9,7 +9,7 @@ const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoSe
 const GENERAL_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 const IDENTIFIER_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
-const CACHE_VERSION = "v18-contract-sequence-merge";
+const CACHE_VERSION = "v19-contract-sequence-registration-fallback";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
 const PROCUREMENT_SEARCH_WINDOW_COUNT = 3;
 const PROCUREMENT_SPEC_SEARCH_WINDOW_COUNT = 15;
@@ -225,7 +225,7 @@ function mergeSearchItems(items: ProcurementSearchItem[]) {
     // 공식 명세가 보장하는 쇼핑몰 행의 유일 키는 계약번호 + 계약순번이다.
     // 검색 경로가 달라도 같은 계약 행만 합치고, 식별번호가 같아도 계약순번이
     // 다른 행은 보존해야 공식 종합검색 건수와 일치한다.
-    const contractRecord = [item.contractNumber, item.contractSequence].filter(Boolean).join(":");
+    const contractRecord = [item.contractNumber, item.contractSequence].filter(Boolean).join(":") || item.registrationDate;
     const identity = contractRecord ? `${item.identity}:contract:${contractRecord}` : item.identity;
     const normalizedItem = identity === item.identity ? item : { ...item, identity };
     const saved = merged.get(identity);
