@@ -9,9 +9,10 @@ const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoSe
 const GENERAL_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 const IDENTIFIER_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
-const CACHE_VERSION = "v22-shopping-offer-signature";
+const CACHE_VERSION = "v23-legal-company-mas-history";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
 const PROCUREMENT_SEARCH_WINDOW_COUNT = 3;
+const PROCUREMENT_COMPANY_HISTORY_WINDOW_COUNT = 15;
 const PROCUREMENT_SPEC_SEARCH_WINDOW_COUNT = 15;
 const PROCUREMENT_SEARCH_GROUP_TIMEOUT_MS = 25_000;
 const PROCUREMENT_MAX_PAGE_SIZE = 300;
@@ -357,6 +358,9 @@ async function searchSources(query: string, scope: ProcurementSearchScope, page:
   if (scope === "all" || scope === "company") {
     requests.push(...CONTRACT_SOURCES.flatMap((source) => companyNameCandidates(query).flatMap((companyName) => procurementSearchDateWindows(
       source.endpoint,
+      source.endpoint === "getMASCntrctPrdctInfoList" && /^(?:주식회사|\(주\)|㈜)/u.test(companyName)
+        ? PROCUREMENT_COMPANY_HISTORY_WINDOW_COUNT
+        : PROCUREMENT_SEARCH_WINDOW_COUNT,
     ).map((dateParams) => requestProcurementApi({
         ...source,
         key,

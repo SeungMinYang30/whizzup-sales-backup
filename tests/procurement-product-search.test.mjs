@@ -90,6 +90,7 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /dtilPrdctClsfcNoNm: query/);
   assert.match(routeSource, /prdctIdntNoNm: query/);
   assert.match(routeSource, /PROCUREMENT_SEARCH_WINDOW_COUNT = 3/);
+  assert.match(routeSource, /PROCUREMENT_COMPANY_HISTORY_WINDOW_COUNT = 15/);
   assert.match(routeSource, /PROCUREMENT_SPEC_SEARCH_WINDOW_COUNT = 15/);
   assert.match(routeSource, /procurementSearchDateWindows/);
   assert.match(routeSource, /function companyNameCandidates/);
@@ -101,7 +102,7 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /inqryBgnDate: startDate/);
   assert.match(routeSource, /body\["nkoneps\.com\.response\.ResponseError"\]/);
   assert.match(routeSource, /serviceKey: key/);
-  assert.match(routeSource, /CACHE_VERSION = "v22-shopping-offer-signature"/);
+  assert.match(routeSource, /CACHE_VERSION = "v23-legal-company-mas-history"/);
   assert.match(routeSource, /GENERAL_CACHE_TTL_MS = 6 \* 60 \* 60/);
   assert.match(routeSource, /IDENTIFIER_CACHE_TTL_MS = 24 \* 60 \* 60/);
   assert.match(routeSource, /CACHE_RETENTION_MS = 30 \* 24 \* 60 \* 60/);
@@ -129,6 +130,7 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /`offer:\$\{signature\}`/);
   assert.match(routeSource, /companyNameCandidates\(query\)\.flatMap/);
   assert.match(routeSource, /cntrctCorpNm: companyName/);
+  assert.match(routeSource, /test\(companyName\)[\s\S]*PROCUREMENT_COMPANY_HISTORY_WINDOW_COUNT/);
   assert.match(routeSource, /scope === "all" \|\| scope === "detail"/);
   assert.match(routeSource, /scope === "all" \|\| scope === "specification"/);
   assert.match(routeSource, /scope === "identifier"/);
