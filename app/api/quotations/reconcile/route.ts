@@ -8,8 +8,8 @@ import {
   ensureDrivePath,
   isGoogleDriveConfigured,
   listDriveChildren,
-  safeDriveFolderName,
 } from "../../../../lib/google-drive-storage";
+import { quotationInstitutionFolderSegments } from "../../../../lib/quotation-file-name";
 
 export const dynamic = "force-dynamic";
 
@@ -43,13 +43,12 @@ export async function POST() {
     const folderFiles = new Map<string, Awaited<ReturnType<typeof listDriveChildren>>>();
     let archived = 0;
     for (const row of rows.results) {
-      const folderSegments = [
-        "01_기관자료",
-        safeDriveFolderName(row.region, "지역 미분류"),
-        safeDriveFolderName(row.organization, "기관 미분류"),
-        "견적서",
-        String(row.quote_date || new Date().getFullYear()).slice(0, 4),
-      ];
+      const folderSegments = quotationInstitutionFolderSegments({
+        region: row.region,
+        organization: row.organization,
+        businessRound: row.business_round,
+        quoteDate: row.quote_date,
+      });
       const folderKey = folderSegments.join("/");
       let files = folderFiles.get(folderKey);
       if (!files) {

@@ -48,11 +48,13 @@ function withExtension(stem: string, extension: string) {
 
 export function quotationInstitutionFolderSegments(quote: QuotationFileNameInput) {
   const yearMatch = safeFilePart(quote.quoteDate, 20).match(/^(\d{4})/u);
+  const businessRound = Math.max(1, Number(quote.businessRound) || 1);
   return [
     "01_기관자료",
     safeFilePart(quote.region, 60) || "지역 미분류",
     safeFilePart(quote.organization, 90) || "기관 미지정",
     QUOTATION_LIBRARY_FOLDER,
+    `${businessRound}차 사업`,
     yearMatch?.[1] || String(new Date().getFullYear()),
   ];
 }

@@ -28,6 +28,7 @@ import {
   safeDriveFolderName,
   uploadDriveFile,
 } from "../../../lib/google-drive-storage";
+import { quotationInstitutionFolderSegments } from "../../../lib/quotation-file-name";
 
 export const dynamic = "force-dynamic";
 
@@ -240,13 +241,12 @@ export async function POST(request: Request) {
       )
       .bind(organization, businessRound)
       .first<{ region: string }>();
-    const folderSegments = [
-      "01_기관자료",
-      safeDriveFolderName(regionRow?.region, "지역 미분류"),
-      safeDriveFolderName(organization),
-      "견적서",
-      quoteDate.slice(0, 4),
-    ];
+    const folderSegments = quotationInstitutionFolderSegments({
+      region: regionRow?.region,
+      organization,
+      businessRound,
+      quoteDate,
+    });
     const stored = await uploadDriveFile({
       file: originalFile,
       folderSegments,

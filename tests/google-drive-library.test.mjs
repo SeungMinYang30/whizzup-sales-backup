@@ -49,7 +49,7 @@ test("preserves XLSX quotations while keeping PDF previews", async () => {
   const route = await read("app/api/quotation-documents/route.ts");
   assert.match(client, /formData\.set\("sourceFile", pdfFile\)/);
   assert.match(route, /sourceFile instanceof File \? sourceFile : pdf/);
-  assert.match(route, /01_기관자료/);
+  assert.match(route, /quotationInstitutionFolderSegments/);
   assert.match(route, /institution-quotation-preview/);
   assert.match(route, /pageKeys\.push\(driveObjectKey\(preview\.fileId\)\)/);
   assert.doesNotMatch(route, /bucket\.put\(pageKeys/);

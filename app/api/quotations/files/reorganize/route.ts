@@ -12,6 +12,7 @@ import {
   syncDriveFileCopyFromSource,
 } from "../../../../../lib/google-drive-storage";
 import {
+  QUOTATION_LIBRARY_FOLDER,
   QUOTATION_LIBRARY_FOLDER_SEGMENTS,
   QUOTATION_LIBRARY_PATH,
   quotationDownloadName,
@@ -74,6 +75,7 @@ export async function POST(request: Request) {
     let moved = 0;
     let renamed = 0;
     let mirrored = 0;
+    let checked = 0;
 
     for (const row of rows.results) {
       const quotationId = Number(row.id);
@@ -110,6 +112,7 @@ export async function POST(request: Request) {
       for (const file of files) {
         try {
           const metadata = await getDriveFileMetadata(file.id);
+          checked += 1;
           for (const parent of metadata.parents || []) oldParentIds.add(parent);
           const alreadyInTargetName = String(metadata.name || "") === file.desiredName;
           if (dryRun) {
@@ -143,7 +146,7 @@ export async function POST(request: Request) {
 
       if (!dryRun) {
         await d1.prepare(`UPDATE authored_quotations
-          SET drive_pdf_name=?, drive_xlsx_name=?, source_file_name=?, updated_at=CURRENT_TIMESTAMP
+          SET drive_pdf_name=?, drive_xlsx_name=?, source_file_name=?
           WHERE id=?`)
           .bind(savedNames.pdf, savedNames.xlsx, savedNames.source, quotationId)
           .run();
@@ -171,9 +174,10 @@ export async function POST(request: Request) {
       moved,
       renamed,
       mirrored,
+      checked,
       removedFolders,
       failures,
-      folder: QUOTATION_LIBRARY_PATH,
+      folder: `01_기관자료/지역/기관/${QUOTATION_LIBRARY_FOLDER}/사업 차수/연도 + ${QUOTATION_LIBRARY_PATH}`,
       nextAfterId,
       done,
     }, { status: failures.length ? 207 : 200 });

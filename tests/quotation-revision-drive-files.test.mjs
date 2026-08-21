@@ -6,6 +6,9 @@ const page = await readFile(new URL("../app/quotation-management-page.tsx", impo
 const store = await readFile(new URL("../lib/authored-quotations.ts", import.meta.url), "utf8");
 const filesRoute = await readFile(new URL("../app/api/quotations/files/route.ts", import.meta.url), "utf8");
 const reorganizeRoute = await readFile(new URL("../app/api/quotations/files/reorganize/route.ts", import.meta.url), "utf8");
+const referenceReorganizeRoute = await readFile(new URL("../app/api/quotation-documents/reorganize/route.ts", import.meta.url), "utf8");
+const referenceDocumentsRoute = await readFile(new URL("../app/api/quotation-documents/route.ts", import.meta.url), "utf8");
+const reorganizePage = await readFile(new URL("../app/maintenance/quotation-drive-reorganize/page.tsx", import.meta.url), "utf8");
 const pdf = await readFile(new URL("../app/authored-quotation-pdf.ts", import.meta.url), "utf8");
 const crm = await readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8");
 const documents = await readFile(new URL("../app/quotation-documents.tsx", import.meta.url), "utf8");
@@ -60,7 +63,7 @@ test("final save queues PDF and Excel while Drive finalization protects the newe
   assert.match(page, /formData\.set\("pdf", pdf\)/);
   assert.match(page, /formData\.set\("xlsx", xlsx\)/);
   assert.match(page, /견적 내용은 저장됐습니다\. PDF·Excel을 안전하게 처리하고 있습니다/);
-  assert.match(page, /void processQuotationFiles\(payload\.quotation, sourceFile\)/);
+  assert.match(page, /void processQuotationFiles\(payload\.quotation, sourceFile(?:, protectionWarning)?\)/);
   assert.match(page, /driveSyncStatus === "queued"/);
   assert.match(page, /파일 재시도/);
   assert.match(page, /setQuotationFileJobVersion\(\(version\) => version \+ 1\)/);
@@ -125,7 +128,17 @@ test("existing Drive quotation files are renamed and moved in place", () => {
   assert.match(reorganizeRoute, /quotationInstitutionFolderSegments/);
   assert.match(reorganizeRoute, /syncDriveFileCopyFromSource/);
   assert.match(reorganizeRoute, /removeEmptyQuotationFolderChain/);
+  assert.match(reorganizeRoute, /SET drive_pdf_name=\?, drive_xlsx_name=\?, source_file_name=\?\s+WHERE id=\?/);
+  assert.doesNotMatch(reorganizeRoute, /SET drive_pdf_name=\?, drive_xlsx_name=\?, source_file_name=\?, updated_at=/);
   assert.doesNotMatch(reorganizeRoute, /removeDriveFile/);
+  assert.match(referenceDocumentsRoute, /quotationInstitutionFolderSegments/);
+  assert.match(referenceReorganizeRoute, /quotationInstitutionFolderSegments/);
+  assert.match(referenceReorganizeRoute, /parseStoredStringList/);
+  assert.match(referenceReorganizeRoute, /driveFileIdFromKey/);
+  assert.match(referenceReorganizeRoute, /organizeDriveFile/);
+  assert.doesNotMatch(referenceReorganizeRoute, /UPDATE quotation_documents/);
+  assert.match(reorganizePage, /\/api\/quotation-documents\/reorganize/);
+  assert.match(reorganizePage, /기존 파일 ID와 견적 수정일을 유지/);
 });
 
 test("retroactive quotation refresh validates replacements and preserves Drive file ids", () => {
