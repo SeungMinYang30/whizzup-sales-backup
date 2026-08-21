@@ -85,16 +85,24 @@ export async function GET(request: Request) {
       if (!row || row.archived_at) {
         return Response.json({ error: "도면·조감도 파일을 찾지 못했습니다." }, { status: 404 });
       }
-      const stored = await downloadDriveFile(row.drive_file_id);
+      const requestedRange = isPreview ? request.headers.get("range") || undefined : undefined;
+      const stored = await downloadDriveFile(row.drive_file_id, { range: requestedRange });
       const previewable = row.mime_type === "application/pdf" || row.mime_type.startsWith("image/");
+      const headers = new Headers({
+        "Content-Type": stored.headers.get("Content-Type") || row.mime_type || "application/octet-stream",
+        "Content-Disposition": `${isPreview && previewable ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(row.original_name)}`,
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      });
+      const contentLength = stored.headers.get("Content-Length");
+      const contentRange = stored.headers.get("Content-Range");
+      const acceptRanges = stored.headers.get("Accept-Ranges");
+      if (contentLength) headers.set("Content-Length", contentLength);
+      if (contentRange) headers.set("Content-Range", contentRange);
+      if (acceptRanges || requestedRange) headers.set("Accept-Ranges", acceptRanges || "bytes");
       return new Response(stored.body, {
-        headers: {
-          "Content-Type": stored.headers.get("Content-Type") || row.mime_type || "application/octet-stream",
-          "Content-Length": stored.headers.get("Content-Length") || String(row.size_bytes),
-          "Content-Disposition": `${isPreview && previewable ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(row.original_name)}`,
-          "Cache-Control": "private, no-store",
-          "X-Content-Type-Options": "nosniff",
-        },
+        status: stored.status === 206 ? 206 : 200,
+        headers,
       });
     }
 

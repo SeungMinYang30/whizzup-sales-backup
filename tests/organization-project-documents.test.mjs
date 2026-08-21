@@ -23,7 +23,7 @@ test("도면과 조감도는 기관과 사업 차수별 Google Drive 폴더에�
   assert.match(store, /organization, business_round, archived_at/);
 });
 
-test("도면과 조감도 보관은 원본 삭제 대신 99_보관으로 이동한다", () => {
+test("도면과 조감도 삭제는 원본 제거 대신 99_보관으로 이동한다", () => {
   assert.match(route, /"99_보관"/);
   assert.match(route, /moveDriveFile/);
   assert.match(route, /SET archived_at = CURRENT_TIMESTAMP/);
@@ -37,7 +37,19 @@ test("기관 상세 요약 카드에서 사업별 파일을 보고 등록하고 
   assert.match(card, /Google Drive의 기관명 \/ 사업 차수 \/ 도면·조감도 폴더에만 저장/);
   assert.match(card, /preview=1/);
   assert.match(card, /download=1/);
-  assert.match(card, /99_보관 폴더로 옮길까요/);
+  assert.match(card, /파일을 삭제할까요/);
+  assert.match(card, /삭제된 파일은 복구를 위해 99_보관 폴더로 이동됩니다/);
+  assert.match(card, />삭제<\/button>/);
+});
+
+test("PDF와 이미지는 기존 보기 버튼으로 내부 미리보기를 열고 대용량 PDF 구간 요청을 전달한다", () => {
+  assert.match(card, /setPreviewDocument\(document\)/);
+  assert.match(card, /project-documents-preview-frame/);
+  assert.match(card, /새 탭에서 열기/);
+  assert.match(route, /request\.headers\.get\("range"\)/);
+  assert.match(route, /Content-Range/);
+  assert.match(route, /Accept-Ranges/);
+  assert.match(styles, /\.project-documents-preview-shell/);
 });
 
 test("도면과 조감도는 통합본 또는 파일별 종류를 확인해 한 번에 등록한다", () => {
@@ -65,6 +77,8 @@ test("대용량 도면 창은 배경을 가리지 않는 일반 팝업이고 인
     styles.indexOf(".project-documents-modal{", styles.indexOf(".project-documents-modal-shell,")),
   );
   assert.doesNotMatch(modalShell, /backdrop-filter/);
+  assert.match(styles, /\.project-documents-list article strong\{[^}]*font-size:14px/);
+  assert.match(styles, /\.project-documents-list article button,\.project-documents-list article a\{[^}]*min-height:38px[^}]*font-size:13px/);
   assert.match(
     crm,
     /event\.target === event\.currentTarget &&[\s\S]{0,180}beginDetailInlineEdit\("contact", detailDisplayRecord\)/,

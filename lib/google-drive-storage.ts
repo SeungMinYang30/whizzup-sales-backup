@@ -981,7 +981,7 @@ export async function getDriveFileMetadata(fileId: string) {
   return payload;
 }
 
-export async function downloadDriveFile(fileId: string) {
+export async function downloadDriveFile(fileId: string, options: { range?: string } = {}) {
   const objectKey = localFileKey(fileId);
   if (objectKey) {
     const stored = await getPostgresObjectStorage().get(objectKey);
@@ -995,6 +995,7 @@ export async function downloadDriveFile(fileId: string) {
   }
   const response = await driveFetch(
     `${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`,
+    options.range ? { headers: { Range: options.range } } : {},
   );
   if (!response.ok || !response.body) {
     throw driveReadError(

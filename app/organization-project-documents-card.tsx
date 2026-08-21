@@ -85,6 +85,7 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [previewDocument, setPreviewDocument] = useState<ProjectDocument | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const loadSequenceRef = useRef(0);
 
@@ -216,17 +217,32 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
     setUploading(false);
   }
 
-  async function archiveDocument(document: ProjectDocument) {
-    if (!window.confirm(`‘${document.original_name}’을 99_보관 폴더로 옮길까요?`)) return;
+  async function deleteDocument(document: ProjectDocument) {
+    if (!window.confirm(`‘${document.original_name}’ 파일을 삭제할까요?\n삭제된 파일은 복구를 위해 99_보관 폴더로 이동됩니다.`)) return;
     setError("");
     try {
       const response = await fetch(`/api/organization-project-documents?id=${document.id}`, { method: "DELETE" });
       const payload = await responsePayload(response);
-      if (!response.ok) throw new Error(payload.error || "파일을 보관하지 못했습니다.");
+      if (!response.ok) throw new Error(payload.error || "파일을 삭제하지 못했습니다.");
       setDocuments((current) => current.filter((item) => item.id !== document.id));
+      setPreviewDocument((current) => current?.id === document.id ? null : current);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "파일을 보관하지 못했습니다.");
+      setError(caught instanceof Error ? caught.message : "파일을 삭제하지 못했습니다.");
     }
+  }
+
+  function openDocument(document: ProjectDocument) {
+    const previewable = document.mime_type === "application/pdf" || document.mime_type.startsWith("image/");
+    if (previewable) {
+      setPreviewDocument(document);
+      return;
+    }
+    window.open(`/api/organization-project-documents?id=${document.id}&preview=1`, "_blank", "noopener,noreferrer");
+  }
+
+  function closeModal() {
+    setPreviewDocument(null);
+    setOpen(false);
   }
 
   const visibleDocuments = documentFilter === "전체"
@@ -242,11 +258,11 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
         <button type="button" onClick={() => { setOpen(true); void loadDocuments(); }}>도면·조감도 보기</button>
       </div>
       {open ? (
-        <div className="project-documents-modal-shell" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setOpen(false); }}>
+        <div className="project-documents-modal-shell" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) closeModal(); }}>
           <section className="project-documents-modal" role="dialog" aria-modal="true" aria-labelledby="project-documents-title">
             <header>
               <div><span className="section-kicker">PROJECT FILES</span><h2 id="project-documents-title">도면·조감도</h2><p>{organization} · {businessRound}차 사업</p></div>
-              <button type="button" aria-label="닫기" onClick={() => setOpen(false)}>×</button>
+              <button type="button" aria-label="닫기" onClick={closeModal}>×</button>
             </header>
             <div className="project-documents-upload">
               <div><b>도면·조감도 한 번에 등록</b><span>통합 파일 한 개 또는 서로 다른 파일을 최대 10개까지 함께 선택하세요.</span></div>
@@ -271,11 +287,33 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
               {loading ? <p>파일을 불러오는 중입니다.</p> : visibleDocuments.length ? visibleDocuments.map((document) => (
                 <article key={document.id}>
                   <div><b>{document.document_type}</b><strong>{document.original_name}</strong><small>{formatBytes(Number(document.size_bytes) || 0)} · {document.created_by_name || "등록자 미상"}</small></div>
-                  <div><button type="button" onClick={() => window.open(`/api/organization-project-documents?id=${document.id}&preview=1`, "_blank", "noopener,noreferrer")}>보기</button><a href={`/api/organization-project-documents?id=${document.id}&download=1`}>다운로드</a><button type="button" className="danger" onClick={() => void archiveDocument(document)}>보관</button></div>
+                  <div><button type="button" onClick={() => openDocument(document)}>보기</button><a href={`/api/organization-project-documents?id=${document.id}&download=1`}>다운로드</a><button type="button" className="danger" onClick={() => void deleteDocument(document)}>삭제</button></div>
                 </article>
               )) : <p>{documents.length ? `${documentFilter} 자료가 없습니다.` : "등록된 도면·조감도가 없습니다."}</p>}
             </div>
           </section>
+          {previewDocument ? (
+            <div className="project-documents-preview-shell" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setPreviewDocument(null); }}>
+              <section className="project-documents-preview" role="dialog" aria-modal="true" aria-labelledby="project-document-preview-title">
+                <header>
+                  <div><span className="section-kicker">FILE PREVIEW</span><h3 id="project-document-preview-title">{previewDocument.original_name}</h3><p>{formatBytes(Number(previewDocument.size_bytes) || 0)} · {previewDocument.document_type}</p></div>
+                  <button type="button" aria-label="미리보기 닫기" onClick={() => setPreviewDocument(null)}>×</button>
+                </header>
+                <div className="project-documents-preview-body">
+                  {previewDocument.mime_type.startsWith("image/") ? (
+                    <img src={`/api/organization-project-documents?id=${previewDocument.id}&preview=1`} alt={previewDocument.original_name} />
+                  ) : (
+                    <iframe className="project-documents-preview-frame" src={`/api/organization-project-documents?id=${previewDocument.id}&preview=1`} title={`${previewDocument.original_name} PDF 미리보기`} />
+                  )}
+                </div>
+                <footer>
+                  <button type="button" onClick={() => window.open(`/api/organization-project-documents?id=${previewDocument.id}&preview=1`, "_blank", "noopener,noreferrer")}>새 탭에서 열기</button>
+                  <a href={`/api/organization-project-documents?id=${previewDocument.id}&download=1`}>다운로드</a>
+                  <button type="button" className="primary" onClick={() => setPreviewDocument(null)}>닫기</button>
+                </footer>
+              </section>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </Fragment>
