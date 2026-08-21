@@ -96,7 +96,7 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /inqryBgnDate: startDate/);
   assert.match(routeSource, /body\["nkoneps\.com\.response\.ResponseError"\]/);
   assert.match(routeSource, /serviceKey: key/);
-  assert.match(routeSource, /CACHE_VERSION = "v13-official-registration-status"/);
+  assert.match(routeSource, /CACHE_VERSION = "v14-contract-record-identity"/);
   assert.match(routeSource, /GENERAL_CACHE_TTL_MS = 6 \* 60 \* 60/);
   assert.match(routeSource, /IDENTIFIER_CACHE_TTL_MS = 24 \* 60 \* 60/);
   assert.match(routeSource, /CACHE_RETENTION_MS = 30 \* 24 \* 60 \* 60/);
@@ -117,6 +117,8 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /controller\.abort\(\)/);
   assert.match(routeSource, /scope === "all" \|\| scope === "company"/);
   assert.match(routeSource, /CONTRACT_SOURCES\.flatMap/);
+  assert.match(routeSource, /item\.contractNumber \|\| item\.registrationDate/);
+  assert.match(routeSource, /`\$\{item\.identity\}:contract:\$\{contractRecord\}`/);
   assert.match(routeSource, /scope === "all" \|\| scope === "detail"/);
   assert.match(routeSource, /scope === "all" \|\| scope === "specification"/);
   assert.match(routeSource, /scope === "identifier"/);

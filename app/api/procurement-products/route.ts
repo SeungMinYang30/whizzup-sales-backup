@@ -9,7 +9,7 @@ const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoSe
 const GENERAL_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 const IDENTIFIER_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
-const CACHE_VERSION = "v13-official-registration-status";
+const CACHE_VERSION = "v14-contract-record-identity";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
 const PROCUREMENT_SEARCH_WINDOW_COUNT = 3;
 const PROCUREMENT_SPEC_SEARCH_WINDOW_COUNT = 15;
@@ -222,14 +222,17 @@ async function requestProcurementApi({ endpoint, params, key, contractMethod, so
 function mergeSearchItems(items: ProcurementSearchItem[]) {
   const merged = new Map<string, ProcurementSearchItem>();
   for (const item of items) {
-    const saved = merged.get(item.identity);
+    const contractRecord = item.contractNumber || item.registrationDate;
+    const identity = contractRecord ? `${item.identity}:contract:${contractRecord}` : item.identity;
+    const normalizedItem = identity === item.identity ? item : { ...item, identity };
+    const saved = merged.get(identity);
     if (!saved) {
-      merged.set(item.identity, item);
+      merged.set(identity, normalizedItem);
       continue;
     }
-    merged.set(item.identity, {
+    merged.set(identity, {
       ...saved,
-      ...Object.fromEntries(Object.entries(item).map(([field, value]) => [
+      ...Object.fromEntries(Object.entries(normalizedItem).map(([field, value]) => [
         field,
         value === "" || value === null ? saved[field as keyof ProcurementSearchItem] : value,
       ])),
