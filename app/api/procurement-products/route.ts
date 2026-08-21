@@ -9,8 +9,9 @@ const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoSe
 const GENERAL_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 const IDENTIFIER_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
-const CACHE_VERSION = "v8-complete-search-scope";
+const CACHE_VERSION = "v9-multi-year-search-scope";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
+const PROCUREMENT_SEARCH_WINDOW_COUNT = 3;
 const PROCUREMENT_SEARCH_GROUP_TIMEOUT_MS = 18_000;
 const PROCUREMENT_MAX_PAGE_SIZE = 300;
 const PROCUREMENT_SEARCH_SCOPES = ["all", "detail", "specification", "company", "identifier"] as const;
@@ -148,16 +149,25 @@ function addUtcDays(value: Date, days: number) {
   return result;
 }
 
-function procurementSearchDateParams(endpoint: string): Record<string, string> {
+function procurementSearchDateParams(endpoint: string, end = new Date()): Record<string, string> {
   // 공식 API는 한 번에 최대 1년만 조회할 수 있다. 범위를 초과하면
   // nkoneps.com.response.ResponseError(resultCode=07)를 돌려주므로 364일로 제한한다.
-  const end = new Date();
   const startDate = compactDate(addUtcDays(end, -PROCUREMENT_SEARCH_WINDOW_DAYS));
   const endDate = compactDate(end);
   if (endpoint === "getShoppingMallPrdctInfoList") {
     return { inqryBgnDate: startDate, inqryEndDate: endDate };
   }
   return { rgstDtBgnDt: `${startDate}0000`, rgstDtEndDt: `${endDate}2359` };
+}
+
+function procurementSearchDateWindows(endpoint: string) {
+  const windows: Record<string, string>[] = [];
+  let end = new Date();
+  for (let index = 0; index < PROCUREMENT_SEARCH_WINDOW_COUNT; index += 1) {
+    windows.push(procurementSearchDateParams(endpoint, end));
+    end = addUtcDays(end, -(PROCUREMENT_SEARCH_WINDOW_DAYS + 1));
+  }
+  return windows;
 }
 
 async function requestProcurementApi({ endpoint, params, key, contractMethod, sourceLabel, signal }: {
@@ -267,13 +277,6 @@ function resultFacets(items: ProcurementSearchItem[]): ProcurementFacets {
   };
 }
 
-function companyNameCandidates(query: string) {
-  const compact = query.replace(/\s+/g, " ").trim();
-  if (!compact) return [];
-  if (/^(?:\(주\)|㈜|주식회사\s*)/.test(compact)) return [compact];
-  return [...new Set([compact, `주식회사 ${compact}`, `(주)${compact}`, `㈜${compact}`])];
-}
-
 function procurementSearchScope(value: string): ProcurementSearchScope {
   return PROCUREMENT_SEARCH_SCOPES.includes(value as ProcurementSearchScope)
     ? value as ProcurementSearchScope
@@ -304,12 +307,12 @@ async function searchSources(query: string, scope: ProcurementSearchScope, page:
 
   if (scope === "identifier" || (scope === "all" && numericQuery)) {
     const controller = new AbortController();
-    const searched = await collectAllUseful(CONTRACT_SOURCES.map((source) => requestProcurementApi({
+    const searched = await collectAllUseful(CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(source.endpoint).map((dateParams) => requestProcurementApi({
         ...source,
         key,
-        params: { ...common, prdctIdntNo: normalizedNumber },
+        params: { ...common, ...dateParams, prdctIdntNo: normalizedNumber },
         signal: controller.signal,
-      })), controller);
+      }))), controller);
     if (!searched.results.length) throw searched.firstError || new Error("조달청 검색에 실패했습니다.");
     return searched.results;
   }
@@ -319,45 +322,45 @@ async function searchSources(query: string, scope: ProcurementSearchScope, page:
   const controller = new AbortController();
   const requests: Promise<ProcurementApiResult>[] = [];
   if (scope === "all" || scope === "company") {
-    requests.push(...companyNameCandidates(query).flatMap((candidate) => CONTRACT_SOURCES.map((source) => requestProcurementApi({
-      ...source,
-      key,
-      params: { ...common, cntrctCorpNm: candidate },
-      signal: controller.signal,
-    }))));
+    requests.push(...CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(source.endpoint).map((dateParams) => requestProcurementApi({
+        ...source,
+        key,
+        params: { ...common, ...dateParams, cntrctCorpNm: query },
+        signal: controller.signal,
+      }))));
   }
   if (scope === "all" || scope === "detail") {
-    requests.push(requestProcurementApi({
+    requests.push(...procurementSearchDateWindows("getShoppingMallPrdctInfoList").map((dateParams) => requestProcurementApi({
       endpoint: "getShoppingMallPrdctInfoList",
       sourceLabel: "나라장터 세부품명",
       key,
-      params: { ...common, dtilPrdctClsfcNoNm: query, regtCncelYn: "N" },
-      signal: controller.signal,
-    }));
-    requests.push(...CONTRACT_SOURCES.map((source) => requestProcurementApi({
-      ...source,
-      key,
-      params: { ...common, prdctClsfcNoNm: query },
+      params: { ...common, ...dateParams, dtilPrdctClsfcNoNm: query, regtCncelYn: "N" },
       signal: controller.signal,
     })));
+    requests.push(...CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(source.endpoint).map((dateParams) => requestProcurementApi({
+        ...source,
+        key,
+        params: { ...common, ...dateParams, prdctClsfcNoNm: query },
+        signal: controller.signal,
+      }))));
   }
   if (scope === "all") {
-    requests.push(requestProcurementApi({
+    requests.push(...procurementSearchDateWindows("getShoppingMallPrdctInfoList").map((dateParams) => requestProcurementApi({
       endpoint: "getShoppingMallPrdctInfoList",
       sourceLabel: "나라장터 품명",
       key,
-      params: { ...common, prdctClsfcNoNm: query, regtCncelYn: "N" },
+      params: { ...common, ...dateParams, prdctClsfcNoNm: query, regtCncelYn: "N" },
       signal: controller.signal,
-    }));
+    })));
   }
   if (scope === "all" || scope === "specification") {
-    requests.push(requestProcurementApi({
+    requests.push(...procurementSearchDateWindows("getShoppingMallPrdctInfoList").map((dateParams) => requestProcurementApi({
       endpoint: "getShoppingMallPrdctInfoList",
       sourceLabel: "나라장터 규격",
       key,
-      params: { ...common, prdctIdntNoNm: query, regtCncelYn: "N" },
+      params: { ...common, ...dateParams, prdctIdntNoNm: query, regtCncelYn: "N" },
       signal: controller.signal,
-    }));
+    })));
   }
   const searched = await collectAllUseful(requests, controller);
   if (!searched.results.length) throw searched.firstError || new Error("조달청 검색에 실패했습니다.");
