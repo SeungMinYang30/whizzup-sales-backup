@@ -9,10 +9,9 @@ const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoSe
 const GENERAL_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 const IDENTIFIER_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
-const CACHE_VERSION = "v20-company-mas-history";
+const CACHE_VERSION = "v21-company-legal-name-candidates";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
 const PROCUREMENT_SEARCH_WINDOW_COUNT = 3;
-const PROCUREMENT_COMPANY_HISTORY_WINDOW_COUNT = 15;
 const PROCUREMENT_SPEC_SEARCH_WINDOW_COUNT = 15;
 const PROCUREMENT_SEARCH_GROUP_TIMEOUT_MS = 25_000;
 const PROCUREMENT_MAX_PAGE_SIZE = 300;
@@ -297,6 +296,20 @@ function procurementSearchScope(value: string): ProcurementSearchScope {
     : "all";
 }
 
+function companyNameCandidates(query: string) {
+  const base = query
+    .normalize("NFKC")
+    .replace(/^\s*(?:주식회사|\(주\)|㈜)\s*/u, "")
+    .replace(/\s*주식회사\s*$/u, "")
+    .trim();
+  return [...new Set([
+    query.trim(),
+    base,
+    base ? `주식회사 ${base}` : "",
+    base ? `(주)${base}` : "",
+  ].filter(Boolean))];
+}
+
 async function collectAllUseful(requests: Promise<ProcurementApiResult>[], controller: AbortController) {
   let firstError: unknown;
   const timeout = setTimeout(() => controller.abort(), PROCUREMENT_SEARCH_GROUP_TIMEOUT_MS);
@@ -336,15 +349,14 @@ async function searchSources(query: string, scope: ProcurementSearchScope, page:
   const controller = new AbortController();
   const requests: Promise<ProcurementApiResult>[] = [];
   if (scope === "all" || scope === "company") {
-    requests.push(...CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(
+    requests.push(...CONTRACT_SOURCES.flatMap((source) => companyNameCandidates(query).flatMap((companyName) => procurementSearchDateWindows(
       source.endpoint,
-      source.endpoint === "getMASCntrctPrdctInfoList" ? PROCUREMENT_COMPANY_HISTORY_WINDOW_COUNT : PROCUREMENT_SEARCH_WINDOW_COUNT,
     ).map((dateParams) => requestProcurementApi({
         ...source,
         key,
-        params: { ...common, ...dateParams, cntrctCorpNm: query },
+        params: { ...common, ...dateParams, cntrctCorpNm: companyName },
         signal: controller.signal,
-      }))));
+      })))));
   }
   if (scope === "all" || scope === "detail") {
     requests.push(...procurementSearchDateWindows("getShoppingMallPrdctInfoList").map((dateParams) => requestProcurementApi({
