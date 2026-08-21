@@ -9,7 +9,7 @@ const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoSe
 const GENERAL_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 const IDENTIFIER_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
-const CACHE_VERSION = "v12-full-spec-history";
+const CACHE_VERSION = "v13-official-registration-status";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
 const PROCUREMENT_SEARCH_WINDOW_COUNT = 3;
 const PROCUREMENT_SPEC_SEARCH_WINDOW_COUNT = 15;
@@ -382,9 +382,7 @@ async function refreshProcurementSearch(options: {
   if (existing) return existing;
   const refresh = (async () => {
     const sourceResults = await searchSources(options.query, options.scope, options.page, options.pageSize, options.key);
-    const mergedItems = mergeSearchItems(sourceResults
-      .flatMap((result) => result.items)
-      .filter((item) => item.saleStatus === "계약 유효" || item.saleStatus === "등록 상품"));
+    const mergedItems = mergeSearchItems(sourceResults.flatMap((result) => result.items));
     const items = mergedItems
       .sort((a, b) => {
         if (options.sort === "priceAsc") return (a.unitPrice ?? Number.MAX_SAFE_INTEGER) - (b.unitPrice ?? Number.MAX_SAFE_INTEGER) || relevance(b, options.query) - relevance(a, options.query);
