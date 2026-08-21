@@ -14190,6 +14190,30 @@ button:is(
 .quotation-product-picker-tools > div { display: flex; gap: 6px; }
 .quotation-product-picker-tools button { min-height: 38px; padding: 0 11px; border: 1px solid #d3ddeb; border-radius: 9px; background: #fff; color: #687792; font-size: 10px; font-weight: 850; cursor: pointer; white-space: nowrap; }
 .quotation-product-picker-tools button.active { border-color: #4967dc; background: #eef2ff; color: #3154c0; }
+.quotation-product-source-tabs { display: flex; gap: 6px; }
+.quotation-product-source-tabs > button { min-height: 32px; padding: 0 12px; border: 1px solid #d3ddeb; border-radius: 9px; background: #fff; color: #687792; font-size: 10px; font-weight: 850; cursor: pointer; }
+.quotation-product-source-tabs > button.active { border-color: #4967dc; background: #eef2ff; color: #3154c0; box-shadow: 0 0 0 2px rgba(73,103,220,.08); }
+.quotation-procurement-search { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; }
+.quotation-procurement-search input { min-width: 0; min-height: 40px; padding: 0 12px; border: 1px solid #ccd7e7; border-radius: 8px; background: #f8faff; color: #283a55; font: inherit; }
+.quotation-procurement-search button { min-height: 40px; padding: 0 14px; border: 1px solid #4967dc; border-radius: 8px; background: #3f5ee6; color: #fff; font-weight: 850; cursor: pointer; white-space: nowrap; }
+.quotation-procurement-search button:disabled { opacity: .55; cursor: wait; }
+.quotation-product-picker-source-row { grid-column: 1 / -1; }
+.quotation-product-picker-search { grid-column: 1 / -1; }
+.quotation-procurement-results { display: grid; gap: 8px; }
+.quotation-procurement-result { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 14px; padding: 12px; border: 1px solid #d7e1ee; border-radius: 10px; background: #fff; }
+.quotation-procurement-result strong { display: block; color: #20324f; font-size: 12px; }
+.quotation-procurement-result p { margin: 4px 0 8px; color: #748198; font-size: 10px; line-height: 1.45; }
+.quotation-procurement-result dl { display: flex; flex-wrap: wrap; gap: 5px 14px; margin: 0; }
+.quotation-procurement-result dl div { display: flex; gap: 5px; font-size: 9px; }
+.quotation-procurement-result dt { color: #8b96a8; }
+.quotation-procurement-result dd { margin: 0; color: #455670; font-weight: 750; }
+.quotation-procurement-result footer { display: flex; min-width: 180px; flex-direction: column; justify-content: center; gap: 6px; }
+.quotation-procurement-result footer span { color: #17825f; font-size: 9px; font-weight: 850; text-align: center; }
+.quotation-procurement-result footer button { min-height: 36px; padding: 0 10px; border: 1px solid #9fb2e5; border-radius: 8px; background: #fff; color: #3158bd; font-size: 9px; font-weight: 850; cursor: pointer; }
+.quotation-procurement-result footer button.primary { border-color: #3f5ee6; background: #3f5ee6; color: #fff; }
+.quotation-procurement-result footer button:disabled { opacity: .55; cursor: wait; }
+.quotation-procurement-error { margin: 0; padding: 10px 12px; border: 1px solid #efbbb4; border-radius: 8px; background: #fff3f1; color: #b7473d; font-size: 10px; }
+.quotation-procurement-more { min-height: 38px; border: 1px solid #b9c7df; border-radius: 8px; background: #f7f9fd; color: #3654a8; font-weight: 850; cursor: pointer; }
 .quotation-product-picker-list { min-height: 0; overflow-y: auto; padding: 8px; overscroll-behavior: contain; }
 .quotation-product-picker-list > button { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 13px; border: 0; border-radius: 9px; background: #fff; color: #253750; text-align: left; cursor: pointer; }
 .quotation-product-picker-list > button:hover,
@@ -14216,6 +14240,11 @@ button:is(
   .quotation-product-picker-tools { grid-template-columns: 1fr; padding: 11px 12px; }
   .quotation-product-picker-tools > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .quotation-product-picker-tools button { min-height: 42px; white-space: normal; }
+  .quotation-product-source-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .quotation-product-source-tabs > button { min-height: 42px; }
+  .quotation-procurement-result { grid-template-columns: 1fr; }
+  .quotation-procurement-result footer { min-width: 0; }
+  .quotation-procurement-result footer button { min-height: 44px; }
   .quotation-product-picker-list { padding: 6px 8px max(12px, env(safe-area-inset-bottom)); }
   .quotation-product-picker-list > button { min-height: 62px; padding: 11px 10px; }
   .quotation-product-picker-list b { white-space: normal; }

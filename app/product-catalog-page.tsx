@@ -1267,6 +1267,7 @@ export default function ProductCatalogPage({
 
       {workspaceTab === "quotations" && <QuotationManagementPage
         institutions={institutions}
+        canRegisterProcurementProduct={isPrimaryOwner === true}
         onOpenOrganization={onOpenOrganization}
         onCountChange={updateQuotationCount}
       />}

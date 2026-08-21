@@ -2,6 +2,7 @@ import {
   accessErrorResponse,
   ensureCollaborationReady,
   requireApprovedMember,
+  requirePrimaryOwner,
 } from "../../../lib/collaboration";
 import {
   PRODUCT_CATALOG,
@@ -17,6 +18,7 @@ import {
 } from "../../../lib/product-vendor-links";
 import { hasProcurementSignal, procurementNumbersFromText, resolveProcurementFeeRate } from "../../../lib/procurement-product";
 import { normalizeProductSupplyType } from "../../../lib/product-supply-classification";
+import { procurementCatalogId, procurementProductIdentity } from "../../../lib/procurement-products";
 
 export const dynamic = "force-dynamic";
 
@@ -78,6 +80,12 @@ function normalizeProduct(
     Number(source.supplierVendorId) > 0
       ? Number(source.supplierVendorId)
       : null;
+  const procurementSupplierName = procurement
+    ? cleanText(source.procurementSupplierName, 300)
+    : "";
+  const procurementUnit = procurement
+    ? cleanText(source.procurementUnit, 40)
+    : "";
   const sourceRow = Math.max(
     1,
     Math.round(Number(source.sourceRow) || index + 1),
@@ -109,6 +117,8 @@ function normalizeProduct(
       supplyType === "partner"
         ? cleanText(source.supplierVendorName, 300)
         : "",
+    procurementSupplierName,
+    procurementUnit,
     procurement,
     procurementChannel,
     procurementNumber,
@@ -148,6 +158,8 @@ function productForStorage(product: ProductCatalogItem) {
     procurementChannel: product.procurementChannel ?? "",
     procurementNumber: product.procurementNumber ?? "",
     procurementFeeRate: product.procurementFeeRate ?? null,
+    procurementSupplierName: product.procurementSupplierName ?? "",
+    procurementUnit: product.procurementUnit ?? "",
   };
 }
 
@@ -357,6 +369,81 @@ export async function GET() {
       await catalogResponse(member.id, settings.products, settings),
       { headers: { "Cache-Control": "no-store" } },
     );
+  } catch (error) {
+    return accessErrorResponse(error);
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const member = await requirePrimaryOwner();
+    const body = (await request.json()) as { product?: unknown };
+    const requested = normalizeProduct(body.product, 0);
+    if (!requested?.procurement || !requested.procurementNumber) {
+      return Response.json({ error: "등록할 조달 물품의 식별번호가 필요합니다." }, { status: 400 });
+    }
+    const identity = procurementProductIdentity(requested.procurementChannel, requested.procurementNumber);
+    if (!identity) {
+      return Response.json({ error: "조달 채널과 식별번호를 확인해 주세요." }, { status: 400 });
+    }
+    requested.id = procurementCatalogId(requested.procurementChannel, requested.procurementNumber);
+    requested.sourceRow = 1;
+    requested.supplyType = "partner";
+    requested.supplierVendorId = null;
+    requested.supplierVendorName = "";
+    requested.commissionRate = null;
+    requested.marginRate = null;
+
+    const d1 = await ensureCollaborationReady();
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const row = await d1
+        .prepare("SELECT value FROM app_settings WHERE key = ?")
+        .bind(SETTING_KEY)
+        .first<{ value: string }>();
+      let current = PRODUCT_CATALOG;
+      if (row?.value) {
+        try {
+          const parsed = normalizeProducts(JSON.parse(row.value));
+          if (parsed.length) current = parsed;
+        } catch {
+          current = PRODUCT_CATALOG;
+        }
+      }
+      const existing = current.find((product) =>
+        procurementProductIdentity(product.procurementChannel, product.procurementNumber) === identity
+      );
+      if (existing) {
+        return Response.json({ product: existing, created: false });
+      }
+      if (current.length >= MAX_PRODUCTS) {
+        return Response.json({ error: `제품은 최대 ${MAX_PRODUCTS.toLocaleString("ko-KR")}개까지 저장할 수 있습니다.` }, { status: 409 });
+      }
+      requested.sourceRow = Math.max(0, ...current.map((product) => product.sourceRow || 0)) + 1;
+      const nextValue = JSON.stringify([...current, requested].map(productForStorage));
+      const write = row?.value
+        ? await d1
+            .prepare(
+              `UPDATE app_settings
+               SET value = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE key = ? AND value = ?
+               RETURNING key`,
+            )
+            .bind(nextValue, member.id, SETTING_KEY, row.value)
+            .run()
+        : await d1
+            .prepare(
+              `INSERT INTO app_settings (key, value, updated_by, updated_at)
+               VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(key) DO NOTHING
+               RETURNING key`,
+            )
+            .bind(SETTING_KEY, nextValue, member.id)
+            .run();
+      if ((write.meta.changes ?? 0) > 0 || write.results.length > 0) {
+        return Response.json({ product: requested, created: true }, { status: 201 });
+      }
+    }
+    return Response.json({ error: "다른 사용자가 제품 목록을 수정 중입니다. 잠시 후 다시 시도해 주세요." }, { status: 409 });
   } catch (error) {
     return accessErrorResponse(error);
   }

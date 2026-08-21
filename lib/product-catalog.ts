@@ -14,6 +14,10 @@ export type ProductCatalogItem = {
   needsReview: boolean;
   supplierVendorId?: number | null;
   supplierVendorName?: string;
+  /** 조달 검색 결과의 공급업체명 스냅샷. 내부 협력사 연결과는 별개입니다. */
+  procurementSupplierName?: string;
+  /** 조달 검색 결과의 단위 스냅샷입니다. */
+  procurementUnit?: string;
   procurement?: boolean;
   procurementChannel?: string;
   procurementNumber?: string;
