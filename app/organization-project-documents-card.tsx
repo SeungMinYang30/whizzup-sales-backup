@@ -85,7 +85,6 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
-  const [previewDocument, setPreviewDocument] = useState<ProjectDocument | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const loadSequenceRef = useRef(0);
 
@@ -225,23 +224,16 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
       const payload = await responsePayload(response);
       if (!response.ok) throw new Error(payload.error || "파일을 삭제하지 못했습니다.");
       setDocuments((current) => current.filter((item) => item.id !== document.id));
-      setPreviewDocument((current) => current?.id === document.id ? null : current);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "파일을 삭제하지 못했습니다.");
     }
   }
 
   function openDocument(document: ProjectDocument) {
-    const previewable = document.mime_type === "application/pdf" || document.mime_type.startsWith("image/");
-    if (previewable) {
-      setPreviewDocument(document);
-      return;
-    }
     window.open(`/api/organization-project-documents?id=${document.id}&preview=1`, "_blank", "noopener,noreferrer");
   }
 
   function closeModal() {
-    setPreviewDocument(null);
     setOpen(false);
   }
 
@@ -292,29 +284,6 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
               )) : <p>{documents.length ? `${documentFilter} 자료가 없습니다.` : "등록된 도면·조감도가 없습니다."}</p>}
             </div>
           </section>
-          {previewDocument ? (
-            <div className="project-documents-preview-shell" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setPreviewDocument(null); }}>
-              <section className="project-documents-preview" role="dialog" aria-modal="true" aria-labelledby="project-document-preview-title">
-                <header>
-                  <div><span className="section-kicker">FILE PREVIEW</span><h3 id="project-document-preview-title">{previewDocument.original_name}</h3><p>{formatBytes(Number(previewDocument.size_bytes) || 0)} · {previewDocument.document_type}</p></div>
-                  <button type="button" aria-label="미리보기 닫기" onClick={() => setPreviewDocument(null)}>×</button>
-                </header>
-                <div className="project-documents-preview-body">
-                  {previewDocument.mime_type.startsWith("image/") ? (
-                    <img src={`/api/organization-project-documents?id=${previewDocument.id}&preview=1`} alt={previewDocument.original_name} />
-                  ) : (
-                    <iframe className="project-documents-preview-frame" src={`/api/organization-project-documents?id=${previewDocument.id}&drivePreview=1`} title={`${previewDocument.original_name} PDF 미리보기`} />
-                  )}
-                </div>
-                <footer>
-                  <span>미리보기가 보이지 않으면 새 탭에서 열어 주세요.</span>
-                  <button type="button" onClick={() => window.open(`/api/organization-project-documents?id=${previewDocument.id}&drivePreview=1`, "_blank", "noopener,noreferrer")}>새 탭에서 열기</button>
-                  <a href={`/api/organization-project-documents?id=${previewDocument.id}&download=1`}>다운로드</a>
-                  <button type="button" className="primary" onClick={() => setPreviewDocument(null)}>닫기</button>
-                </footer>
-              </section>
-            </div>
-          ) : null}
         </div>
       ) : null}
     </Fragment>

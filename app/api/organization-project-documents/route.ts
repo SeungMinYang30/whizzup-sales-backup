@@ -10,7 +10,10 @@ import {
   getDriveFileMetadata,
   GoogleDriveStorageError,
   googleDriveStorageErrorResponse,
+  ensureDrivePath,
   moveDriveFile,
+  organizeDriveFile,
+  removeEmptyDriveFolderChain,
   rollbackDriveMoves,
   safeDriveFolderName,
   uploadDriveFile,
@@ -73,6 +76,25 @@ async function findDocument(id: number) {
   return { d1, row };
 }
 
+async function projectDocumentFolderSegments(
+  d1: Awaited<ReturnType<typeof ensureOrganizationProjectDocumentsReady>>,
+  organization: string,
+  businessRound: number,
+) {
+  const regionRow = await d1.prepare(
+    `SELECT region FROM activities
+     WHERE organization = ? AND business_round = ? AND TRIM(region) <> ''
+     ORDER BY updated_at DESC, id DESC LIMIT 1`,
+  ).bind(organization, businessRound).first<{ region: string }>();
+  return [
+    "01_기관자료",
+    safeDriveFolderName(regionRow?.region, "지역 미분류"),
+    safeDriveFolderName(organization),
+    "도면·조감도",
+    `${businessRound}차 사업`,
+  ];
+}
+
 export async function GET(request: Request) {
   try {
     await requireApprovedMember();
@@ -80,34 +102,28 @@ export async function GET(request: Request) {
     const id = positiveInteger(params.get("id"));
     const isDownload = params.get("download") === "1";
     const isPreview = params.get("preview") === "1";
-    const isDrivePreview = params.get("drivePreview") === "1";
-    if (id && (isDownload || isPreview || isDrivePreview)) {
+    if (id && (isDownload || isPreview)) {
       const { row } = await findDocument(id);
       if (!row || row.archived_at) {
         return Response.json({ error: "도면·조감도 파일을 찾지 못했습니다." }, { status: 404 });
       }
-      if (isDrivePreview && row.mime_type === "application/pdf" && !row.drive_file_id.startsWith("local:")) {
-        return Response.redirect(`https://drive.google.com/file/d/${encodeURIComponent(row.drive_file_id)}/preview`, 302);
-      }
       const previewable = row.mime_type === "application/pdf" || row.mime_type.startsWith("image/");
-      const requestedRange = isPreview || isDrivePreview
+      const requestedRange = isPreview
         ? request.headers.get("range") || undefined
         : undefined;
       const stored = await downloadDriveFile(row.drive_file_id, { range: requestedRange });
       const headers = new Headers({
         "Content-Type": stored.headers.get("Content-Type") || row.mime_type || "application/octet-stream",
-        "Content-Disposition": `${(isPreview || isDrivePreview) && previewable ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(row.original_name)}`,
+        "Content-Disposition": `${isPreview && previewable ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(row.original_name)}`,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
-        "X-Frame-Options": "SAMEORIGIN",
-        "Content-Security-Policy": "frame-ancestors 'self'",
       });
       const contentLength = stored.headers.get("Content-Length");
       const contentRange = stored.headers.get("Content-Range");
       const acceptRanges = stored.headers.get("Accept-Ranges");
       if (contentLength) headers.set("Content-Length", contentLength);
       if (contentRange) headers.set("Content-Range", contentRange);
-      if (acceptRanges || requestedRange || ((isPreview || isDrivePreview) && row.mime_type === "application/pdf")) {
+      if (acceptRanges || requestedRange || (isPreview && row.mime_type === "application/pdf")) {
         headers.set("Accept-Ranges", acceptRanges || "bytes");
       }
       return new Response(stored.body, {
@@ -125,7 +141,33 @@ export async function GET(request: Request) {
        WHERE organization = ? AND business_round = ? AND archived_at IS NULL
        ORDER BY id DESC`,
     ).bind(organization, businessRound).all<OrganizationProjectDocumentRow>();
-    return Response.json({ documents: result.results ?? [] });
+    const documents = result.results ?? [];
+    if (documents.length) {
+      const folderSegments = await projectDocumentFolderSegments(d1, organization, businessRound);
+      const destinationFolderId = await ensureDrivePath(folderSegments);
+      for (const document of documents) {
+        if (document.drive_folder_id === destinationFolderId) continue;
+        const organized = await organizeDriveFile(
+          document.drive_file_id,
+          folderSegments,
+          document.original_name,
+        );
+        await d1.prepare(
+          "UPDATE organization_project_documents SET drive_folder_id = ? WHERE id = ?",
+        ).bind(destinationFolderId, document.id).run();
+        document.drive_folder_id = destinationFolderId;
+        if (!organized.previousParents.includes(destinationFolderId)) {
+          for (const previousParent of organized.previousParents) {
+            await removeEmptyDriveFolderChain(previousParent, [
+              "도면·조감도",
+              `${businessRound}차 사업`,
+              safeDriveFolderName(organization),
+            ]).catch(() => 0);
+          }
+        }
+      }
+    }
+    return Response.json({ documents });
   } catch (error) {
     return googleDriveStorageErrorResponse(error) ?? accessErrorResponse(error);
   }
@@ -140,16 +182,16 @@ export async function POST(request: Request) {
       if (!metadata.valid) {
         return Response.json({ error: projectDocumentUploadHelp }, { status: 400 });
       }
+      const d1 = await ensureOrganizationProjectDocumentsReady();
       const session = await createDriveResumableUpload({
         fileName: metadata.fileName,
         mimeType: metadata.mimeType,
         sizeBytes: metadata.sizeBytes,
-        folderSegments: [
-          "01_기관자료",
-          safeDriveFolderName(metadata.organization),
-          `${metadata.businessRound}차 사업`,
-          "도면·조감도",
-        ],
+        folderSegments: await projectDocumentFolderSegments(
+          d1,
+          metadata.organization,
+          metadata.businessRound,
+        ),
         contextType: "organization-project-document",
         contextId: `${metadata.organization}|${metadata.businessRound}|${metadata.documentType}`,
         createdBy: member.id,
@@ -168,19 +210,14 @@ export async function POST(request: Request) {
       return Response.json({ error: projectDocumentUploadHelp }, { status: 400 });
     }
 
+    const d1 = await ensureOrganizationProjectDocumentsReady();
     const uploaded = await uploadDriveFile({
       file,
-      folderSegments: [
-        "01_기관자료",
-        safeDriveFolderName(organization),
-        `${businessRound}차 사업`,
-        "도면·조감도",
-      ],
+      folderSegments: await projectDocumentFolderSegments(d1, organization, businessRound),
       contextType: "organization-project-document",
       contextId: `${organization}|${businessRound}|${documentType}`,
     });
     uploadedFileId = uploaded.fileId;
-    const d1 = await ensureOrganizationProjectDocumentsReady();
     const row = await d1.prepare(
       `INSERT INTO organization_project_documents
        (organization, business_round, document_type, original_name, drive_file_id, drive_folder_id,

@@ -12,6 +12,9 @@ const [route, card, store, crm, styles] = await Promise.all([
 
 test("도면과 조감도는 기관과 사업 차수별 Google Drive 폴더에만 저장한다", () => {
   assert.match(route, /"01_기관자료"/);
+  assert.match(route, /SELECT region FROM activities/);
+  assert.match(route, /safeDriveFolderName\(regionRow\?\.region, "지역 미분류"\)/);
+  assert.match(route, /safeDriveFolderName\(organization\),\s*"도면·조감도",\s*`\$\{businessRound\}차 사업`/);
   assert.match(route, /`\$\{businessRound\}차 사업`/);
   assert.match(route, /"도면·조감도"/);
   assert.match(route, /createDriveResumableUpload/);
@@ -21,6 +24,9 @@ test("도면과 조감도는 기관과 사업 차수별 Google Drive 폴더에�
   assert.doesNotMatch(route, /writeFile|put\(/);
   assert.match(store, /organization_project_documents/);
   assert.match(store, /organization, business_round, archived_at/);
+  assert.match(route, /organizeDriveFile/);
+  assert.match(route, /removeEmptyDriveFolderChain/);
+  assert.match(route, /UPDATE organization_project_documents SET drive_folder_id/);
 });
 
 test("도면과 조감도 삭제는 원본 제거 대신 99_보관으로 이동한다", () => {
@@ -42,18 +48,12 @@ test("기관 상세 요약 카드에서 사업별 파일을 보고 등록하고 
   assert.match(card, />삭제<\/button>/);
 });
 
-test("PDF와 이미지는 기존 보기 버튼으로 내부 미리보기를 열고 대용량 PDF 구간 요청을 전달한다", () => {
-  assert.match(card, /setPreviewDocument\(document\)/);
-  assert.match(card, /project-documents-preview-frame/);
-  assert.match(card, /drivePreview=1/);
-  assert.match(card, /새 탭에서 열기/);
+test("기존 보기 버튼은 PDF와 이미지를 새 전체 탭에서 열고 구간 요청을 전달한다", () => {
+  assert.match(card, /window\.open\(`\/api\/organization-project-documents\?id=\$\{document\.id\}&preview=1`, "_blank"/);
+  assert.doesNotMatch(card, /project-documents-preview-frame/);
   assert.match(route, /request\.headers\.get\("range"\)/);
-  assert.match(route, /drive\.google\.com\/file\/d\/\$\{encodeURIComponent\(row\.drive_file_id\)\}\/preview/);
   assert.match(route, /Content-Range/);
   assert.match(route, /Accept-Ranges/);
-  assert.match(route, /"X-Frame-Options": "SAMEORIGIN"/);
-  assert.match(route, /"Content-Security-Policy": "frame-ancestors 'self'"/);
-  assert.match(styles, /\.project-documents-preview-shell/);
 });
 
 test("도면과 조감도는 통합본 또는 파일별 종류를 확인해 한 번에 등록한다", () => {

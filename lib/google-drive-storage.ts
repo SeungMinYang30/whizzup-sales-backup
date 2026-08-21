@@ -1150,6 +1150,32 @@ export async function organizeDriveFile(fileId: string, folderSegments: string[]
   }
 }
 
+export async function removeEmptyDriveFolderChain(startFolderId: string, expectedNames: string[]) {
+  let folderId = startFolderId;
+  let removed = 0;
+  for (const expectedName of expectedNames) {
+    if (!folderId) break;
+    const metadata = await getDriveFileMetadata(folderId).catch(() => null);
+    if (
+      !metadata
+      || !isDriveFolder(metadata)
+      || String(metadata.name || "") !== safeDriveFolderName(expectedName)
+      || (await listDriveChildren(folderId)).length
+    ) {
+      break;
+    }
+    const parentId = metadata.parents?.[0] || "";
+    const response = await driveFetch(
+      `${DRIVE_API}/files/${encodeURIComponent(folderId)}?supportsAllDrives=true`,
+      { method: "DELETE" },
+    );
+    if (!response.ok && response.status !== 404) break;
+    removed += 1;
+    folderId = parentId;
+  }
+  return removed;
+}
+
 const REMOVABLE_QUOTATION_FOLDER = /^(?:기관자료 보기_견적서|견적서|참고 원본|\d{4})$/u;
 
 export async function removeEmptyQuotationFolderChain(startFolderId: string) {
