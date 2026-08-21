@@ -139,7 +139,7 @@ export async function POST(request: Request) {
           failures.push({
             quotationId,
             kind: file.kind,
-            error: (error instanceof Error ? error.message : "파일 정리 실패").slice(0, 300),
+            error: `${String(row.organization || "기관 미지정")} · ${Math.max(1, Number(row.business_round) || 1)}차 · ${String(row.quote_number || "번호 미등록")} · ${error instanceof Error ? error.message : "파일 정리 실패"}`.slice(0, 300),
           });
         }
       }

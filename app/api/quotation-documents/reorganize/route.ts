@@ -88,7 +88,7 @@ export async function POST(request: Request) {
           failures.push({
             quotationId: row.id,
             kind: file.kind,
-            error: (error instanceof Error ? error.message : "외부 참고 견적 파일 정리 실패").slice(0, 300),
+            error: `${row.organization} · ${Math.max(1, Number(row.business_round) || 1)}차 · ${row.original_name} · ${error instanceof Error ? error.message : "외부 참고 견적 파일 정리 실패"}`.slice(0, 300),
           });
         }
       }
