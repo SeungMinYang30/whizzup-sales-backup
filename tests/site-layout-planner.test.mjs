@@ -21,19 +21,33 @@ test("기본판은 기관·견적 DB 대신 브라우저에만 저장한다", ()
   assert.doesNotMatch(pageSource, /\/api\//);
 });
 
-test("실 크기와 기본 현장 요소를 편집하고 드래그할 수 있다", () => {
-  for (const label of ["장비", "책상", "출입문", "창문", "기둥", "메모"]) {
+test("실 크기와 CAD 표준 블록을 편집하고 드래그할 수 있다", () => {
+  for (const label of ["단문형", "양문형", "미닫이", "3분할", "4분할", "6분할", "장비", "모듈 책상", "기둥", "현장 메모"]) {
     assert.match(pageSource, new RegExp(`label: "${label}"`));
   }
   assert.match(pageSource, /roomWidth/);
   assert.match(pageSource, /roomHeight/);
+  assert.match(pageSource, /roomCeilingHeight/);
+  assert.match(pageSource, /교실 자동 생성/);
   assert.match(pageSource, /onPointerMove=\{moveDrag\}/);
+  assert.match(pageSource, /snapOpening/);
   assert.match(pageSource, /90° 회전/);
   assert.match(pageSource, /duplicateSelected/);
 });
 
+test("모델 공간과 A3 출력 도면에 CAD 정보 구조를 제공한다", () => {
+  assert.match(pageSource, /A3 출력 미리보기/);
+  assert.match(pageSource, /site-layout-paper-sheet/);
+  assert.match(pageSource, /RC 벽체 t=150/);
+  assert.match(pageSource, /SNAP/);
+  assert.match(pageSource, /ORTHO/);
+  assert.match(pageSource, /OSNAP/);
+  assert.match(pageSource, /A-WALL RC 벽체/);
+  assert.match(stylesSource, /repeating-linear-gradient\(135deg/);
+});
+
 test("모바일에서는 넓은 배치도를 잘라내지 않고 좌우 탐색한다", () => {
-  assert.match(stylesSource, /@media \(max-width: 760px\)[\s\S]*?\.site-layout-canvas-panel \{[\s\S]*?justify-items: start;/);
+  assert.match(stylesSource, /@media \(max-width: 760px\)[\s\S]*?\.site-layout-model-space \{[\s\S]*?justify-items: start;/);
   assert.match(stylesSource, /\.site-layout-board-wrap \{ min-width: 620px; \}/);
-  assert.match(stylesSource, /\.site-layout-canvas-panel \{[\s\S]*?overflow: auto;/);
+  assert.match(stylesSource, /\.site-layout-model-space \{[\s\S]*?overflow: auto;/);
 });
