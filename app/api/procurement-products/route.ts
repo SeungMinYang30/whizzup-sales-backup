@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { accessErrorResponse, ensureCollaborationReady, requireApprovedMember } from "../../../lib/collaboration";
 import { mapProcurementSearchItem, type ProcurementSearchItem } from "../../../lib/procurement-products";
 
@@ -5,8 +6,10 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoService";
-const CACHE_TTL_MS = 30 * 60 * 1_000;
-const CACHE_VERSION = "v6-market-picker";
+const GENERAL_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
+const IDENTIFIER_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
+const CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
+const CACHE_VERSION = "v7-shared-cache-policy";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
 const PROCUREMENT_SEARCH_GROUP_TIMEOUT_MS = 18_000;
 const PROCUREMENT_SEARCH_GRACE_MS = 800;
@@ -19,8 +22,20 @@ type ProcurementFacets = {
   marketplaces: NamedFacet[];
 };
 type ProcurementSearchPayload = { items: ProcurementSearchItem[]; total: number; facets: ProcurementFacets };
-const cache = new Map<string, ProcurementSearchPayload & { expiresAt: number }>();
+type ProcurementCacheEntry = ProcurementSearchPayload & { expiresAt: number; cachedAt: number };
+type SharedCacheResult = ProcurementSearchPayload & { expiresAt: number; cachedAt: number; stale: boolean };
+const cache = new Map<string, ProcurementCacheEntry>();
+const refreshes = new Map<string, Promise<ProcurementSearchPayload & { cachedAt: number }>>();
 let sharedCacheReadyPromise: Promise<void> | null = null;
+
+function normalizedIdentifierQuery(query: string) {
+  const compact = query.replace(/[^0-9]/g, "");
+  return /^\d{8}$/.test(compact) ? compact : "";
+}
+
+function procurementCacheTtl(query: string) {
+  return normalizedIdentifierQuery(query) ? IDENTIFIER_CACHE_TTL_MS : GENERAL_CACHE_TTL_MS;
+}
 
 async function procurementCacheDatabase() {
   if (!sharedCacheReadyPromise) {
@@ -34,6 +49,9 @@ async function procurementCacheDatabase() {
           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )`,
       ).run();
+      await d1.prepare(
+        "DELETE FROM procurement_search_cache WHERE expires_at < ?",
+      ).bind(Date.now() - CACHE_RETENTION_MS).run().catch(() => undefined);
     })().catch((error) => {
       sharedCacheReadyPromise = null;
       throw error;
@@ -43,22 +61,32 @@ async function procurementCacheDatabase() {
   return ensureCollaborationReady();
 }
 
-async function readSharedCache(cacheKey: string): Promise<ProcurementSearchPayload | null> {
+async function readSharedCache(cacheKey: string, ttlMs: number): Promise<SharedCacheResult | null> {
   try {
     const d1 = await procurementCacheDatabase();
     const row = await d1.prepare(
       "SELECT payload, expires_at FROM procurement_search_cache WHERE cache_key = ? LIMIT 1",
     ).bind(cacheKey).first<{ payload: string; expires_at: number }>();
-    if (!row || Number(row.expires_at) <= Date.now()) return null;
+    if (!row) return null;
+    const expiresAt = Number(row.expires_at);
+    const cachedAt = expiresAt - ttlMs;
+    if (!Number.isFinite(expiresAt) || cachedAt <= Date.now() - CACHE_RETENTION_MS) return null;
     const parsed = JSON.parse(String(row.payload || "{}")) as Partial<ProcurementSearchPayload>;
     if (!Array.isArray(parsed.items) || !parsed.facets || !Number.isFinite(Number(parsed.total))) return null;
-    return { items: parsed.items, total: Number(parsed.total), facets: parsed.facets } as ProcurementSearchPayload;
+    return {
+      items: parsed.items,
+      total: Number(parsed.total),
+      facets: parsed.facets,
+      expiresAt,
+      cachedAt,
+      stale: expiresAt <= Date.now(),
+    } as SharedCacheResult;
   } catch {
     return null;
   }
 }
 
-async function writeSharedCache(cacheKey: string, payload: ProcurementSearchPayload) {
+async function writeSharedCache(cacheKey: string, payload: ProcurementSearchPayload, ttlMs: number, cachedAt: number) {
   try {
     const d1 = await procurementCacheDatabase();
     await d1.prepare(
@@ -68,7 +96,7 @@ async function writeSharedCache(cacheKey: string, payload: ProcurementSearchPayl
          payload = excluded.payload,
          expires_at = excluded.expires_at,
          updated_at = CURRENT_TIMESTAMP`,
-    ).bind(cacheKey, JSON.stringify(payload), Date.now() + CACHE_TTL_MS).run();
+    ).bind(cacheKey, JSON.stringify(payload), cachedAt + ttlMs).run();
   } catch {
     // Shared caching is an optimization; the live procurement result remains usable.
   }
@@ -329,6 +357,42 @@ async function searchSources(query: string, page: number, pageSize: number, key:
   return results;
 }
 
+async function refreshProcurementSearch(options: {
+  cacheKey: string;
+  key: string;
+  page: number;
+  pageSize: number;
+  query: string;
+  sort: string;
+  ttlMs: number;
+}) {
+  const existing = refreshes.get(options.cacheKey);
+  if (existing) return existing;
+  const refresh = (async () => {
+    const sourceResults = await searchSources(options.query, options.page, options.pageSize, options.key);
+    const mergedItems = mergeSearchItems(sourceResults.flatMap((result) => result.items));
+    const items = mergedItems
+      .sort((a, b) => {
+        if (options.sort === "priceAsc") return (a.unitPrice ?? Number.MAX_SAFE_INTEGER) - (b.unitPrice ?? Number.MAX_SAFE_INTEGER) || relevance(b, options.query) - relevance(a, options.query);
+        if (options.sort === "priceDesc") return (b.unitPrice ?? -1) - (a.unitPrice ?? -1) || relevance(b, options.query) - relevance(a, options.query);
+        if (options.sort === "recent") return String(b.registrationDate).localeCompare(String(a.registrationDate)) || relevance(b, options.query) - relevance(a, options.query);
+        return relevance(b, options.query) - relevance(a, options.query) || a.name.localeCompare(b.name, "ko");
+      })
+      .slice(0, options.pageSize);
+    const facets = resultFacets(items);
+    // 같은 항목을 여러 공식 검색 필드에서 찾으므로 각 응답의 합계를 더해 중복 과장하지 않는다.
+    const total = Math.max(items.length, ...sourceResults.map((result) => result.total));
+    const payload = { items, total, facets };
+    const cachedAt = Date.now();
+    cache.set(options.cacheKey, { expiresAt: cachedAt + options.ttlMs, cachedAt, ...payload });
+    if (cache.size > 100) cache.delete(cache.keys().next().value as string);
+    await writeSharedCache(options.cacheKey, payload, options.ttlMs, cachedAt);
+    return { ...payload, cachedAt };
+  })().finally(() => refreshes.delete(options.cacheKey));
+  refreshes.set(options.cacheKey, refresh);
+  return refresh;
+}
+
 export async function GET(request: Request) {
   try {
     await requireApprovedMember();
@@ -337,6 +401,7 @@ export async function GET(request: Request) {
     const page = Math.max(1, Math.min(100, Number(url.searchParams.get("page")) || 1));
     const pageSize = Math.max(1, Math.min(120, Number(url.searchParams.get("pageSize")) || 120));
     const sort = String(url.searchParams.get("sort") || "relevance");
+    const forceRefresh = url.searchParams.get("refresh") === "1";
     if (query.length < 2) {
       return Response.json({ error: "업체명, 조달 물품명 또는 식별번호를 두 글자 이상 입력해 주세요." }, { status: 400 });
     }
@@ -345,34 +410,36 @@ export async function GET(request: Request) {
       return Response.json({ error: "조달 검색 인증키가 아직 설정되지 않았습니다. 관리자에게 확인해 주세요.", code: "PROCUREMENT_KEY_MISSING" }, { status: 503 });
     }
     const cacheKey = `${CACHE_VERSION}:${query.toLocaleLowerCase("ko-KR")}:${page}:${pageSize}:${sort}`;
+    const ttlMs = procurementCacheTtl(query);
+    const ttlHours = Math.round(ttlMs / (60 * 60 * 1_000));
     const cached = cache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return Response.json({ items: cached.items, total: cached.total, facets: cached.facets, page, pageSize, cached: true });
+    if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
+      return Response.json({ items: cached.items, total: cached.total, facets: cached.facets, page, pageSize, cached: true, stale: false, cachedAt: cached.cachedAt, cacheSource: "memory", ttlHours });
     }
-    const sharedCached = await readSharedCache(cacheKey);
-    if (sharedCached) {
-      cache.set(cacheKey, { ...sharedCached, expiresAt: Date.now() + CACHE_TTL_MS });
-      return Response.json({ ...sharedCached, page, pageSize, cached: true, cacheSource: "shared" });
+    const sharedCached = forceRefresh ? null : await readSharedCache(cacheKey, ttlMs);
+    if (sharedCached && !sharedCached.stale) {
+      cache.set(cacheKey, {
+        items: sharedCached.items,
+        total: sharedCached.total,
+        facets: sharedCached.facets,
+        expiresAt: sharedCached.expiresAt,
+        cachedAt: sharedCached.cachedAt,
+      });
+      return Response.json({ items: sharedCached.items, total: sharedCached.total, facets: sharedCached.facets, page, pageSize, cached: true, stale: false, cachedAt: sharedCached.cachedAt, cacheSource: "shared", ttlHours });
     }
-
-    const sourceResults = await searchSources(query, page, pageSize, key);
-    const mergedItems = mergeSearchItems(sourceResults.flatMap((result) => result.items));
-    const items = mergedItems
-      .sort((a, b) => {
-        if (sort === "priceAsc") return (a.unitPrice ?? Number.MAX_SAFE_INTEGER) - (b.unitPrice ?? Number.MAX_SAFE_INTEGER) || relevance(b, query) - relevance(a, query);
-        if (sort === "priceDesc") return (b.unitPrice ?? -1) - (a.unitPrice ?? -1) || relevance(b, query) - relevance(a, query);
-        if (sort === "recent") return String(b.registrationDate).localeCompare(String(a.registrationDate)) || relevance(b, query) - relevance(a, query);
-        return relevance(b, query) - relevance(a, query) || a.name.localeCompare(b.name, "ko");
-      })
-      .slice(0, pageSize);
-    const facets = resultFacets(items);
-    // 같은 항목을 여러 공식 검색 필드에서 찾으므로 각 응답의 합계를 더해 중복 과장하지 않는다.
-    const total = Math.max(items.length, ...sourceResults.map((result) => result.total));
-    const payload = { items, total, facets };
-    cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, ...payload });
-    if (cache.size > 100) cache.delete(cache.keys().next().value as string);
-    await writeSharedCache(cacheKey, payload);
-    return Response.json({ ...payload, page, pageSize, cached: false });
+    const refreshOptions = { cacheKey, key, page, pageSize, query, sort, ttlMs };
+    if (sharedCached?.stale) {
+      after(async () => {
+        try {
+          await refreshProcurementSearch(refreshOptions);
+        } catch (error) {
+          console.error("[procurement-products-cache-refresh]", error);
+        }
+      });
+      return Response.json({ items: sharedCached.items, total: sharedCached.total, facets: sharedCached.facets, page, pageSize, cached: true, stale: true, refreshing: true, cachedAt: sharedCached.cachedAt, cacheSource: "shared", ttlHours });
+    }
+    const refreshed = await refreshProcurementSearch(refreshOptions);
+    return Response.json({ ...refreshed, page, pageSize, cached: false, stale: false, cacheSource: forceRefresh ? "refreshed" : "live", ttlHours });
   } catch (error) {
     const accessResponse = accessErrorResponse(error);
     if (accessResponse.status === 401 || accessResponse.status === 403) return accessResponse;

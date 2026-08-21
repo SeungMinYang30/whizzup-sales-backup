@@ -14256,6 +14256,11 @@ button:is(
 .quotation-procurement-result-toolbar { position: sticky; top: 0; z-index: 2; display: flex; min-height: 56px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #dfe5ee; background: rgba(255, 255, 255, .96); }
 .quotation-procurement-result-toolbar b { color: #203653; font-size: 16px; }
 .quotation-procurement-result-toolbar small { color: #78869a; font-size: 13px; }
+.quotation-procurement-cache-status { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: #52705f; font-size: 13px; }
+.quotation-procurement-cache-status.stale { color: #8a6421; }
+.quotation-procurement-cache-status.failed { color: #a34b42; }
+.quotation-procurement-cache-status button { min-height: 28px; padding: 0 9px; border: 1px solid #b9c8e0; border-radius: 7px; background: #fff; color: #3158bd; font-size: 12px; font-weight: 850; cursor: pointer; }
+.quotation-procurement-cache-status button:disabled { opacity: .6; cursor: wait; }
 .quotation-procurement-result-toolbar label { display: flex; align-items: center; gap: 7px; color: #6b7990; font-size: 13px; }
 .quotation-procurement-result-toolbar select { min-height: 38px; padding: 0 28px 0 9px; border: 1px solid #d0d9e7; border-radius: 8px; background: #fff; font-size: 13px; }
 .quotation-procurement-market-empty { display: grid; min-height: 260px; place-content: center; gap: 8px; color: #718098; font-size: 13px; text-align: center; }
@@ -14434,6 +14439,7 @@ button:is(
   .quotation-procurement-result-toolbar { flex-wrap: wrap; padding-block: 7px; }
   .quotation-procurement-result-toolbar > div { width: 100%; }
   .quotation-procurement-result-toolbar small { display: block; margin-top: 2px; }
+  .quotation-procurement-cache-status { align-items: flex-start; flex-direction: column; }
   .quotation-procurement-registration-fields { grid-template-columns: 1fr; }
   .quotation-procurement-registration-fields label.wide { grid-column: auto; }
   .quotation-procurement-registration-fields input { font-size: 16px; }

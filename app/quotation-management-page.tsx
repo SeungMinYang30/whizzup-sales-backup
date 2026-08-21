@@ -165,6 +165,14 @@ type ProductPickerSource = "catalog" | "procurement";
 type ProcurementSort = "relevance" | "priceAsc" | "priceDesc" | "recent";
 type ProcurementFacet = { number: string; name: string; count: number };
 type ProcurementNamedFacet = { name: string; count: number };
+type ProcurementCacheInfo = {
+  cached: boolean;
+  cachedAt: number;
+  cacheSource: string;
+  refreshFailed?: boolean;
+  stale: boolean;
+  ttlHours: number;
+};
 type ProcurementVendorOption = { id: number; companyName: string };
 type ProcurementRegistrationMode = "catalog-only" | "catalog-and-quotation";
 type ProcurementRegistrationDraft = {
@@ -680,6 +688,8 @@ export default function QuotationManagementPage({
   const [procurementTotal, setProcurementTotal] = useState(0);
   const [procurementPage, setProcurementPage] = useState(1);
   const [procurementLoading, setProcurementLoading] = useState(false);
+  const [procurementRefreshing, setProcurementRefreshing] = useState(false);
+  const [procurementCacheInfo, setProcurementCacheInfo] = useState<ProcurementCacheInfo | null>(null);
   const [procurementError, setProcurementError] = useState("");
   const [procurementHasSearched, setProcurementHasSearched] = useState(false);
   const [procurementDetail, setProcurementDetail] = useState<ProcurementSearchItem | null>(null);
@@ -821,6 +831,8 @@ export default function QuotationManagementPage({
     setProcurementTotal(0);
     setProcurementPage(1);
     setProcurementError("");
+    setProcurementRefreshing(false);
+    setProcurementCacheInfo(null);
     setProcurementSort("relevance");
     setProcurementSelectedIdentities([]);
     setProcurementDetailFilters([]);
@@ -1883,6 +1895,7 @@ export default function QuotationManagementPage({
       procurementSearchDebounceRef.current = null;
     }
     setProcurementLoading(false);
+    setProcurementRefreshing(false);
     setProductResultsOpen(false);
     setProcurementError("");
     setProcurementDetail(null);
@@ -1920,6 +1933,7 @@ export default function QuotationManagementPage({
     setProcurementTotal(0);
     setProcurementPage(1);
     setProcurementError("");
+    setProcurementCacheInfo(null);
     setProcurementHasSearched(false);
     setProcurementDetail(null);
     setProcurementSelectedIdentities([]);
@@ -1930,6 +1944,7 @@ export default function QuotationManagementPage({
     setProcurementVisibleCount(30);
     setProcurementQuantities({});
     setProcurementLoading(false);
+    setProcurementRefreshing(false);
     if (value.trim().length >= 2) {
       procurementSearchDebounceRef.current = window.setTimeout(() => {
         procurementSearchDebounceRef.current = null;
@@ -1938,7 +1953,7 @@ export default function QuotationManagementPage({
     }
   }
 
-  async function searchProcurement(page = 1, append = false, requestedSort: ProcurementSort = procurementSort, requestedQuery = procurementQuery) {
+  async function searchProcurement(page = 1, append = false, requestedSort: ProcurementSort = procurementSort, requestedQuery = procurementQuery, forceRefresh = false) {
     if (procurementSearchDebounceRef.current !== null) {
       window.clearTimeout(procurementSearchDebounceRef.current);
       procurementSearchDebounceRef.current = null;
@@ -1953,7 +1968,8 @@ export default function QuotationManagementPage({
     const requestId = procurementSearchRequestRef.current + 1;
     procurementSearchRequestRef.current = requestId;
     procurementSearchAbortRef.current = controller;
-    if (!append) {
+    const keepVisibleResults = forceRefresh && procurementResults.length > 0;
+    if (!append && !keepVisibleResults) {
       setProcurementResults([]);
       setProcurementTotal(0);
       setProcurementPage(1);
@@ -1961,15 +1977,23 @@ export default function QuotationManagementPage({
       setProcurementHasSearched(false);
       setProcurementDetail(null);
     }
-    setProcurementLoading(true);
+    setProcurementLoading(!forceRefresh);
+    setProcurementRefreshing(forceRefresh);
     setProcurementError("");
+    let hasUsableResults = keepVisibleResults;
     try {
-      const response = await fetch(`/api/procurement-products?q=${encodeURIComponent(key)}&page=${page}&pageSize=120&sort=${encodeURIComponent(requestedSort)}`, {
+      const requestUrl = `/api/procurement-products?q=${encodeURIComponent(key)}&page=${page}&pageSize=120&sort=${encodeURIComponent(requestedSort)}`;
+      const response = await fetch(`${requestUrl}${forceRefresh ? "&refresh=1" : ""}`, {
         cache: "no-store",
         signal: controller.signal,
       });
       const payload = await response.json().catch(() => ({})) as {
+        cached?: boolean;
+        cachedAt?: number;
+        cacheSource?: string;
         items?: ProcurementSearchItem[];
+        stale?: boolean;
+        ttlHours?: number;
         total?: number;
         error?: string;
       };
@@ -1984,14 +2008,59 @@ export default function QuotationManagementPage({
       setProcurementSort(requestedSort);
       setProcurementHasSearched(true);
       setProductResultsOpen(true);
+      setProcurementCacheInfo({
+        cached: Boolean(payload.cached),
+        cachedAt: Number(payload.cachedAt) || Date.now(),
+        cacheSource: String(payload.cacheSource || "live"),
+        stale: Boolean(payload.stale),
+        ttlHours: Math.max(1, Number(payload.ttlHours) || 6),
+      });
+      hasUsableResults = true;
+      if (payload.stale && !forceRefresh) {
+        setProcurementLoading(false);
+        setProcurementRefreshing(true);
+        const refreshedResponse = await fetch(`${requestUrl}&refresh=1`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const refreshedPayload = await refreshedResponse.json().catch(() => ({})) as {
+          cached?: boolean;
+          cachedAt?: number;
+          cacheSource?: string;
+          items?: ProcurementSearchItem[];
+          stale?: boolean;
+          ttlHours?: number;
+          total?: number;
+          error?: string;
+        };
+        if (!refreshedResponse.ok) throw new Error(refreshedPayload.error || "최신 조달 정보를 불러오지 못했습니다.");
+        if (requestId !== procurementSearchRequestRef.current) return;
+        const refreshedItems = Array.isArray(refreshedPayload.items) ? refreshedPayload.items : [];
+        setProcurementResults((current) => append
+          ? [...current, ...refreshedItems.filter((item) => !current.some((saved) => saved.identity === item.identity))]
+          : refreshedItems);
+        setProcurementTotal(Math.max(refreshedItems.length, Number(refreshedPayload.total) || 0));
+        setProcurementCacheInfo({
+          cached: Boolean(refreshedPayload.cached),
+          cachedAt: Number(refreshedPayload.cachedAt) || Date.now(),
+          cacheSource: String(refreshedPayload.cacheSource || "refreshed"),
+          stale: false,
+          ttlHours: Math.max(1, Number(refreshedPayload.ttlHours) || 6),
+        });
+      }
     } catch (error) {
       if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
       if (requestId !== procurementSearchRequestRef.current) return;
-      setProcurementError(error instanceof Error ? error.message : "조달 물품을 불러오지 못했습니다.");
+      if (hasUsableResults) {
+        setProcurementCacheInfo((current) => current ? { ...current, refreshFailed: true } : current);
+      } else {
+        setProcurementError(error instanceof Error ? error.message : "조달 물품을 불러오지 못했습니다.");
+      }
     } finally {
       if (requestId === procurementSearchRequestRef.current) {
         procurementSearchAbortRef.current = null;
         setProcurementLoading(false);
+        setProcurementRefreshing(false);
       }
     }
   }
@@ -2250,7 +2319,7 @@ export default function QuotationManagementPage({
             <section><header><b>계약업체</b><span>{procurementFacets.suppliers.length}</span></header>{procurementFacets.suppliers.length ? procurementFacets.suppliers.map((facet) => <label key={facet.name}><input type="checkbox" checked={procurementSupplierFilters.includes(facet.name)} onChange={() => { setProcurementVisibleCount(30); setProcurementSupplierFilters((current) => current.includes(facet.name) ? current.filter((value) => value !== facet.name) : [...current, facet.name]); }} /><span>{facet.name}</span><em>{facet.count}</em></label>) : <p>검색 후 계약업체 필터가 표시됩니다.</p>}</section>
           </aside>
           <main className="quotation-procurement-market-results">
-            <header className="quotation-procurement-result-toolbar"><div>{procurementHasSearched ? <><b>검색결과 {won.format(procurementTotal)}건</b><small> · 현재 필터 {won.format(filteredResults.length)}건 · {won.format(results.length)}건 표시</small></> : <b>나라장터 물품 검색</b>}</div><label>정렬<select value={procurementSort} onChange={(event) => void searchProcurement(1, false, event.target.value as ProcurementSort)} disabled={!procurementHasSearched || procurementLoading}><option value="relevance">관련도순</option><option value="priceAsc">낮은가격순</option><option value="priceDesc">높은가격순</option><option value="recent">최신등록순</option></select></label></header>
+            <header className="quotation-procurement-result-toolbar"><div>{procurementHasSearched ? <><b>검색결과 {won.format(procurementTotal)}건</b><small> · 현재 필터 {won.format(filteredResults.length)}건 · {won.format(results.length)}건 표시</small></> : <b>나라장터 물품 검색</b>}{procurementCacheInfo && <div className={`quotation-procurement-cache-status${procurementCacheInfo.stale ? " stale" : ""}${procurementCacheInfo.refreshFailed ? " failed" : ""}`}><span>{procurementCacheInfo.refreshFailed ? "저장 결과 표시 · 최신 정보 갱신 실패" : procurementRefreshing ? "저장 결과 표시 · 최신 정보 갱신 중…" : procurementCacheInfo.cached ? "공유 캐시 사용" : "나라장터 최신 조회"} · {new Date(procurementCacheInfo.cachedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 갱신 · {procurementCacheInfo.ttlHours}시간 공유</span><button type="button" disabled={procurementLoading || procurementRefreshing} onClick={() => void searchProcurement(1, false, procurementSort, procurementQuery, true)}>{procurementRefreshing ? "갱신 중…" : "최신 정보 새로고침"}</button></div>}</div><label>정렬<select value={procurementSort} onChange={(event) => void searchProcurement(1, false, event.target.value as ProcurementSort)} disabled={!procurementHasSearched || procurementLoading || procurementRefreshing}><option value="relevance">관련도순</option><option value="priceAsc">낮은가격순</option><option value="priceDesc">높은가격순</option><option value="recent">최신등록순</option></select></label></header>
             {procurementError && <p className="quotation-procurement-error">{procurementError}</p>}
             {procurementLoading && !procurementResults.length && <div className="quotation-procurement-market-empty"><b>나라장터 상품을 검색하고 있습니다.</b><span>회사명 검색은 여러 조달 계약 자료를 함께 확인해 조금 걸릴 수 있습니다.</span></div>}
             {!procurementLoading && !procurementHasSearched && <div className="quotation-procurement-market-empty"><b>업체명·제품명·식별번호로 검색해 주세요.</b><span>검색 결과에서 여러 제품을 선택해 한 번에 견적이나 제품 DB에 넣을 수 있습니다.</span></div>}
