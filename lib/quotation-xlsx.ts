@@ -1,5 +1,5 @@
 import { zipSync } from "fflate";
-import { airpassEquipmentKitOutputLines, airpassEquipmentKitTotal, type AirpassEquipmentKit } from "./airpass-equipment-kit";
+import { airpassEquipmentGuidePanelOutputLines, airpassEquipmentKitOutputLines, airpassEquipmentKitTotal, type AirpassEquipmentKit } from "./airpass-equipment-kit";
 import { AIRPASS_COMPANY } from "./airpass-company";
 import {
   formatQuotationItemNameForOutput,
@@ -303,6 +303,7 @@ function equipmentKitSheetXml(input: QuotationWorkbookInput, hasDrawing: boolean
   const equipmentKit = input.equipmentKit!;
   const complimentary = input.equipmentKitComplimentary === true;
   const lines = airpassEquipmentKitOutputLines(equipmentKit);
+  const guidePanels = airpassEquipmentGuidePanelOutputLines(equipmentKit);
   const firstRow = 17;
   const lineRows = lines.map((line, index) => {
     const row = firstRow + index;
@@ -317,7 +318,19 @@ function equipmentKitSheetXml(input: QuotationWorkbookInput, hasDrawing: boolean
     </row>`;
   }).join("");
   const totalRow = firstRow + Math.max(1, lines.length) + 1;
-  const noticeRow = totalRow + 2;
+  const panelHeaderRow = guidePanels.length ? totalRow + 2 : 0;
+  const panelStartRow = guidePanels.length ? panelHeaderRow + 1 : 0;
+  const panelRowCount = Math.ceil(guidePanels.length / 2);
+  const panelRows = guidePanels.length ? Array.from({ length: panelRowCount }, (_, index) => {
+    const row = panelStartRow + index;
+    const left = guidePanels[index * 2];
+    const right = guidePanels[index * 2 + 1];
+    return `<row r="${row}" ht="25" customHeight="1">
+      ${inline(`A${row}`, left.label, 21)}${styledBlanks(row, ["B", "C"], 21)}${inline(`D${row}`, `${left.quantity}개`, 21)}
+      ${right ? `${inline(`E${row}`, right.label, 21)}${styledBlanks(row, ["F", "G"], 21)}${inline(`H${row}`, `${right.quantity}개`, 21)}${inline(`I${row}`, "", 21)}` : styledBlanks(row, ["E", "F", "G", "H", "I"], 21)}
+    </row>`;
+  }).join("") : "";
+  const noticeRow = guidePanels.length ? panelStartRow + panelRowCount + 1 : totalRow + 2;
   const signatureStartRow = noticeRow + 2;
   const signatureEndRow = signatureStartRow + 2;
   const merges = [
@@ -327,6 +340,13 @@ function equipmentKitSheetXml(input: QuotationWorkbookInput, hasDrawing: boolean
     "A12:C12", "D12:F12", "G12:I12", "A14:I14", "B16:C16", "G16:H16",
     ...lines.flatMap((_, index) => [`B${firstRow + index}:C${firstRow + index}`, `G${firstRow + index}:H${firstRow + index}`]),
     `A${totalRow}:F${totalRow}`, `G${totalRow}:I${totalRow}`,
+    ...(guidePanels.length ? [
+      `A${panelHeaderRow}:I${panelHeaderRow}`,
+      ...Array.from({ length: panelRowCount }, (_, index) => {
+        const row = panelStartRow + index;
+        return [`A${row}:C${row}`, `E${row}:G${row}`, `H${row}:I${row}`];
+      }).flat(),
+    ] : []),
     `A${noticeRow}:I${noticeRow}`,
     `A${signatureStartRow}:E${signatureEndRow}`, `F${signatureStartRow}:H${signatureEndRow}`, `I${signatureStartRow}:I${signatureEndRow}`,
   ];
@@ -353,6 +373,7 @@ function equipmentKitSheetXml(input: QuotationWorkbookInput, hasDrawing: boolean
     <row r="16" ht="27" customHeight="1">${inline("A16", "No", 6)}${inline("B16", "품명", 6)}${inline("D16", "수량", 6)}${inline("E16", "단위", 6)}${inline("F16", "단가", 6)}${inline("G16", "금액", 6)}${inline("H16", "", 6)}${inline("I16", "비고", 6)}</row>
     ${lineRows || `<row r="${firstRow}" ht="31" customHeight="1">${inline(`A${firstRow}`, "", 7)}${inline(`B${firstRow}`, "출력할 교구 품목이 없습니다.", 8)}${inline(`C${firstRow}`, "", 8)}${styledBlanks(firstRow, ["D", "E", "F", "G", "H", "I"], 7)}</row>`}
     <row r="${totalRow}" ht="34" customHeight="1">${inline(`A${totalRow}`, complimentary ? "제공 금액" : "합계금액 (VAT 포함)", 16)}${styledBlanks(totalRow, ["B", "C", "D", "E", "F"], 16)}${complimentary ? inline(`G${totalRow}`, "무상 제공", 17) : numeric(`G${totalRow}`, airpassEquipmentKitTotal(equipmentKit), 17)}${styledBlanks(totalRow, ["H", "I"], 17)}</row>
+    ${guidePanels.length ? `<row r="${panelHeaderRow}" ht="25" customHeight="1">${inline(`A${panelHeaderRow}`, "안내판넬 체크", 2)}${styledBlanks(panelHeaderRow, ["B", "C", "D", "E", "F", "G", "H", "I"], 2)}</row>${panelRows}` : ""}
     <row r="${noticeRow}" ht="25" customHeight="1">${inline(`A${noticeRow}`, `${AIRPASS_COMPANY.name} · 본 세부견적은 본 견적서와 함께 제출됩니다.`, 18)}</row>
     <row r="${signatureStartRow}" ht="26" customHeight="1">${inline(`A${signatureStartRow}`, `위와 같이 견적합니다.\n\n${koreanDate(input.quoteDate)}`, 18)}${inline(`F${signatureStartRow}`, `${AIRPASS_COMPANY.name}\n대표이사  ${AIRPASS_COMPANY.representative}`, 18)}${inline(`I${signatureStartRow}`, "", 18)}</row>
     <row r="${signatureStartRow + 1}" ht="26" customHeight="1"/><row r="${signatureEndRow}" ht="26" customHeight="1"/>

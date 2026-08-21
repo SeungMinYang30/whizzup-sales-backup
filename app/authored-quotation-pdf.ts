@@ -1,5 +1,5 @@
 import type { AuthoredQuotation, AuthoredQuotationItem } from "../lib/authored-quotations";
-import { airpassEquipmentKitOutputLines, airpassEquipmentKitTotal } from "../lib/airpass-equipment-kit";
+import { airpassEquipmentGuidePanelOutputLines, airpassEquipmentKitOutputLines, airpassEquipmentKitTotal } from "../lib/airpass-equipment-kit";
 import { fieldInspectionDownloadName, quotationDownloadName, quotationFileStem } from "../lib/quotation-file-name";
 import { AIRPASS_COMPANY } from "../lib/airpass-company";
 import {
@@ -425,7 +425,10 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
   }
   for (const parentItem of quote.items.filter((item) => item.equipmentKit)) {
     const detailLines = airpassEquipmentKitOutputLines(parentItem.equipmentKit);
-    const detailItemsPerPage = 16;
+    const guidePanels = airpassEquipmentGuidePanelOutputLines(parentItem.equipmentKit);
+    // 안내판넬이 있는 마지막 장은 안내판넬·합계·서명 블록 전체가
+    // 페이지 안에 남도록 품목 행 공간을 미리 확보합니다.
+    const detailItemsPerPage = guidePanels.length ? 14 : 16;
     const detailPageCount = Math.max(1, Math.ceil(detailLines.length / detailItemsPerPage));
     for (let detailPageIndex = 0; detailPageIndex < detailPageCount; detailPageIndex += 1) {
       const canvas = document.createElement("canvas");
@@ -523,7 +526,38 @@ async function renderPages(quote: AuthoredQuotationPdfInput) {
         for (const x of columns.slice(1, -1)) { context.beginPath(); context.moveTo(x, y); context.lineTo(x, y + rowHeight); context.stroke(); }
       });
       if (detailPageIndex === detailPageCount - 1) {
-        const totalY = tableTop + 46 + pageLines.length * rowHeight + 24;
+        const tableEndY = tableTop + 46 + pageLines.length * rowHeight;
+        let totalY = tableEndY + 24;
+        if (guidePanels.length) {
+          const panelY = totalY;
+          const panelHeaderHeight = 36;
+          const panelRowHeight = 42;
+          const panelColumnWidth = 548;
+          const panelRows = Math.ceil(guidePanels.length / 2);
+          context.fillStyle = "#17233f";
+          context.fillRect(72, panelY, 1096, panelHeaderHeight);
+          context.fillStyle = "#fff";
+          context.font = '700 16px "Malgun Gothic", "Noto Sans KR", sans-serif';
+          context.textAlign = "left";
+          context.fillText("안내판넬 체크", 88, panelY + 24);
+          guidePanels.forEach((panel, panelIndex) => {
+            const column = panelIndex % 2;
+            const row = Math.floor(panelIndex / 2);
+            const x = 72 + column * panelColumnWidth;
+            const y = panelY + panelHeaderHeight + row * panelRowHeight;
+            context.fillStyle = "#fff9df";
+            context.fillRect(x, y, panelColumnWidth, panelRowHeight);
+            context.strokeStyle = "#cfd8ea";
+            context.strokeRect(x, y, panelColumnWidth, panelRowHeight);
+            drawCell(context, panel.label, x, y, panelColumnWidth - 112, panelRowHeight, { align: "center", maxLines: 1, fontSize: 14 });
+            drawCell(context, `${panel.quantity}개`, x + panelColumnWidth - 112, y, 112, panelRowHeight, { bold: true, align: "center", maxLines: 1, fontSize: 14 });
+            context.beginPath();
+            context.moveTo(x + panelColumnWidth - 112, y);
+            context.lineTo(x + panelColumnWidth - 112, y + panelRowHeight);
+            context.stroke();
+          });
+          totalY = panelY + panelHeaderHeight + panelRows * panelRowHeight + 18;
+        }
         context.fillStyle = "#eaf0ff"; context.fillRect(72, totalY, 1096, 58);
         drawCell(context, "합계금액 (VAT 포함)", 72, totalY, 760, 58, { bold: true, align: "center", maxLines: 1, fontSize: 18 });
         drawCell(context, parentItem.complimentary ? "무상 제공" : `${won.format(airpassEquipmentKitTotal(parentItem.equipmentKit))}원`, 832, totalY, 336, 58, { bold: true, align: "right", maxLines: 1, fontSize: 23 });

@@ -6,9 +6,13 @@ import { register } from "node:module";
 register(new URL("./typescript-resolver.mjs", import.meta.url));
 
 const {
+  AIRPASS_EQUIPMENT_GUIDE_PANEL_DEFINITIONS,
+  airpassEquipmentGuidePanelOutputLines,
+  airpassEquipmentGuidePanels,
   createAirpassEquipmentKitFromPlan,
   defaultAirpassEquipmentKitPlans,
   normalizeAirpassEquipmentKitPlans,
+  normalizeAirpassEquipmentKit,
 } = await import("../lib/airpass-equipment-kit.ts");
 
 const page = await readFile(new URL("../app/quotation-management-page.tsx", import.meta.url), "utf8");
@@ -85,4 +89,32 @@ test("equipment-kit plan persistence is admin-managed and stored in app settings
   assert.match(api, /INSERT INTO app_settings/);
   assert.match(page, /현재 구성 새 기본안 저장/);
   assert.match(page, /기존 견적은 바뀌지 않습니다/);
+});
+
+test("안내판넬은 고정 4종만 저장하고 수량이 있는 항목만 출력한다", () => {
+  assert.deepEqual(
+    AIRPASS_EQUIPMENT_GUIDE_PANEL_DEFINITIONS.map(({ label }) => label),
+    ["키오스크 사용안내", "이용주의사항", "키넥트 사용안내", "스포츠실 사용안내"],
+  );
+  const kit = normalizeAirpassEquipmentKit({
+    kind: "airpass-equipment",
+    plan: "one",
+    lines: [],
+    guidePanels: [
+      { id: "kiosk", quantity: 2 },
+      { id: "precautions", quantity: 0 },
+      { id: "kinect", quantity: -4 },
+      { id: "sports-room", quantity: 3 },
+      { id: "custom-panel", quantity: 99 },
+    ],
+  });
+  assert.ok(kit);
+  assert.deepEqual(airpassEquipmentGuidePanels(kit).map(({ quantity }) => quantity), [2, 0, 0, 3]);
+  assert.deepEqual(
+    airpassEquipmentGuidePanelOutputLines(kit).map(({ label, quantity }) => [label, quantity]),
+    [["키오스크 사용안내", 2], ["스포츠실 사용안내", 3]],
+  );
+  assert.match(page, /고정 4종 · 수량 0은 PDF·Excel 별첨에서 제외/);
+  assert.match(pdf, /안내판넬 체크/);
+  assert.match(styles, /equipment-kit-print-guide-panels[\s\S]*?break-inside:avoid/);
 });

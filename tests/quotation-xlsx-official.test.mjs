@@ -91,6 +91,12 @@ test("할인과 추가비용은 금액이 입력된 견적에만 표시한다", 
 test("교구 견적은 에어패스 공급자 정보와 직인을 사용하고 금액 다음에 비고가 바로 온다", async () => {
   const airpassSealData = new Uint8Array(await readFile(new URL("../public/airpass-seal.png", import.meta.url)));
   const equipmentKit = createAirpassEquipmentKit("one");
+  equipmentKit.guidePanels = [
+    { id: "kiosk", quantity: 1 },
+    { id: "precautions", quantity: 0 },
+    { id: "kinect", quantity: 2 },
+    { id: "sports-room", quantity: 3 },
+  ];
   const workbook = createQuotationWorkbook({
     customerName: "북대초등학교 병설유치원",
     quoteDate: "2026-08-12",
@@ -119,6 +125,14 @@ test("교구 견적은 에어패스 공급자 정보와 직인을 사용하고 �
   assert.match(detailSheet, /<c r="G16"[^>]*>.*금액/s);
   assert.match(detailSheet, /<c r="I16"[^>]*>.*비고/s);
   assert.doesNotMatch(detailSheet, /<c r="J16"/);
+  assert.match(detailSheet, /안내판넬 체크/);
+  assert.match(detailSheet, /키오스크 사용안내/);
+  assert.match(detailSheet, /키넥트 사용안내/);
+  assert.match(detailSheet, /스포츠실 사용안내/);
+  assert.doesNotMatch(detailSheet, /이용주의사항/);
+  assert.match(detailSheet, /1개/);
+  assert.match(detailSheet, /2개/);
+  assert.match(detailSheet, /3개/);
   assert.ok(files["xl/media/airpass-seal.png"]);
   assert.ok(files["xl/drawings/drawing2.xml"]);
 });

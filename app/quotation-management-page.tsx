@@ -40,6 +40,9 @@ import {
 import { directPurchaseLimitWarning, procurementContractWarnings } from "../lib/procurement-contract-warning";
 import { applyCatalogSuppliers } from "../lib/quotation-supplier";
 import {
+  AIRPASS_EQUIPMENT_GUIDE_PANEL_DEFINITIONS,
+  airpassEquipmentGuidePanelOutputLines,
+  airpassEquipmentGuidePanels,
   airpassEquipmentKitOutputLines,
   airpassEquipmentKitTotal,
   createAirpassEquipmentKit,
@@ -1333,10 +1336,10 @@ export default function QuotationManagementPage({
 
   const equipmentKitPrintPages = useMemo(() => {
     if (!draft) return [] as Array<{ item: DraftItem; lines: NonNullable<DraftItem["equipmentKit"]>["lines"]; page: number; pages: number; startIndex: number }>;
-    const itemsPerPage = 16;
     return draft.items.flatMap((item) => {
       const lines = airpassEquipmentKitOutputLines(item.equipmentKit);
       if (!lines.length) return [];
+      const itemsPerPage = airpassEquipmentGuidePanelOutputLines(item.equipmentKit).length ? 14 : 16;
       const chunks = Array.from({ length: Math.ceil(lines.length / itemsPerPage) }, (_, index) => lines.slice(index * itemsPerPage, (index + 1) * itemsPerPage));
       return chunks.map((chunk, index) => ({ item, lines: chunk, page: index + 1, pages: chunks.length, startIndex: index * itemsPerPage }));
     });
@@ -1892,8 +1895,12 @@ export default function QuotationManagementPage({
   }
 
   async function openEquipmentKitEditor(item: DraftItem) {
-    let equipmentKit = item.equipmentKit
-      ? { ...item.equipmentKit, lines: item.equipmentKit.lines.map((line) => ({ ...line })) }
+    let equipmentKit: AirpassEquipmentKit | undefined = item.equipmentKit
+      ? {
+          ...item.equipmentKit,
+          lines: item.equipmentKit.lines.map((line) => ({ ...line })),
+          guidePanels: airpassEquipmentGuidePanels(item.equipmentKit).map((panel) => ({ ...panel })),
+        }
       : undefined;
     const savedQuoteId = draft?.id;
     const savedQuote = savedQuoteId ? quotes.find((quote) => quote.id === savedQuoteId) : undefined;
@@ -1922,6 +1929,7 @@ export default function QuotationManagementPage({
         equipmentKit = {
           kind: "airpass-equipment",
           plan,
+          guidePanels: airpassEquipmentGuidePanels(standard),
           lines: [
             ...parsed.items.map((line, index) => {
               const standardLine = standard.lines.find((candidate) => normalizedEquipmentKitName(candidate.name) === normalizedEquipmentKitName(line.productName));
@@ -1978,10 +1986,26 @@ export default function QuotationManagementPage({
     });
   }
 
+  function updateEquipmentGuidePanelQuantity(id: string, quantity: number) {
+    if (!equipmentKitEditor?.item.equipmentKit) return;
+    const equipmentKit: AirpassEquipmentKit = {
+      ...equipmentKitEditor.item.equipmentKit,
+      guidePanels: airpassEquipmentGuidePanels(equipmentKitEditor.item.equipmentKit).map((panel) => (
+        panel.id === id ? { ...panel, quantity: Math.max(0, Math.round(quantity || 0)) } : panel
+      )),
+    };
+    setEquipmentKitEditor({
+      ...equipmentKitEditor,
+      item: { ...equipmentKitEditor.item, equipmentKit },
+    });
+  }
+
   function selectEquipmentKitPlan(plan: AirpassEquipmentKitPlan) {
     if (!equipmentKitEditor?.item.equipmentKit) return;
     const customLines = equipmentKitEditor.item.equipmentKit.lines.filter((line) => line.custom);
+    const guidePanels = airpassEquipmentGuidePanels(equipmentKitEditor.item.equipmentKit);
     const equipmentKit = createAirpassEquipmentKitFromPlan(plan);
+    equipmentKit.guidePanels = guidePanels.map((panel) => ({ ...panel }));
     const plannedNames = new Set(equipmentKit.lines.map((line) => normalizedEquipmentKitName(line.name)));
     equipmentKit.lines.push(...customLines
       .filter((line) => !plannedNames.has(normalizedEquipmentKitName(line.name)))
@@ -3420,6 +3444,29 @@ export default function QuotationManagementPage({
                 })}</tbody>
               </table>
             </div>
+            <section className="equipment-kit-guide-panels" aria-labelledby="equipment-kit-guide-panels-title">
+              <header>
+                <strong id="equipment-kit-guide-panels-title">안내판넬 체크</strong>
+                <span>고정 4종 · 수량 0은 PDF·Excel 별첨에서 제외</span>
+              </header>
+              <div>
+                {AIRPASS_EQUIPMENT_GUIDE_PANEL_DEFINITIONS.map((definition) => {
+                  const panel = airpassEquipmentGuidePanels(equipmentKitEditor.item.equipmentKit).find(({ id }) => id === definition.id);
+                  return <label key={definition.id}>
+                    <span>{definition.label}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={panel?.quantity ?? 0}
+                      onChange={(event) => updateEquipmentGuidePanelQuantity(definition.id, Number(event.target.value))}
+                      aria-label={`${definition.label} 수량`}
+                    />
+                    <em>개</em>
+                  </label>;
+                })}
+              </div>
+            </section>
             <div className="equipment-kit-total"><span>견적·별첨에 포함되는 교구 합계</span><strong>{won.format(airpassEquipmentKitTotal(equipmentKitEditor.item.equipmentKit))}원</strong></div>
             <footer><button type="button" onClick={closeEquipmentKitEditor}>취소</button><button type="button" className="primary" onClick={applyEquipmentKit}>이 구성으로 견적에 적용</button></footer>
           </section>
@@ -3484,6 +3531,10 @@ export default function QuotationManagementPage({
               <thead><tr><th>No</th><th>품명</th><th>수량</th><th>단위</th><th>단가</th><th>금액</th><th>비고</th></tr></thead>
               <tbody>{kitPage.lines.map((line, lineIndex) => <tr key={line.id}><td>{kitPage.startIndex + lineIndex + 1}</td><td>{line.name}</td><td>{line.quantity}</td><td>{line.unit}</td><td>{kitPage.item.complimentary ? "무상" : `${won.format(line.unitPrice)}원`}</td><td>{kitPage.item.complimentary ? "무상" : `${won.format(line.quantity * line.unitPrice)}원`}</td><td>{kitPage.item.complimentary ? "무상 제공" : ""}</td></tr>)}</tbody>
             </table>
+            {kitPage.page === kitPage.pages && airpassEquipmentGuidePanelOutputLines(kitPage.item.equipmentKit).length > 0 && <section className="equipment-kit-print-guide-panels">
+              <h2>안내판넬 체크</h2>
+              <div>{airpassEquipmentGuidePanelOutputLines(kitPage.item.equipmentKit).map((panel) => <p key={panel.id}><span>{panel.label}</span><b>{panel.quantity}개</b></p>)}</div>
+            </section>}
             {kitPage.page === kitPage.pages && <div className="equipment-kit-print-total"><span>{kitPage.item.complimentary ? "제공 조건" : "합계금액 (VAT 포함)"}</span><strong>{kitPage.item.complimentary ? "무상 제공" : `${won.format(airpassEquipmentKitTotal(kitPage.item.equipmentKit))}원`}</strong></div>}
             <footer className="equipment-kit-print-footer"><span>{AIRPASS_COMPANY.name} · 본 세부견적은 본 견적서와 함께 제출됩니다.</span>{kitPage.page === kitPage.pages && <img src="/airpass-seal.png" alt="에어패스 직인" />}<b>별첨 {kitPageIndex + 1}</b></footer>
           </article>)}

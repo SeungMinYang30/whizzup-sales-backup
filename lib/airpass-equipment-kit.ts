@@ -7,12 +7,27 @@ export type AirpassEquipmentKitLine = {
   custom?: boolean;
 };
 
+export const AIRPASS_EQUIPMENT_GUIDE_PANEL_DEFINITIONS = [
+  { id: "kiosk", label: "키오스크 사용안내" },
+  { id: "precautions", label: "이용주의사항" },
+  { id: "kinect", label: "키넥트 사용안내" },
+  { id: "sports-room", label: "스포츠실 사용안내" },
+] as const;
+
+export type AirpassEquipmentGuidePanelId = typeof AIRPASS_EQUIPMENT_GUIDE_PANEL_DEFINITIONS[number]["id"];
+
+export type AirpassEquipmentGuidePanel = {
+  id: AirpassEquipmentGuidePanelId;
+  quantity: number;
+};
+
 export type AirpassEquipmentKit = {
   kind: "airpass-equipment";
   plan: "one" | "two";
   templateId?: string;
   templateName?: string;
   lines: AirpassEquipmentKitLine[];
+  guidePanels?: AirpassEquipmentGuidePanel[];
 };
 
 export type AirpassEquipmentKitPlan = {
@@ -48,6 +63,39 @@ const safeInteger = (value: unknown) => {
   return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
 };
 
+export function defaultAirpassEquipmentGuidePanels(): AirpassEquipmentGuidePanel[] {
+  return AIRPASS_EQUIPMENT_GUIDE_PANEL_DEFINITIONS.map(({ id }) => ({ id, quantity: 0 }));
+}
+
+export function normalizeAirpassEquipmentGuidePanels(value: unknown): AirpassEquipmentGuidePanel[] {
+  const quantities = new Map<AirpassEquipmentGuidePanelId, number>();
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (!entry || typeof entry !== "object") continue;
+      const source = entry as Record<string, unknown>;
+      const definition = AIRPASS_EQUIPMENT_GUIDE_PANEL_DEFINITIONS.find(({ id }) => id === source.id);
+      if (!definition) continue;
+      quantities.set(definition.id, safeInteger(source.quantity));
+    }
+  }
+  return AIRPASS_EQUIPMENT_GUIDE_PANEL_DEFINITIONS.map(({ id }) => ({
+    id,
+    quantity: quantities.get(id) ?? 0,
+  }));
+}
+
+export function airpassEquipmentGuidePanels(value: AirpassEquipmentKit | undefined) {
+  return normalizeAirpassEquipmentGuidePanels(value?.guidePanels);
+}
+
+export function airpassEquipmentGuidePanelOutputLines(value: AirpassEquipmentKit | undefined) {
+  const quantities = new Map(airpassEquipmentGuidePanels(value).map((panel) => [panel.id, panel.quantity]));
+  return AIRPASS_EQUIPMENT_GUIDE_PANEL_DEFINITIONS.flatMap((definition) => {
+    const quantity = quantities.get(definition.id) ?? 0;
+    return quantity > 0 ? [{ ...definition, quantity }] : [];
+  });
+}
+
 export function isAirpassEquipmentKitProduct(name: string) {
   const compact = name.replace(/\s/g, "").toLocaleLowerCase("ko-KR");
   return compact.endsWith("교구세트") || compact.includes("에어패스교구세트");
@@ -58,6 +106,7 @@ export function createAirpassEquipmentKit(plan: "one" | "two" = "one"): AirpassE
   return {
     kind: "airpass-equipment",
     plan,
+    guidePanels: defaultAirpassEquipmentGuidePanels(),
     lines: BASE_LINES.map((line, index) => ({
       id: `base-${index + 1}`,
       name: line[0],
@@ -110,6 +159,7 @@ export function createAirpassEquipmentKitFromPlan(plan: AirpassEquipmentKitPlan)
     plan: plan.systemPlan ?? "one",
     templateId: plan.id,
     templateName: plan.name,
+    guidePanels: defaultAirpassEquipmentGuidePanels(),
     lines: plan.lines.map((line, index) => ({ ...line, id: line.id || `${plan.id}-${index + 1}` })),
   };
 }
@@ -138,6 +188,7 @@ export function normalizeAirpassEquipmentKit(value: unknown): AirpassEquipmentKi
     plan,
     templateId: safeText(source.templateId, 160) || undefined,
     templateName: safeText(source.templateName, 120) || undefined,
+    guidePanels: normalizeAirpassEquipmentGuidePanels(source.guidePanels),
     lines,
   };
 }

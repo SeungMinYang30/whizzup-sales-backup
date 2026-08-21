@@ -21,9 +21,9 @@ test("기관 상세 일정 분류를 통합 일정 저장값으로 보존한다"
 });
 
 test("기본 교구 세부견적 13개 품목은 PDF와 인쇄에서 한 장에 배치한다", () => {
-  assert.match(quotationPdf, /const detailItemsPerPage = 16/);
+  assert.match(quotationPdf, /const detailItemsPerPage = guidePanels\.length \? 14 : 16/);
   assert.match(quotationPdf, /const rowHeight = pageLines\.length > 13 \? 48 : 54/);
-  assert.match(quotationPage, /const itemsPerPage = 16/);
+  assert.match(quotationPage, /const itemsPerPage = airpassEquipmentGuidePanelOutputLines\(item\.equipmentKit\)\.length \? 14 : 16/);
   assert.match(quotationPage, /startIndex: index \* itemsPerPage/);
   assert.doesNotMatch(quotationPage, /Math\.ceil\(lines\.length \/ 10\)/);
 });
@@ -31,8 +31,7 @@ test("기본 교구 세부견적 13개 품목은 PDF와 인쇄에서 한 장에 
 test("내부 수익표는 모바일 인쇄 DOM 대신 실제 PDF 파일을 새 탭에 연다", () => {
   const openFunction = quotationPage.match(/async function openInternalProfitPdf\(\) \{[\s\S]*?\n  \}/)?.[0] ?? "";
   assert.match(openFunction, /createInternalProfitReportPdf\(input\)/);
-  assert.match(openFunction, /URL\.createObjectURL\(file\)/);
-  assert.match(openFunction, /popup\.location\.replace\(url\)/);
+  assert.match(openFunction, /openPdfBlobInReservedTab\(file, pdfTab\)/);
   assert.doesNotMatch(openFunction, /window\.print|internal-profit-printing/);
   assert.match(quotationPage, />PDF 보기·인쇄</);
 });
