@@ -148,6 +148,8 @@ test("quotation picker supports quote-only and owner-only catalog registration i
   assert.match(quotationSource, />나라장터 검색</);
   assert.match(quotationSource, /"견적에만 넣기"/);
   assert.match(quotationSource, /제품 DB에 등록 후 견적에 넣기/);
+  assert.match(quotationSource, /openProcurementRegistrationReview\(\[item\], "catalog-and-quotation"\)/);
+  assert.match(quotationSource, /제품 DB 등록 후 견적에 넣기/);
   assert.match(quotationSource, /제품 DB에만 등록/);
   assert.match(quotationSource, /productPickerTarget\.kind === "replace"/);
   assert.match(quotationSource, /kind: "insert", index/);
@@ -190,6 +192,9 @@ test("quotation picker supports quote-only and owner-only catalog registration i
   assert.match(globalCssSource, /\.quotation-procurement-market-dialog \{[^}]*width: min\(95vw, 1800px\);[^}]*height: min\(95dvh, 1040px\)/);
   assert.match(globalCssSource, /\.quotation-procurement-result-info h4 \{[^}]*font-size: 17px/);
   assert.match(globalCssSource, /\.quotation-procurement-market-search-area form button \{[^}]*font-size: 16px/);
+  assert.match(globalCssSource, /\.quotation-procurement-result-actions \{[^}]*gap: 9px 10px;[^}]*padding: 4px 0/);
+  assert.match(globalCssSource, /\.quotation-procurement-result-actions button \{[^}]*min-height: 44px;[^}]*padding: 8px 10px/);
+  assert.match(globalCssSource, /button\.catalog-and-quotation/);
   assert.match(globalCssSource, /\.quotation-procurement-cache-status \{/);
   assert.doesNotMatch(globalCssSource, /quotation-procurement-market-filters section:nth-of-type\(2\) \{ display: none/);
   assert.match(catalogRouteSource, /requirePrimaryOwner\(\)/);
