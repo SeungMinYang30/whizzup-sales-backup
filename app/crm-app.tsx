@@ -138,6 +138,7 @@ const InventoryPage = lazy(() => import("./inventory-page"));
 const ConstructionSchedulePage = lazy(() => import("./construction-schedule-page"));
 const ComplexProjectPage = lazy(() => import("./complex-project-page"));
 const ResourceLibraryPage = lazy(() => import("./resource-library-page"));
+const SiteLayoutPlannerPage = lazy(() => import("./site-layout-planner-page"));
 const QuotationDocuments = lazy(() => import("./quotation-documents"));
 const SalesMapPage = lazy(() => import("./sales-map"));
 const HomeCalendar = lazy(() => import("./home-calendar"));
@@ -1144,7 +1145,8 @@ type View =
   | "inventory"
   | "installation-schedule"
   | "quotations"
-  | "integration";
+  | "integration"
+  | "site-layout";
 
 // These screens own their data requests and do not read the shared activity list.
 // Keep this as an explicit opt-out so newly added screens continue to load the full
@@ -1157,6 +1159,7 @@ const standaloneViewsWithoutFullRecords = new Set<View>([
   "accounting",
   "inventory",
   "integration",
+  "site-layout",
 ]);
 
 function viewRequiresFullRecords(view: View) {
@@ -1675,6 +1678,7 @@ const navItems: { id: View; label: string; mark: string }[] = [
   { id: "dashboard", label: "대시보드", mark: "D" },
   { id: "followup", label: "기관·예산 관리", mark: "F" },
   { id: "complex-projects", label: "공간재구조화 사업 관리", mark: "X" },
+  { id: "site-layout", label: "현장 배치도", mark: "L" },
   { id: "products", label: "견적·제품·협력사 관리", mark: "P" },
   { id: "resources", label: "자료실", mark: "R" },
   { id: "map", label: "영업·수주 지도", mark: "M" },
@@ -1704,6 +1708,7 @@ const presenceViewLabels: Record<View, string> = {
   "installation-schedule": "시공·납품 일정",
   quotations: "견적서 관리",
   integration: "관리자 센터 · API·연동",
+  "site-layout": "현장 배치도",
 };
 
 function presenceViewLabel(value: string) {
@@ -1762,6 +1767,7 @@ const availableViews = new Set<View>([
   "installation-schedule",
   "quotations",
   "integration",
+  "site-layout",
 ]);
 const presentationHiddenViews = new Set<View>([
   "records",
@@ -16346,6 +16352,8 @@ export default function CrmApp({
       ? "대시보드"
       : view === "complex-projects"
                 ? "공간재구조화 사업 관리"
+        : view === "site-layout"
+          ? "현장 배치도"
         : view === "resources"
           ? "자료실"
         : view === "records"
@@ -16990,7 +16998,7 @@ export default function CrmApp({
           </div>
         </header>
 
-        <div className={`content ${view === "dashboard" || view === "followup" || view === "map" || view === "budget-institutions" || view === "complex-projects" || view === "resources" || isAdminCenterView || view === "records" || view === "organizations" || view === "awards" || view === "products" || view === "vendors" || view === "accounting" || view === "analytics" || view === "owner-performance" || view === "inventory" ? "content-wide" : ""}`}>
+        <div className={`content ${view === "dashboard" || view === "followup" || view === "map" || view === "budget-institutions" || view === "complex-projects" || view === "site-layout" || view === "resources" || isAdminCenterView || view === "records" || view === "organizations" || view === "awards" || view === "products" || view === "vendors" || view === "accounting" || view === "analytics" || view === "owner-performance" || view === "inventory" ? "content-wide" : ""}`}>
           <div className="page-heading">
             <div>
               <p className="eyebrow">TM · MEETING MANAGEMENT</p>
@@ -17018,6 +17026,8 @@ export default function CrmApp({
                         ? "기관 위치와 진행 상태를 확인하고, 방문할 학교를 선택해 영업 동선을 계획합니다."
                       : view === "complex-projects"
                         ? "큰 사업의 예산·공간·품목·영업보호·분할 납품을 기존 회계와 통계에 연결해 관리합니다."
+                      : view === "site-layout"
+                        ? "현장에서 실 크기를 입력하고 장비·가구·문·창문을 축척에 맞춰 배치합니다."
                       : view === "resources"
                         ? "제안서·매뉴얼·공문·제품 자료를 함께 올리고 게시판처럼 내려받습니다."
                       : view === "lounge"
@@ -17842,7 +17852,13 @@ export default function CrmApp({
             </Suspense>
           )}
 
-          {view === "map" || view === "budget-institutions" || view === "complex-projects" || view === "resources" || view === "lounge" ? null : view === "accounting" ? (
+          {view === "site-layout" && (
+            <Suspense fallback={<DeferredPageFallback />}>
+              <SiteLayoutPlannerPage />
+            </Suspense>
+          )}
+
+          {view === "map" || view === "budget-institutions" || view === "complex-projects" || view === "site-layout" || view === "resources" || view === "lounge" ? null : view === "accounting" ? (
             <Suspense fallback={<DeferredPageFallback />}>
               <AccountingPage
                 key={accountingInitialTab}
