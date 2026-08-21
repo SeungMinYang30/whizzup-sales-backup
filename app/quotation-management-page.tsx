@@ -2610,14 +2610,21 @@ export default function QuotationManagementPage({
     return payload.quotation;
   }
 
-  async function processQuotationFiles(quote: AuthoredQuotation, sourceFile: File | null = null) {
+  async function processQuotationFiles(
+    quote: AuthoredQuotation,
+    sourceFile: File | null = null,
+    protectionWarning = "",
+  ) {
     if (quotationFileJobsRef.current.has(quote.id)) return;
     quotationFileJobsRef.current.add(quote.id);
     try {
       const saved = await storeQuotationFiles(quote, { sourceFile });
-      setMessage(sourceFile
+      const successMessage = sourceFile
         ? "견적 내용과 PDF·Excel, 외부 참고 원본 저장을 완료했습니다."
-        : "견적 내용과 PDF·Excel 저장을 완료했습니다.");
+        : "견적 내용과 PDF·Excel 저장을 완료했습니다.";
+      setMessage(protectionWarning
+        ? `${successMessage} ${protectionWarning}`
+        : successMessage);
       window.dispatchEvent(new CustomEvent("whizzup:quotation-files-updated", {
         detail: { organization: saved.organization, businessRound: saved.businessRound },
       }));
@@ -2629,7 +2636,7 @@ export default function QuotationManagementPage({
             ? { ...item, driveSyncStatus: "error", driveSyncError: text }
             : item
         ));
-        setMessage(`견적 내용은 저장됐지만 PDF·Excel 처리가 필요합니다. ${text}`);
+        setMessage(`견적 내용은 저장됐지만 PDF·Excel 처리가 필요합니다. ${text}${protectionWarning ? ` ${protectionWarning}` : ""}`);
       }
     } finally {
       quotationFileJobsRef.current.delete(quote.id);
@@ -2901,14 +2908,28 @@ export default function QuotationManagementPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...draft, budgets: effectiveBudgets, status: "draft", validateFinal: status === "final" }),
       });
-      const payload = await response.json() as { quotation?: AuthoredQuotation; error?: string };
+      const payload = await response.json() as {
+        quotation?: AuthoredQuotation;
+        protectionSync?: {
+          status?: "synced" | "not_applicable" | "warning";
+          added?: number;
+          warning?: string;
+        };
+        error?: string;
+      };
       if (!response.ok || !payload.quotation) throw new Error(payload.error || "견적서를 저장하지 못했습니다.");
       if (status === "final") {
         const sourceFile = importSourceFile;
+        const protectionWarning = payload.protectionSync?.warning ?? "";
+        const protectionAdded = Number(payload.protectionSync?.added) || 0;
         setQuotes((current) => [payload.quotation!, ...current.filter((quote) => quote.id !== payload.quotation!.id)]);
-        setMessage("견적 내용은 저장됐습니다. PDF·Excel을 안전하게 처리하고 있습니다.");
+        setMessage(protectionWarning
+          ? `견적 내용은 저장됐습니다. ${protectionWarning}`
+          : protectionAdded > 0
+            ? `견적 내용은 저장됐습니다. 영업보호 필요 품목 ${protectionAdded}개도 내 기록 점검에 반영했습니다. PDF·Excel을 처리하고 있습니다.`
+            : "견적 내용은 저장됐습니다. PDF·Excel을 안전하게 처리하고 있습니다.");
         closeEditor();
-        void processQuotationFiles(payload.quotation, sourceFile);
+        void processQuotationFiles(payload.quotation, sourceFile, protectionWarning);
       } else {
         setMessage("임시 저장했습니다.");
         const savedDraft = draftFromQuotation(payload.quotation);

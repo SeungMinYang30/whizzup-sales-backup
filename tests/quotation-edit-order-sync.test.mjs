@@ -29,14 +29,14 @@ test("최종 견적은 같은 번호로 직접 수정하고 기존 출력 파일
   assert.match(store, /crypto\.randomUUID\(\)/);
 });
 
-test("견적 저장은 기관 상세 품목을 직접 변경하지 않는다", async () => {
+test("브라우저 견적 저장 후처리는 기관 상세 품목 API를 중복 호출하지 않는다", async () => {
   const page = await readFile(pagePath, "utf8");
   const saveStart = page.indexOf('async function save(status: "draft" | "final")');
   const exportStart = page.indexOf("async function exportExcel()", saveStart);
   const saveBody = page.slice(saveStart, exportStart);
   assert.doesNotMatch(saveBody, /\/api\/equipment/);
   assert.doesNotMatch(saveBody, /syncQuotationItems|syncConstructionCost/);
-  assert.match(saveBody, /void processQuotationFiles\(payload\.quotation, sourceFile\)/);
+  assert.match(saveBody, /void processQuotationFiles\(payload\.quotation, sourceFile, protectionWarning\)/);
   assert.match(saveBody, /closeEditor\(\)/);
   assert.doesNotMatch(saveBody, /await storeQuotationFiles/);
 });

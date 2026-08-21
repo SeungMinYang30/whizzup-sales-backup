@@ -443,10 +443,10 @@ export async function GET(request: Request) {
       const d1 = await ensureEquipmentReady();
       const items = await d1
         .prepare(
-          `WITH latest_activities AS (
-             SELECT organization, progress_manager,
+           `WITH latest_activities AS (
+             SELECT organization, business_round, progress_manager,
                     ROW_NUMBER() OVER (
-                      PARTITION BY organization
+                      PARTITION BY organization, business_round
                       ORDER BY COALESCE(activity_date, '') DESC, id DESC
                     ) AS row_number
              FROM activities
@@ -456,11 +456,16 @@ export async function GET(request: Request) {
            FROM equipment_items i
            JOIN equipment_projects p ON p.id = i.project_id
            LEFT JOIN latest_activities a
-             ON a.organization = p.organization AND a.row_number = 1
+             ON a.organization = p.organization
+            AND a.business_round = p.business_round
+            AND a.row_number = 1
            WHERE COALESCE(i.protection_status, '신청 필요') <> '신청 완료'
              AND (
                trim(COALESCE(a.progress_manager, '')) = trim(?)
-               OR (trim(COALESCE(a.progress_manager, '')) = '' AND p.created_by = ?)
+               OR (
+                 trim(COALESCE(a.progress_manager, '')) = ''
+                 AND COALESCE(i.created_by, p.created_by) = ?
+               )
              )
            ORDER BY p.updated_at DESC, i.updated_at DESC, i.id DESC`,
         )

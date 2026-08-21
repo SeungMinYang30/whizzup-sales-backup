@@ -26,6 +26,7 @@ import {
   quotationInstitutionFolderSegments,
   quotationSourceFileName,
 } from "../../../lib/quotation-file-name";
+import { syncFinalQuotationProtectionItems } from "../../../lib/quotation-protection-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -250,7 +251,31 @@ export async function POST(request: Request) {
   try {
     const member = await requireApprovedMember();
     const payload = (await request.json()) as Record<string, unknown>;
-    return Response.json({ quotation: await saveAuthoredQuotation(payload, member) });
+    const quotation = await saveAuthoredQuotation(payload, member);
+    let protectionSync:
+      | Awaited<ReturnType<typeof syncFinalQuotationProtectionItems>>
+      | { status: "warning"; added: 0; linked: 0; skipped: 0; projectId: null; warning: string }
+      | undefined;
+    if (quotation.status === "final") {
+      try {
+        protectionSync = await syncFinalQuotationProtectionItems(quotation, member);
+      } catch (error) {
+        console.error("Final quotation protection sync failed", {
+          quotationId: quotation.id,
+          error,
+        });
+        protectionSync = {
+          status: "warning",
+          added: 0,
+          linked: 0,
+          skipped: 0,
+          projectId: null,
+          warning:
+            "견적은 저장됐지만 영업보호 품목 반영을 완료하지 못했습니다. 견적 목록에서 다시 최종 저장하거나 운영자에게 확인해 주세요.",
+        };
+      }
+    }
+    return Response.json({ quotation, protectionSync });
   } catch (error) {
     return accessErrorResponse(error);
   }

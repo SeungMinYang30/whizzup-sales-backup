@@ -1,7 +1,7 @@
 export const VERCEL_SCHEMA_VERSION =
-  "202608210001_construction_manual_sort_order";
+  "202608210002_quotation_protection_links";
 export const VERCEL_PREVIOUS_SCHEMA_VERSION =
-  "202608200001_explicit_award_status";
+  "202608210001_construction_manual_sort_order";
 export const VERCEL_BASE_SCHEMA_VERSION = "202608060007_full_backup_columns";
 
 const CONSTRUCTION_SCHEDULE_DUPLICATE_ARCHIVE_SQL = `
@@ -87,6 +87,21 @@ ALTER TABLE public.budget_name_deleted_audit ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.budget_name_review_exclusions ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.budget_name_deleted_audit FROM anon, authenticated;
 REVOKE ALL ON public.budget_name_review_exclusions FROM anon, authenticated;
+`;
+
+const QUOTATION_PROTECTION_LINK_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS public.quotation_equipment_item_links (
+  quotation_id bigint NOT NULL,
+  quotation_item_key text NOT NULL,
+  equipment_item_id bigint NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (quotation_id, quotation_item_key)
+);
+CREATE INDEX IF NOT EXISTS quotation_equipment_item_links_item_idx
+  ON public.quotation_equipment_item_links (equipment_item_id);
+ALTER TABLE public.quotation_equipment_item_links ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.quotation_equipment_item_links FROM anon, authenticated;
 `;
 
 const COMPLEX_PROJECT_BACKFILL_SQL = `
@@ -476,6 +491,7 @@ ${INSTITUTION_REGISTRY_SCHEMA_SQL}
 ${INSTITUTION_BUSINESS_BUDGETS_SCHEMA_SQL}
 ${CONSTRUCTION_SCHEDULE_DUPLICATE_ARCHIVE_SQL}
 ${BUDGET_NAME_ADMIN_AUDIT_SCHEMA_SQL}
+${QUOTATION_PROTECTION_LINK_SCHEMA_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
@@ -1415,6 +1431,7 @@ ${INSTITUTION_REGISTRY_SCHEMA_SQL}
 ${INSTITUTION_BUSINESS_BUDGETS_SCHEMA_SQL}
 ${CONSTRUCTION_SCHEDULE_DUPLICATE_ARCHIVE_SQL}
 ${BUDGET_NAME_ADMIN_AUDIT_SCHEMA_SQL}
+${QUOTATION_PROTECTION_LINK_SCHEMA_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
@@ -1688,6 +1705,7 @@ ${INSTITUTION_REGISTRY_SCHEMA_SQL}
 ${INSTITUTION_BUSINESS_BUDGETS_SCHEMA_SQL}
 ${CONSTRUCTION_SCHEDULE_DUPLICATE_ARCHIVE_SQL}
 ${BUDGET_NAME_ADMIN_AUDIT_SCHEMA_SQL}
+${QUOTATION_PROTECTION_LINK_SCHEMA_SQL}
 INSERT INTO public.vercel_schema_migrations (version)
 VALUES ('${VERCEL_SCHEMA_VERSION}')
 ON CONFLICT (version) DO NOTHING;
