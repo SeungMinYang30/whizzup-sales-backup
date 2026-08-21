@@ -2156,7 +2156,6 @@ export default function QuotationManagementPage({
       const product = savedProducts.get(item.identity) || existingProcurementProduct(item) || procurementSearchItemToCatalogProduct(item);
       if (selectProductForTarget(product)) {
         setProcurementDetail(null);
-        setMessage(`‘${item.name}’ 조달 물품을 선택한 위치에 적용했습니다.`);
       }
       return;
     }
@@ -2340,7 +2339,9 @@ export default function QuotationManagementPage({
     const selectedSet = new Set(procurementSelectedIdentities);
     const allVisibleSelected = results.length > 0 && results.every((item) => selectedSet.has(item.identity));
     const contextual = productPickerTarget.kind !== "append";
-    const pickerTitle = contextual ? (productPickerTarget.kind === "replace" ? "나라장터 제품으로 변경" : "나라장터 제품 끼워넣기") : "나라장터 종합쇼핑몰 검색";
+    const pickerTitle = contextual ? (productPickerTarget.kind === "replace" ? "나라장터 제품으로 변경" : "나라장터 제품 견적에 넣기") : "나라장터 종합쇼핑몰 검색";
+    const contextualActionLabel = productPickerTarget.kind === "replace" ? "이 제품으로 변경" : "견적에 넣기";
+    const contextualActionHelp = productPickerTarget.kind === "replace" ? "선택한 제품으로 현재 품목을 변경합니다." : "선택한 제품을 현재 품목 위치에 추가합니다.";
     return createPortal(<div className="quotation-procurement-market-modal">
       <section className="quotation-procurement-market-dialog" role="dialog" aria-modal="true" aria-labelledby="procurement-market-title">
         <header className="quotation-procurement-market-header">
@@ -2378,14 +2379,14 @@ export default function QuotationManagementPage({
               const quantity = procurementQuantity(item);
               return <article className={selected ? "selected" : ""} key={item.identity}>
                 <label className="quotation-procurement-result-check"><input type={contextual ? "radio" : "checkbox"} name={contextual ? "procurement-target" : undefined} checked={selected} onChange={() => toggleProcurementSelection(item)} /><span>선택</span></label>
-                <div className="quotation-procurement-result-image">{item.imageUrl ? <img src={item.imageUrl} alt="" referrerPolicy="no-referrer" /> : <span>이미지<br />없음</span>}</div>
+                <div className="quotation-procurement-result-image">{item.imageUrl ? <img src={`/api/procurement-products/image?url=${encodeURIComponent(item.imageUrl)}`} alt={`${item.name} 상품 이미지`} /> : <span>이미지<br />없음</span>}</div>
                 <div className="quotation-procurement-result-info"><div className="quotation-procurement-result-badges"><span>{item.detailClassificationName || item.classificationName || "조달 물품"}</span>{registered && <em>제품 DB 등록됨</em>}</div><h4>{item.name}</h4><p>{item.specification || "규격 정보 미등록"}</p><dl><div><dt>계약업체</dt><dd>{item.supplierName || "미등록"}</dd></div><div><dt>식별번호</dt><dd>{item.procurementNumber}</dd></div><div><dt>계약구분</dt><dd>{item.contractMethod || item.sourceLabel}</dd></div><div><dt>판매상태</dt><dd>{item.saleStatus}</dd></div></dl></div>
                 <div className="quotation-procurement-result-actions">
                   <strong>{item.unitPrice === null ? "가격 정보 없음" : `${won.format(item.unitPrice)}원`}</strong>
                   <small>{item.unit ? `단위 ${item.unit}` : "단위 미등록"}</small>
                   <div className="quotation-procurement-quantity"><button type="button" onClick={() => setProcurementQuantities((current) => ({ ...current, [item.identity]: Math.max(1, quantity - 1) }))}>−</button><input inputMode="numeric" aria-label={`${item.name} 수량`} value={quantity} onChange={(event) => setProcurementQuantities((current) => ({ ...current, [item.identity]: Math.max(1, Math.min(999, Number(event.target.value) || 1)) }))} /><button type="button" onClick={() => setProcurementQuantities((current) => ({ ...current, [item.identity]: Math.min(999, quantity + 1) }))}>+</button></div>
                   <button type="button" onClick={() => setProcurementDetail(item)}>상세보기</button>
-                  <button className="primary" type="button" onClick={() => addProcurementItemsToQuotation([item])}>{contextual ? "이 위치에 적용" : "견적에만 넣기"}</button>
+                  <button className="primary" type="button" onClick={() => addProcurementItemsToQuotation([item])}>{contextual ? contextualActionLabel : "견적에만 넣기"}</button>
                   {canRegisterProcurementProduct && (registered
                     ? <button className="registered" type="button" disabled>제품 DB 등록됨</button>
                     : <>
@@ -2398,7 +2399,7 @@ export default function QuotationManagementPage({
             {(results.length < filteredResults.length || procurementResults.length < procurementTotal) && <button className="quotation-procurement-market-more" type="button" disabled={procurementLoading} onClick={() => { if (results.length < filteredResults.length) setProcurementVisibleCount((current) => current + 30); else void searchProcurement(procurementPage + 1, true).then(() => setProcurementVisibleCount((current) => current + 30)); }}>{procurementLoading ? "불러오는 중…" : results.length < filteredResults.length ? `더 보기 (${won.format(results.length)} / ${won.format(filteredResults.length)})` : "추가 결과 검색"}</button>}
           </main>
         </div>
-        <footer className="quotation-procurement-market-footer"><div><b>{selectedItems.length}개 선택</b><span>{contextual ? "선택한 한 제품을 현재 위치에 적용합니다." : "수량과 세부정보를 확인한 뒤 원하는 방식으로 추가하세요."}</span></div><button type="button" onClick={closeProductPicker}>닫기</button>{selectedItems.length > 0 && <button type="button" onClick={() => addProcurementItemsToQuotation(selectedItems)}>{contextual ? "선택 제품 적용" : "선택 품목 견적에만 넣기"}</button>}{canRegisterProcurementProduct && selectedItems.length > 0 && !contextual && <><button type="button" onClick={() => openProcurementRegistrationReview(selectedItems, "catalog-only")}>제품 DB에만 등록</button><button className="primary" type="button" onClick={() => openProcurementRegistrationReview(selectedItems, "catalog-and-quotation")}>제품 DB에 등록 후 견적에 넣기</button></>}</footer>
+        <footer className="quotation-procurement-market-footer"><div><b>{selectedItems.length}개 선택</b><span>{contextual ? contextualActionHelp : "수량과 세부정보를 확인한 뒤 원하는 방식으로 추가하세요."}</span></div><button type="button" onClick={closeProductPicker}>닫기</button>{selectedItems.length > 0 && <button type="button" onClick={() => addProcurementItemsToQuotation(selectedItems)}>{contextual ? contextualActionLabel : "선택 품목 견적에만 넣기"}</button>}{canRegisterProcurementProduct && selectedItems.length > 0 && !contextual && <><button type="button" onClick={() => openProcurementRegistrationReview(selectedItems, "catalog-only")}>제품 DB에만 등록</button><button className="primary" type="button" onClick={() => openProcurementRegistrationReview(selectedItems, "catalog-and-quotation")}>제품 DB에 등록 후 견적에 넣기</button></>}</footer>
       </section>
       {renderProcurementRegistrationModal()}
     </div>, document.body);
@@ -2411,7 +2412,7 @@ export default function QuotationManagementPage({
       <section role="dialog" aria-modal="true" aria-labelledby="procurement-detail-title" onPointerDown={(event) => event.stopPropagation()}>
         <header><div><small>G2B PRODUCT DETAIL</small><h4 id="procurement-detail-title">나라장터 상품 상세</h4></div><button type="button" onClick={() => setProcurementDetail(null)} aria-label="상세정보 닫기">×</button></header>
         <div className="quotation-procurement-detail-body">
-          {procurementDetail.imageUrl ? <img src={procurementDetail.imageUrl} alt={`${procurementDetail.name} 상품 이미지`} referrerPolicy="no-referrer" /> : <div className="quotation-procurement-detail-image-empty">등록된 상품 이미지가 없습니다.</div>}
+          {procurementDetail.imageUrl ? <img src={`/api/procurement-products/image?url=${encodeURIComponent(procurementDetail.imageUrl)}`} alt={`${procurementDetail.name} 상품 이미지`} /> : <div className="quotation-procurement-detail-image-empty">등록된 상품 이미지가 없습니다.</div>}
           <div><h5>{procurementDetail.name}</h5><p>{procurementDetail.specification || "규격·모델 정보가 제공되지 않았습니다."}</p><dl>
             <div><dt>계약업체</dt><dd>{procurementDetail.supplierName || "정보 없음"}</dd></div>
             <div><dt>제조사</dt><dd>{procurementDetail.manufacturerName || "정보 없음"}</dd></div>

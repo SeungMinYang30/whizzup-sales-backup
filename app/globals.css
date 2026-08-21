@@ -15261,8 +15261,10 @@ button:is(
 .quotation-settlement-output-actions > button { min-height: 42px; border: 1px solid #3157e6; border-radius: 8px; background: #3157e6; color: #fff; font-size: 12px; font-weight: 900; cursor: pointer; }
 .quotation-settlement-output-actions > button + button { background: #fff; color: #3157e6; }
 .quotation-settlement-output-actions > button:disabled { cursor: not-allowed; opacity: .45; }
-.quotation-output-spacing { align-items: stretch; flex-direction: column; gap: 10px; margin: 12px 0 4px; padding: 13px; }
-.quotation-output-spacing > div:last-child { width: 100%; justify-content: space-between; padding-top: 9px; border-top: 1px solid #e0e6f1; }
+.quotation-output-spacing { align-items: stretch; flex-direction: column; gap: 13px; margin: 14px 0 8px; padding: 16px 14px 14px; }
+.quotation-output-spacing > div:first-child { gap: 6px; }
+.quotation-output-spacing > div:last-child { width: 100%; justify-content: space-between; padding-top: 12px; border-top: 1px solid #e0e6f1; }
+.quotation-output-spacing button { width: 34px; height: 34px; }
 .quotation-output-spacing b { flex: 1; }
 
 @media (max-width: 700px) {
@@ -15279,8 +15281,8 @@ button:is(
   .quotation-output-menu-settlement > .quotation-output-menu-panel,
   .quotation-output-menu-settlement:not([open]) > .quotation-output-menu-panel { position: static; display: grid; width: 100%; min-width: 0; gap: 8px; padding: 0; border: 0; background: transparent; box-shadow: none; }
   .quotation-output-menu-settlement .quotation-output-menu-panel > button { min-height: 42px; justify-content: center; text-align: center; }
-  .quotation-output-spacing { align-items: stretch; flex-direction: column; gap: 10px; margin: 12px 0 4px; padding: 13px; }
-  .quotation-output-spacing > div:last-child { width: 100%; justify-content: space-between; padding-top: 9px; border-top: 1px solid #e0e6f1; }
+  .quotation-output-spacing { align-items: stretch; flex-direction: column; gap: 13px; margin: 14px 0 8px; padding: 16px 14px 14px; }
+  .quotation-output-spacing > div:last-child { width: 100%; justify-content: space-between; padding-top: 12px; border-top: 1px solid #e0e6f1; }
   .quotation-output-spacing b { flex: 1; }
 }
 
@@ -15406,8 +15408,8 @@ button:is(
 
 .project-documents-modal{
   display:flex;
-  width:min(780px,100%);
-  max-height:min(760px,calc(100dvh - 40px));
+  width:min(920px,100%);
+  max-height:min(860px,calc(100dvh - 40px));
   flex-direction:column;
   overflow:hidden;
   border:1px solid #d2dceb;
@@ -15428,14 +15430,39 @@ button:is(
 .project-documents-modal>header h2{margin:4px 0 0;color:#172743;font-size:24px}
 .project-documents-modal>header p{margin:6px 0 0;color:#728198;font-size:12px}
 .project-documents-modal>header>button{width:38px;height:38px;border:1px solid #d2dceb;border-radius:9px;background:#fff;color:#62718a;font-size:24px}
-.project-documents-upload{display:grid;grid-template-columns:180px minmax(0,1fr);gap:12px;padding:18px 22px 10px}
+.project-documents-upload{display:grid;grid-template-columns:minmax(0,1fr) 230px;align-items:end;gap:16px;padding:18px 22px 12px}
+.project-documents-upload>div{display:grid;gap:5px;color:#42536d}
+.project-documents-upload>div b{font-size:14px}
+.project-documents-upload>div span{font-size:11px;line-height:1.5}
 .project-documents-upload>label{display:grid;gap:6px;color:#42536d;font-size:11px;font-weight:850}
 .project-documents-upload select{min-height:40px;border:1px solid #cbd6e6;border-radius:9px;background:#fff;padding:0 10px;color:#273951;font:inherit}
 .project-documents-file input{position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none}
 .project-documents-file span{display:flex;min-height:40px;align-items:center;justify-content:center;border:1px solid #3157e6;border-radius:9px;background:#3157e6;color:#fff;cursor:pointer}
+.project-documents-queue{margin:0 22px 14px;overflow:hidden;border:1px solid #d5dfed;border-radius:11px;background:#f8faff}
+.project-documents-queue>header{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;border-bottom:1px solid #dce4ef;background:#eef3ff}
+.project-documents-queue>header>div{display:grid;gap:3px}
+.project-documents-queue>header b{color:#263b5f;font-size:13px}
+.project-documents-queue>header span{color:#718099;font-size:10px}
+.project-documents-queue>header button{min-height:38px;padding:0 13px;border:1px solid #3157e6;border-radius:8px;background:#3157e6;color:#fff;font-size:11px;font-weight:850}
+.project-documents-queue>header button:disabled{opacity:.55}
+.project-documents-queue>div{max-height:230px;overflow:auto}
+.project-documents-queue article{display:grid;grid-template-columns:minmax(0,1fr) 190px 54px;align-items:center;gap:10px;padding:10px 12px;border-top:1px solid #e0e6ef}
+.project-documents-queue article:first-child{border-top:0}
+.project-documents-queue article.error{background:#fff5f3}
+.project-documents-queue article>div{display:grid;min-width:0;gap:3px}
+.project-documents-queue article strong{overflow:hidden;color:#263750;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+.project-documents-queue article small{color:#7a879b;font-size:9px;line-height:1.4}
+.project-documents-queue article.error small{color:#b64a40}
+.project-documents-queue article select{min-width:0;min-height:36px;border:1px solid #cbd6e6;border-radius:8px;background:#fff;padding:0 8px;color:#34465f;font-size:11px}
+.project-documents-queue article button{min-height:34px;border:1px solid #d0d9e6;border-radius:7px;background:#fff;color:#64738a;font-size:10px;font-weight:800}
 .project-documents-storage-note{margin:0 22px 12px;color:#6d7d94;font-size:10px;line-height:1.55}
+.project-documents-success{margin:0 22px 12px;padding:10px 12px;border:1px solid #a9d8c8;border-radius:9px;background:#effaf6;color:#167357;font-size:11px;font-weight:750}
 .project-documents-error{margin:0 22px 12px;padding:10px 12px;border:1px solid #efb3ad;border-radius:9px;background:#fff3f1;color:#b53d32;font-size:11px;font-weight:750}
-.project-documents-list{min-height:170px;overflow-y:auto;padding:0 22px 22px;overscroll-behavior:contain}
+.project-documents-filters{display:flex;gap:7px;margin:0 22px 12px;overflow-x:auto;padding-bottom:2px}
+.project-documents-filters button{min-height:34px;padding:0 12px;border:1px solid #d3ddeb;border-radius:999px;background:#fff;color:#66758c;font-size:10px;font-weight:850;white-space:nowrap}
+.project-documents-filters button.active{border-color:#3157e6;background:#3157e6;color:#fff}
+.project-documents-filters button b{margin-left:3px}
+.project-documents-list{min-height:170px;flex:1 1 170px;overflow-y:auto;padding:0 22px 22px;overscroll-behavior:contain}
 .project-documents-list>p{margin:0;padding:36px 14px;border:1px dashed #cad5e5;border-radius:10px;color:#7c899d;text-align:center}
 .project-documents-list article{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 0;border-top:1px solid #e2e8f1}
 .project-documents-list article>div:first-child{display:grid;min-width:0;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:3px 9px}
@@ -15580,8 +15607,14 @@ button:is(
   .project-documents-modal-shell{align-items:flex-end;padding:0}
   .project-documents-modal{width:100%;max-height:92dvh;border-radius:18px 18px 0 0}
   .project-documents-modal>header{padding:16px}
-  .project-documents-upload{grid-template-columns:1fr 1fr;padding:14px 16px 9px}
-  .project-documents-storage-note,.project-documents-error{margin-right:16px;margin-left:16px}
+  .project-documents-upload{grid-template-columns:1fr;padding:14px 16px 11px}
+  .project-documents-queue{margin-right:16px;margin-left:16px}
+  .project-documents-queue>header{align-items:stretch;flex-direction:column}
+  .project-documents-queue>header button{width:100%}
+  .project-documents-queue article{grid-template-columns:minmax(0,1fr) auto}
+  .project-documents-queue article>div{grid-column:1/-1}
+  .project-documents-queue article select{width:100%}
+  .project-documents-storage-note,.project-documents-success,.project-documents-error,.project-documents-filters{margin-right:16px;margin-left:16px}
   .project-documents-list{padding-right:16px;padding-left:16px}
   .project-documents-list article{align-items:flex-start;flex-direction:column}
   .project-documents-list article>div:last-child{width:100%}

@@ -5,6 +5,7 @@ import ts from "typescript";
 
 const librarySource = await readFile(new URL("../lib/procurement-products.ts", import.meta.url), "utf8");
 const routeSource = await readFile(new URL("../app/api/procurement-products/route.ts", import.meta.url), "utf8");
+const imageRouteSource = await readFile(new URL("../app/api/procurement-products/image/route.ts", import.meta.url), "utf8");
 const catalogRouteSource = await readFile(new URL("../app/api/product-catalog/route.ts", import.meta.url), "utf8");
 const backupSource = await readFile(new URL("../lib/backup-store.ts", import.meta.url), "utf8");
 const quotationSource = await readFile(new URL("../app/quotation-management-page.tsx", import.meta.url), "utf8");
@@ -44,6 +45,15 @@ test("procurement result mapping exposes the fields used by the detailed product
   assert.equal(item.contractSequence, "2");
   assert.equal(item.saleStatus, "계약 유효");
   assert.equal(item.sourceUrl, "https://goods.g2b.go.kr/search/productSearchView.do?goodsClsfcNo=12345678&goodsIdntfcNo=24563902");
+});
+
+test("procurement images use an authenticated same-origin proxy on desktop and mobile", () => {
+  assert.match(quotationSource, /\/api\/procurement-products\/image\?url=\$\{encodeURIComponent\(item\.imageUrl\)\}/);
+  assert.match(quotationSource, /\/api\/procurement-products\/image\?url=\$\{encodeURIComponent\(procurementDetail\.imageUrl\)\}/);
+  assert.match(imageRouteSource, /requireApprovedMember\(\)/);
+  assert.match(imageRouteSource, /hostname\.endsWith\("\.g2b\.go\.kr"\)/);
+  assert.match(imageRouteSource, /contentType\.startsWith\("image\/"\)/);
+  assert.match(imageRouteSource, /MAX_IMAGE_BYTES/);
 });
 
 test("contract results use their detailed specification as the visible product name", () => {
@@ -147,6 +157,10 @@ test("official procurement search stays server-only and requires an approved mem
 test("quotation picker supports quote-only and owner-only catalog registration in append insert and replace flows", () => {
   assert.match(quotationSource, />나라장터 검색</);
   assert.match(quotationSource, /"견적에만 넣기"/);
+  assert.match(quotationSource, /나라장터 제품 견적에 넣기/);
+  assert.match(quotationSource, /productPickerTarget\.kind === "replace" \? "이 제품으로 변경" : "견적에 넣기"/);
+  assert.match(quotationSource, /선택한 제품을 현재 품목 위치에 추가합니다/);
+  assert.doesNotMatch(quotationSource, /이 위치에 적용|선택 제품 적용|나라장터 제품 끼워넣기/);
   assert.match(quotationSource, /제품 DB에 등록 후 견적에 넣기/);
   assert.match(quotationSource, /openProcurementRegistrationReview\(\[item\], "catalog-and-quotation"\)/);
   assert.match(quotationSource, /제품 DB 등록 후 견적에 넣기/);

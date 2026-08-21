@@ -15,7 +15,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const allowedKinds = new Set(["도면", "조감도", "기타"]);
+const allowedKinds = new Set(["도면", "조감도", "통합본", "기타"]);
 const allowedExtensions = new Set(["pdf", "jpg", "jpeg", "png", "webp", "dwg", "dxf", "zip", "ppt", "pptx"]);
 
 function positiveInteger(value: unknown) {

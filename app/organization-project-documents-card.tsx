@@ -17,12 +17,39 @@ type Props = {
   businessRound: number;
 };
 
+type PendingProjectDocument = {
+  key: string;
+  file: File;
+  documentType: string;
+  status: "pending" | "uploading" | "uploaded" | "error";
+  error?: string;
+};
+
 const acceptedFiles = ".pdf,.jpg,.jpeg,.png,.webp,.dwg,.dxf,.zip,.ppt,.pptx";
+const documentTypes = [
+  { value: "도면", label: "도면" },
+  { value: "조감도", label: "조감도" },
+  { value: "통합본", label: "도면·조감도 통합본" },
+  { value: "기타", label: "기타" },
+];
+const documentFilters = ["전체", "도면", "조감도", "통합본", "기타"] as const;
 
 function formatBytes(value: number) {
   if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)}MB`;
   if (value >= 1024) return `${Math.round(value / 1024)}KB`;
   return `${value}B`;
+}
+
+function pendingDocumentKey(file: File) {
+  return `${file.name}|${file.size}|${file.lastModified}`;
+}
+
+function suggestedDocumentType(file: File) {
+  const name = file.name.toLocaleLowerCase("ko-KR");
+  if (name.includes("통합") || (name.includes("도면") && name.includes("조감"))) return "통합본";
+  if (name.includes("조감") || name.includes("투시") || name.includes("렌더")) return "조감도";
+  if (name.includes("도면") || name.includes("평면") || name.includes("입면") || name.includes("배치")) return "도면";
+  return "통합본";
 }
 
 async function responsePayload(response: Response) {
@@ -32,7 +59,9 @@ async function responsePayload(response: Response) {
 export default function OrganizationProjectDocumentsCard({ organization, businessRound }: Props) {
   const [open, setOpen] = useState(false);
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
-  const [documentType, setDocumentType] = useState("도면");
+  const [pendingDocuments, setPendingDocuments] = useState<PendingProjectDocument[]>([]);
+  const [documentFilter, setDocumentFilter] = useState<(typeof documentFilters)[number]>("전체");
+  const [uploadSummary, setUploadSummary] = useState("");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -67,29 +96,56 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
     };
   }, [loadDocuments]);
 
-  async function uploadFiles(files: FileList | null) {
-    const selected = files ? Array.from(files).slice(0, 10) : [];
+  function queueFiles(files: FileList | null) {
+    const selected = files ? Array.from(files) : [];
+    if (!selected.length || uploading) return;
+    const existing = new Set(pendingDocuments.map((entry) => entry.key));
+    const additions = selected
+      .filter((file) => !existing.has(pendingDocumentKey(file)))
+      .map((file) => ({
+        key: pendingDocumentKey(file),
+        file,
+        documentType: suggestedDocumentType(file),
+        status: "pending" as const,
+      }));
+    const next = [...pendingDocuments, ...additions];
+    setPendingDocuments(next.slice(0, 10));
+    setUploadSummary("");
+    setError(next.length > 10 ? "한 번에 최대 10개 파일까지 등록할 수 있습니다." : "");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  async function uploadFiles() {
+    const selected = pendingDocuments.filter((entry) => entry.status !== "uploaded");
     if (!selected.length || uploading) return;
     setUploading(true);
     setError("");
-    try {
-      for (const file of selected) {
+    setUploadSummary("");
+    let uploadedCount = 0;
+    let failedCount = 0;
+    for (const entry of selected) {
+      setPendingDocuments((current) => current.map((item) => item.key === entry.key ? { ...item, status: "uploading", error: undefined } : item));
+      try {
         const form = new FormData();
         form.set("organization", organization);
         form.set("businessRound", String(businessRound));
-        form.set("documentType", documentType);
-        form.set("file", file);
+        form.set("documentType", entry.documentType);
+        form.set("file", entry.file);
         const response = await fetch("/api/organization-project-documents", { method: "POST", body: form });
         const payload = await responsePayload(response);
-        if (!response.ok) throw new Error(payload.error || `${file.name} 파일을 저장하지 못했습니다.`);
+        if (!response.ok) throw new Error(payload.error || `${entry.file.name} 파일을 저장하지 못했습니다.`);
+        uploadedCount += 1;
+        setPendingDocuments((current) => current.map((item) => item.key === entry.key ? { ...item, status: "uploaded", error: undefined } : item));
+      } catch (caught) {
+        failedCount += 1;
+        const message = caught instanceof Error ? caught.message : "파일을 저장하지 못했습니다.";
+        setPendingDocuments((current) => current.map((item) => item.key === entry.key ? { ...item, status: "error", error: message } : item));
       }
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      await loadDocuments();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "파일을 저장하지 못했습니다.");
-    } finally {
-      setUploading(false);
     }
+    if (uploadedCount) await loadDocuments();
+    setPendingDocuments((current) => current.filter((item) => item.status !== "uploaded"));
+    setUploadSummary(`${uploadedCount}개 파일을 등록했습니다.${failedCount ? ` 실패 ${failedCount}개는 목록에서 확인 후 다시 등록해 주세요.` : ""}`);
+    setUploading(false);
   }
 
   async function archiveDocument(document: ProjectDocument) {
@@ -104,6 +160,10 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
       setError(caught instanceof Error ? caught.message : "파일을 보관하지 못했습니다.");
     }
   }
+
+  const visibleDocuments = documentFilter === "전체"
+    ? documents
+    : documents.filter((document) => document.document_type === documentFilter);
 
   return (
     <Fragment>
@@ -121,18 +181,31 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
               <button type="button" aria-label="닫기" onClick={() => setOpen(false)}>×</button>
             </header>
             <div className="project-documents-upload">
-              <label>자료 종류<select value={documentType} onChange={(event) => setDocumentType(event.target.value)}><option>도면</option><option>조감도</option><option>기타</option></select></label>
-              <label className="project-documents-file">파일 선택<input ref={fileInputRef} type="file" multiple accept={acceptedFiles} disabled={uploading} onChange={(event) => void uploadFiles(event.target.files)} /><span>{uploading ? "Google Drive에 저장 중…" : "+ 파일 등록"}</span></label>
+              <div><b>도면·조감도 한 번에 등록</b><span>통합 파일 한 개 또는 서로 다른 파일을 최대 10개까지 함께 선택하세요.</span></div>
+              <label className="project-documents-file">파일 선택<input ref={fileInputRef} type="file" multiple accept={acceptedFiles} disabled={uploading} onChange={(event) => queueFiles(event.target.files)} /><span>{pendingDocuments.length ? "+ 파일 더 선택" : "+ 파일 여러 개 선택"}</span></label>
             </div>
+            {pendingDocuments.length ? <div className="project-documents-queue">
+              <header><div><b>등록 대기 {pendingDocuments.length}개</b><span>파일마다 자료 종류를 확인해 주세요.</span></div><button type="button" disabled={uploading} onClick={() => void uploadFiles()}>{uploading ? "Google Drive에 등록 중…" : `선택 파일 ${pendingDocuments.length}개 등록`}</button></header>
+              <div>{pendingDocuments.map((entry) => <article key={entry.key} className={entry.status}>
+                <div><strong>{entry.file.name}</strong><small>{formatBytes(entry.file.size)}{entry.error ? ` · ${entry.error}` : entry.status === "uploading" ? " · 등록 중…" : ""}</small></div>
+                <select aria-label={`${entry.file.name} 자료 종류`} value={entry.documentType} disabled={uploading} onChange={(event) => setPendingDocuments((current) => current.map((item) => item.key === entry.key ? { ...item, documentType: event.target.value, status: "pending", error: undefined } : item))}>{documentTypes.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select>
+                <button type="button" disabled={uploading} aria-label={`${entry.file.name} 선택 해제`} onClick={() => setPendingDocuments((current) => current.filter((item) => item.key !== entry.key))}>제외</button>
+              </article>)}</div>
+            </div> : null}
             <small className="project-documents-storage-note">Google Drive의 기관명 / 사업 차수 / 도면·조감도 폴더에만 저장합니다. 삭제한 파일은 99_보관으로 이동합니다.</small>
+            {uploadSummary ? <div className="project-documents-success" role="status">{uploadSummary}</div> : null}
             {error ? <div className="project-documents-error" role="alert">{error}</div> : null}
+            {documents.length ? <nav className="project-documents-filters" aria-label="도면·조감도 자료 필터">{documentFilters.map((filter) => {
+              const count = filter === "전체" ? documents.length : documents.filter((document) => document.document_type === filter).length;
+              return <button key={filter} type="button" className={documentFilter === filter ? "active" : ""} onClick={() => setDocumentFilter(filter)}>{filter} <b>{count}</b></button>;
+            })}</nav> : null}
             <div className="project-documents-list">
-              {loading ? <p>파일을 불러오는 중입니다.</p> : documents.length ? documents.map((document) => (
+              {loading ? <p>파일을 불러오는 중입니다.</p> : visibleDocuments.length ? visibleDocuments.map((document) => (
                 <article key={document.id}>
                   <div><b>{document.document_type}</b><strong>{document.original_name}</strong><small>{formatBytes(Number(document.size_bytes) || 0)} · {document.created_by_name || "등록자 미상"}</small></div>
                   <div><button type="button" onClick={() => window.open(`/api/organization-project-documents?id=${document.id}&preview=1`, "_blank", "noopener,noreferrer")}>보기</button><a href={`/api/organization-project-documents?id=${document.id}&download=1`}>다운로드</a><button type="button" className="danger" onClick={() => void archiveDocument(document)}>보관</button></div>
                 </article>
-              )) : <p>등록된 도면·조감도가 없습니다.</p>}
+              )) : <p>{documents.length ? `${documentFilter} 자료가 없습니다.` : "등록된 도면·조감도가 없습니다."}</p>}
             </div>
           </section>
         </div>

@@ -244,6 +244,8 @@ test("quotation output removes default empty rows and supports shared manual spa
   assert.match(page, /printItemPages/);
   assert.match(page, /Array\.from\(\{ length: outputBlankRows \}/);
   assert.match(page, /Excel·PDF 공통/);
+  assert.match(styles, /\.quotation-output-spacing \{[^}]*gap: 13px;[^}]*margin: 14px 0 8px;[^}]*padding: 16px 14px 14px;/);
+  assert.match(styles, /\.quotation-output-spacing > div:last-child \{[^}]*padding-top: 12px;/);
   assert.match(page, /quotation-print-closing/);
   assert.match(page, /견적서 품목 계속/);
   assert.match(styles, /break-after:page/);

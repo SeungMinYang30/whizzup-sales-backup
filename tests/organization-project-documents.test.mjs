@@ -35,3 +35,15 @@ test("기관 상세 요약 카드에서 사업별 파일을 보고 등록하고 
   assert.match(card, /download=1/);
   assert.match(card, /99_보관 폴더로 옮길까요/);
 });
+
+test("도면과 조감도는 통합본 또는 파일별 종류를 확인해 한 번에 등록한다", () => {
+  assert.match(route, /"통합본"/);
+  assert.match(card, /도면·조감도 한 번에 등록/);
+  assert.match(card, /type="file" multiple/);
+  assert.match(card, /pendingDocuments\.map/);
+  assert.match(card, /entry\.documentType/);
+  assert.match(card, /선택 파일 \$\{pendingDocuments\.length\}개 등록/);
+  assert.match(card, /실패 \$\{failedCount\}개는 목록에서 확인 후 다시 등록/);
+  assert.match(card, /도면·조감도 자료 필터/);
+  assert.match(card, /documentFilter === "전체"/);
+});
