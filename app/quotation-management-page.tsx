@@ -174,6 +174,23 @@ type ProcurementRegistrationDraft = {
   commissionPercent: string;
 };
 
+function procurementFacetsForItems(items: ProcurementSearchItem[]) {
+  const detailMap = new Map<string, ProcurementFacet>();
+  const contractMap = new Map<string, number>();
+  items.forEach((item) => {
+    const number = item.detailClassificationNumber || "unclassified";
+    const name = item.detailClassificationName || item.classificationName || "세부품명 미분류";
+    const current = detailMap.get(number);
+    detailMap.set(number, { number, name, count: (current?.count || 0) + 1 });
+    const contract = item.contractMethod || item.sourceLabel || "계약 구분 미확인";
+    contractMap.set(contract, (contractMap.get(contract) || 0) + 1);
+  });
+  return {
+    detailClassifications: [...detailMap.values()].sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, "ko")),
+    contractMethods: [...contractMap.entries()].map(([name, count]) => ({ name, count })).sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, "ko")),
+  };
+}
+
 type RecentConsortiumRate = {
   rate: number;
   quoteNumber: string;
@@ -650,7 +667,8 @@ export default function QuotationManagementPage({
   const [procurementSort, setProcurementSort] = useState<ProcurementSort>("relevance");
   const [procurementSelectedIdentities, setProcurementSelectedIdentities] = useState<string[]>([]);
   const [procurementDetailFilters, setProcurementDetailFilters] = useState<string[]>([]);
-  const [procurementFacets, setProcurementFacets] = useState<{ detailClassifications: ProcurementFacet[]; contractMethods: { name: string; count: number }[] }>({ detailClassifications: [], contractMethods: [] });
+  const [procurementContractFilters, setProcurementContractFilters] = useState<string[]>([]);
+  const procurementFacets = useMemo(() => procurementFacetsForItems(procurementResults), [procurementResults]);
   const [procurementQuantities, setProcurementQuantities] = useState<Record<string, number>>({});
   const [procurementRegistrationMode, setProcurementRegistrationMode] = useState<ProcurementRegistrationMode | null>(null);
   const [procurementRegistrationDrafts, setProcurementRegistrationDrafts] = useState<ProcurementRegistrationDraft[]>([]);
@@ -698,6 +716,7 @@ export default function QuotationManagementPage({
   const contextualProductSearchInputRef = useRef<HTMLInputElement | null>(null);
   const procurementSearchRequestRef = useRef(0);
   const procurementSearchAbortRef = useRef<AbortController | null>(null);
+  const procurementSearchDebounceRef = useRef<number | null>(null);
 
   function quotationRegion(quote: Pick<Draft, "organization" | "businessRound">) {
     return institutions.find((item) =>
@@ -714,7 +733,10 @@ export default function QuotationManagementPage({
     if (inspectionPdfFallbackRef.current) URL.revokeObjectURL(inspectionPdfFallbackRef.current);
   }, []);
 
-  useEffect(() => () => procurementSearchAbortRef.current?.abort(), []);
+  useEffect(() => () => {
+    procurementSearchAbortRef.current?.abort();
+    if (procurementSearchDebounceRef.current !== null) window.clearTimeout(procurementSearchDebounceRef.current);
+  }, []);
 
   useEffect(() => {
     if (!productResultsOpen) return;
@@ -780,7 +802,6 @@ export default function QuotationManagementPage({
     setProcurementSort("relevance");
     setProcurementSelectedIdentities([]);
     setProcurementDetailFilters([]);
-    setProcurementFacets({ detailClassifications: [], contractMethods: [] });
     setProcurementQuantities({});
     setProcurementRegistrationMode(null);
     setProcurementRegistrationDrafts([]);
@@ -1831,6 +1852,14 @@ export default function QuotationManagementPage({
   }
 
   function closeProductPicker() {
+    procurementSearchAbortRef.current?.abort();
+    procurementSearchAbortRef.current = null;
+    procurementSearchRequestRef.current += 1;
+    if (procurementSearchDebounceRef.current !== null) {
+      window.clearTimeout(procurementSearchDebounceRef.current);
+      procurementSearchDebounceRef.current = null;
+    }
+    setProcurementLoading(false);
     setProductResultsOpen(false);
     setProcurementError("");
     setProcurementDetail(null);
@@ -1843,6 +1872,13 @@ export default function QuotationManagementPage({
   }
 
   function openProductPicker(target: ProductPickerTarget) {
+    procurementSearchAbortRef.current?.abort();
+    procurementSearchAbortRef.current = null;
+    procurementSearchRequestRef.current += 1;
+    if (procurementSearchDebounceRef.current !== null) {
+      window.clearTimeout(procurementSearchDebounceRef.current);
+      procurementSearchDebounceRef.current = null;
+    }
     setProductPickerTarget(target);
     setInsertMenuIndex(null);
     setProductQuery("");
@@ -1854,6 +1890,7 @@ export default function QuotationManagementPage({
 
   function changeProcurementQuery(value: string) {
     procurementSearchAbortRef.current?.abort();
+    if (procurementSearchDebounceRef.current !== null) window.clearTimeout(procurementSearchDebounceRef.current);
     procurementSearchRequestRef.current += 1;
     setProcurementQuery(value);
     setProcurementResults([]);
@@ -1864,13 +1901,23 @@ export default function QuotationManagementPage({
     setProcurementDetail(null);
     setProcurementSelectedIdentities([]);
     setProcurementDetailFilters([]);
-    setProcurementFacets({ detailClassifications: [], contractMethods: [] });
+    setProcurementContractFilters([]);
     setProcurementQuantities({});
     setProcurementLoading(false);
+    if (value.trim().length >= 2) {
+      procurementSearchDebounceRef.current = window.setTimeout(() => {
+        procurementSearchDebounceRef.current = null;
+        void searchProcurement(1, false, procurementSort, value);
+      }, 450);
+    }
   }
 
-  async function searchProcurement(page = 1, append = false, requestedSort: ProcurementSort = procurementSort) {
-    const key = procurementQuery.trim();
+  async function searchProcurement(page = 1, append = false, requestedSort: ProcurementSort = procurementSort, requestedQuery = procurementQuery) {
+    if (procurementSearchDebounceRef.current !== null) {
+      window.clearTimeout(procurementSearchDebounceRef.current);
+      procurementSearchDebounceRef.current = null;
+    }
+    const key = requestedQuery.trim();
     if (key.length < 2) {
       setProcurementError("업체명, 조달 물품명 또는 식별번호를 두 글자 이상 입력해 주세요.");
       return;
@@ -1897,7 +1944,6 @@ export default function QuotationManagementPage({
       const payload = await response.json().catch(() => ({})) as {
         items?: ProcurementSearchItem[];
         total?: number;
-        facets?: { detailClassifications?: ProcurementFacet[]; contractMethods?: { name: string; count: number }[] };
         error?: string;
       };
       if (!response.ok) throw new Error(payload.error || "조달 물품을 불러오지 못했습니다.");
@@ -1907,10 +1953,6 @@ export default function QuotationManagementPage({
         ? [...current, ...nextItems.filter((item) => !current.some((saved) => saved.identity === item.identity))]
         : nextItems);
       setProcurementTotal(Math.max(nextItems.length, Number(payload.total) || 0));
-      setProcurementFacets({
-        detailClassifications: Array.isArray(payload.facets?.detailClassifications) ? payload.facets.detailClassifications : [],
-        contractMethods: Array.isArray(payload.facets?.contractMethods) ? payload.facets.contractMethods : [],
-      });
       setProcurementPage(page);
       setProcurementSort(requestedSort);
       setProcurementHasSearched(true);
@@ -1932,8 +1974,12 @@ export default function QuotationManagementPage({
   }
 
   function filteredProcurementResults() {
-    if (!procurementDetailFilters.length) return procurementResults;
-    return procurementResults.filter((item) => procurementDetailFilters.includes(item.detailClassificationNumber || "unclassified"));
+    return procurementResults.filter((item) => {
+      const matchesDetail = !procurementDetailFilters.length || procurementDetailFilters.includes(item.detailClassificationNumber || "unclassified");
+      const contractMethod = item.contractMethod || item.sourceLabel || "계약 구분 미확인";
+      const matchesContract = !procurementContractFilters.length || procurementContractFilters.includes(contractMethod);
+      return matchesDetail && matchesContract;
+    });
   }
 
   function selectedProcurementItems(fallback?: ProcurementSearchItem) {
@@ -2147,12 +2193,12 @@ export default function QuotationManagementPage({
         </div>
         <div className="quotation-procurement-market-content">
           <aside className="quotation-procurement-market-filters">
-            <button className="quotation-procurement-filter-reset" type="button" onClick={() => setProcurementDetailFilters([])}>↻ 전체 필터 초기화</button>
+            <button className="quotation-procurement-filter-reset" type="button" onClick={() => { setProcurementDetailFilters([]); setProcurementContractFilters([]); }}>↻ 전체 필터 초기화</button>
             <section><header><b>세부품명</b><span>{procurementFacets.detailClassifications.length}</span></header>{procurementFacets.detailClassifications.length ? procurementFacets.detailClassifications.map((facet) => {
               const key = facet.number || "unclassified";
               return <label key={`${key}-${facet.name}`}><input type="checkbox" checked={procurementDetailFilters.includes(key)} onChange={() => setProcurementDetailFilters((current) => current.includes(key) ? current.filter((value) => value !== key) : [...current, key])} /><span>{facet.name || "미분류"}</span><em>{facet.count}</em></label>;
             }) : <p>검색 후 세부품명 필터가 표시됩니다.</p>}</section>
-            <section><header><b>계약구분</b><span>{procurementFacets.contractMethods.length}</span></header>{procurementFacets.contractMethods.map((facet) => <div className="quotation-procurement-facet-info" key={facet.name}><span>{facet.name || "기타"}</span><em>{facet.count}</em></div>)}</section>
+            <section><header><b>계약구분</b><span>{procurementFacets.contractMethods.length}</span></header>{procurementFacets.contractMethods.length ? procurementFacets.contractMethods.map((facet) => <label key={facet.name}><input type="checkbox" checked={procurementContractFilters.includes(facet.name)} onChange={() => setProcurementContractFilters((current) => current.includes(facet.name) ? current.filter((value) => value !== facet.name) : [...current, facet.name])} /><span>{facet.name || "기타"}</span><em>{facet.count}</em></label>) : <p>검색 후 계약구분 필터가 표시됩니다.</p>}</section>
           </aside>
           <main className="quotation-procurement-market-results">
             <header className="quotation-procurement-result-toolbar"><div>{procurementHasSearched ? <><b>검색결과 {won.format(procurementTotal)}건</b><small>{results.length !== procurementResults.length ? ` · 현재 필터 ${results.length}건` : ` · 현재 ${procurementResults.length}건 표시`}</small></> : <b>나라장터 물품 검색</b>}</div><label>정렬<select value={procurementSort} onChange={(event) => void searchProcurement(1, false, event.target.value as ProcurementSort)} disabled={!procurementHasSearched || procurementLoading}><option value="relevance">관련도순</option><option value="priceAsc">낮은가격순</option><option value="priceDesc">높은가격순</option><option value="recent">최신등록순</option></select></label></header>

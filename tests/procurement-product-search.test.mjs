@@ -7,6 +7,7 @@ const librarySource = await readFile(new URL("../lib/procurement-products.ts", i
 const routeSource = await readFile(new URL("../app/api/procurement-products/route.ts", import.meta.url), "utf8");
 const catalogRouteSource = await readFile(new URL("../app/api/product-catalog/route.ts", import.meta.url), "utf8");
 const quotationSource = await readFile(new URL("../app/quotation-management-page.tsx", import.meta.url), "utf8");
+const globalCssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 const transpiled = ts.transpileModule(librarySource, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
@@ -76,8 +77,11 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /inqryBgnDate: startDate/);
   assert.match(routeSource, /body\["nkoneps\.com\.response\.ResponseError"\]/);
   assert.match(routeSource, /serviceKey: key/);
-  assert.match(routeSource, /CACHE_VERSION = "v4-market-picker"/);
-  assert.match(routeSource, /CACHE_TTL_MS = 10 \* 60/);
+  assert.match(routeSource, /CACHE_VERSION = "v5-market-picker"/);
+  assert.match(routeSource, /CACHE_TTL_MS = 3 \* 60/);
+  assert.match(routeSource, /collectFirstUseful/);
+  assert.match(routeSource, /PROCUREMENT_SEARCH_GRACE_MS = 800/);
+  assert.match(routeSource, /controller\.abort\(\)/);
   assert.match(routeSource, /detailClassifications/);
   assert.match(routeSource, /sort === "priceAsc"/);
   assert.doesNotMatch(routeSource, /20000101/);
@@ -100,8 +104,16 @@ test("quotation picker supports quote-only and owner-only catalog registration i
   assert.match(quotationSource, /function changeProcurementQuery\(value: string\)/);
   assert.match(quotationSource, /procurementSearchAbortRef\.current\?\.abort\(\)/);
   assert.match(quotationSource, /requestId !== procurementSearchRequestRef\.current/);
+  assert.match(quotationSource, /window\.setTimeout\(\(\) => \{/);
+  assert.match(quotationSource, /\}, 450\)/);
+  assert.match(quotationSource, /setProcurementResults\(\[\]\)/);
+  assert.match(quotationSource, /procurementContractFilters\.includes\(facet\.name\)/);
+  assert.match(quotationSource, /setProcurementContractFilters\(\[\]\)/);
   assert.match(quotationSource, /onChange=\{\(event\) => changeProcurementQuery\(event\.target\.value\)\}/);
   assert.match(quotationSource, /<a href=\{procurementDetail\.sourceUrl\} target="_blank" rel="noopener noreferrer">나라장터 원문 열기<\/a>/);
+  assert.match(globalCssSource, /\.quotation-procurement-market-dialog \{[^}]*width: min\(95vw, 1800px\);[^}]*height: min\(95dvh, 1040px\)/);
+  assert.match(globalCssSource, /\.quotation-procurement-result-info h4 \{[^}]*font-size: 15px/);
+  assert.doesNotMatch(globalCssSource, /quotation-procurement-market-filters section:nth-of-type\(2\) \{ display: none/);
   assert.match(catalogRouteSource, /requirePrimaryOwner\(\)/);
   assert.match(catalogRouteSource, /procurementProductIdentity/);
   assert.doesNotMatch(catalogRouteSource, /requested\.commissionRate = null/);
