@@ -14,6 +14,7 @@ export type ProcurementSearchItem = {
   procurementNumber: string;
   contractMethod: string;
   contractNumber: string;
+  contractSequence: string;
   contractStartDate: string;
   contractEndDate: string;
   imageUrl: string;
@@ -138,6 +139,7 @@ export function mapProcurementSearchItem(value: unknown, options: ProcurementSea
     procurementNumber,
     contractMethod: text(source.cntrctMthdNm || options.contractMethod, 160),
     contractNumber: text(source.shopngCntrctNo, 100),
+    contractSequence: text(source.shopngCntrctSno, 40),
     contractStartDate: text(source.cntrctBgnDate, 20),
     contractEndDate,
     imageUrl: text(source.prdctImgUrl, 1_000),
