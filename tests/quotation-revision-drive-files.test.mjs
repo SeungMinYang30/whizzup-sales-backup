@@ -127,9 +127,10 @@ test("existing Drive quotation files are renamed and moved in place", () => {
   assert.match(reorganizeRoute, /QUOTATION_LIBRARY_FOLDER/);
   assert.match(reorganizeRoute, /quotationInstitutionFolderSegments/);
   assert.match(reorganizeRoute, /syncDriveFileCopyFromSource/);
+  assert.match(reorganizeRoute, /listDriveFilesByContext/);
   assert.match(reorganizeRoute, /removeEmptyQuotationFolderChain/);
-  assert.match(reorganizeRoute, /SET drive_pdf_name=\?, drive_xlsx_name=\?, source_file_name=\?\s+WHERE id=\?/);
-  assert.doesNotMatch(reorganizeRoute, /SET drive_pdf_name=\?, drive_xlsx_name=\?, source_file_name=\?, updated_at=/);
+  assert.match(reorganizeRoute, /SET drive_pdf_file_id=\?, drive_pdf_name=\?, drive_xlsx_file_id=\?, drive_xlsx_name=\?, source_file_id=\?, source_file_name=\?\s+WHERE id=\?/);
+  assert.doesNotMatch(reorganizeRoute, /SET drive_pdf_file_id=[\s\S]*updated_at=/);
   assert.doesNotMatch(reorganizeRoute, /removeDriveFile/);
   assert.match(referenceDocumentsRoute, /quotationInstitutionFolderSegments/);
   assert.match(referenceReorganizeRoute, /quotationInstitutionFolderSegments/);

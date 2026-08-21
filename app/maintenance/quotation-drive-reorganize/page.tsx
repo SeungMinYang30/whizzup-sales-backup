@@ -12,6 +12,8 @@ type Result = {
   checked: number;
   referenceDocuments: number;
   referenceFiles: number;
+  recoverable: number;
+  recovered: number;
   removedFolders: number;
   failures: Array<{ quotationId: number; kind: string; error: string }>;
   folder: string;
@@ -38,6 +40,8 @@ export default function QuotationDriveReorganizePage() {
         checked: 0,
         referenceDocuments: 0,
         referenceFiles: 0,
+        recoverable: 0,
+        recovered: 0,
         removedFolders: 0,
         failures: [],
         folder: "",
@@ -61,6 +65,8 @@ export default function QuotationDriveReorganizePage() {
           total.referenceDocuments += payload.referenceDocuments || 0;
           total.files += payload.files || 0;
           total.referenceFiles += payload.referenceFiles || 0;
+          total.recoverable += payload.recoverable || 0;
+          total.recovered += payload.recovered || 0;
           total.moved += payload.moved || 0;
           total.renamed += payload.renamed || 0;
           total.mirrored += payload.mirrored || 0;
@@ -87,6 +93,8 @@ export default function QuotationDriveReorganizePage() {
         checked: 0,
         referenceDocuments: 0,
         referenceFiles: 0,
+        recoverable: 0,
+        recovered: 0,
         removedFolders: 0,
         failures: [],
         folder: "",
@@ -116,7 +124,7 @@ export default function QuotationDriveReorganizePage() {
           ) : (
             <>
               <strong>{result.dryRun ? "미리보기 완료" : "정리 완료"}</strong>
-              <p>최종 견적 {result.quotations}건 · 외부 참고 {result.referenceDocuments}건 · 점검 파일 {result.checked}개 · 이동 {result.moved}개 · 이름 변경 {result.renamed}개 · 전체 폴더 동기화 {result.mirrored}개 · 빈 폴더 삭제 {result.removedFolders}개</p>
+              <p>최종 견적 {result.quotations}건 · 외부 참고 {result.referenceDocuments}건 · 점검 파일 {result.checked}개 · 사본 복구 가능 {result.recoverable}개 · 복구 완료 {result.recovered}개 · 이동 {result.moved}개 · 이름 변경 {result.renamed}개 · 전체 폴더 동기화 {result.mirrored}개 · 빈 폴더 삭제 {result.removedFolders}개</p>
               <p>대상 폴더: {result.folder}</p>
               {result.failures.length > 0 && (
                 <div role="alert" style={{ color: "#b42318" }}>

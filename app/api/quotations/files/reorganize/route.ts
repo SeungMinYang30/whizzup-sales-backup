@@ -6,6 +6,7 @@ import { ensureAuthoredQuotationsReady } from "../../../../../lib/authored-quota
 import {
   getDriveFileMetadata,
   isGoogleDriveConfigured,
+  listDriveFilesByContext,
   organizeDriveFile,
   removeEmptyLegacyQuotationFolders,
   removeEmptyQuotationFolderChain,
@@ -76,6 +77,8 @@ export async function POST(request: Request) {
     let renamed = 0;
     let mirrored = 0;
     let checked = 0;
+    let recoverable = 0;
+    let recovered = 0;
 
     for (const row of rows.results) {
       const quotationId = Number(row.id);
@@ -108,10 +111,42 @@ export async function POST(request: Request) {
         xlsx: String(row.drive_xlsx_name || ""),
         source: String(row.source_file_name || ""),
       };
+      const savedIds = {
+        pdf: String(row.drive_pdf_file_id || ""),
+        xlsx: String(row.drive_xlsx_file_id || ""),
+        source: String(row.source_file_id || ""),
+      };
 
       for (const file of files) {
         try {
-          const metadata = await getDriveFileMetadata(file.id);
+          let activeFileId = file.id;
+          let metadata;
+          try {
+            metadata = await getDriveFileMetadata(activeFileId);
+          } catch (missingError) {
+            const mirror = (await listDriveFilesByContext({
+              folderSegments: [...QUOTATION_LIBRARY_FOLDER_SEGMENTS],
+              contextTypes: [`authored-quotation-${file.kind}-mirror`],
+              contextId,
+            }))[0];
+            if (!mirror) throw missingError;
+            recoverable += 1;
+            if (dryRun) {
+              checked += 1;
+              continue;
+            }
+            const restored = await syncDriveFileCopyFromSource({
+              sourceFileId: mirror.id,
+              name: file.desiredName,
+              folderSegments: institutionFolder,
+              contextType: `authored-quotation-${file.kind}`,
+              contextId,
+            });
+            activeFileId = restored.fileId;
+            savedIds[file.kind as keyof typeof savedIds] = activeFileId;
+            recovered += 1;
+            metadata = await getDriveFileMetadata(activeFileId);
+          }
           checked += 1;
           for (const parent of metadata.parents || []) oldParentIds.add(parent);
           const alreadyInTargetName = String(metadata.name || "") === file.desiredName;
@@ -120,7 +155,7 @@ export async function POST(request: Request) {
             continue;
           }
           const organized = await organizeDriveFile(
-            file.id,
+            activeFileId,
             institutionFolder,
             file.desiredName,
           );
@@ -128,7 +163,7 @@ export async function POST(request: Request) {
           if (organized.previousName !== organized.name) renamed += 1;
           savedNames[file.kind as keyof typeof savedNames] = organized.name;
           await syncDriveFileCopyFromSource({
-            sourceFileId: file.id,
+            sourceFileId: activeFileId,
             name: organized.name,
             folderSegments: [...QUOTATION_LIBRARY_FOLDER_SEGMENTS],
             contextType: `authored-quotation-${file.kind}-mirror`,
@@ -146,9 +181,9 @@ export async function POST(request: Request) {
 
       if (!dryRun) {
         await d1.prepare(`UPDATE authored_quotations
-          SET drive_pdf_name=?, drive_xlsx_name=?, source_file_name=?
+          SET drive_pdf_file_id=?, drive_pdf_name=?, drive_xlsx_file_id=?, drive_xlsx_name=?, source_file_id=?, source_file_name=?
           WHERE id=?`)
-          .bind(savedNames.pdf, savedNames.xlsx, savedNames.source, quotationId)
+          .bind(savedIds.pdf, savedNames.pdf, savedIds.xlsx, savedNames.xlsx, savedIds.source, savedNames.source, quotationId)
           .run();
       }
     }
@@ -175,6 +210,8 @@ export async function POST(request: Request) {
       renamed,
       mirrored,
       checked,
+      recoverable,
+      recovered,
       removedFolders,
       failures,
       folder: `01_기관자료/지역/기관/${QUOTATION_LIBRARY_FOLDER}/사업 차수/연도 + ${QUOTATION_LIBRARY_PATH}`,
