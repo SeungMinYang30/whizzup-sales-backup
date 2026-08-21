@@ -15,6 +15,18 @@ export type ProcurementSearchItem = {
   contractStartDate: string;
   contractEndDate: string;
   imageUrl: string;
+  classificationNumber: string;
+  classificationName: string;
+  detailClassificationNumber: string;
+  registrationDate: string;
+  saleStatus: string;
+  sourceLabel: string;
+  sourceUrl: string;
+};
+
+export type ProcurementSearchMapOptions = {
+  contractMethod?: string;
+  sourceLabel?: string;
 };
 
 export function procurementProductIdentity(channel: unknown, identifier: unknown) {
@@ -62,13 +74,22 @@ function nullableMoney(value: unknown) {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : null;
 }
 
-export function mapProcurementSearchItem(value: unknown): ProcurementSearchItem | null {
+function procurementSaleStatus(source: Record<string, unknown>, contractEndDate: string) {
+  if (text(source.regtCncelYn, 10).toLocaleUpperCase("ko-KR") === "Y") return "등록 취소";
+  const end = contractEndDate.replace(/[^0-9]/g, "").slice(0, 8);
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  if (end && end < today) return "계약 종료";
+  return contractEndDate ? "계약 유효" : "등록 상품";
+}
+
+export function mapProcurementSearchItem(value: unknown, options: ProcurementSearchMapOptions = {}): ProcurementSearchItem | null {
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
   const procurementNumber = text(source.prdctIdntNo, 100);
-  const name = text(source.prdctIdntNoNm || source.dtilPrdctClsfcNoNm || source.prdctClsfcNoNm, 300);
+  const name = text(source.prdctIdntNoNm || source.prdctNm || source.dtilPrdctClsfcNoNm || source.prdctClsfcNoNm, 300);
   if (!procurementNumber || !name) return null;
   const procurementChannel = "G2B";
+  const contractEndDate = text(source.cntrctEndDate, 20);
   return {
     identity: procurementProductIdentity(procurementChannel, procurementNumber),
     name,
@@ -79,10 +100,17 @@ export function mapProcurementSearchItem(value: unknown): ProcurementSearchItem 
     manufacturerName: text(source.prdctMakrNm, 300),
     procurementChannel,
     procurementNumber,
-    contractMethod: text(source.cntrctMthdNm, 160),
+    contractMethod: text(source.cntrctMthdNm || options.contractMethod, 160),
     contractNumber: text(source.shopngCntrctNo, 100),
     contractStartDate: text(source.cntrctBgnDate, 20),
-    contractEndDate: text(source.cntrctEndDate, 20),
+    contractEndDate,
     imageUrl: text(source.prdctImgUrl, 1_000),
+    classificationNumber: text(source.prdctClsfcNo, 100),
+    classificationName: text(source.prdctClsfcNoNm, 300),
+    detailClassificationNumber: text(source.dtilPrdctClsfcNo, 100),
+    registrationDate: text(source.rgstDt || source.regDt, 30),
+    saleStatus: procurementSaleStatus(source, contractEndDate),
+    sourceLabel: text(options.sourceLabel || "나라장터 종합쇼핑몰", 100),
+    sourceUrl: "https://shopping.g2b.go.kr/",
   };
 }
