@@ -13,7 +13,8 @@ test("도면과 조감도는 기관과 사업 차수별 Google Drive 폴더에�
   assert.match(route, /"01_기관자료"/);
   assert.match(route, /`\$\{businessRound\}차 사업`/);
   assert.match(route, /"도면·조감도"/);
-  assert.match(route, /uploadDriveFile/);
+  assert.match(route, /createDriveResumableUpload/);
+  assert.match(route, /uploadDriveResumableChunk/);
   assert.doesNotMatch(route, /writeFile|put\(/);
   assert.match(store, /organization_project_documents/);
   assert.match(store, /organization, business_round, archived_at/);
@@ -46,4 +47,10 @@ test("도면과 조감도는 통합본 또는 파일별 종류를 확인해 한 
   assert.match(card, /실패 \$\{failedCount\}개는 목록에서 확인 후 다시 등록/);
   assert.match(card, /도면·조감도 자료 필터/);
   assert.match(card, /documentFilter === "전체"/);
+  assert.match(card, /RESOURCE_UPLOAD_CHUNK_BYTES/);
+  assert.match(card, /Content-Range/);
+  assert.match(card, /X-Drive-Upload-Url/);
+  assert.match(card, /progress \|\| 0/);
+  assert.match(route, /export async function PATCH/);
+  assert.match(route, /getDriveFileMetadata/);
 });

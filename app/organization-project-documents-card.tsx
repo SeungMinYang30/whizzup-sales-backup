@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { RESOURCE_UPLOAD_CHUNK_BYTES, RESOURCE_UPLOAD_MAX_RETRIES, RESOURCE_UPLOAD_RETRY_BASE_DELAY_MS } from "../lib/resource-upload-config";
 
 type ProjectDocument = {
   id: number;
@@ -22,6 +23,7 @@ type PendingProjectDocument = {
   file: File;
   documentType: string;
   status: "pending" | "uploading" | "uploaded" | "error";
+  progress?: number;
   error?: string;
 };
 
@@ -53,7 +55,25 @@ function suggestedDocumentType(file: File) {
 }
 
 async function responsePayload(response: Response) {
-  return await response.json().catch(() => ({})) as { error?: string; documents?: ProjectDocument[] };
+  return await response.json().catch(() => ({})) as {
+    error?: string;
+    code?: string;
+    documents?: ProjectDocument[];
+    document?: ProjectDocument;
+    uploadUrl?: string;
+    folderId?: string;
+    complete?: boolean;
+    file?: { id?: string };
+  };
+}
+
+function uploadHeaders(headers: Record<string, string>) {
+  return { ...headers, "X-WHIZZUP-Request-Mode": "read" };
+}
+
+function uploadFailure(payload: { error?: string; code?: string }, status: number) {
+  if (status === 413 || payload.code === "VERCEL_PAYLOAD_LIMIT") return new Error("파일이 커서 한 번에 전송하지 못했습니다. 조각 업로드로 다시 시도해 주세요.");
+  return new Error(payload.error || "파일을 Google Drive에 저장하지 못했습니다.");
 }
 
 export default function OrganizationProjectDocumentsCard({ organization, businessRound }: Props) {
@@ -124,18 +144,66 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
     let uploadedCount = 0;
     let failedCount = 0;
     for (const entry of selected) {
-      setPendingDocuments((current) => current.map((item) => item.key === entry.key ? { ...item, status: "uploading", error: undefined } : item));
+      setPendingDocuments((current) => current.map((item) => item.key === entry.key ? { ...item, status: "uploading", progress: 0, error: undefined } : item));
       try {
-        const form = new FormData();
-        form.set("organization", organization);
-        form.set("businessRound", String(businessRound));
-        form.set("documentType", entry.documentType);
-        form.set("file", entry.file);
-        const response = await fetch("/api/organization-project-documents", { method: "POST", body: form });
-        const payload = await responsePayload(response);
-        if (!response.ok) throw new Error(payload.error || `${entry.file.name} 파일을 저장하지 못했습니다.`);
+        const metadata = {
+          organization,
+          businessRound,
+          documentType: entry.documentType,
+          fileName: entry.file.name,
+          mimeType: entry.file.type || "application/octet-stream",
+          sizeBytes: entry.file.size,
+        };
+        const sessionResponse = await fetch("/api/organization-project-documents", {
+          method: "POST",
+          headers: uploadHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify(metadata),
+        });
+        const session = await responsePayload(sessionResponse);
+        if (!sessionResponse.ok || !session.uploadUrl || !session.folderId) throw uploadFailure(session, sessionResponse.status);
+
+        let fileId = "";
+        for (let start = 0; start < entry.file.size; start += RESOURCE_UPLOAD_CHUNK_BYTES) {
+          const end = Math.min(entry.file.size, start + RESOURCE_UPLOAD_CHUNK_BYTES);
+          let completed = false;
+          let lastError: Error | null = null;
+          for (let attempt = 0; attempt <= RESOURCE_UPLOAD_MAX_RETRIES; attempt += 1) {
+            try {
+              const chunkResponse = await fetch("/api/organization-project-documents", {
+                method: "PUT",
+                headers: uploadHeaders({
+                  "Content-Type": metadata.mimeType,
+                  "Content-Range": `bytes ${start}-${end - 1}/${entry.file.size}`,
+                  "X-Drive-Upload-Url": session.uploadUrl,
+                }),
+                body: entry.file.slice(start, end),
+              });
+              const chunk = await responsePayload(chunkResponse);
+              if (!chunkResponse.ok) throw uploadFailure(chunk, chunkResponse.status);
+              if (chunk.complete) fileId = chunk.file?.id || "";
+              const progress = Math.min(99, Math.round((end / entry.file.size) * 100));
+              setPendingDocuments((current) => current.map((item) => item.key === entry.key ? { ...item, progress } : item));
+              completed = true;
+              break;
+            } catch (caught) {
+              lastError = caught instanceof Error ? caught : new Error("파일 조각을 전송하지 못했습니다.");
+              if (attempt < RESOURCE_UPLOAD_MAX_RETRIES) {
+                await new Promise((resolve) => window.setTimeout(resolve, RESOURCE_UPLOAD_RETRY_BASE_DELAY_MS * 2 ** attempt));
+              }
+            }
+          }
+          if (!completed) throw lastError || new Error("파일 조각을 전송하지 못했습니다.");
+        }
+        if (!fileId) throw new Error("Google Drive 업로드 완료 정보를 확인하지 못했습니다.");
+        const finalizeResponse = await fetch("/api/organization-project-documents", {
+          method: "PATCH",
+          headers: uploadHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ ...metadata, fileId, folderId: session.folderId }),
+        });
+        const finalized = await responsePayload(finalizeResponse);
+        if (!finalizeResponse.ok || !finalized.document) throw uploadFailure(finalized, finalizeResponse.status);
         uploadedCount += 1;
-        setPendingDocuments((current) => current.map((item) => item.key === entry.key ? { ...item, status: "uploaded", error: undefined } : item));
+        setPendingDocuments((current) => current.map((item) => item.key === entry.key ? { ...item, status: "uploaded", progress: 100, error: undefined } : item));
       } catch (caught) {
         failedCount += 1;
         const message = caught instanceof Error ? caught.message : "파일을 저장하지 못했습니다.";
@@ -187,7 +255,7 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
             {pendingDocuments.length ? <div className="project-documents-queue">
               <header><div><b>등록 대기 {pendingDocuments.length}개</b><span>파일마다 자료 종류를 확인해 주세요.</span></div><button type="button" disabled={uploading} onClick={() => void uploadFiles()}>{uploading ? "Google Drive에 등록 중…" : `선택 파일 ${pendingDocuments.length}개 등록`}</button></header>
               <div>{pendingDocuments.map((entry) => <article key={entry.key} className={entry.status}>
-                <div><strong>{entry.file.name}</strong><small>{formatBytes(entry.file.size)}{entry.error ? ` · ${entry.error}` : entry.status === "uploading" ? " · 등록 중…" : ""}</small></div>
+                <div><strong>{entry.file.name}</strong><small>{formatBytes(entry.file.size)}{entry.error ? ` · ${entry.error}` : entry.status === "uploading" ? ` · ${entry.progress || 0}% 등록 중…` : ""}</small></div>
                 <select aria-label={`${entry.file.name} 자료 종류`} value={entry.documentType} disabled={uploading} onChange={(event) => setPendingDocuments((current) => current.map((item) => item.key === entry.key ? { ...item, documentType: event.target.value, status: "pending", error: undefined } : item))}>{documentTypes.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select>
                 <button type="button" disabled={uploading} aria-label={`${entry.file.name} 선택 해제`} onClick={() => setPendingDocuments((current) => current.filter((item) => item.key !== entry.key))}>제외</button>
               </article>)}</div>
