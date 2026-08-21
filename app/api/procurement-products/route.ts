@@ -99,39 +99,86 @@ function relevance(item: ProcurementSearchItem, query: string) {
     + (item.saleStatus === "계약 유효" ? 5 : 0);
 }
 
+function fulfilledResults(settled: PromiseSettledResult<ProcurementApiResult>[]) {
+  return settled
+    .filter((result): result is PromiseFulfilledResult<ProcurementApiResult> => result.status === "fulfilled")
+    .map((result) => result.value);
+}
+
+function companyNameCandidates(query: string) {
+  const compact = query.replace(/\s+/g, " ").trim();
+  if (!compact || /^(?:\(주\)|㈜|주식회사\s*)/.test(compact)) return [];
+  return [`(주)${compact}`, `주식회사 ${compact}`];
+}
+
 async function searchSources(query: string, page: number, pageSize: number, key: string) {
   const numericQuery = /^\d{5,}$/.test(query.replace(/\D/g, ""));
   const common = { numOfRows: String(pageSize), pageNo: String(page) };
-  const contractField = numericQuery ? "prdctIdntNo" : "cntrctCorpNm";
-  const contractQuery = numericQuery ? query.replace(/\D/g, "") : query;
-  const primaryRequests = [
-    ...CONTRACT_SOURCES.map((source) => requestProcurementApi({
+  const normalizedNumber = query.replace(/\D/g, "");
+
+  if (numericQuery) {
+    const settled = await Promise.allSettled([
+      ...CONTRACT_SOURCES.map((source) => requestProcurementApi({
+        ...source,
+        key,
+        params: { ...common, prdctIdntNo: normalizedNumber },
+      })),
+      requestProcurementApi({
+        endpoint: "getShoppingMallPrdctInfoList",
+        sourceLabel: "나라장터 품목 등록",
+        key,
+        params: { ...common, prdctIdntNoNm: normalizedNumber, regtCncelYn: "N" },
+      }),
+    ]);
+    const results = fulfilledResults(settled);
+    if (!results.length) throw settled.find((result) => result.status === "rejected")?.reason || new Error("조달청 검색에 실패했습니다.");
+    return results;
+  }
+
+  // 공식 API는 통합 키워드 검색을 제공하지 않으므로 업체명·품명·세부품명·규격명을 각각 조회한다.
+  const [companySettled, productSettled] = await Promise.all([
+    Promise.allSettled(CONTRACT_SOURCES.map((source) => requestProcurementApi({
       ...source,
       key,
-      params: { ...common, [contractField]: contractQuery },
-    })),
-    requestProcurementApi({
+      params: { ...common, cntrctCorpNm: query },
+    }))),
+    Promise.allSettled(["prdctClsfcNoNm", "dtilPrdctClsfcNoNm", "prdctIdntNoNm"].map((field) => requestProcurementApi({
       endpoint: "getShoppingMallPrdctInfoList",
       sourceLabel: "나라장터 품목 등록",
       key,
-      params: { ...common, prdctIdntNoNm: query, regtCncelYn: "N" },
-    }),
-  ];
-  const settled = await Promise.allSettled(primaryRequests);
-  const successful = settled.filter((result): result is PromiseFulfilledResult<ProcurementApiResult> => result.status === "fulfilled");
-  if (!successful.length) throw settled.find((result) => result.status === "rejected")?.reason || new Error("조달청 검색에 실패했습니다.");
-  let results = successful.map((result) => result.value);
+      params: { ...common, [field]: query, regtCncelYn: "N" },
+    }))),
+  ]);
+  const companyResults = fulfilledResults(companySettled);
+  const productResults = fulfilledResults(productSettled);
+  let results = [...companyResults, ...productResults];
 
-  // 업체명·식별번호 검색에 결과가 없을 때만 품명 분류 검색을 추가해 일일 API 호출량을 보호합니다.
-  if (!numericQuery && !results.some((result) => result.items.length)) {
-    const fallback = await Promise.allSettled(CONTRACT_SOURCES.map((source) => requestProcurementApi({
+  // 조달 등록 상호가 법인 표기를 포함한 경우를 위해 원문 업체명 검색이 비었을 때만 제한적으로 보완한다.
+  if (!companyResults.some((result) => result.items.length)) {
+    const candidates = companyNameCandidates(query);
+    if (candidates.length) {
+      const companyFallback = await Promise.allSettled(candidates.flatMap((candidate) => CONTRACT_SOURCES.map((source) => requestProcurementApi({
+        ...source,
+        key,
+        params: { ...common, cntrctCorpNm: candidate },
+      }))));
+      results = [...results, ...fulfilledResults(companyFallback)];
+    }
+  }
+
+  // 품목 등록 검색이 비었을 때만 계약 품명 검색을 보완하여 평상시 API 호출량을 줄인다.
+  if (!productResults.some((result) => result.items.length)) {
+    const productFallback = await Promise.allSettled(CONTRACT_SOURCES.map((source) => requestProcurementApi({
       ...source,
       key,
       params: { ...common, prdctClsfcNoNm: query },
     })));
-    results = [...results, ...fallback
-      .filter((result): result is PromiseFulfilledResult<ProcurementApiResult> => result.status === "fulfilled")
-      .map((result) => result.value)];
+    results = [...results, ...fulfilledResults(productFallback)];
+  }
+
+  if (!results.length) {
+    const rejected = [...companySettled, ...productSettled].find((result) => result.status === "rejected");
+    throw rejected?.reason || new Error("조달청 검색에 실패했습니다.");
   }
   return results;
 }
@@ -160,7 +207,8 @@ export async function GET(request: Request) {
     const items = mergeSearchItems(sourceResults.flatMap((result) => result.items))
       .sort((a, b) => relevance(b, query) - relevance(a, query) || a.name.localeCompare(b.name, "ko"))
       .slice(0, pageSize);
-    const total = Math.max(items.length, sourceResults.reduce((sum, result) => sum + result.total, 0));
+    // 같은 항목을 여러 공식 검색 필드에서 찾으므로 각 응답의 합계를 더해 중복 과장하지 않는다.
+    const total = Math.max(items.length, ...sourceResults.map((result) => result.total));
     cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, items, total });
     if (cache.size > 100) cache.delete(cache.keys().next().value as string);
     return Response.json({ items, total, page, pageSize, cached: false });

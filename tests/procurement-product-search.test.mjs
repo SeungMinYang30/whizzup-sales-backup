@@ -49,8 +49,10 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /getUcntrctPrdctInfoList/);
   assert.match(routeSource, /getThptyUcntrctPrdctInfoList/);
   assert.match(routeSource, /cntrctCorpNm/);
-  assert.match(routeSource, /prdctClsfcNoNm/);
-  assert.match(routeSource, /prdctIdntNoNm: query/);
+  assert.match(routeSource, /params: \{ \.\.\.common, prdctClsfcNoNm: query \}/);
+  assert.match(routeSource, /\["prdctClsfcNoNm", "dtilPrdctClsfcNoNm", "prdctIdntNoNm"\]/);
+  assert.match(routeSource, /companyNameCandidates\(query\)/);
+  assert.match(routeSource, /`\(주\)\$\{compact\}`/);
   assert.match(routeSource, /CACHE_TTL_MS = 10 \* 60/);
   assert.doesNotMatch(routeSource, /setUTCFullYear/);
   assert.doesNotMatch(quotationSource, /NEXT_PUBLIC_PROCUREMENT_DATA_SERVICE_KEY/);
