@@ -96,7 +96,11 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /inqryBgnDate: startDate/);
   assert.match(routeSource, /body\["nkoneps\.com\.response\.ResponseError"\]/);
   assert.match(routeSource, /serviceKey: key/);
-  assert.match(routeSource, /CACHE_VERSION = "v15-shopping-contract-identity"/);
+  assert.match(routeSource, /CACHE_VERSION = "v16-contract-change-date"/);
+  assert.match(routeSource, /function procurementChangeDateWindows/);
+  assert.match(routeSource, /chgDtBgnDt: `\$\{startDate\}0000`/);
+  assert.match(routeSource, /chgDtEndDt: `\$\{endDate\}2359`/);
+  assert.match(routeSource, /hasExplicitDateRange/);
   assert.match(routeSource, /GENERAL_CACHE_TTL_MS = 6 \* 60 \* 60/);
   assert.match(routeSource, /IDENTIFIER_CACHE_TTL_MS = 24 \* 60 \* 60/);
   assert.match(routeSource, /CACHE_RETENTION_MS = 30 \* 24 \* 60 \* 60/);

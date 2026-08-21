@@ -9,7 +9,7 @@ const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoSe
 const GENERAL_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 const IDENTIFIER_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
-const CACHE_VERSION = "v15-shopping-contract-identity";
+const CACHE_VERSION = "v16-contract-change-date";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
 const PROCUREMENT_SEARCH_WINDOW_COUNT = 3;
 const PROCUREMENT_SPEC_SEARCH_WINDOW_COUNT = 15;
@@ -171,6 +171,18 @@ function procurementSearchDateWindows(endpoint: string, count = PROCUREMENT_SEAR
   return windows;
 }
 
+function procurementChangeDateWindows(count = PROCUREMENT_SEARCH_WINDOW_COUNT) {
+  const windows: Record<string, string>[] = [];
+  let end = new Date();
+  for (let index = 0; index < count; index += 1) {
+    const startDate = compactDate(addUtcDays(end, -PROCUREMENT_SEARCH_WINDOW_DAYS));
+    const endDate = compactDate(end);
+    windows.push({ chgDtBgnDt: `${startDate}0000`, chgDtEndDt: `${endDate}2359` });
+    end = addUtcDays(end, -(PROCUREMENT_SEARCH_WINDOW_DAYS + 1));
+  }
+  return windows;
+}
+
 async function requestProcurementApi({ endpoint, params, key, contractMethod, sourceLabel, signal }: {
   endpoint: string;
   params: Record<string, string>;
@@ -182,11 +194,19 @@ async function requestProcurementApi({ endpoint, params, key, contractMethod, so
   // The official API otherwise falls back to only the latest day of registrations.
   // Always provide a stable registration/search range so company and product-name
   // searches can find existing active catalogue entries, not only today's rows.
+  const hasExplicitDateRange = [
+    "rgstDtBgnDt",
+    "rgstDtEndDt",
+    "chgDtBgnDt",
+    "chgDtEndDt",
+    "inqryBgnDate",
+    "inqryEndDate",
+  ].some((name) => Object.prototype.hasOwnProperty.call(params, name));
   const searchParams = new URLSearchParams({
     serviceKey: key,
     type: "json",
     inqryDiv: "1",
-    ...procurementSearchDateParams(endpoint),
+    ...(hasExplicitDateRange ? {} : procurementSearchDateParams(endpoint)),
     ...params,
   });
   const response = await fetch(`${API_BASE_URL}/${endpoint}?${searchParams.toString()}`, {
@@ -316,7 +336,10 @@ async function searchSources(query: string, scope: ProcurementSearchScope, page:
 
   if (scope === "identifier" || (scope === "all" && numericQuery)) {
     const controller = new AbortController();
-    const searched = await collectAllUseful(CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(source.endpoint).map((dateParams) => requestProcurementApi({
+    const searched = await collectAllUseful(CONTRACT_SOURCES.flatMap((source) => [
+      ...procurementSearchDateWindows(source.endpoint),
+      ...procurementChangeDateWindows(),
+    ].map((dateParams) => requestProcurementApi({
         ...source,
         key,
         params: { ...common, ...dateParams, prdctIdntNo: normalizedNumber },
@@ -331,7 +354,10 @@ async function searchSources(query: string, scope: ProcurementSearchScope, page:
   const controller = new AbortController();
   const requests: Promise<ProcurementApiResult>[] = [];
   if (scope === "all" || scope === "company") {
-    requests.push(...CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(source.endpoint).map((dateParams) => requestProcurementApi({
+    requests.push(...CONTRACT_SOURCES.flatMap((source) => [
+      ...procurementSearchDateWindows(source.endpoint),
+      ...procurementChangeDateWindows(),
+    ].map((dateParams) => requestProcurementApi({
         ...source,
         key,
         params: { ...common, ...dateParams, cntrctCorpNm: query },
