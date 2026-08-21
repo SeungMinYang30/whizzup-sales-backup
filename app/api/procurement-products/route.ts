@@ -9,10 +9,10 @@ const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoSe
 const GENERAL_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 const IDENTIFIER_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
-const CACHE_VERSION = "v10-active-contract-history";
+const CACHE_VERSION = "v11-extended-spec-history";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
 const PROCUREMENT_SEARCH_WINDOW_COUNT = 3;
-const PROCUREMENT_COMPANY_SEARCH_WINDOW_COUNT = 10;
+const PROCUREMENT_SPEC_SEARCH_WINDOW_COUNT = 10;
 const PROCUREMENT_SEARCH_GROUP_TIMEOUT_MS = 25_000;
 const PROCUREMENT_MAX_PAGE_SIZE = 300;
 const PROCUREMENT_SEARCH_SCOPES = ["all", "detail", "specification", "company", "identifier"] as const;
@@ -308,7 +308,7 @@ async function searchSources(query: string, scope: ProcurementSearchScope, page:
 
   if (scope === "identifier" || (scope === "all" && numericQuery)) {
     const controller = new AbortController();
-    const searched = await collectAllUseful(CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(source.endpoint, PROCUREMENT_COMPANY_SEARCH_WINDOW_COUNT).map((dateParams) => requestProcurementApi({
+    const searched = await collectAllUseful(CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(source.endpoint).map((dateParams) => requestProcurementApi({
         ...source,
         key,
         params: { ...common, ...dateParams, prdctIdntNo: normalizedNumber },
@@ -323,7 +323,7 @@ async function searchSources(query: string, scope: ProcurementSearchScope, page:
   const controller = new AbortController();
   const requests: Promise<ProcurementApiResult>[] = [];
   if (scope === "all" || scope === "company") {
-    requests.push(...CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(source.endpoint, PROCUREMENT_COMPANY_SEARCH_WINDOW_COUNT).map((dateParams) => requestProcurementApi({
+    requests.push(...CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(source.endpoint).map((dateParams) => requestProcurementApi({
         ...source,
         key,
         params: { ...common, ...dateParams, cntrctCorpNm: query },
@@ -355,7 +355,7 @@ async function searchSources(query: string, scope: ProcurementSearchScope, page:
     })));
   }
   if (scope === "all" || scope === "specification") {
-    requests.push(...procurementSearchDateWindows("getShoppingMallPrdctInfoList").map((dateParams) => requestProcurementApi({
+    requests.push(...procurementSearchDateWindows("getShoppingMallPrdctInfoList", PROCUREMENT_SPEC_SEARCH_WINDOW_COUNT).map((dateParams) => requestProcurementApi({
       endpoint: "getShoppingMallPrdctInfoList",
       sourceLabel: "나라장터 규격",
       key,
