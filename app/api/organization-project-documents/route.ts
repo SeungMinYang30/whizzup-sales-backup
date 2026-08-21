@@ -85,9 +85,11 @@ export async function GET(request: Request) {
       if (!row || row.archived_at) {
         return Response.json({ error: "도면·조감도 파일을 찾지 못했습니다." }, { status: 404 });
       }
-      const requestedRange = isPreview ? request.headers.get("range") || undefined : undefined;
-      const stored = await downloadDriveFile(row.drive_file_id, { range: requestedRange });
       const previewable = row.mime_type === "application/pdf" || row.mime_type.startsWith("image/");
+      const requestedRange = isPreview
+        ? request.headers.get("range") || (row.mime_type === "application/pdf" ? "bytes=0-1048575" : undefined)
+        : undefined;
+      const stored = await downloadDriveFile(row.drive_file_id, { range: requestedRange });
       const headers = new Headers({
         "Content-Type": stored.headers.get("Content-Type") || row.mime_type || "application/octet-stream",
         "Content-Disposition": `${isPreview && previewable ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(row.original_name)}`,
@@ -101,7 +103,9 @@ export async function GET(request: Request) {
       const acceptRanges = stored.headers.get("Accept-Ranges");
       if (contentLength) headers.set("Content-Length", contentLength);
       if (contentRange) headers.set("Content-Range", contentRange);
-      if (acceptRanges || requestedRange) headers.set("Accept-Ranges", acceptRanges || "bytes");
+      if (acceptRanges || requestedRange || (isPreview && row.mime_type === "application/pdf")) {
+        headers.set("Accept-Ranges", acceptRanges || "bytes");
+      }
       return new Response(stored.body, {
         status: stored.status === 206 ? 206 : 200,
         headers,

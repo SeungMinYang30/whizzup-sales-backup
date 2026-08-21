@@ -47,6 +47,7 @@ test("PDF와 이미지는 기존 보기 버튼으로 내부 미리보기를 열�
   assert.match(card, /project-documents-preview-frame/);
   assert.match(card, /새 탭에서 열기/);
   assert.match(route, /request\.headers\.get\("range"\)/);
+  assert.match(route, /bytes=0-1048575/);
   assert.match(route, /Content-Range/);
   assert.match(route, /Accept-Ranges/);
   assert.match(route, /"X-Frame-Options": "SAMEORIGIN"/);
