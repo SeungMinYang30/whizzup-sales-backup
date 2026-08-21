@@ -90,6 +90,7 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /dtilPrdctClsfcNoNm: query/);
   assert.match(routeSource, /prdctIdntNoNm: query/);
   assert.match(routeSource, /PROCUREMENT_SEARCH_WINDOW_COUNT = 3/);
+  assert.match(routeSource, /PROCUREMENT_COMPANY_HISTORY_WINDOW_COUNT = 15/);
   assert.match(routeSource, /PROCUREMENT_SPEC_SEARCH_WINDOW_COUNT = 15/);
   assert.match(routeSource, /procurementSearchDateWindows/);
   assert.match(routeSource, /cntrctCorpNm: query/);
@@ -100,7 +101,7 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /inqryBgnDate: startDate/);
   assert.match(routeSource, /body\["nkoneps\.com\.response\.ResponseError"\]/);
   assert.match(routeSource, /serviceKey: key/);
-  assert.match(routeSource, /CACHE_VERSION = "v19-contract-sequence-registration-fallback"/);
+  assert.match(routeSource, /CACHE_VERSION = "v20-company-mas-history"/);
   assert.match(routeSource, /GENERAL_CACHE_TTL_MS = 6 \* 60 \* 60/);
   assert.match(routeSource, /IDENTIFIER_CACHE_TTL_MS = 24 \* 60 \* 60/);
   assert.match(routeSource, /CACHE_RETENTION_MS = 30 \* 24 \* 60 \* 60/);
@@ -122,9 +123,9 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /scope === "all" \|\| scope === "company"/);
   assert.match(routeSource, /CONTRACT_SOURCES\.flatMap/);
   assert.match(routeSource, /item\.contractNumber, item\.contractSequence/);
-  assert.match(routeSource, /\.join\(":"\) \|\| item\.registrationDate/);
   assert.match(routeSource, /`\$\{item\.identity\}:contract:\$\{contractRecord\}`/);
-  assert.doesNotMatch(routeSource, /shoppingIdentities/);
+  assert.match(routeSource, /shoppingIdentities\.has\(item\.identity\)/);
+  assert.match(routeSource, /source\.endpoint === "getMASCntrctPrdctInfoList" \? PROCUREMENT_COMPANY_HISTORY_WINDOW_COUNT/);
   assert.match(routeSource, /scope === "all" \|\| scope === "detail"/);
   assert.match(routeSource, /scope === "all" \|\| scope === "specification"/);
   assert.match(routeSource, /scope === "identifier"/);

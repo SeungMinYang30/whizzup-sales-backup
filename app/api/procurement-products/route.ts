@@ -9,9 +9,10 @@ const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoSe
 const GENERAL_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 const IDENTIFIER_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
-const CACHE_VERSION = "v19-contract-sequence-registration-fallback";
+const CACHE_VERSION = "v20-company-mas-history";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
 const PROCUREMENT_SEARCH_WINDOW_COUNT = 3;
+const PROCUREMENT_COMPANY_HISTORY_WINDOW_COUNT = 15;
 const PROCUREMENT_SPEC_SEARCH_WINDOW_COUNT = 15;
 const PROCUREMENT_SEARCH_GROUP_TIMEOUT_MS = 25_000;
 const PROCUREMENT_MAX_PAGE_SIZE = 300;
@@ -221,11 +222,17 @@ async function requestProcurementApi({ endpoint, params, key, contractMethod, so
 
 function mergeSearchItems(items: ProcurementSearchItem[]) {
   const merged = new Map<string, ProcurementSearchItem>();
+  const shoppingIdentities = new Set(items
+    .filter((item) => item.sourceLabel.startsWith("나라장터 "))
+    .map((item) => item.identity));
   for (const item of items) {
+    const shoppingRecord = item.sourceLabel.startsWith("나라장터 ");
+    if (!shoppingRecord && shoppingIdentities.has(item.identity)) continue;
     // 공식 명세가 보장하는 쇼핑몰 행의 유일 키는 계약번호 + 계약순번이다.
-    // 검색 경로가 달라도 같은 계약 행만 합치고, 식별번호가 같아도 계약순번이
-    // 다른 행은 보존해야 공식 종합검색 건수와 일치한다.
-    const contractRecord = [item.contractNumber, item.contractSequence].filter(Boolean).join(":") || item.registrationDate;
+    // 같은 식별번호라도 계약순번이 다른 쇼핑몰 행은 보존해야 한다.
+    const contractRecord = shoppingRecord
+      ? [item.contractNumber, item.contractSequence].filter(Boolean).join(":") || item.registrationDate
+      : "";
     const identity = contractRecord ? `${item.identity}:contract:${contractRecord}` : item.identity;
     const normalizedItem = identity === item.identity ? item : { ...item, identity };
     const saved = merged.get(identity);
@@ -329,7 +336,10 @@ async function searchSources(query: string, scope: ProcurementSearchScope, page:
   const controller = new AbortController();
   const requests: Promise<ProcurementApiResult>[] = [];
   if (scope === "all" || scope === "company") {
-    requests.push(...CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(source.endpoint).map((dateParams) => requestProcurementApi({
+    requests.push(...CONTRACT_SOURCES.flatMap((source) => procurementSearchDateWindows(
+      source.endpoint,
+      source.endpoint === "getMASCntrctPrdctInfoList" ? PROCUREMENT_COMPANY_HISTORY_WINDOW_COUNT : PROCUREMENT_SEARCH_WINDOW_COUNT,
+    ).map((dateParams) => requestProcurementApi({
         ...source,
         key,
         params: { ...common, ...dateParams, cntrctCorpNm: query },
