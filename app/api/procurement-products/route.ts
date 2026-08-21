@@ -9,7 +9,7 @@ const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoSe
 const GENERAL_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 const IDENTIFIER_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
-const CACHE_VERSION = "v21-company-legal-name-candidates";
+const CACHE_VERSION = "v22-shopping-offer-signature";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
 const PROCUREMENT_SEARCH_WINDOW_COUNT = 3;
 const PROCUREMENT_SPEC_SEARCH_WINDOW_COUNT = 15;
@@ -221,17 +221,23 @@ async function requestProcurementApi({ endpoint, params, key, contractMethod, so
 
 function mergeSearchItems(items: ProcurementSearchItem[]) {
   const merged = new Map<string, ProcurementSearchItem>();
-  const shoppingIdentities = new Set(items
+  const offerSignature = (item: ProcurementSearchItem) => [
+    item.identity,
+    item.name.normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/\s+/g, ""),
+    item.unitPrice ?? "",
+  ].join(":");
+  const shoppingSignatures = new Set(items
     .filter((item) => item.sourceLabel.startsWith("나라장터 "))
-    .map((item) => item.identity));
+    .map(offerSignature));
   for (const item of items) {
     const shoppingRecord = item.sourceLabel.startsWith("나라장터 ");
-    if (!shoppingRecord && shoppingIdentities.has(item.identity)) continue;
+    const signature = offerSignature(item);
+    if (!shoppingRecord && shoppingSignatures.has(signature)) continue;
     // 공식 명세가 보장하는 쇼핑몰 행의 유일 키는 계약번호 + 계약순번이다.
     // 같은 식별번호라도 계약순번이 다른 쇼핑몰 행은 보존해야 한다.
     const contractRecord = shoppingRecord
       ? [item.contractNumber, item.contractSequence].filter(Boolean).join(":") || item.registrationDate
-      : "";
+      : `offer:${signature}`;
     const identity = contractRecord ? `${item.identity}:contract:${contractRecord}` : item.identity;
     const normalizedItem = identity === item.identity ? item : { ...item, identity };
     const saved = merged.get(identity);
