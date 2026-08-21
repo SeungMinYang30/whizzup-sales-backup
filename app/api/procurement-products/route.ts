@@ -2,11 +2,12 @@ import { accessErrorResponse, requireApprovedMember } from "../../../lib/collabo
 import { mapProcurementSearchItem, type ProcurementSearchItem } from "../../../lib/procurement-products";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoService";
 const CACHE_TTL_MS = 10 * 60 * 1_000;
-const CACHE_VERSION = "v2-date-range";
-const PROCUREMENT_SEARCH_START_DATE = "20000101";
+const CACHE_VERSION = "v3-valid-window";
+const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
 const cache = new Map<string, { expiresAt: number; items: ProcurementSearchItem[]; total: number }>();
 
 const CONTRACT_SOURCES = [
@@ -47,12 +48,22 @@ function compactDate(value = new Date()) {
   return `${year}${month}${day}`;
 }
 
+function addUtcDays(value: Date, days: number) {
+  const result = new Date(value);
+  result.setUTCDate(result.getUTCDate() + days);
+  return result;
+}
+
 function procurementSearchDateParams(endpoint: string): Record<string, string> {
-  const endDate = compactDate(new Date(Date.now() + 24 * 60 * 60 * 1_000));
+  // 공식 API는 한 번에 최대 1년만 조회할 수 있다. 범위를 초과하면
+  // nkoneps.com.response.ResponseError(resultCode=07)를 돌려주므로 364일로 제한한다.
+  const end = new Date();
+  const startDate = compactDate(addUtcDays(end, -PROCUREMENT_SEARCH_WINDOW_DAYS));
+  const endDate = compactDate(end);
   if (endpoint === "getShoppingMallPrdctInfoList") {
-    return { inqryBgnDate: PROCUREMENT_SEARCH_START_DATE, inqryEndDate: endDate };
+    return { inqryBgnDate: startDate, inqryEndDate: endDate };
   }
-  return { rgstDtBgnDt: PROCUREMENT_SEARCH_START_DATE, rgstDtEndDt: endDate };
+  return { rgstDtBgnDt: `${startDate}0000`, rgstDtEndDt: `${endDate}2359` };
 }
 
 async function requestProcurementApi({ endpoint, params, key, contractMethod, sourceLabel }: {
@@ -75,10 +86,18 @@ async function requestProcurementApi({ endpoint, params, key, contractMethod, so
   const response = await fetch(`${API_BASE_URL}/${endpoint}?${searchParams.toString()}`, {
     headers: { Accept: "application/json" },
     cache: "no-store",
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(45_000),
   });
   const body = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!response.ok || !body) throw new Error(`${sourceLabel} 응답을 확인할 수 없습니다.`);
+  const errorRoot = body["nkoneps.com.response.ResponseError"];
+  const errorHeader = (errorRoot && typeof errorRoot === "object" && "header" in errorRoot
+    && (errorRoot as Record<string, unknown>).header && typeof (errorRoot as Record<string, unknown>).header === "object"
+    ? (errorRoot as Record<string, unknown>).header
+    : null) as Record<string, unknown> | null;
+  if (errorHeader) {
+    throw new Error(String(errorHeader.resultMsg || `${sourceLabel} 검색 요청이 거절되었습니다.`));
+  }
   const root = (body.response && typeof body.response === "object" ? body.response : body) as Record<string, unknown>;
   const header = (root.header && typeof root.header === "object" ? root.header : {}) as Record<string, unknown>;
   const resultCode = String(header.resultCode ?? body.resultCode ?? "00");
@@ -133,8 +152,9 @@ function fulfilledResults(settled: PromiseSettledResult<ProcurementApiResult>[])
 
 function companyNameCandidates(query: string) {
   const compact = query.replace(/\s+/g, " ").trim();
-  if (!compact || /^(?:\(주\)|㈜|주식회사\s*)/.test(compact)) return [];
-  return [`(주)${compact}`, `주식회사 ${compact}`];
+  if (!compact) return [];
+  if (/^(?:\(주\)|㈜|주식회사\s*)/.test(compact)) return [compact];
+  return [...new Set([`(주)${compact}`, `주식회사 ${compact}`, `㈜${compact}`, compact])];
 }
 
 async function searchSources(query: string, page: number, pageSize: number, key: string) {
@@ -143,30 +163,23 @@ async function searchSources(query: string, page: number, pageSize: number, key:
   const normalizedNumber = query.replace(/\D/g, "");
 
   if (numericQuery) {
-    const settled = await Promise.allSettled([
-      ...CONTRACT_SOURCES.map((source) => requestProcurementApi({
+    const settled = await Promise.allSettled(CONTRACT_SOURCES.map((source) => requestProcurementApi({
         ...source,
         key,
         params: { ...common, prdctIdntNo: normalizedNumber },
-      })),
-      requestProcurementApi({
-        endpoint: "getShoppingMallPrdctInfoList",
-        sourceLabel: "나라장터 품목 등록",
-        key,
-        params: { ...common, prdctIdntNoNm: normalizedNumber, regtCncelYn: "N" },
-      }),
-    ]);
+      })));
     const results = fulfilledResults(settled);
     if (!results.length) throw settled.find((result) => result.status === "rejected")?.reason || new Error("조달청 검색에 실패했습니다.");
     return results;
   }
 
   // 공식 API는 통합 키워드 검색을 제공하지 않으므로 업체명·품명·세부품명·규격명을 각각 조회한다.
+  const companyCandidates = companyNameCandidates(query);
   const [companySettled, productSettled] = await Promise.all([
-    Promise.allSettled(CONTRACT_SOURCES.map((source) => requestProcurementApi({
-      ...source,
+    Promise.allSettled(companyCandidates.map((candidate) => requestProcurementApi({
+      ...CONTRACT_SOURCES[0],
       key,
-      params: { ...common, cntrctCorpNm: query },
+      params: { ...common, cntrctCorpNm: candidate },
     }))),
     Promise.allSettled(["prdctClsfcNoNm", "dtilPrdctClsfcNoNm", "prdctIdntNoNm"].map((field) => requestProcurementApi({
       endpoint: "getShoppingMallPrdctInfoList",
@@ -179,11 +192,10 @@ async function searchSources(query: string, page: number, pageSize: number, key:
   const productResults = fulfilledResults(productSettled);
   let results = [...companyResults, ...productResults];
 
-  // 조달 등록 상호가 법인 표기를 포함한 경우를 위해 원문 업체명 검색이 비었을 때만 제한적으로 보완한다.
+  // 다수공급자계약에 업체명이 없을 때만 나머지 계약 유형까지 확장한다.
   if (!companyResults.some((result) => result.items.length)) {
-    const candidates = companyNameCandidates(query);
-    if (candidates.length) {
-      const companyFallback = await Promise.allSettled(candidates.flatMap((candidate) => CONTRACT_SOURCES.map((source) => requestProcurementApi({
+    if (companyCandidates.length) {
+      const companyFallback = await Promise.allSettled(companyCandidates.flatMap((candidate) => CONTRACT_SOURCES.slice(1).map((source) => requestProcurementApi({
         ...source,
         key,
         params: { ...common, cntrctCorpNm: candidate },

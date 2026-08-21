@@ -93,15 +93,20 @@ export function mapProcurementSearchItem(value: unknown, options: ProcurementSea
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
   const procurementNumber = text(source.prdctIdntNo, 100);
-  const name = text(source.prdctIdntNoNm || source.prdctNm || source.dtilPrdctClsfcNoNm || source.prdctClsfcNoNm, 300);
+  const catalogueName = text(source.prdctIdntNoNm || source.prdctNm, 300);
+  const rawSpecification = text(source.prdctSpecNm, 1_000);
+  const name = catalogueName || rawSpecification || text(source.dtilPrdctClsfcNoNm || source.prdctClsfcNoNm, 300);
   if (!procurementNumber || !name) return null;
   const procurementChannel = "G2B";
   const contractEndDate = text(source.cntrctEndDate, 20);
   const classificationNumber = text(source.prdctClsfcNo, 100);
+  const classificationSummary = [text(source.dtilPrdctClsfcNoNm, 300), text(source.prdctClsfcNoNm, 300)]
+    .filter((entry, index, entries) => entry && entries.indexOf(entry) === index)
+    .join(" · ");
   return {
     identity: procurementProductIdentity(procurementChannel, procurementNumber),
     name,
-    specification: text(source.prdctSpecNm, 1_000),
+    specification: catalogueName ? rawSpecification : classificationSummary,
     unitPrice: nullableMoney(source.cntrctPrceAmt),
     unit: text(source.prdctUnit, 40),
     supplierName: text(source.cntrctCorpNm, 300),

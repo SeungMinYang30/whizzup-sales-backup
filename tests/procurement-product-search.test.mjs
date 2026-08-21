@@ -38,6 +38,18 @@ test("procurement result mapping exposes the fields used by the detailed product
   assert.equal(item.sourceUrl, "https://goods.g2b.go.kr/search/productSearchView.do?goodsClsfcNo=12345678&goodsIdntfcNo=24563902");
 });
 
+test("contract results use their detailed specification as the visible product name", () => {
+  const item = procurement.mapProcurementSearchItem({
+    prdctIdntNo: "24563902",
+    prdctSpecNm: "멀티미디어학습장치, 에어패스, AP-EDUVR-01, 가상체육시스템",
+    dtilPrdctClsfcNoNm: "멀티미디어학습장치",
+    prdctClsfcNoNm: "영상·음향장비",
+    cntrctCorpNm: "(주)에어패스",
+  }, { contractMethod: "다수공급자계약", sourceLabel: "다수공급자계약" });
+  assert.equal(item.name, "멀티미디어학습장치, 에어패스, AP-EDUVR-01, 가상체육시스템");
+  assert.equal(item.specification, "멀티미디어학습장치 · 영상·음향장비");
+});
+
 test("procurement catalog identity is stable by channel and identifier", () => {
   assert.equal(procurement.procurementProductIdentity("G2B", "2456-3902"), "G2B:24563902");
   assert.equal(procurement.procurementCatalogId("G2B", "24563902"), "procurement-g2b-24563902");
@@ -52,15 +64,19 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /cntrctCorpNm/);
   assert.match(routeSource, /params: \{ \.\.\.common, prdctClsfcNoNm: query \}/);
   assert.match(routeSource, /\["prdctClsfcNoNm", "dtilPrdctClsfcNoNm", "prdctIdntNoNm"\]/);
-  assert.match(routeSource, /companyNameCandidates\(query\)/);
+  assert.match(routeSource, /const companyCandidates = companyNameCandidates\(query\)/);
   assert.match(routeSource, /`\(주\)\$\{compact\}`/);
-  assert.match(routeSource, /PROCUREMENT_SEARCH_START_DATE = "20000101"/);
-  assert.match(routeSource, /rgstDtBgnDt: PROCUREMENT_SEARCH_START_DATE/);
-  assert.match(routeSource, /inqryBgnDate: PROCUREMENT_SEARCH_START_DATE/);
+  assert.match(routeSource, /`주식회사 \$\{compact\}`/);
+  assert.match(routeSource, /`㈜\$\{compact\}`/);
+  assert.match(routeSource, /PROCUREMENT_SEARCH_WINDOW_DAYS = 364/);
+  assert.match(routeSource, /rgstDtBgnDt: `\$\{startDate\}0000`/);
+  assert.match(routeSource, /rgstDtEndDt: `\$\{endDate\}2359`/);
+  assert.match(routeSource, /inqryBgnDate: startDate/);
+  assert.match(routeSource, /body\["nkoneps\.com\.response\.ResponseError"\]/);
   assert.match(routeSource, /serviceKey: key/);
-  assert.match(routeSource, /CACHE_VERSION = "v2-date-range"/);
+  assert.match(routeSource, /CACHE_VERSION = "v3-valid-window"/);
   assert.match(routeSource, /CACHE_TTL_MS = 10 \* 60/);
-  assert.doesNotMatch(routeSource, /setUTCFullYear/);
+  assert.doesNotMatch(routeSource, /20000101/);
   assert.doesNotMatch(quotationSource, /NEXT_PUBLIC_PROCUREMENT_DATA_SERVICE_KEY/);
 });
 
@@ -76,7 +92,7 @@ test("quotation picker supports quote-only and owner-only catalog registration i
   assert.match(quotationSource, /procurementSearchAbortRef\.current\?\.abort\(\)/);
   assert.match(quotationSource, /requestId !== procurementSearchRequestRef\.current/);
   assert.match(quotationSource, /onChange=\{\(event\) => changeProcurementQuery\(event\.target\.value\)\}/);
-  assert.match(quotationSource, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}>나라장터 원문 열기/);
+  assert.match(quotationSource, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\} onClick=\{\(event\) => event\.stopPropagation\(\)\}>나라장터 원문 열기/);
   assert.match(catalogRouteSource, /requirePrimaryOwner\(\)/);
   assert.match(catalogRouteSource, /procurementProductIdentity/);
 });

@@ -1992,7 +1992,7 @@ export default function QuotationManagementPage({
               <div><dt>계약 단가</dt><dd>{procurementDetail.unitPrice === null ? "가격 정보 없음" : `${won.format(procurementDetail.unitPrice)}원${procurementDetail.unit ? ` / ${procurementDetail.unit}` : ""}`}</dd></div>
             </dl></div>
           </div>
-          <footer><a href={procurementDetail.sourceUrl} target="_blank" rel="noreferrer" onPointerDown={(event) => event.stopPropagation()}>나라장터 원문 열기</a><button type="button" onClick={() => void selectProcurementProduct(procurementDetail, false)}>견적에 넣기</button>{canRegisterProcurementProduct && !existingProcurementProduct(procurementDetail) && <button className="primary" type="button" disabled={procurementSavingIdentity === procurementDetail.identity} onClick={() => void selectProcurementProduct(procurementDetail, true)}>제품 DB에 등록</button>}</footer>
+          <footer><a href={procurementDetail.sourceUrl} target="_blank" rel="noopener noreferrer" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>나라장터 원문 열기</a><button type="button" onClick={() => void selectProcurementProduct(procurementDetail, false)}>견적에 넣기</button>{canRegisterProcurementProduct && !existingProcurementProduct(procurementDetail) && <button className="primary" type="button" disabled={procurementSavingIdentity === procurementDetail.identity} onClick={() => void selectProcurementProduct(procurementDetail, true)}>제품 DB에 등록</button>}</footer>
         </section>
       </div>, document.body)}
     </div>;
