@@ -229,10 +229,6 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
     }
   }
 
-  function openDocument(document: ProjectDocument) {
-    window.open(`/api/organization-project-documents?id=${document.id}&preview=1`, "_blank", "noopener,noreferrer");
-  }
-
   function closeModal() {
     setOpen(false);
   }
@@ -268,7 +264,7 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
                 <button type="button" disabled={uploading} aria-label={`${entry.file.name} 선택 해제`} onClick={() => setPendingDocuments((current) => current.filter((item) => item.key !== entry.key))}>제외</button>
               </article>)}</div>
             </div> : null}
-            <small className="project-documents-storage-note">Google Drive의 기관명 / 사업 차수 / 도면·조감도 폴더에만 저장합니다. 삭제한 파일은 99_보관으로 이동합니다.</small>
+            <small className="project-documents-storage-note">Google Drive의 지역 / 기관명 / 도면·조감도 / 사업 차수 폴더에 저장합니다. 삭제한 파일은 99_보관으로 이동합니다.</small>
             {uploadSummary ? <div className="project-documents-success" role="status">{uploadSummary}</div> : null}
             {error ? <div className="project-documents-error" role="alert">{error}</div> : null}
             {documents.length ? <nav className="project-documents-filters" aria-label="도면·조감도 자료 필터">{documentFilters.map((filter) => {
@@ -279,7 +275,7 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
               {loading ? <p>파일을 불러오는 중입니다.</p> : visibleDocuments.length ? visibleDocuments.map((document) => (
                 <article key={document.id}>
                   <div><b>{document.document_type}</b><strong>{document.original_name}</strong><small>{formatBytes(Number(document.size_bytes) || 0)} · {document.created_by_name || "등록자 미상"}</small></div>
-                  <div><button type="button" onClick={() => openDocument(document)}>보기</button><a href={`/api/organization-project-documents?id=${document.id}&download=1`}>다운로드</a><button type="button" className="danger" onClick={() => void deleteDocument(document)}>삭제</button></div>
+                  <div><a href={`/api/organization-project-documents?id=${document.id}&preview=1`} target="_blank" rel="noopener noreferrer">보기</a><a href={`/api/organization-project-documents?id=${document.id}&download=1`}>다운로드</a><button type="button" className="danger" onClick={() => void deleteDocument(document)}>삭제</button></div>
                 </article>
               )) : <p>{documents.length ? `${documentFilter} 자료가 없습니다.` : "등록된 도면·조감도가 없습니다."}</p>}
             </div>

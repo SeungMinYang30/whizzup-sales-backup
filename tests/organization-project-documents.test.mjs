@@ -40,7 +40,7 @@ test("기관 상세 요약 카드에서 사업별 파일을 보고 등록하고 
   assert.match(crm, /<OrganizationProjectDocumentsCard/);
   assert.match(crm, /businessRound=\{selectedDetailBusinessRound\}/);
   assert.match(card, /도면·조감도 보기/);
-  assert.match(card, /Google Drive의 기관명 \/ 사업 차수 \/ 도면·조감도 폴더에만 저장/);
+  assert.match(card, /Google Drive의 지역 \/ 기관명 \/ 도면·조감도 \/ 사업 차수 폴더에 저장/);
   assert.match(card, /preview=1/);
   assert.match(card, /download=1/);
   assert.match(card, /파일을 삭제할까요/);
@@ -49,7 +49,8 @@ test("기관 상세 요약 카드에서 사업별 파일을 보고 등록하고 
 });
 
 test("기존 보기 버튼은 PDF와 이미지를 새 전체 탭에서 열고 구간 요청을 전달한다", () => {
-  assert.match(card, /window\.open\(`\/api\/organization-project-documents\?id=\$\{document\.id\}&preview=1`, "_blank"/);
+  assert.match(card, /href=\{`\/api\/organization-project-documents\?id=\$\{document\.id\}&preview=1`\} target="_blank" rel="noopener noreferrer">보기<\/a>/);
+  assert.doesNotMatch(card, /window\.open\(`\/api\/organization-project-documents/);
   assert.doesNotMatch(card, /project-documents-preview-frame/);
   assert.match(route, /request\.headers\.get\("range"\)/);
   assert.match(route, /Content-Range/);
