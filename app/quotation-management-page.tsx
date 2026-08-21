@@ -163,6 +163,7 @@ type ProductPickerTarget =
 type ProductPickerSource = "catalog" | "procurement";
 
 type ProcurementSort = "relevance" | "priceAsc" | "priceDesc" | "recent";
+type ProcurementSearchScope = "all" | "detail" | "specification" | "company" | "identifier";
 type ProcurementFacet = { number: string; name: string; count: number };
 type ProcurementNamedFacet = { name: string; count: number };
 type ProcurementCacheInfo = {
@@ -182,6 +183,22 @@ type ProcurementRegistrationDraft = {
   procurementFeePercent: string;
   commissionPercent: string;
 };
+
+const procurementSearchScopeOptions: Array<{ value: ProcurementSearchScope; label: string }> = [
+  { value: "all", label: "전체" },
+  { value: "detail", label: "세부품명" },
+  { value: "specification", label: "규격" },
+  { value: "company", label: "업체명" },
+  { value: "identifier", label: "물품식별번호" },
+];
+
+function procurementSearchPlaceholder(scope: ProcurementSearchScope) {
+  if (scope === "company") return "계약업체명을 입력하세요";
+  if (scope === "detail") return "세부품명을 입력하세요";
+  if (scope === "specification") return "규격·모델명을 입력하세요";
+  if (scope === "identifier") return "물품식별번호 8자리를 입력하세요";
+  return "업체명·세부품명·규격·식별번호를 입력하세요";
+}
 
 function procurementFacetsForItems(items: ProcurementSearchItem[]) {
   const detailMap = new Map<string, ProcurementFacet>();
@@ -694,6 +711,7 @@ export default function QuotationManagementPage({
   const [procurementHasSearched, setProcurementHasSearched] = useState(false);
   const [procurementDetail, setProcurementDetail] = useState<ProcurementSearchItem | null>(null);
   const [procurementSort, setProcurementSort] = useState<ProcurementSort>("relevance");
+  const [procurementSearchScope, setProcurementSearchScope] = useState<ProcurementSearchScope>("all");
   const [procurementSelectedIdentities, setProcurementSelectedIdentities] = useState<string[]>([]);
   const [procurementDetailFilters, setProcurementDetailFilters] = useState<string[]>([]);
   const [procurementContractFilters, setProcurementContractFilters] = useState<string[]>([]);
@@ -1948,12 +1966,41 @@ export default function QuotationManagementPage({
     if (value.trim().length >= 2) {
       procurementSearchDebounceRef.current = window.setTimeout(() => {
         procurementSearchDebounceRef.current = null;
-        void searchProcurement(1, false, procurementSort, value);
+        void searchProcurement(1, false, procurementSort, value, false, procurementSearchScope);
       }, 350);
     }
   }
 
-  async function searchProcurement(page = 1, append = false, requestedSort: ProcurementSort = procurementSort, requestedQuery = procurementQuery, forceRefresh = false) {
+  function changeProcurementSearchScope(value: ProcurementSearchScope) {
+    procurementSearchAbortRef.current?.abort();
+    if (procurementSearchDebounceRef.current !== null) window.clearTimeout(procurementSearchDebounceRef.current);
+    procurementSearchRequestRef.current += 1;
+    setProcurementSearchScope(value);
+    setProcurementResults([]);
+    setProcurementTotal(0);
+    setProcurementPage(1);
+    setProcurementError("");
+    setProcurementCacheInfo(null);
+    setProcurementHasSearched(false);
+    setProcurementDetail(null);
+    setProcurementSelectedIdentities([]);
+    setProcurementDetailFilters([]);
+    setProcurementContractFilters([]);
+    setProcurementSupplierFilters([]);
+    setProcurementMarketplace("shopping");
+    setProcurementVisibleCount(30);
+    setProcurementQuantities({});
+    setProcurementLoading(false);
+    setProcurementRefreshing(false);
+    if (procurementQuery.trim().length >= 2) {
+      procurementSearchDebounceRef.current = window.setTimeout(() => {
+        procurementSearchDebounceRef.current = null;
+        void searchProcurement(1, false, procurementSort, procurementQuery, false, value);
+      }, 350);
+    }
+  }
+
+  async function searchProcurement(page = 1, append = false, requestedSort: ProcurementSort = procurementSort, requestedQuery = procurementQuery, forceRefresh = false, requestedScope: ProcurementSearchScope = procurementSearchScope) {
     if (procurementSearchDebounceRef.current !== null) {
       window.clearTimeout(procurementSearchDebounceRef.current);
       procurementSearchDebounceRef.current = null;
@@ -1982,7 +2029,7 @@ export default function QuotationManagementPage({
     setProcurementError("");
     let hasUsableResults = keepVisibleResults;
     try {
-      const requestUrl = `/api/procurement-products?q=${encodeURIComponent(key)}&page=${page}&pageSize=120&sort=${encodeURIComponent(requestedSort)}`;
+      const requestUrl = `/api/procurement-products?q=${encodeURIComponent(key)}&scope=${encodeURIComponent(requestedScope)}&page=${page}&pageSize=300&sort=${encodeURIComponent(requestedSort)}`;
       const response = await fetch(`${requestUrl}${forceRefresh ? "&refresh=1" : ""}`, {
         cache: "no-store",
         signal: controller.signal,
@@ -2302,8 +2349,8 @@ export default function QuotationManagementPage({
         </header>
         <div className="quotation-procurement-market-search-area">
           <form onSubmit={(event) => { event.preventDefault(); void searchProcurement(1, false); }}>
-            <select aria-label="나라장터 검색 범위" defaultValue="all"><option value="all">통합 검색</option></select>
-            <input ref={contextualProductSearchInputRef} value={procurementQuery} onChange={(event) => changeProcurementQuery(event.target.value)} placeholder="업체명·제품명·식별번호를 입력하세요" aria-label="나라장터 업체명 제품명 식별번호 검색" />
+            <select aria-label="나라장터 검색 범위" value={procurementSearchScope} onChange={(event) => changeProcurementSearchScope(event.target.value as ProcurementSearchScope)}>{procurementSearchScopeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+            <input ref={contextualProductSearchInputRef} value={procurementQuery} onChange={(event) => changeProcurementQuery(event.target.value)} placeholder={procurementSearchPlaceholder(procurementSearchScope)} aria-label={`나라장터 ${procurementSearchScopeOptions.find((option) => option.value === procurementSearchScope)?.label || "전체"} 검색`} />
             <button type="submit" disabled={procurementLoading}>{procurementLoading ? "검색 중…" : "검색"}</button>
           </form>
           <nav aria-label="조달 검색 채널"><button type="button" className={procurementMarketplace === "shopping" ? "active" : ""} onClick={() => { setProcurementMarketplace("shopping"); setProcurementVisibleCount(30); }}>종합쇼핑몰 <b>{procurementHasSearched ? procurementFacets.marketplaces.find((facet) => facet.name === "종합쇼핑몰")?.count || 0 : 0}</b></button><button type="button" disabled title="추후 연동 예정">벤처나라</button><button type="button" disabled title="추후 연동 예정">혁신장터</button><button type="button" className={procurementMarketplace === "digital-service" ? "active" : ""} onClick={() => { setProcurementMarketplace("digital-service"); setProcurementVisibleCount(30); }}>디지털서비스몰 <b>{procurementHasSearched ? procurementFacets.marketplaces.find((facet) => facet.name === "디지털서비스몰")?.count || 0 : 0}</b></button></nav>

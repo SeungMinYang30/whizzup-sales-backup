@@ -9,10 +9,12 @@ const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoSe
 const GENERAL_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 const IDENTIFIER_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const CACHE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
-const CACHE_VERSION = "v7-shared-cache-policy";
+const CACHE_VERSION = "v8-complete-search-scope";
 const PROCUREMENT_SEARCH_WINDOW_DAYS = 364;
 const PROCUREMENT_SEARCH_GROUP_TIMEOUT_MS = 18_000;
-const PROCUREMENT_SEARCH_GRACE_MS = 800;
+const PROCUREMENT_MAX_PAGE_SIZE = 300;
+const PROCUREMENT_SEARCH_SCOPES = ["all", "detail", "specification", "company", "identifier"] as const;
+type ProcurementSearchScope = typeof PROCUREMENT_SEARCH_SCOPES[number];
 type ProcurementFacet = { number: string; name: string; count: number };
 type NamedFacet = { name: string; count: number };
 type ProcurementFacets = {
@@ -272,41 +274,37 @@ function companyNameCandidates(query: string) {
   return [...new Set([compact, `주식회사 ${compact}`, `(주)${compact}`, `㈜${compact}`])];
 }
 
-async function collectFirstUseful(requests: Promise<ProcurementApiResult>[], controller: AbortController) {
-  const results: ProcurementApiResult[] = [];
+function procurementSearchScope(value: string): ProcurementSearchScope {
+  return PROCUREMENT_SEARCH_SCOPES.includes(value as ProcurementSearchScope)
+    ? value as ProcurementSearchScope
+    : "all";
+}
+
+async function collectAllUseful(requests: Promise<ProcurementApiResult>[], controller: AbortController) {
   let firstError: unknown;
-  const tracked = requests.map((request) => request.then((result) => {
-    results.push(result);
-    if (!result.items.length) throw new Error("empty procurement result");
-    return result;
-  }, (error) => {
-    firstError ??= error;
-    throw error;
-  }));
   const timeout = setTimeout(() => controller.abort(), PROCUREMENT_SEARCH_GROUP_TIMEOUT_MS);
   try {
-    await Promise.any(tracked);
-    await Promise.race([
-      Promise.allSettled(tracked),
-      new Promise((resolve) => setTimeout(resolve, PROCUREMENT_SEARCH_GRACE_MS)),
-    ]);
-  } catch {
-    await Promise.allSettled(tracked);
+    const settled = await Promise.allSettled(requests);
+    const results: ProcurementApiResult[] = [];
+    for (const result of settled) {
+      if (result.status === "fulfilled") results.push(result.value);
+      else firstError ??= result.reason;
+    }
+    return { results, firstError };
   } finally {
     clearTimeout(timeout);
     controller.abort();
   }
-  return { results, firstError };
 }
 
-async function searchSources(query: string, page: number, pageSize: number, key: string) {
+async function searchSources(query: string, scope: ProcurementSearchScope, page: number, pageSize: number, key: string) {
   const numericQuery = /^\d{5,}$/.test(query.replace(/\D/g, ""));
   const common = { numOfRows: String(pageSize), pageNo: String(page) };
   const normalizedNumber = query.replace(/\D/g, "");
 
-  if (numericQuery) {
+  if (scope === "identifier" || (scope === "all" && numericQuery)) {
     const controller = new AbortController();
-    const searched = await collectFirstUseful(CONTRACT_SOURCES.map((source) => requestProcurementApi({
+    const searched = await collectAllUseful(CONTRACT_SOURCES.map((source) => requestProcurementApi({
         ...source,
         key,
         params: { ...common, prdctIdntNo: normalizedNumber },
@@ -316,45 +314,54 @@ async function searchSources(query: string, page: number, pageSize: number, key:
     return searched.results;
   }
 
-  // 공식 API는 통합 키워드 검색을 제공하지 않으므로 업체명·품명·세부품명·규격명을 각각 조회한다.
-  const companyCandidates = companyNameCandidates(query);
-  const primaryController = new AbortController();
-  const primary = await collectFirstUseful([
-    ...companyCandidates.map((candidate) => requestProcurementApi({
-      ...CONTRACT_SOURCES[0],
-      key,
-      params: { ...common, cntrctCorpNm: candidate },
-      signal: primaryController.signal,
-    })),
-    ...["prdctClsfcNoNm", "dtilPrdctClsfcNoNm", "prdctIdntNoNm"].map((field) => requestProcurementApi({
-      endpoint: "getShoppingMallPrdctInfoList",
-      sourceLabel: "나라장터 품목 등록",
-      key,
-      params: { ...common, [field]: query, regtCncelYn: "N" },
-      signal: primaryController.signal,
-    })),
-  ], primaryController);
-  if (primary.results.some((result) => result.items.length)) return primary.results;
-
-  // 1차 검색이 비었을 때만 일반·제3자단가계약까지 확장한다.
-  const fallbackController = new AbortController();
-  const fallback = await collectFirstUseful([
-    ...companyCandidates.flatMap((candidate) => CONTRACT_SOURCES.slice(1).map((source) => requestProcurementApi({
+  // 공식 API는 통합 키워드 검색을 제공하지 않는다. 선택한 범위에 해당하는
+  // 계약·품목등록 조회를 모두 끝까지 수집한 뒤 물품식별번호로 합친다.
+  const controller = new AbortController();
+  const requests: Promise<ProcurementApiResult>[] = [];
+  if (scope === "all" || scope === "company") {
+    requests.push(...companyNameCandidates(query).flatMap((candidate) => CONTRACT_SOURCES.map((source) => requestProcurementApi({
       ...source,
       key,
       params: { ...common, cntrctCorpNm: candidate },
-      signal: fallbackController.signal,
-    }))),
-    ...CONTRACT_SOURCES.map((source) => requestProcurementApi({
+      signal: controller.signal,
+    }))));
+  }
+  if (scope === "all" || scope === "detail") {
+    requests.push(requestProcurementApi({
+      endpoint: "getShoppingMallPrdctInfoList",
+      sourceLabel: "나라장터 세부품명",
+      key,
+      params: { ...common, dtilPrdctClsfcNoNm: query, regtCncelYn: "N" },
+      signal: controller.signal,
+    }));
+    requests.push(...CONTRACT_SOURCES.map((source) => requestProcurementApi({
       ...source,
       key,
       params: { ...common, prdctClsfcNoNm: query },
-      signal: fallbackController.signal,
-    })),
-  ], fallbackController);
-  const results = [...primary.results, ...fallback.results];
-  if (!results.length) throw fallback.firstError || primary.firstError || new Error("조달청 검색에 실패했습니다.");
-  return results;
+      signal: controller.signal,
+    })));
+  }
+  if (scope === "all") {
+    requests.push(requestProcurementApi({
+      endpoint: "getShoppingMallPrdctInfoList",
+      sourceLabel: "나라장터 품명",
+      key,
+      params: { ...common, prdctClsfcNoNm: query, regtCncelYn: "N" },
+      signal: controller.signal,
+    }));
+  }
+  if (scope === "all" || scope === "specification") {
+    requests.push(requestProcurementApi({
+      endpoint: "getShoppingMallPrdctInfoList",
+      sourceLabel: "나라장터 규격",
+      key,
+      params: { ...common, prdctIdntNoNm: query, regtCncelYn: "N" },
+      signal: controller.signal,
+    }));
+  }
+  const searched = await collectAllUseful(requests, controller);
+  if (!searched.results.length) throw searched.firstError || new Error("조달청 검색에 실패했습니다.");
+  return searched.results;
 }
 
 async function refreshProcurementSearch(options: {
@@ -363,13 +370,14 @@ async function refreshProcurementSearch(options: {
   page: number;
   pageSize: number;
   query: string;
+  scope: ProcurementSearchScope;
   sort: string;
   ttlMs: number;
 }) {
   const existing = refreshes.get(options.cacheKey);
   if (existing) return existing;
   const refresh = (async () => {
-    const sourceResults = await searchSources(options.query, options.page, options.pageSize, options.key);
+    const sourceResults = await searchSources(options.query, options.scope, options.page, options.pageSize, options.key);
     const mergedItems = mergeSearchItems(sourceResults.flatMap((result) => result.items));
     const items = mergedItems
       .sort((a, b) => {
@@ -381,7 +389,10 @@ async function refreshProcurementSearch(options: {
       .slice(0, options.pageSize);
     const facets = resultFacets(items);
     // 같은 항목을 여러 공식 검색 필드에서 찾으므로 각 응답의 합계를 더해 중복 과장하지 않는다.
-    const total = Math.max(items.length, ...sourceResults.map((result) => result.total));
+    const sourceMayHaveMore = sourceResults.some((result) => result.total > result.items.length);
+    const total = sourceMayHaveMore
+      ? Math.max(items.length, ...sourceResults.map((result) => result.total))
+      : items.length;
     const payload = { items, total, facets };
     const cachedAt = Date.now();
     cache.set(options.cacheKey, { expiresAt: cachedAt + options.ttlMs, cachedAt, ...payload });
@@ -399,8 +410,9 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const query = String(url.searchParams.get("q") || "").trim().slice(0, 120);
     const page = Math.max(1, Math.min(100, Number(url.searchParams.get("page")) || 1));
-    const pageSize = Math.max(1, Math.min(120, Number(url.searchParams.get("pageSize")) || 120));
+    const pageSize = Math.max(1, Math.min(PROCUREMENT_MAX_PAGE_SIZE, Number(url.searchParams.get("pageSize")) || PROCUREMENT_MAX_PAGE_SIZE));
     const sort = String(url.searchParams.get("sort") || "relevance");
+    const scope = procurementSearchScope(String(url.searchParams.get("scope") || "all"));
     const forceRefresh = url.searchParams.get("refresh") === "1";
     if (query.length < 2) {
       return Response.json({ error: "업체명, 조달 물품명 또는 식별번호를 두 글자 이상 입력해 주세요." }, { status: 400 });
@@ -409,7 +421,10 @@ export async function GET(request: Request) {
     if (!key) {
       return Response.json({ error: "조달 검색 인증키가 아직 설정되지 않았습니다. 관리자에게 확인해 주세요.", code: "PROCUREMENT_KEY_MISSING" }, { status: 503 });
     }
-    const cacheKey = `${CACHE_VERSION}:${query.toLocaleLowerCase("ko-KR")}:${page}:${pageSize}:${sort}`;
+    if (scope === "identifier" && !/^\d{8}$/.test(query.replace(/\D/g, ""))) {
+      return Response.json({ error: "물품식별번호 8자리를 입력해 주세요." }, { status: 400 });
+    }
+    const cacheKey = `${CACHE_VERSION}:${scope}:${query.toLocaleLowerCase("ko-KR")}:${page}:${pageSize}:${sort}`;
     const ttlMs = procurementCacheTtl(query);
     const ttlHours = Math.round(ttlMs / (60 * 60 * 1_000));
     const cached = cache.get(cacheKey);
@@ -427,7 +442,7 @@ export async function GET(request: Request) {
       });
       return Response.json({ items: sharedCached.items, total: sharedCached.total, facets: sharedCached.facets, page, pageSize, cached: true, stale: false, cachedAt: sharedCached.cachedAt, cacheSource: "shared", ttlHours });
     }
-    const refreshOptions = { cacheKey, key, page, pageSize, query, sort, ttlMs };
+    const refreshOptions = { cacheKey, key, page, pageSize, query, scope, sort, ttlMs };
     if (sharedCached?.stale) {
       after(async () => {
         try {
