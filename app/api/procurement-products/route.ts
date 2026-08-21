@@ -5,6 +5,8 @@ export const dynamic = "force-dynamic";
 
 const API_BASE_URL = "https://apis.data.go.kr/1230000/at/ShoppingMallPrdctInfoService";
 const CACHE_TTL_MS = 10 * 60 * 1_000;
+const CACHE_VERSION = "v2-date-range";
+const PROCUREMENT_SEARCH_START_DATE = "20000101";
 const cache = new Map<string, { expiresAt: number; items: ProcurementSearchItem[]; total: number }>();
 
 const CONTRACT_SOURCES = [
@@ -38,6 +40,21 @@ function normalizeItems(value: unknown): unknown[] {
   return [];
 }
 
+function compactDate(value = new Date()) {
+  const year = value.getUTCFullYear();
+  const month = String(value.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(value.getUTCDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
+}
+
+function procurementSearchDateParams(endpoint: string): Record<string, string> {
+  const endDate = compactDate(new Date(Date.now() + 24 * 60 * 60 * 1_000));
+  if (endpoint === "getShoppingMallPrdctInfoList") {
+    return { inqryBgnDate: PROCUREMENT_SEARCH_START_DATE, inqryEndDate: endDate };
+  }
+  return { rgstDtBgnDt: PROCUREMENT_SEARCH_START_DATE, rgstDtEndDt: endDate };
+}
+
 async function requestProcurementApi({ endpoint, params, key, contractMethod, sourceLabel }: {
   endpoint: string;
   params: Record<string, string>;
@@ -45,7 +62,16 @@ async function requestProcurementApi({ endpoint, params, key, contractMethod, so
   contractMethod?: string;
   sourceLabel: string;
 }): Promise<ProcurementApiResult> {
-  const searchParams = new URLSearchParams({ ServiceKey: key, type: "json", inqryDiv: "1", ...params });
+  // The official API otherwise falls back to only the latest day of registrations.
+  // Always provide a stable registration/search range so company and product-name
+  // searches can find existing active catalogue entries, not only today's rows.
+  const searchParams = new URLSearchParams({
+    serviceKey: key,
+    type: "json",
+    inqryDiv: "1",
+    ...procurementSearchDateParams(endpoint),
+    ...params,
+  });
   const response = await fetch(`${API_BASE_URL}/${endpoint}?${searchParams.toString()}`, {
     headers: { Accept: "application/json" },
     cache: "no-store",
@@ -197,7 +223,7 @@ export async function GET(request: Request) {
     if (!key) {
       return Response.json({ error: "조달 검색 인증키가 아직 설정되지 않았습니다. 관리자에게 확인해 주세요.", code: "PROCUREMENT_KEY_MISSING" }, { status: 503 });
     }
-    const cacheKey = `${query.toLocaleLowerCase("ko-KR")}:${page}:${pageSize}`;
+    const cacheKey = `${CACHE_VERSION}:${query.toLocaleLowerCase("ko-KR")}:${page}:${pageSize}`;
     const cached = cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return Response.json({ items: cached.items, total: cached.total, page, pageSize, cached: true });

@@ -82,6 +82,13 @@ function procurementSaleStatus(source: Record<string, unknown>, contractEndDate:
   return contractEndDate ? "계약 유효" : "등록 상품";
 }
 
+function procurementSourceUrl(classificationNumber: string, procurementNumber: string) {
+  const params = new URLSearchParams();
+  if (classificationNumber) params.set("goodsClsfcNo", classificationNumber);
+  params.set("goodsIdntfcNo", procurementNumber);
+  return `https://goods.g2b.go.kr/search/productSearchView.do?${params.toString()}`;
+}
+
 export function mapProcurementSearchItem(value: unknown, options: ProcurementSearchMapOptions = {}): ProcurementSearchItem | null {
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
@@ -90,6 +97,7 @@ export function mapProcurementSearchItem(value: unknown, options: ProcurementSea
   if (!procurementNumber || !name) return null;
   const procurementChannel = "G2B";
   const contractEndDate = text(source.cntrctEndDate, 20);
+  const classificationNumber = text(source.prdctClsfcNo, 100);
   return {
     identity: procurementProductIdentity(procurementChannel, procurementNumber),
     name,
@@ -105,12 +113,12 @@ export function mapProcurementSearchItem(value: unknown, options: ProcurementSea
     contractStartDate: text(source.cntrctBgnDate, 20),
     contractEndDate,
     imageUrl: text(source.prdctImgUrl, 1_000),
-    classificationNumber: text(source.prdctClsfcNo, 100),
+    classificationNumber,
     classificationName: text(source.prdctClsfcNoNm, 300),
     detailClassificationNumber: text(source.dtilPrdctClsfcNo, 100),
     registrationDate: text(source.rgstDt || source.regDt, 30),
     saleStatus: procurementSaleStatus(source, contractEndDate),
     sourceLabel: text(options.sourceLabel || "나라장터 종합쇼핑몰", 100),
-    sourceUrl: "https://shopping.g2b.go.kr/",
+    sourceUrl: procurementSourceUrl(classificationNumber, procurementNumber),
   };
 }

@@ -35,6 +35,7 @@ test("procurement result mapping exposes the fields used by the detailed product
   assert.equal(item.detailClassificationNumber, "1234567890");
   assert.equal(item.contractMethod, "다수공급자계약");
   assert.equal(item.saleStatus, "계약 유효");
+  assert.equal(item.sourceUrl, "https://goods.g2b.go.kr/search/productSearchView.do?goodsClsfcNo=12345678&goodsIdntfcNo=24563902");
 });
 
 test("procurement catalog identity is stable by channel and identifier", () => {
@@ -53,6 +54,11 @@ test("official procurement search stays server-only and requires an approved mem
   assert.match(routeSource, /\["prdctClsfcNoNm", "dtilPrdctClsfcNoNm", "prdctIdntNoNm"\]/);
   assert.match(routeSource, /companyNameCandidates\(query\)/);
   assert.match(routeSource, /`\(주\)\$\{compact\}`/);
+  assert.match(routeSource, /PROCUREMENT_SEARCH_START_DATE = "20000101"/);
+  assert.match(routeSource, /rgstDtBgnDt: PROCUREMENT_SEARCH_START_DATE/);
+  assert.match(routeSource, /inqryBgnDate: PROCUREMENT_SEARCH_START_DATE/);
+  assert.match(routeSource, /serviceKey: key/);
+  assert.match(routeSource, /CACHE_VERSION = "v2-date-range"/);
   assert.match(routeSource, /CACHE_TTL_MS = 10 \* 60/);
   assert.doesNotMatch(routeSource, /setUTCFullYear/);
   assert.doesNotMatch(quotationSource, /NEXT_PUBLIC_PROCUREMENT_DATA_SERVICE_KEY/);
@@ -66,6 +72,11 @@ test("quotation picker supports quote-only and owner-only catalog registration i
   assert.match(quotationSource, /kind: "insert", index/);
   assert.match(quotationSource, /나라장터 상품 상세/);
   assert.match(quotationSource, /업체명·제품명·식별번호 검색/);
+  assert.match(quotationSource, /function changeProcurementQuery\(value: string\)/);
+  assert.match(quotationSource, /procurementSearchAbortRef\.current\?\.abort\(\)/);
+  assert.match(quotationSource, /requestId !== procurementSearchRequestRef\.current/);
+  assert.match(quotationSource, /onChange=\{\(event\) => changeProcurementQuery\(event\.target\.value\)\}/);
+  assert.match(quotationSource, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}>나라장터 원문 열기/);
   assert.match(catalogRouteSource, /requirePrimaryOwner\(\)/);
   assert.match(catalogRouteSource, /procurementProductIdentity/);
 });
