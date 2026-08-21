@@ -93,6 +93,8 @@ export async function GET(request: Request) {
         "Content-Disposition": `${isPreview && previewable ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(row.original_name)}`,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "SAMEORIGIN",
+        "Content-Security-Policy": "frame-ancestors 'self'",
       });
       const contentLength = stored.headers.get("Content-Length");
       const contentRange = stored.headers.get("Content-Range");

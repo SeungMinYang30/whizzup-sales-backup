@@ -49,6 +49,8 @@ test("PDF와 이미지는 기존 보기 버튼으로 내부 미리보기를 열�
   assert.match(route, /request\.headers\.get\("range"\)/);
   assert.match(route, /Content-Range/);
   assert.match(route, /Accept-Ranges/);
+  assert.match(route, /"X-Frame-Options": "SAMEORIGIN"/);
+  assert.match(route, /"Content-Security-Policy": "frame-ancestors 'self'"/);
   assert.match(styles, /\.project-documents-preview-shell/);
 });
 
