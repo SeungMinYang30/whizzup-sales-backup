@@ -119,7 +119,16 @@ export default function QuotationDriveReorganizePage() {
               <p>최종 견적 {result.quotations}건 · 외부 참고 {result.referenceDocuments}건 · 점검 파일 {result.checked}개 · 이동 {result.moved}개 · 이름 변경 {result.renamed}개 · 전체 폴더 동기화 {result.mirrored}개 · 빈 폴더 삭제 {result.removedFolders}개</p>
               <p>대상 폴더: {result.folder}</p>
               {result.failures.length > 0 && (
-                <p role="alert" style={{ color: "#b42318" }}>실패 {result.failures.length}개가 있어 상세 로그 확인이 필요합니다.</p>
+                <div role="alert" style={{ color: "#b42318" }}>
+                  <p>실패 {result.failures.length}개가 있어 실제 이동 전에 확인이 필요합니다.</p>
+                  <ul style={{ paddingLeft: 20 }}>
+                    {result.failures.map((failure, index) => (
+                      <li key={`${failure.quotationId}-${failure.kind}-${index}`}>
+                        #{failure.quotationId} · {failure.kind} · {failure.error}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </>
           )}
