@@ -21,11 +21,23 @@ test("기초도면 작성 메뉴는 지연 로딩되고 개발 배지를 노출�
   assert.doesNotMatch(appSource, /nav-beta-badge|>BETA</);
 });
 
-test("페이지는 개발 안내를 제거하고 CAD팀 전달 PDF를 제공한다", () => {
+test("페이지는 개발 안내를 제거하고 미리보기·저장·공유를 한 PDF 메뉴로 제공한다", () => {
   assert.doesNotMatch(pageSource, /site-layout-beta-notice|BETA ·|개발 중/);
   assert.match(pageSource, /siteLayoutPdfFromSvg/);
-  assert.match(pageSource, /PDF 저장/);
+  assert.match(pageSource, /site-layout-action-pdf-menu/);
+  assert.match(pageSource, /site-layout-pdf-menu/);
+  assert.match(pageSource, /site-layout-pdf-preview/);
+  assert.match(pageSource, /<b>미리보기<\/b>/);
+  assert.match(pageSource, /<b>저장<\/b>/);
+  assert.match(pageSource, /<b>공유<\/b>/);
+  assert.doesNotMatch(pageSource, /className="site-layout-action-pdf"/);
+  assert.doesNotMatch(pageSource, /className="site-layout-share-button site-layout-action-share"/);
   assert.match(pageSource, /navigator\.share/);
+  assert.match(pageSource, /navigator\.canShare/);
+  assert.match(pageSource, /공유 권한이 허용되지 않아 PDF 미리보기를 열었습니다/);
+  assert.match(pageSource, /error\.name === "AbortError"/);
+  assert.doesNotMatch(pageSource, /setToastMessage\(error instanceof Error \? error\.message : "PDF를 공유하지 못했습니다\."\)/);
+  assert.match(stylesSource, /\.site-layout-pdf-menu button,[\s\S]*?text-align:center/);
   assert.doesNotMatch(pageSource, /alert\s*\(/);
 });
 
