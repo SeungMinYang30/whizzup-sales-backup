@@ -19342,6 +19342,8 @@ button:is(
   .site-layout-brand > span { width:38px; height:38px; }
   .site-layout-header-actions { grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; }
   .site-layout-header-actions > button { width:100%; min-height:44px; padding-inline:8px; }
+  .site-layout-header-actions > .site-layout-action-save,
+  .site-layout-header-actions > .site-layout-action-retry { grid-column:1 / -1; }
   .site-layout-share-button { display:inline-flex; }
   .site-layout-context-details[open] .site-layout-context-bar { grid-template-columns:1fr; }
   .site-layout-create-institution { width:100%; }
@@ -19352,4 +19354,32 @@ button:is(
   .site-layout-model-space { height:clamp(320px,50dvh,520px); padding:10px 8px 18px!important; }
   .site-layout-canvas-head { min-height:46px; padding:7px 10px; }
   .site-layout-canvas-head > div:first-child span { display:none; }
+}
+
+/* Guided object actions: keep destructive operations deliberate and out of the mobile input flow. */
+.site-layout-guided-stage-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.site-layout-guided-stage-head > div { display:grid; gap:2px; min-width:0; }
+.site-layout-guided-stage-head small { color:#667085; font-size:10px; }
+.site-layout-guided-stage-list { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+.site-layout-guided-stage-list > li { position:relative; display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:6px; padding:8px; border:1px solid #e1e6f0; border-radius:10px; }
+.site-layout-guided-stage-list > li.active { border:2px solid #3157e8; }
+.site-layout-stage-manage,
+.site-layout-object-more { position:relative; }
+.site-layout-stage-manage > summary,
+.site-layout-object-more > summary { display:grid; min-height:36px; padding:0 11px; place-items:center; border:1px solid #cbd6e7; border-radius:8px; background:#fff; color:#51647f; font-size:10px; font-weight:850; cursor:pointer; list-style:none; }
+.site-layout-stage-manage > summary::-webkit-details-marker,
+.site-layout-object-more > summary::-webkit-details-marker { display:none; }
+.site-layout-stage-manage > button,
+.site-layout-object-more > div { position:absolute; z-index:45; top:calc(100% + 5px); right:0; }
+.site-layout-stage-manage > button { width:max-content; min-height:38px; padding:0 12px; border:1px solid #edb7b2; border-radius:8px; background:#fff7f6; color:#b5453e; font-weight:850; box-shadow:0 8px 22px rgba(45,61,88,.14); }
+.site-layout-object-more > div { display:grid; width:110px; padding:6px; border:1px solid #d3dcea; border-radius:9px; background:#fff; box-shadow:0 10px 24px rgba(45,61,88,.16); }
+.site-layout-object-more > div button { min-height:36px; border:0; border-radius:6px; background:#fff; color:#4b607c; font-weight:800; }
+.site-layout-object-more > div button.danger { color:#b5453e; }
+
+@media (max-width:760px) {
+  .site-layout-guided-stage-head { align-items:flex-start; }
+  .site-layout-guided-stage-head small { max-width:250px; line-height:1.4; }
+  .site-layout-guided-stage-list > li { grid-template-columns:minmax(0,1fr) 68px 68px; padding:9px; }
+  .site-layout-guided-stage-list .site-layout-object-edit,
+  .site-layout-object-more > summary { min-height:42px; }
 }

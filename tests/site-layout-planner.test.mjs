@@ -240,11 +240,12 @@ test("창호는 이전 창틀 끝 또는 중심을 기준으로 연쇄 등록한
   ]);
 });
 
-test("간편 실측에서도 객체를 선택·복사·삭제하고 참조 객체 삭제를 안전하게 재기준화한다", () => {
+test("간편 실측 객체 작업은 수정에 집중하고 복사·삭제를 더보기 안에 안전하게 둔다", () => {
   assertContainsAll(pageSource, [
     /const activeStageItems = useMemo/,
     /className="site-layout-guided-stage-items"/,
-    /className="site-layout-guided-selection-bar"/,
+    /className="site-layout-object-more"/,
+    /className="site-layout-stage-manage"/,
     /function duplicateGuidedItem\(/,
     /function editGuidedItem\(/,
     /function rebaseReferencesAfterDeletion\(/,
@@ -254,8 +255,9 @@ test("간편 실측에서도 객체를 선택·복사·삭제하고 참조 객�
     /모든 객체 삭제/,
     /function pendingStageChecks\(/,
     /stageChecks: pendingStageChecks\(current, deleted\)/,
-    /도면이나 아래 목록에서 객체를 골라 수정·복사·삭제할 수 있습니다/,
+    /객체를 선택해 치수를 확인하거나 수정할 수 있습니다/,
   ]);
+  assert.doesNotMatch(pageSource, /site-layout-guided-selection-bar/);
   assert.match(pageSource, /selectedItemId=\{selectedId\} interactive interactionMode=\{workflowMode === "direct" \? "drag" : "select"\} showDimensions showLabels/);
   assert.match(pageSource, /onItemPointerDown=\{workflowMode === "direct" \? startGeometryDrag : undefined\}/);
 });
@@ -290,7 +292,7 @@ test("모바일 도면 크게 보기는 CSS immersive와 전체화면·가로 �
     /@media \(max-height: 500px\) and \(orientation: landscape\)/,
     /\.site-layout-workspace\.is-mobile-expanded\.is-guided \.site-layout-board > svg \[data-item-id\] \{[\s\S]*?touch-action: pan-x pan-y pinch-zoom;/,
   ]);
-  assert.match(pageSource, /zIndex: canvasExpanded \? 220 : 60/);
+  assert.doesNotMatch(pageSource, /선택 객체 빠른 작업/);
 });
 
 test("직접 편집에서는 PC 드래그와 포인터 좌표 변환을 유지한다", () => {
