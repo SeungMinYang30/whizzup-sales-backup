@@ -120,6 +120,25 @@ export type ItemGeometryMm = GeometryRectMm & {
   spanEndMm?: number;
 };
 
+export type SiteLayoutDimensionPointMm = {
+  xMm: number;
+  yMm: number;
+};
+
+export type SiteLayoutDimensionSegmentMm = {
+  id: string;
+  subjectItemId: string;
+  referenceItemId?: string;
+  axis: StructureMeasurementAxis;
+  side: SiteLayoutWallSide;
+  kind: "span" | "reference" | "position";
+  distanceMode: StructureDistanceMode;
+  start: SiteLayoutDimensionPointMm;
+  end: SiteLayoutDimensionPointMm;
+  distanceMm: number;
+  label: string;
+};
+
 export type SvgViewBoxMm = {
   minX: number;
   minY: number;
@@ -465,6 +484,217 @@ export function computeItemGeometryMm(
     spanStartMm,
     spanEndMm: spanStartMm === undefined ? undefined : spanStartMm + positioned.widthMm,
   };
+}
+
+function dimensionPointForWall(
+  draft: Pick<SiteLayoutDraftMm, "roomWidthMm" | "roomHeightMm">,
+  wall: SiteLayoutWallSide,
+  alongMm: number,
+): SiteLayoutDimensionPointMm {
+  if (wall === "top") return { xMm: alongMm, yMm: 0 };
+  if (wall === "bottom") return { xMm: alongMm, yMm: draft.roomHeightMm };
+  if (wall === "left") return { xMm: 0, yMm: alongMm };
+  return { xMm: draft.roomWidthMm, yMm: alongMm };
+}
+
+function itemDimensionPoint(
+  draft: Pick<SiteLayoutDraftMm, "roomWidthMm" | "roomHeightMm" | "roomWallThicknessMm">,
+  item: SiteLayoutItemMm,
+  geometry: ItemGeometryMm,
+  axis: StructureMeasurementAxis,
+  coordinateMm: number,
+): SiteLayoutDimensionPointMm {
+  if (item.wall && wallSpanAxis(item.wall) === axis) {
+    return dimensionPointForWall(draft, item.wall, coordinateMm);
+  }
+  return axis === "x"
+    ? { xMm: coordinateMm, yMm: geometry.centerYmm }
+    : { xMm: geometry.centerXmm, yMm: coordinateMm };
+}
+
+function dimensionSideForItem(item: SiteLayoutItemMm, axis: StructureMeasurementAxis): SiteLayoutWallSide {
+  const attachmentWall = item.structureAttachment?.mode === "wall" ? item.structureAttachment.wall : item.wall;
+  if (attachmentWall && wallSpanAxis(attachmentWall) === axis) return attachmentWall;
+  return axis === "x" ? "top" : "left";
+}
+
+function itemAxisCoordinates(geometry: ItemGeometryMm, axis: StructureMeasurementAxis) {
+  const startMm = axis === "x" ? geometry.xMm : geometry.yMm;
+  const endMm = axis === "x" ? geometry.xMm + geometry.widthMm : geometry.yMm + geometry.heightMm;
+  return { startMm, endMm, centerMm: (startMm + endMm) / 2 };
+}
+
+function dimensionLabel(prefix: string, distanceMm: number) {
+  return `${prefix}${prefix ? " " : ""}${Math.round(Math.abs(distanceMm)).toLocaleString("ko-KR")} mm`;
+}
+
+/**
+ * Converts stored survey datums into explicit CAD witness points.
+ * The returned distance is always derived from the rendered geometry so zoom,
+ * responsive layout and wall-hatch thickness can never change a measurement.
+ */
+export function buildSiteLayoutDimensionSegmentsMm(
+  draft: Pick<SiteLayoutDraftMm, "roomWidthMm" | "roomHeightMm" | "roomWallThicknessMm" | "items">,
+): SiteLayoutDimensionSegmentMm[] {
+  const itemById = new Map(draft.items.map((item) => [item.id, item]));
+  const geometryById = new Map(draft.items.map((item) => [item.id, computeItemGeometryMm(draft, item)]));
+  const segments: SiteLayoutDimensionSegmentMm[] = [];
+
+  function addSegment(segment: Omit<SiteLayoutDimensionSegmentMm, "distanceMm" | "label"> & { labelPrefix?: string }) {
+    const distanceMm = segment.axis === "x"
+      ? Math.abs(segment.end.xMm - segment.start.xMm)
+      : Math.abs(segment.end.yMm - segment.start.yMm);
+    if (distanceMm < 1) return;
+    const { labelPrefix = "", ...rest } = segment;
+    segments.push({ ...rest, distanceMm, label: dimensionLabel(labelPrefix, distanceMm) });
+  }
+
+  function addMeasuredReference(
+    item: SiteLayoutItemMm,
+    geometry: ItemGeometryMm,
+    measurement: StructureMeasurement,
+  ) {
+    const target = itemAxisCoordinates(geometry, measurement.axis);
+    const side = dimensionSideForItem(item, measurement.axis);
+    const targetCoordinateMm = measurement.distanceMode === "center"
+      ? target.centerMm
+      : measurement.direction === 1 ? target.startMm : target.endMm;
+    const end = itemDimensionPoint(draft, item, geometry, measurement.axis, targetCoordinateMm);
+
+    if (measurement.referenceType === "item") {
+      const reference = measurement.referenceItemId ? itemById.get(measurement.referenceItemId) : undefined;
+      const referenceGeometry = reference ? geometryById.get(reference.id) : undefined;
+      if (!reference || !referenceGeometry) return;
+      const referenceAxis = itemAxisCoordinates(referenceGeometry, measurement.axis);
+      const referenceCoordinateMm = measurement.distanceMode === "center"
+        ? referenceAxis.centerMm
+        : measurement.direction === 1 ? referenceAxis.endMm : referenceAxis.startMm;
+      addSegment({
+        id: `${item.id}-reference`,
+        subjectItemId: item.id,
+        referenceItemId: reference.id,
+        axis: measurement.axis,
+        side,
+        kind: "reference",
+        distanceMode: measurement.distanceMode,
+        start: itemDimensionPoint(draft, reference, referenceGeometry, measurement.axis, referenceCoordinateMm),
+        end,
+        labelPrefix: measurement.distanceMode === "center" ? "중심간" : "면간",
+      });
+      return;
+    }
+
+    const roomSpanMm = measurement.axis === "x" ? draft.roomWidthMm : draft.roomHeightMm;
+    const datumCoordinateMm = measurement.direction === 1 ? 0 : roomSpanMm;
+    const datum = item.wall && wallSpanAxis(item.wall) === measurement.axis
+      ? dimensionPointForWall(draft, item.wall, datumCoordinateMm)
+      : measurement.axis === "x"
+        ? { xMm: datumCoordinateMm, yMm: geometry.centerYmm }
+        : { xMm: geometry.centerXmm, yMm: datumCoordinateMm };
+    addSegment({
+      id: `${item.id}-reference`,
+      subjectItemId: item.id,
+      axis: measurement.axis,
+      side,
+      kind: "reference",
+      distanceMode: measurement.distanceMode,
+      start: datum,
+      end,
+      labelPrefix: measurement.distanceMode === "center" ? "중심" : "벽면",
+    });
+  }
+
+  for (const item of draft.items) {
+    const geometry = geometryById.get(item.id);
+    if (!geometry) continue;
+
+    if (isOpening(item) && item.wall && geometry.spanStartMm !== undefined && geometry.spanEndMm !== undefined) {
+      addSegment({
+        id: `${item.id}-span`,
+        subjectItemId: item.id,
+        axis: wallSpanAxis(item.wall),
+        side: item.wall,
+        kind: "span",
+        distanceMode: "clear",
+        start: dimensionPointForWall(draft, item.wall, geometry.spanStartMm),
+        end: dimensionPointForWall(draft, item.wall, geometry.spanEndMm),
+        labelPrefix: "개구부",
+      });
+
+      if (item.kind === "window" && item.openingMeasurement) {
+        addMeasuredReference(item, geometry, item.openingMeasurement);
+      } else {
+        const axis = wallSpanAxis(item.wall);
+        const targetCoordinateMm = item.offsetAnchor === "center"
+          ? (axis === "x" ? geometry.centerXmm : geometry.centerYmm)
+          : geometry.spanStartMm;
+        addSegment({
+          id: `${item.id}-reference`,
+          subjectItemId: item.id,
+          axis,
+          side: item.wall,
+          kind: "reference",
+          distanceMode: item.offsetAnchor === "center" ? "center" : "clear",
+          start: dimensionPointForWall(draft, item.wall, 0),
+          end: dimensionPointForWall(draft, item.wall, targetCoordinateMm),
+          labelPrefix: item.offsetAnchor === "center" ? "벽→중심" : "벽→시작면",
+        });
+        if (item.kind === "door") {
+          addSegment({
+            id: `${item.id}-reference-end`,
+            subjectItemId: item.id,
+            axis,
+            side: item.wall,
+            kind: "reference",
+            distanceMode: "clear",
+            start: dimensionPointForWall(draft, item.wall, geometry.spanEndMm),
+            end: dimensionPointForWall(draft, item.wall, wallLengthMm(draft, item.wall)),
+            labelPrefix: "끝면→벽",
+          });
+        }
+      }
+    }
+
+    if (isStructureItem(item) && item.structureMeasurement) {
+      addMeasuredReference(item, geometry, item.structureMeasurement);
+    } else if (item.kind === "pillar" && !item.wall) {
+      addSegment({
+        id: `${item.id}-position-x`, subjectItemId: item.id, axis: "x", side: "top", kind: "position", distanceMode: "center",
+        start: { xMm: 0, yMm: geometry.centerYmm }, end: { xMm: geometry.centerXmm, yMm: geometry.centerYmm }, labelPrefix: "좌측벽→중심",
+      });
+      addSegment({
+        id: `${item.id}-position-y`, subjectItemId: item.id, axis: "y", side: "left", kind: "position", distanceMode: "center",
+        start: { xMm: geometry.centerXmm, yMm: 0 }, end: { xMm: geometry.centerXmm, yMm: geometry.centerYmm }, labelPrefix: "상단벽→중심",
+      });
+    }
+
+    if (item.kind === "beam" && item.wall && geometry.spanStartMm !== undefined && geometry.spanEndMm !== undefined) {
+      addSegment({
+        id: `${item.id}-span`,
+        subjectItemId: item.id,
+        axis: wallSpanAxis(item.wall),
+        side: item.wall,
+        kind: "span",
+        distanceMode: "clear",
+        start: dimensionPointForWall(draft, item.wall, geometry.spanStartMm),
+        end: dimensionPointForWall(draft, item.wall, geometry.spanEndMm),
+        labelPrefix: "보 길이",
+      });
+    }
+
+    if (item.presetId === "aircon-ceiling") {
+      addSegment({
+        id: `${item.id}-position-x`, subjectItemId: item.id, axis: "x", side: "top", kind: "position", distanceMode: "center",
+        start: { xMm: 0, yMm: geometry.centerYmm }, end: { xMm: geometry.centerXmm, yMm: geometry.centerYmm }, labelPrefix: "좌측벽→중심",
+      });
+      addSegment({
+        id: `${item.id}-position-y`, subjectItemId: item.id, axis: "y", side: "left", kind: "position", distanceMode: "center",
+        start: { xMm: geometry.centerXmm, yMm: 0 }, end: { xMm: geometry.centerXmm, yMm: geometry.centerYmm }, labelPrefix: "상단벽→중심",
+      });
+    }
+  }
+
+  return segments;
 }
 
 export function computeWallGeometryMm(
@@ -933,7 +1163,7 @@ export function resolveStructurePlacements(draft: SiteLayoutDraftMm): StructureP
           addIssue({
             code: "structure-reference-missing",
             severity: "error",
-            message: `${item.name}의 이전 보를 찾을 수 없습니다. 기준 보를 다시 선택해 주세요.`,
+            message: `${item.name}의 이전 기준 객체를 찾을 수 없습니다. 기준 기둥·보를 다시 선택해 주세요.`,
             itemId: item.id,
           });
         } else if (reference.kind !== item.kind || !isStructureItem(reference)) {
@@ -955,7 +1185,7 @@ export function resolveStructurePlacements(draft: SiteLayoutDraftMm): StructureP
               addIssue({
                 code: "structure-reference-axis",
                 severity: "error",
-                message: `${item.name}과 기준 보의 진행축이 서로 다릅니다.`,
+                message: `${item.name}과 기준 기둥·보의 진행축이 서로 다릅니다.`,
                 itemId: item.id,
               });
             } else if (
@@ -970,7 +1200,7 @@ export function resolveStructurePlacements(draft: SiteLayoutDraftMm): StructureP
               addIssue({
                 code: "structure-reference-wall",
                 severity: "error",
-                message: `${item.name}과 기준 보가 같은 벽에 설치되어 있는지 확인해 주세요.`,
+                message: `${item.name}과 기준 기둥·보가 같은 벽에 설치되어 있는지 확인해 주세요.`,
                 itemId: item.id,
               });
             } else {
@@ -987,7 +1217,7 @@ export function resolveStructurePlacements(draft: SiteLayoutDraftMm): StructureP
                 addIssue({
                   code: "structure-distance-outside-room",
                   severity: "error",
-                  message: `${item.name}의 보 사이 거리가 공간 범위를 벗어납니다.`,
+                  message: `${item.name}의 기둥·보 사이 거리가 공간 범위를 벗어납니다.`,
                   itemId: item.id,
                 });
               } else {

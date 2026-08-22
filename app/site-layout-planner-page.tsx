@@ -950,6 +950,11 @@ export default function SiteLayoutPlannerPage() {
       updateBeamMeasurement(selectedStageItem, wallMeasurement(wall, selectedStageItem.offsetReference ?? "start", value));
       return;
     }
+    if (selectedStageItem.kind === "pillar") {
+      const wall = selectedStageItem.wall ?? "top";
+      updatePillarMeasurement(selectedStageItem, wallMeasurement(wall, selectedStageItem.offsetReference ?? "start", value));
+      return;
+    }
     if (selectedStageItem.kind === "window") {
       updateWindowMeasurement(selectedStageItem, wallMeasurement(selectedStageItem.wall ?? "top", selectedStageItem.offsetReference ?? "start", value));
       return;
@@ -997,6 +1002,13 @@ export default function SiteLayoutPlannerPage() {
     const itemIndex = draft.items.findIndex((candidate) => candidate.id === item.id);
     return draft.items.slice(0, itemIndex < 0 ? draft.items.length : itemIndex).reverse().find((candidate) => candidate.kind === "beam" && (candidate.wall ?? "top") === wall) ?? null;
   }
+  function previousPillar(item: LayoutItem, wall = item.wall ?? "top") {
+    const explicitId = item.structureMeasurement?.referenceType === "item" ? item.structureMeasurement.referenceItemId : undefined;
+    const explicit = explicitId ? draft.items.find((candidate) => candidate.id === explicitId && candidate.kind === "pillar") : null;
+    if (explicit && (explicit.wall ?? "top") === wall) return explicit;
+    const itemIndex = draft.items.findIndex((candidate) => candidate.id === item.id);
+    return draft.items.slice(0, itemIndex < 0 ? draft.items.length : itemIndex).reverse().find((candidate) => candidate.kind === "pillar" && (candidate.wall ?? "top") === wall) ?? null;
+  }
   function previousWindow(item: LayoutItem, wall = item.wall ?? "top") {
     const explicitId = item.openingMeasurement?.referenceType === "item" ? item.openingMeasurement.referenceItemId : undefined;
     const explicit = explicitId ? draft.items.find((candidate) => candidate.id === explicitId && candidate.kind === "window") : null;
@@ -1034,6 +1046,38 @@ export default function SiteLayoutPlannerPage() {
       ...placeBeamByMeasurement(item, measurement, reference),
     });
   }
+  function placePillarByMeasurement(item: LayoutItem, measurement: StructureMeasurement, reference: LayoutItem | null) {
+    const wall = item.structureAttachment?.mode === "wall" ? item.structureAttachment.wall : item.wall ?? "top";
+    const length = wall === "top" || wall === "bottom" ? draft.roomWidth : draft.roomHeight;
+    const distance = Math.max(0, measurement.distanceMm / 1000);
+    let start = 0;
+    if (measurement.referenceType === "item" && reference) {
+      const referenceStart = reference.offset ?? (wall === "top" || wall === "bottom" ? (reference.x / 100) * draft.roomWidth : (reference.y / 100) * draft.roomHeight);
+      const referenceCenter = referenceStart + reference.width / 2;
+      start = measurement.direction === 1
+        ? measurement.distanceMode === "center" ? referenceCenter + distance - item.width / 2 : referenceStart + reference.width + distance
+        : measurement.distanceMode === "center" ? referenceCenter - distance - item.width / 2 : referenceStart - distance - item.width;
+    } else if (measurement.direction === -1) {
+      start = measurement.distanceMode === "center" ? length - distance - item.width / 2 : length - distance - item.width;
+    } else {
+      start = measurement.distanceMode === "center" ? distance - item.width / 2 : distance;
+    }
+    const clampedStart = Math.min(Math.max(0, length - item.width), Math.max(0, start));
+    const x = wall === "top" || wall === "bottom" ? (clampedStart / draft.roomWidth) * 100 : item.x;
+    const y = wall === "left" || wall === "right" ? (clampedStart / draft.roomHeight) * 100 : item.y;
+    return { ...placePillarOnWall(item, wall, x, y, draft.roomWidth, draft.roomHeight), offset: Math.round(clampedStart * 1000) / 1000 };
+  }
+  function updatePillarMeasurement(item: LayoutItem, measurement: StructureMeasurement) {
+    const reference = measurement.referenceType === "item"
+      ? draft.items.find((candidate) => candidate.id === measurement.referenceItemId && candidate.kind === "pillar") ?? null
+      : null;
+    const wall = item.structureAttachment?.mode === "wall" ? item.structureAttachment.wall : item.wall ?? "top";
+    updateSelectedById(item.id, {
+      structureAttachment: { mode: "wall", wall },
+      structureMeasurement: measurement,
+      ...placePillarByMeasurement(item, measurement, reference),
+    });
+  }
   function placeWindowByMeasurement(item: LayoutItem, measurement: OpeningMeasurement, reference: LayoutItem | null) {
     const wall = item.wall ?? "top";
     const length = wall === "top" || wall === "bottom" ? draft.roomWidth : draft.roomHeight;
@@ -1064,6 +1108,15 @@ export default function SiteLayoutPlannerPage() {
   }
   function selectGuidedWall(item: LayoutItem, wall: WallSide) {
     setSelectedId(item.id);
+    if (item.kind === "pillar") {
+      const reference = previousPillar(item, wall);
+      const measurement: StructureMeasurement = reference
+        ? { axis: wall === "top" || wall === "bottom" ? "x" : "y", referenceType: "item", referenceItemId: reference.id, direction: 1, distanceMode: item.structureMeasurement?.distanceMode ?? "clear", distanceMm: item.structureMeasurement?.distanceMm ?? 1000 }
+        : wallMeasurement(wall, item.offsetReference ?? "start", 0);
+      const next = { ...item, wall, structureAttachment: { mode: "wall" as const, wall }, structureMeasurement: measurement };
+      updateSelectedById(item.id, { ...next, ...placePillarByMeasurement(next, measurement, reference) });
+      return;
+    }
     if (item.kind !== "beam") {
       if (item.kind === "window") {
         const reference = previousWindow(item, wall);
@@ -1092,6 +1145,18 @@ export default function SiteLayoutPlannerPage() {
     const startX = targetX ?? (isWallBound ? 8 + ((wallBoundCount * 16) % 76) : 18 + ((draft.items.length * 9) % 42));
     const startY = targetY ?? (isWallBound ? 0 : 22 + ((draft.items.length * 11) % 42));
     let rawItem = makeItem(presetId, startX, startY, 0, samePresetCount ? ` ${samePresetCount + 1}` : "");
+    if (preset.kind === "pillar" && workflowMode === "guided") {
+      const reference = [...draft.items].reverse().find((candidate) => candidate.kind === "pillar" && (candidate.wall ?? "top") === "top") ?? null;
+      const measurement: StructureMeasurement = reference
+        ? { axis: "x", referenceType: "item", referenceItemId: reference.id, direction: 1, distanceMode: "clear", distanceMm: 1000 }
+        : wallMeasurement("top", "start", 0);
+      rawItem = { ...rawItem, wall: "top", offset: 0, offsetReference: "start", structureAttachment: { mode: "wall", wall: "top" }, structureMeasurement: measurement };
+      const item = { ...rawItem, ...placePillarByMeasurement(rawItem, measurement, reference) };
+      setDraft((current) => ({ ...current, items: [...current.items, item] }));
+      setSelectedId(item.id); setPendingPresetId(null); setView("model");
+      setCommand(`명령: ${preset.label} ${preset.code} 벽 밀착 배치 완료 · 이전 기둥과의 면 사이 거리를 입력하세요.`);
+      return item;
+    }
     if (preset.kind === "beam") {
       const reference = [...draft.items].reverse().find((candidate) => candidate.kind === "beam" && (candidate.wall ?? "top") === "top") ?? null;
       const measurement: StructureMeasurement = reference
@@ -1173,6 +1238,31 @@ export default function SiteLayoutPlannerPage() {
     setActiveQuestionIndex(2);
     setSaveMessage(`${reference.name} 다음 위치의 보를 추가했습니다. 면 사이 또는 중심 사이 거리를 입력해 주세요.`);
   }
+  function addFollowupPillar(reference: LayoutItem) {
+    const samePresetCount = draft.items.filter((item) => item.kind === "pillar").length;
+    const wall = reference.wall ?? "top";
+    const measurement: StructureMeasurement = {
+      axis: wall === "top" || wall === "bottom" ? "x" : "y",
+      referenceType: "item",
+      referenceItemId: reference.id,
+      direction: 1,
+      distanceMode: "clear",
+      distanceMm: 1000,
+    };
+    const presetId: LayoutSymbol = reference.presetId === "pillar-round" ? "pillar-round" : "pillar";
+    const raw = {
+      ...makeItem(presetId, 0, 0, wall === "left" || wall === "right" ? 90 : 0, samePresetCount ? ` ${samePresetCount + 1}` : ""),
+      wall,
+      offsetReference: "start" as const,
+      structureAttachment: { mode: "wall" as const, wall },
+      structureMeasurement: measurement,
+    };
+    const item = { ...raw, ...placePillarByMeasurement(raw, measurement, reference) };
+    setDraft((current) => ({ ...current, items: [...current.items, item] }));
+    setSelectedId(item.id);
+    setActiveQuestionIndex(2);
+    setSaveMessage(`${reference.name} 다음 기둥을 추가했습니다. 이전 기둥 끝면부터 이번 기둥 시작면까지 거리를 입력해 주세요.`);
+  }
   function addFollowupWindow(reference: LayoutItem) {
     const samePresetCount = draft.items.filter((item) => item.kind === "window").length;
     const wall = reference.wall ?? "top";
@@ -1227,7 +1317,13 @@ export default function SiteLayoutPlannerPage() {
     dragRef.current = { id: item.id, pointerId: event.pointerId, startModelX: point.xMm, startModelY: point.yMm, startX: legacyItem.x, startY: legacyItem.y };
     setSelectedId(item.id); setActiveTool("이동");
   }
-  function isWallMounted(item: LayoutItem) { return item.kind === "door" || item.kind === "window" || item.kind === "beam" || item.presetId === "aircon-wall"; }
+  function isWallMounted(item: LayoutItem) {
+    return item.kind === "door"
+      || item.kind === "window"
+      || item.kind === "beam"
+      || (item.kind === "pillar" && item.structureAttachment?.mode === "wall")
+      || item.presetId === "aircon-wall";
+  }
   function placeWallMountedItem(item: LayoutItem, wall: WallSide, rawOffset: number) {
     const wallLength = wall === "top" || wall === "bottom" ? draft.roomWidth : draft.roomHeight;
     const requested = Math.max(0, Number.isFinite(rawOffset) ? rawOffset : 0);
@@ -1267,6 +1363,17 @@ export default function SiteLayoutPlannerPage() {
       beamSpacing: measurement.distanceMm / 1000,
     };
   }
+  function rebasePillarToWall(item: LayoutItem, placement: ReturnType<typeof placeWallMountedItem>) {
+    if (item.kind !== "pillar") return placement;
+    const measurement = wallMeasurement(placement.wall, "start", placement.offset);
+    return {
+      ...placement,
+      ...placePillarOnWall(item, placement.wall, placement.x, placement.y, draft.roomWidth, draft.roomHeight),
+      offsetReference: "start" as const,
+      structureAttachment: { mode: "wall" as const, wall: placement.wall },
+      structureMeasurement: measurement,
+    };
+  }
   function snapOpening(item: LayoutItem, x: number, y: number) {
     if (!isWallMounted(item)) return { x: snapGrid(x), y: snapGrid(y), rotation: item.rotation };
     const edges = [
@@ -1294,6 +1401,15 @@ export default function SiteLayoutPlannerPage() {
       updateSelected({ ...next, ...placeBeamByMeasurement(next, measurement, reference) });
       return;
     }
+    if (selectedItem.kind === "pillar") {
+      const reference = previousPillar(selectedItem, wall);
+      const measurement: StructureMeasurement = reference
+        ? { axis: wall === "top" || wall === "bottom" ? "x" : "y", referenceType: "item", referenceItemId: reference.id, direction: 1, distanceMode: selectedItem.structureMeasurement?.distanceMode ?? "clear", distanceMm: selectedItem.structureMeasurement?.distanceMm ?? 1000 }
+        : wallMeasurement(wall, selectedItem.offsetReference ?? "start", 0);
+      const next = { ...selectedItem, wall, structureAttachment: { mode: "wall" as const, wall }, structureMeasurement: measurement };
+      updateSelected({ ...next, ...placePillarByMeasurement(next, measurement, reference) });
+      return;
+    }
     if (selectedItem.kind === "window") {
       const reference = previousWindow(selectedItem, wall);
       const measurement: OpeningMeasurement = reference
@@ -1308,6 +1424,10 @@ export default function SiteLayoutPlannerPage() {
   }
   function updateWallMountedOffset(value: number) {
     if (!selectedItem || !isWallMounted(selectedItem)) return;
+    if (selectedItem.kind === "pillar") {
+      updatePillarMeasurement(selectedItem, wallMeasurement(selectedItem.wall ?? "top", "start", value));
+      return;
+    }
     updateSelected(placeWallMountedItem(selectedItem, selectedItem.wall ?? "top", value));
   }
   function footprint(item: LayoutItem) {
@@ -1354,6 +1474,13 @@ export default function SiteLayoutPlannerPage() {
       const measurement = next.structureMeasurement ?? wallMeasurement(next.wall ?? "top", next.offsetReference ?? "start", displayedWallDistance(next));
       const reference = measurement.referenceType === "item" ? previousBeam(next, next.wall ?? "top") : null;
       updateSelected({ [axis]: value, ...placeBeamByMeasurement(next, measurement, reference) });
+      return;
+    }
+    if (selectedItem.kind === "pillar" && selectedItem.structureAttachment?.mode === "wall") {
+      const next = { ...selectedItem, [axis]: value };
+      const measurement = next.structureMeasurement ?? wallMeasurement(next.wall ?? "top", next.offsetReference ?? "start", displayedWallDistance(next));
+      const reference = measurement.referenceType === "item" ? previousPillar(next, next.wall ?? "top") : null;
+      updateSelected({ [axis]: value, ...placePillarByMeasurement(next, measurement, reference) });
       return;
     }
     if (axis === "width" && isWallMounted(selectedItem)) {
@@ -1407,7 +1534,14 @@ export default function SiteLayoutPlannerPage() {
     setDraft((current) => ({ ...current, items: current.items.map((item) => {
       if (item.id !== active.id) return item;
       const placement = snapPlacement(item, nextX, nextY);
-      return { ...item, ...(item.kind === "beam" ? rebaseBeamToWall(item, placement as ReturnType<typeof placeWallMountedItem>) : placement) };
+      return {
+        ...item,
+        ...(item.kind === "beam"
+          ? rebaseBeamToWall(item, placement as ReturnType<typeof placeWallMountedItem>)
+          : item.kind === "pillar" && "wall" in placement && placement.wall
+            ? rebasePillarToWall(item, placement as ReturnType<typeof placeWallMountedItem>)
+            : placement),
+      };
     }) }));
   }
   function finishGeometryDrag(pointerId: number) {
@@ -1418,6 +1552,10 @@ export default function SiteLayoutPlannerPage() {
       if (item.kind === "beam") {
         const placement = placeWallMountedItem(item, item.wall ?? "top", item.offset ?? 0);
         return { ...item, ...rebaseBeamToWall(item, placement) };
+      }
+      if (item.kind === "pillar" && item.wall) {
+        const placement = placeWallMountedItem(item, item.wall, item.offset ?? 0);
+        return { ...item, ...rebasePillarToWall(item, placement) };
       }
       if (item.kind === "window") {
         const wall = item.wall ?? "top";
@@ -1456,6 +1594,18 @@ export default function SiteLayoutPlannerPage() {
         const measuredCopy = { ...baseCopy, wall: oppositeWall, structureAttachment: { mode: "wall" as const, wall: oppositeWall }, structureMeasurement: measurement, beamSpacing: offset };
         copy = { ...measuredCopy, ...placeBeamByMeasurement(measuredCopy, measurement, null) };
       }
+    } else if (selectedItem.kind === "pillar" && selectedItem.structureAttachment?.mode === "wall") {
+      const wall = selectedItem.wall ?? "top";
+      const measurement: StructureMeasurement = {
+        axis: wall === "top" || wall === "bottom" ? "x" : "y",
+        referenceType: "item",
+        referenceItemId: selectedItem.id,
+        direction: 1,
+        distanceMode: "clear",
+        distanceMm: 200,
+      };
+      const measuredCopy = { ...baseCopy, wall, structureAttachment: { mode: "wall" as const, wall }, structureMeasurement: measurement };
+      copy = { ...measuredCopy, ...placePillarByMeasurement(measuredCopy, measurement, selectedItem) };
     } else if (selectedItem.kind === "window") {
       const wall = selectedItem.wall ?? "top";
       const measurement: OpeningMeasurement = {
@@ -1484,8 +1634,13 @@ export default function SiteLayoutPlannerPage() {
     const value = positiveDimension(rawValue, item[axis]);
     const sized = item.presetId === "aircon-ceiling" ? { ...item, width: value, height: value } : { ...item, [axis]: value };
     const beamMeasurement = sized.kind === "beam" ? sized.structureMeasurement ?? wallMeasurement(sized.wall ?? "top", sized.offsetReference ?? "start", displayedWallDistance(sized)) : null;
+    const pillarMeasurement = sized.kind === "pillar" && sized.structureAttachment?.mode === "wall"
+      ? sized.structureMeasurement ?? wallMeasurement(sized.wall ?? "top", sized.offsetReference ?? "start", displayedWallDistance(sized))
+      : null;
     const placement = sized.kind === "beam" && beamMeasurement
       ? placeBeamByMeasurement(sized, beamMeasurement, beamMeasurement.referenceType === "item" ? previousBeam(sized, sized.wall ?? "top") : null)
+      : sized.kind === "pillar" && pillarMeasurement
+        ? placePillarByMeasurement(sized, pillarMeasurement, pillarMeasurement.referenceType === "item" ? previousPillar(sized, sized.wall ?? "top") : null)
       : sized.kind === "window" && sized.openingMeasurement
         ? placeWindowByMeasurement(sized, sized.openingMeasurement, sized.openingMeasurement.referenceType === "item" ? previousWindow(sized, sized.wall ?? "top") : null)
       : isWallMounted(sized)
@@ -1500,6 +1655,12 @@ export default function SiteLayoutPlannerPage() {
     const measurement = item.structureMeasurement
       ?? wallMeasurement(item.wall ?? "top", item.offsetReference ?? "start", displayedWallDistance(item));
     updateBeamMeasurement(item, { ...measurement, distanceMm: Math.round(value * 1000) });
+  }
+  function updatePillarDistanceFromInspector(item: LayoutItem, rawValue: number) {
+    const value = Math.max(0, Number.isFinite(rawValue) ? rawValue : 0);
+    const measurement = item.structureMeasurement
+      ?? wallMeasurement(item.wall ?? "top", item.offsetReference ?? "start", displayedWallDistance(item));
+    updatePillarMeasurement(item, { ...measurement, distanceMm: Math.round(value * 1000) });
   }
   function renderGuidedQuestion() {
     if (activeStep.id === "room") {
@@ -1528,14 +1689,59 @@ export default function SiteLayoutPlannerPage() {
     const mounted = isWallMounted(item);
     const references = wallReferenceLabels(item.wall ?? "top");
     const beamReference = item.kind === "beam" ? previousBeam(item) : null;
+    const pillarReference = item.kind === "pillar" ? previousPillar(item) : null;
     const windowReference = item.kind === "window" ? previousWindow(item) : null;
     const beamMeasurement = item.kind === "beam"
       ? item.structureMeasurement ?? wallMeasurement(item.wall ?? "top", item.offsetReference ?? "start", displayedWallDistance(item))
       : null;
+    const pillarMeasurement = item.kind === "pillar"
+      ? item.structureMeasurement ?? wallMeasurement(item.wall ?? "top", item.offsetReference ?? "start", displayedWallDistance(item))
+      : null;
     if (activeQuestionIndex === 1) {
-      return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 2/{currentQuestionCount}</small><b>{mounted ? item.kind === "beam" ? "보가 붙어 있는 벽을 골라 주세요." : "어느 벽에 설치되어 있나요?" : "배치 기준을 확인해 주세요."}</b><span>{mounted ? "현장에서 바라본 도면 기준으로 큰 벽 버튼을 누르세요." : "실내 객체는 좌측벽과 상단벽에서 중심까지의 거리로 기록합니다."}</span></div>{mounted ? <div className="site-layout-wall-picker">{(["top", "right", "bottom", "left"] as WallSide[]).map((wall) => <button key={wall} type="button" className={(item.wall ?? "top") === wall ? "active" : ""} onClick={() => selectGuidedWall(item, wall)}>{wallLabel(wall)}</button>)}</div> : <div className="site-layout-reference-diagram"><b>좌측 D벽 → 중심</b><b>상단 A벽 → 중심</b></div>}</div>;
+      const mountedQuestion = item.kind === "beam" ? "보가 붙어 있는 벽을 골라 주세요." : item.kind === "pillar" ? "기둥이 붙어 있는 벽을 골라 주세요." : "어느 벽에 설치되어 있나요?";
+      return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 2/{currentQuestionCount}</small><b>{mounted ? mountedQuestion : "배치 기준을 확인해 주세요."}</b><span>{mounted ? item.kind === "pillar" ? "첫 기둥은 선택한 벽에 붙고, 모서리부터 기둥 시작면까지 0m를 기본값으로 사용합니다." : "현장에서 바라본 도면 기준으로 큰 벽 버튼을 누르세요." : "실내 객체는 좌측벽과 상단벽에서 중심까지의 거리로 기록합니다."}</span></div>{mounted ? <div className="site-layout-wall-picker">{(["top", "right", "bottom", "left"] as WallSide[]).map((wall) => <button key={wall} type="button" className={(item.wall ?? "top") === wall ? "active" : ""} onClick={() => selectGuidedWall(item, wall)}>{wallLabel(wall)}</button>)}</div> : <div className="site-layout-reference-diagram"><b>좌측 D벽 → 중심</b><b>상단 A벽 → 중심</b></div>}</div>;
     }
     if (activeQuestionIndex === 2) {
+      if (item.kind === "pillar" && pillarMeasurement) {
+        const usingPrevious = pillarMeasurement.referenceType === "item" && Boolean(pillarReference);
+        return (
+          <div className="site-layout-question-card site-layout-beam-question">
+            <div className="site-layout-question-heading">
+              <small>기둥·보 3/{currentQuestionCount}</small>
+              <b>{pillarReference ? "이번 기둥은 어디에서부터 쟀나요?" : "첫 기둥은 어느 모서리에서 시작하나요?"}</b>
+              <span>{pillarReference ? "이전 기둥의 끝면부터 이번 기둥의 시작면까지 잰 값을 입력하세요." : "선택한 벽에 밀착하고, 모서리부터 기둥 시작면까지 0m를 기본으로 배치합니다."}</span>
+            </div>
+            {pillarReference && (
+              <div className="site-layout-choice-grid two">
+                <button type="button" className={!usingPrevious ? "active" : ""} onClick={() => updatePillarMeasurement(item, wallMeasurement(item.wall ?? "top", item.offsetReference ?? "start", displayedWallDistance(item)))}>벽 모서리 기준</button>
+                <button type="button" className={usingPrevious ? "active" : ""} onClick={() => updatePillarMeasurement(item, { axis: (item.wall === "left" || item.wall === "right") ? "y" : "x", referenceType: "item", referenceItemId: pillarReference.id, direction: 1, distanceMode: pillarMeasurement.distanceMode, distanceMm: pillarMeasurement.distanceMm || 1000 })}>이전 기둥 기준</button>
+              </div>
+            )}
+            {usingPrevious && pillarReference ? (
+              <>
+                <div className="site-layout-beam-reference"><span>기준 기둥</span><b>{pillarReference.name}</b></div>
+                <div className="site-layout-choice-grid two">
+                  <button type="button" className={pillarMeasurement.distanceMode === "clear" ? "active" : ""} onClick={() => updatePillarMeasurement(item, { ...pillarMeasurement, distanceMode: "clear" })}>끝면 → 시작면</button>
+                  <button type="button" className={pillarMeasurement.distanceMode === "center" ? "active" : ""} onClick={() => updatePillarMeasurement(item, { ...pillarMeasurement, distanceMode: "center" })}>중심 → 중심</button>
+                </div>
+                <label>
+                  <span>{pillarMeasurement.distanceMode === "clear" ? "이전 기둥 끝면 → 이번 기둥 시작면 거리(m)" : "이전 기둥 중심 → 이번 기둥 중심 거리(m)"}</span>
+                  <FriendlyNumberInput label="기둥 사이 거리(m)" value={pillarMeasurement.distanceMm / 1000} min={0} max={30} onCommit={(value) => updatePillarMeasurement(item, { ...pillarMeasurement, distanceMm: Math.round(value * 1000) })} />
+                </label>
+              </>
+            ) : (
+              <>
+                <div className="site-layout-choice-grid two">{(["start", "end"] as OffsetReference[]).map((reference) => <button key={reference} type="button" className={(item.offsetReference ?? "start") === reference ? "active" : ""} onClick={() => { const measurement = wallMeasurement(item.wall ?? "top", reference, 0); const next = { ...item, offsetReference: reference, structureMeasurement: measurement }; updateSelectedById(item.id, { offsetReference: reference, structureMeasurement: measurement, ...placePillarByMeasurement(next, measurement, null) }); }}>{references[reference]}에서 시작</button>)}</div>
+                <label>
+                  <span>{(item.offsetReference ?? "start") === "start" ? references.start : references.end} → 기둥 시작면 거리(m)</span>
+                  <FriendlyNumberInput label="벽 모서리에서 첫 기둥까지 거리(m)" value={displayedWallDistance(item)} min={0} max={wallLength(item)} onCommit={updateDisplayedWallDistance} />
+                </label>
+                <div className="site-layout-beam-summary"><span>벽 부착</span><b>{wallLabel(item.wall)} · 벽에서 실내 방향 0m</b></div>
+              </>
+            )}
+          </div>
+        );
+      }
       if (item.kind === "beam" && beamMeasurement) {
         const usingPrevious = beamMeasurement.referenceType === "item" && Boolean(beamReference);
         return <div className="site-layout-question-card site-layout-beam-question"><div className="site-layout-question-heading"><small>기둥·보 3/{currentQuestionCount}</small><b>{beamReference ? "이번 보는 어디에서부터 쟀나요?" : "첫 보는 어느 모서리에서부터 쟀나요?"}</b><span>보가 여러 개면 앞 보에서 이번 보까지 잰 값을 그대로 입력할 수 있습니다.</span></div>{beamReference && <div className="site-layout-choice-grid two"><button type="button" className={!usingPrevious ? "active" : ""} onClick={() => updateBeamMeasurement(item, wallMeasurement(item.wall ?? "top", item.offsetReference ?? "start", displayedWallDistance(item)))}>벽 모서리 기준</button><button type="button" className={usingPrevious ? "active" : ""} onClick={() => updateBeamMeasurement(item, { axis: (item.wall === "left" || item.wall === "right") ? "y" : "x", referenceType: "item", referenceItemId: beamReference.id, direction: 1, distanceMode: beamMeasurement.distanceMode, distanceMm: beamMeasurement.distanceMm || 1000 })}>이전 보 기준</button></div>}{usingPrevious && beamReference ? <><div className="site-layout-beam-reference"><span>기준 보</span><b>{beamReference.name}</b></div><div className="site-layout-choice-grid two"><button type="button" className={beamMeasurement.distanceMode === "clear" ? "active" : ""} onClick={() => updateBeamMeasurement(item, { ...beamMeasurement, distanceMode: "clear" })}>면에서 면까지</button><button type="button" className={beamMeasurement.distanceMode === "center" ? "active" : ""} onClick={() => updateBeamMeasurement(item, { ...beamMeasurement, distanceMode: "center" })}>중심에서 중심까지</button></div><label><span>{beamMeasurement.distanceMode === "clear" ? "이전 보 면 → 이번 보 면 거리(m)" : "이전 보 중심 → 이번 보 중심 거리(m)"}</span><FriendlyNumberInput label="이전 보에서 다음 보까지 거리(m)" value={beamMeasurement.distanceMm / 1000} min={0} max={30} onCommit={(value) => updateBeamMeasurement(item, { ...beamMeasurement, distanceMm: Math.round(value * 1000) })} /></label></> : <><div className="site-layout-choice-grid two">{(["start", "end"] as OffsetReference[]).map((reference) => <button key={reference} type="button" className={(item.offsetReference ?? "start") === reference ? "active" : ""} onClick={() => { const measurement = wallMeasurement(item.wall ?? "top", reference, displayedWallDistance(item)); const next = { ...item, offsetReference: reference, structureMeasurement: measurement }; updateSelectedById(item.id, { offsetReference: reference, structureMeasurement: measurement, ...placeBeamByMeasurement(next, measurement, null) }); }}>{references[reference]}</button>)}</div><label><span>{(item.offsetReference ?? "start") === "start" ? references.start : references.end} → 보 시작면 거리(m)</span><FriendlyNumberInput label="벽 모서리에서 첫 보까지 거리(m)" value={displayedWallDistance(item)} min={0} max={wallLength(item)} onCommit={updateDisplayedWallDistance} /></label></>}</div>;
@@ -1553,7 +1759,7 @@ export default function SiteLayoutPlannerPage() {
       return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 4/{currentQuestionCount}</small><b>현장에서 잰 실제 크기를 입력해 주세요.</b><span>도면 확대·축소와 관계없이 실제 mm 치수는 그대로 유지됩니다.</span></div><div className="site-layout-guided-measurements"><label><span>{widthLabel}(m)</span><FriendlyNumberInput label="객체 가로(m)" value={item.width} min={0.1} max={mounted ? wallMax : 100} onCommit={(value) => updateStageItemDimension(item, "width", value)} /></label>{item.kind === "door" || item.kind === "window" ? <label><span>개구부 높이(m)</span><FriendlyNumberInput label="개구부 높이(m)" value={item.openingHeight ?? (item.kind === "door" ? 2.1 : 1.5)} min={0.3} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { openingHeight: Math.min(value, ceilingHeight - (item.kind === "window" ? item.sillHeight ?? 0.9 : 0)) })} /></label> : item.presetId !== "aircon-ceiling" && <label><span>{item.kind === "beam" ? "벽에서 실내 방향 보 폭" : "세로"}(m)</span><FriendlyNumberInput label="객체 세로(m)" value={item.height} min={0.1} max={100} onCommit={(value) => updateStageItemDimension(item, "height", value)} /></label>}</div></div>;
     }
     const addLabel = item.kind === "beam" ? "+ 다음 보 추가" : item.kind === "window" ? "+ 창호 추가" : item.kind === "door" ? "+ 출입문 추가" : item.kind === "fixture" ? "+ 에어컨 추가" : "+ 기둥 추가";
-    return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 5/{currentQuestionCount}</small><b>{preset.label} 세부 조건을 확인해 주세요.</b><span>같은 종류가 더 있으면 아래 버튼으로 추가하고, 없으면 바로 다음 단계로 이동하세요.</span></div>{item.kind === "door" && <div className="site-layout-guided-measurements"><label><span>경첩 방향</span><select value={item.handing ?? "left"} onChange={(event) => updateSelectedById(item.id, { handing: event.target.value as OpeningHand })}><option value="left">좌경첩</option><option value="right">우경첩</option></select></label><label><span>열림 방향</span><select value={item.swing ?? "inside"} onChange={(event) => updateSelectedById(item.id, { swing: event.target.value as OpeningSwing })}><option value="inside">실 안쪽</option><option value="outside">실 바깥쪽</option></select></label></div>}{item.kind === "window" && <label><span>바닥 → 창 하단 높이(m)</span><FriendlyNumberInput label="창 하단 높이(m)" value={item.sillHeight ?? 0.9} min={0} max={ceilingHeight - (item.openingHeight ?? 1.5)} onCommit={(value) => updateSelectedById(item.id, { sillHeight: value })} /></label>}{item.kind === "beam" && <div className="site-layout-guided-measurements"><label><span>바닥 → 보 하단(m)</span><FriendlyNumberInput label="보 하단 높이(m)" value={item.beamBottomHeight ?? 2.2} min={0} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { beamBottomHeight: value })} /></label><div className="site-layout-beam-summary"><span>배치 기준</span><b>{beamMeasurement?.referenceType === "item" ? `${beamMeasurement.distanceMode === "center" ? "중심 간" : "면 간"} ${Number(((beamMeasurement.distanceMm || 0) / 1000).toFixed(3))}m` : `${references[item.offsetReference ?? "start"]} 기준`}</b></div></div>}{item.kind === "fixture" && <label><span>바닥 → 설치면 높이(m)</span><FriendlyNumberInput label="에어컨 설치 높이(m)" value={item.mountingHeight ?? (item.presetId === "aircon-ceiling" ? ceilingHeight : 2.1)} min={0} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { mountingHeight: value })} /></label>}<div className="site-layout-question-actions"><button type="button" onClick={() => { if (item.kind === "beam") addFollowupBeam(item); else if (item.kind === "window") addFollowupWindow(item); else { setSelectedId(""); setActiveQuestionIndex(0); } }}>{addLabel}</button></div></div>;
+    return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 5/{currentQuestionCount}</small><b>{preset.label} 세부 조건을 확인해 주세요.</b><span>같은 종류가 더 있으면 아래 버튼으로 추가하고, 없으면 바로 다음 단계로 이동하세요.</span></div>{item.kind === "door" && <div className="site-layout-guided-measurements"><label><span>경첩 방향</span><select value={item.handing ?? "left"} onChange={(event) => updateSelectedById(item.id, { handing: event.target.value as OpeningHand })}><option value="left">좌경첩</option><option value="right">우경첩</option></select></label><label><span>열림 방향</span><select value={item.swing ?? "inside"} onChange={(event) => updateSelectedById(item.id, { swing: event.target.value as OpeningSwing })}><option value="inside">실 안쪽</option><option value="outside">실 바깥쪽</option></select></label></div>}{item.kind === "window" && <label><span>바닥 → 창 하단 높이(m)</span><FriendlyNumberInput label="창 하단 높이(m)" value={item.sillHeight ?? 0.9} min={0} max={ceilingHeight - (item.openingHeight ?? 1.5)} onCommit={(value) => updateSelectedById(item.id, { sillHeight: value })} /></label>}{item.kind === "beam" && <div className="site-layout-guided-measurements"><label><span>바닥 → 보 하단(m)</span><FriendlyNumberInput label="보 하단 높이(m)" value={item.beamBottomHeight ?? 2.2} min={0} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { beamBottomHeight: value })} /></label><div className="site-layout-beam-summary"><span>배치 기준</span><b>{beamMeasurement?.referenceType === "item" ? `${beamMeasurement.distanceMode === "center" ? "중심 간" : "면 간"} ${Number(((beamMeasurement.distanceMm || 0) / 1000).toFixed(3))}m` : `${references[item.offsetReference ?? "start"]} 기준`}</b></div></div>}{item.kind === "pillar" && <div className="site-layout-beam-summary"><span>배치 기준</span><b>{pillarMeasurement?.referenceType === "item" ? `${pillarMeasurement.distanceMode === "center" ? "중심 간" : "끝면→시작면"} ${Number(((pillarMeasurement.distanceMm || 0) / 1000).toFixed(3))}m` : `${wallLabel(item.wall)} 밀착 · ${references[item.offsetReference ?? "start"]}에서 ${Number((displayedWallDistance(item) || 0).toFixed(3))}m`}</b></div>}{item.kind === "fixture" && <label><span>바닥 → 설치면 높이(m)</span><FriendlyNumberInput label="에어컨 설치 높이(m)" value={item.mountingHeight ?? (item.presetId === "aircon-ceiling" ? ceilingHeight : 2.1)} min={0} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { mountingHeight: value })} /></label>}<div className="site-layout-question-actions"><button type="button" onClick={() => { if (item.kind === "beam") addFollowupBeam(item); else if (item.kind === "pillar") addFollowupPillar(item); else if (item.kind === "window") addFollowupWindow(item); else { setSelectedId(""); setActiveQuestionIndex(0); } }}>{addLabel}</button></div></div>;
   }
   async function leaveCanvasExpanded({ historyAlreadyPopped = false }: { historyAlreadyPopped?: boolean } = {}) {
     if (closingExpandedRef.current) return;
@@ -1789,6 +1995,9 @@ export default function SiteLayoutPlannerPage() {
             {selectedItem.kind === "beam" && <div className="site-layout-structure-fields">
               <label><span>바닥→보 하단(m)</span><FriendlyNumberInput label="바닥에서 보 하단(m)" value={selectedItem.beamBottomHeight ?? 2.2} min={0} max={20} onCommit={(value) => updateSelected({ beamBottomHeight: value })} /></label>
               <label><span>{selectedItem.structureMeasurement?.referenceType === "item" ? "기준 보에서 거리(m)" : "기준 모서리→보 시작면 거리(m)"}</span><FriendlyNumberInput label="보 기준거리(m)" value={selectedItem.structureMeasurement ? selectedItem.structureMeasurement.distanceMm / 1000 : displayedWallDistance(selectedItem)} min={0} max={30} onCommit={(value) => updateBeamDistanceFromInspector(selectedItem, value)} /></label>
+            </div>}
+            {selectedItem.kind === "pillar" && selectedItem.structureAttachment?.mode === "wall" && <div className="site-layout-structure-fields">
+              <label><span>{selectedItem.structureMeasurement?.referenceType === "item" ? "이전 기둥 끝면→현재 기둥 시작면(m)" : "기준 모서리→기둥 시작면(m)"}</span><FriendlyNumberInput label="기둥 기준거리(m)" value={selectedItem.structureMeasurement ? selectedItem.structureMeasurement.distanceMm / 1000 : displayedWallDistance(selectedItem)} min={0} max={30} onCommit={(value) => updatePillarDistanceFromInspector(selectedItem, value)} /></label>
             </div>}
             <div className="site-layout-object-facts"><span>블록명 <b>{selectedPreset.code}</b></span><span>레이어 <b>{itemLayer(selectedItem).toUpperCase()}</b></span><span>스냅 <b>{isWallMounted(selectedItem) ? `${wallLabel(selectedItem.wall)} 기준거리` : "두 벽 중심거리"}</b></span></div>
             {selectedPreset.guide && <div className="site-layout-install-guide"><span>현장 확인</span><p>{selectedPreset.guide}</p></div>}

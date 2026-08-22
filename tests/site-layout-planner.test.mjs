@@ -206,7 +206,24 @@ test("보는 벽 부착을 기본으로 첫 보와 다음 보의 실측 기준�
     /중심에서 중심까지/,
     /"\+ 다음 보 추가"/,
   ]);
-  assert.match(pageSource, /isWallMounted\(item: LayoutItem\)[^{]*\{ return[^}]*item\.kind === "beam"/);
+  const wallMountedSource = pageSource.match(/function isWallMounted\(item: LayoutItem\) \{[\s\S]*?\n  \}/)?.[0] ?? "";
+  assert.ok(wallMountedSource, "벽 부착 객체 판별 함수를 찾을 수 있어야 합니다.");
+  assert.match(wallMountedSource, /item\.kind === "beam"/);
+  assert.match(wallMountedSource, /item\.kind === "pillar" && item\.structureAttachment\?\.mode === "wall"/);
+});
+
+test("기둥은 첫 벽 모서리 0m에서 시작하고 다음 기둥을 면간거리로 이어 붙인다", () => {
+  assertContainsAll(pageSource, [
+    /function previousPillar\(/,
+    /function placePillarByMeasurement\(/,
+    /function updatePillarMeasurement\(/,
+    /function addFollowupPillar\(/,
+    /wallMeasurement\("top", "start", 0\)/,
+    /이전 기둥 끝면 → 이번 기둥 시작면 거리\(m\)/,
+    /끝면 → 시작면/,
+    /else if \(item\.kind === "pillar"\) addFollowupPillar\(item\)/,
+    /function rebasePillarToWall\(/,
+  ]);
 });
 
 test("모바일 도면 크게 보기는 CSS immersive와 전체화면·가로 보기의 안전한 폴백을 제공한다", () => {
@@ -247,7 +264,8 @@ test("직접 편집한 보는 새 벽 기준으로 재측정되고 복제와 ins
   assertContainsAll(pageSource, [
     /function rebaseBeamToWall\(/,
     /const measurement = wallMeasurement\(placement\.wall, "start", placement\.offset\)/,
-    /item\.kind === "beam" \? rebaseBeamToWall/,
+    /item\.kind === "beam"[\s\S]*?\? rebaseBeamToWall/,
+    /item\.kind === "pillar"[\s\S]*?\? rebasePillarToWall/,
     /function finishGeometryDrag\(/,
     /structureAttachment: \{ mode: "wall" as const, wall: placement\.wall \}/,
     /referenceItemId: selectedItem\.id/,
@@ -304,13 +322,23 @@ test("모바일 진입부는 중복 브랜드와 설명을 숨기고 기관 정�
 test("A3 도면은 객체별 실제 치수와 측정 기준을 진한 선으로 표기한다", () => {
   assertContainsAll(geometryViewSource, [
     /function measurementLabel\(/,
-    /개구부 \$\{formatMm\(item\.widthMm\)\}/,
-    /이전 창호/,
-    /이전 보/,
-    /좌측 중심/,
-    /const symbolStrokeWidth = mode === "paper" \? 2\.35 : 1\.55/,
+    /buildSiteLayoutDimensionSegmentsMm/,
+    /function LinearDimension\(/,
+    /function ObjectDimensionLayer\(/,
+    /data-dimension-id=\{segment\.id\}/,
+    /segment\.start\.xMm/,
+    /segment\.end\.xMm/,
+    /showDimensions && mode === "paper" && <ObjectDimensionLayer/,
+    /const symbolStrokeWidth = mode === "paper" \? 3\.2 : 1\.55/,
+    /const openingStrokeWidth = mode === "paper" \? 4\.2 : 2\.4/,
+    /openingFill: "#bfe8f2"/,
     /paintOrder="stroke"/,
   ]);
+  const measurementLabelSource = geometryViewSource.match(/function measurementLabel[\s\S]*?\n}\n\nfunction ItemLabel/)?.[0] ?? "";
+  assert.ok(measurementLabelSource, "A3 객체 설명 생성 함수를 찾을 수 있어야 합니다.");
+  assert.match(measurementLabelSource, /if \(item\.presetId === "aircon-ceiling"\) \{[\s\S]*?설치면 H=/);
+  assert.doesNotMatch(measurementLabelSource, /840|이전 창호|이전 보|좌측 중심/);
+  assert.match(geometryViewSource, /if \(segment\.kind === "position"\) return point/);
   assert.match(pageSource, /천장조명 철거/);
   assert.doesNotMatch(pageSource, /전용 회로 \{surveyChoiceLabel/);
 });

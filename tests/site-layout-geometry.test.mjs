@@ -8,6 +8,7 @@ import {
   PREVIOUS_STORAGE_KEY,
   STORAGE_KEY,
   advanceSurveyStep,
+  buildSiteLayoutDimensionSegmentsMm,
   clampWallOffsetMm,
   computeItemGeometryMm,
   computeOpeningCutGeometryMm,
@@ -57,6 +58,21 @@ function makeBeam(id, overrides = {}) {
     handing: undefined,
     swing: undefined,
     beamBottomHeightMm: 2_200,
+    ...overrides,
+  });
+}
+
+function makePillar(id, overrides = {}) {
+  return makeItem({
+    id,
+    kind: "pillar",
+    presetId: "pillar",
+    name: `콘크리트 기둥 ${id}`,
+    widthMm: 450,
+    heightMm: 450,
+    openingHeightMm: undefined,
+    handing: undefined,
+    swing: undefined,
     ...overrides,
   });
 }
@@ -412,6 +428,240 @@ test("wall and previous-beam clear distances resolve to exact physical millimetr
   assert.equal(second.xMm, 5_400);
   assert.equal(second.yMm, 0);
   assert.equal(second.xMm - (first.xMm + first.widthMm), 2_000);
+});
+
+test("first pillar starts flush at zero and the next pillar uses face-to-face distance", () => {
+  const draft = normalizeDraft({
+    ...createDefaultDraft(),
+    roomWidthMm: 10_000,
+    roomHeightMm: 6_000,
+    items: [
+      makePillar("pillar-1", {
+        structureAttachment: { mode: "wall", wall: "top" },
+        structureMeasurement: {
+          axis: "x",
+          referenceType: "wall",
+          referenceWall: "left",
+          direction: 1,
+          distanceMode: "clear",
+          distanceMm: 0,
+        },
+      }),
+      makePillar("pillar-2", {
+        structureAttachment: { mode: "wall", wall: "top" },
+        structureMeasurement: {
+          axis: "x",
+          referenceType: "item",
+          referenceItemId: "pillar-1",
+          direction: 1,
+          distanceMode: "clear",
+          distanceMm: 1_200,
+        },
+      }),
+    ],
+  });
+
+  const placement = resolveStructurePlacements(draft);
+  const first = computeItemGeometryMm(draft, placement.items[0]);
+  const second = computeItemGeometryMm(draft, placement.items[1]);
+  const segment = buildSiteLayoutDimensionSegmentsMm(draft)
+    .find((candidate) => candidate.id === "pillar-2-reference");
+
+  assert.deepEqual(placement.issues, []);
+  assert.deepEqual({ xMm: first.xMm, yMm: first.yMm }, { xMm: 0, yMm: 0 });
+  assert.deepEqual({ xMm: second.xMm, yMm: second.yMm }, { xMm: 1_650, yMm: 0 });
+  assert.equal(second.xMm - (first.xMm + first.widthMm), 1_200);
+  assert.deepEqual(segment?.start, { xMm: 450, yMm: 0 });
+  assert.deepEqual(segment?.end, { xMm: 1_650, yMm: 0 });
+  assert.equal(segment?.label, "면간 1,200 mm");
+});
+
+test("A3 beam dimensions use the previous beam end face and next beam start face", () => {
+  const draft = normalizeDraft({
+    ...createDefaultDraft(),
+    roomWidthMm: 10_000,
+    roomHeightMm: 6_000,
+    items: [
+      makeBeam("beam-1", {
+        structureAttachment: { mode: "wall", wall: "top" },
+        structureMeasurement: {
+          axis: "x",
+          referenceType: "wall",
+          referenceWall: "left",
+          direction: 1,
+          distanceMode: "clear",
+          distanceMm: 1_000,
+        },
+      }),
+      makeBeam("beam-2", {
+        structureAttachment: { mode: "wall", wall: "top" },
+        structureMeasurement: {
+          axis: "x",
+          referenceType: "item",
+          referenceItemId: "beam-1",
+          direction: 1,
+          distanceMode: "clear",
+          distanceMm: 2_000,
+        },
+      }),
+    ],
+  });
+
+  const segment = buildSiteLayoutDimensionSegmentsMm(draft)
+    .find((candidate) => candidate.id === "beam-2-reference");
+
+  assert.deepEqual(segment, {
+    id: "beam-2-reference",
+    subjectItemId: "beam-2",
+    referenceItemId: "beam-1",
+    axis: "x",
+    side: "top",
+    kind: "reference",
+    distanceMode: "clear",
+    start: { xMm: 3_400, yMm: 0 },
+    end: { xMm: 5_400, yMm: 0 },
+    distanceMm: 2_000,
+    label: "면간 2,000 mm",
+  });
+});
+
+test("A3 window dimensions use the previous window end face and next window start face", () => {
+  const base = { ...createDefaultDraft(), roomWidthMm: 10_000, roomHeightMm: 6_000 };
+  const first = placeItemOnWall(base, makeItem({
+    id: "window-1",
+    kind: "window",
+    presetId: "window-sliding-2",
+    name: "첫 창호",
+    widthMm: 1_800,
+    heightMm: 140,
+    openingHeightMm: 1_500,
+    sillHeightMm: 900,
+    handing: undefined,
+    swing: undefined,
+  }), "top", 500);
+  const second = placeItemOnWall(base, makeItem({
+    id: "window-2",
+    kind: "window",
+    presetId: "window-sliding-2",
+    name: "다음 창호",
+    widthMm: 1_800,
+    heightMm: 140,
+    openingHeightMm: 1_500,
+    sillHeightMm: 900,
+    handing: undefined,
+    swing: undefined,
+    openingMeasurement: {
+      axis: "x",
+      referenceType: "item",
+      referenceItemId: "window-1",
+      direction: 1,
+      distanceMode: "clear",
+      distanceMm: 650,
+    },
+  }), "top", 2_950);
+  const draft = normalizeDraft({ ...base, items: [first, second] });
+
+  const segment = buildSiteLayoutDimensionSegmentsMm(draft)
+    .find((candidate) => candidate.id === "window-2-reference");
+
+  assert.deepEqual(segment, {
+    id: "window-2-reference",
+    subjectItemId: "window-2",
+    referenceItemId: "window-1",
+    axis: "x",
+    side: "top",
+    kind: "reference",
+    distanceMode: "clear",
+    start: { xMm: 2_300, yMm: 0 },
+    end: { xMm: 2_950, yMm: 0 },
+    distanceMm: 650,
+    label: "면간 650 mm",
+  });
+});
+
+test("A3 door dimensions expose the opening span and both wall reference distances", () => {
+  const base = { ...createDefaultDraft(), roomWidthMm: 10_000, roomHeightMm: 6_000 };
+  const door = placeItemOnWall(base, makeItem({
+    id: "door-bottom",
+    name: "하단 출입문",
+    widthMm: 1_800,
+  }), "bottom", 7_000);
+  const draft = normalizeDraft({ ...base, items: [door] });
+  const segments = buildSiteLayoutDimensionSegmentsMm(draft);
+
+  assert.deepEqual(
+    segments
+      .filter((segment) => segment.subjectItemId === "door-bottom")
+      .map(({ id, start, end, distanceMm, label }) => ({ id, start, end, distanceMm, label })),
+    [
+      {
+        id: "door-bottom-span",
+        start: { xMm: 7_000, yMm: 6_000 },
+        end: { xMm: 8_800, yMm: 6_000 },
+        distanceMm: 1_800,
+        label: "개구부 1,800 mm",
+      },
+      {
+        id: "door-bottom-reference",
+        start: { xMm: 0, yMm: 6_000 },
+        end: { xMm: 7_000, yMm: 6_000 },
+        distanceMm: 7_000,
+        label: "벽→시작면 7,000 mm",
+      },
+      {
+        id: "door-bottom-reference-end",
+        start: { xMm: 8_800, yMm: 6_000 },
+        end: { xMm: 10_000, yMm: 6_000 },
+        distanceMm: 1_200,
+        label: "끝면→벽 1,200 mm",
+      },
+    ],
+  );
+});
+
+test("A3 ceiling AC dimensions report center datums without an 840 mm size dimension", () => {
+  const draft = normalizeDraft({
+    ...createDefaultDraft(),
+    roomWidthMm: 10_000,
+    roomHeightMm: 6_000,
+    items: [makeItem({
+      id: "aircon-ceiling",
+      kind: "fixture",
+      presetId: "aircon-ceiling",
+      name: "천장형 에어컨",
+      xMm: 5_000,
+      yMm: 3_000,
+      widthMm: 840,
+      heightMm: 840,
+      openingHeightMm: undefined,
+      handing: undefined,
+      swing: undefined,
+    })],
+  });
+
+  const segments = buildSiteLayoutDimensionSegmentsMm(draft)
+    .filter((segment) => segment.subjectItemId === "aircon-ceiling");
+
+  assert.deepEqual(
+    segments.map(({ id, start, end, distanceMm, label }) => ({ id, start, end, distanceMm, label })),
+    [
+      {
+        id: "aircon-ceiling-position-x",
+        start: { xMm: 0, yMm: 3_420 },
+        end: { xMm: 5_420, yMm: 3_420 },
+        distanceMm: 5_420,
+        label: "좌측벽→중심 5,420 mm",
+      },
+      {
+        id: "aircon-ceiling-position-y",
+        start: { xMm: 5_420, yMm: 0 },
+        end: { xMm: 5_420, yMm: 3_420 },
+        distanceMm: 3_420,
+        label: "상단벽→중심 3,420 mm",
+      },
+    ],
+  );
+  assert.equal(segments.some((segment) => segment.kind === "span" || /840/.test(segment.label)), false);
 });
 
 test("center distances and reverse wall references preserve their distinct semantics", () => {
