@@ -22,7 +22,7 @@ test("기본판은 기관·견적 DB 대신 브라우저에만 저장한다", ()
 });
 
 test("실 크기와 CAD 표준 블록을 편집하고 드래그할 수 있다", () => {
-  for (const label of ["단문형", "양문형", "비대칭 양문", "좌우 미닫이", "폴딩도어", "고정창", "슬라이딩 2짝", "슬라이딩 3짝", "슬라이딩 4짝", "6분할 연창", "프로젝트창", "사각 기둥", "보", "벽걸이 에어컨", "천장형 에어컨", "현장 메모"]) {
+  for (const label of ["단문형", "양문형", "비대칭 양문", "좌우 미닫이", "폴딩도어", "고정창", "슬라이딩 2짝", "슬라이딩 3짝", "슬라이딩 4짝", "6분할 연창", "프로젝트창", "사각 기둥", "원형 기둥", "천장 보", "벽걸이 에어컨", "천장형 에어컨"]) {
     assert.match(pageSource, new RegExp(`label: "${label}"`));
   }
   assert.match(pageSource, /roomWidth/);
@@ -36,7 +36,7 @@ test("실 크기와 CAD 표준 블록을 편집하고 드래그할 수 있다", 
 });
 
 test("제품 블록은 보존하되 기초 도면 UI와 출력에서 숨긴다", () => {
-  assert.match(pageSource, /const basicGroups: PresetGroup\[\] = \["문", "창호", "기둥·보", "현장 설비", "기타"\]/);
+  assert.match(pageSource, /const basicGroups: PresetGroup\[\] = \["문", "창호", "기둥·보", "현장 설비"\]/);
   assert.match(pageSource, /itemPresets\.filter\(\(preset\) => basicGroups\.includes\(preset\.group\)\)/);
   assert.match(pageSource, /itemLayer\(item\) !== "equipment" && visibleLayers/);
   assert.match(pageSource, /equipment: false/);
@@ -59,7 +59,7 @@ test("문·창호는 중복 의사 요소 없이 재사용 SVG CAD 심벌로 그
 test("모델 공간과 A3 출력 도면에 CAD 정보 구조를 제공한다", () => {
   assert.match(pageSource, /A3 출력 미리보기/);
   assert.match(pageSource, /site-layout-paper-sheet/);
-  assert.match(pageSource, /RC 벽체 t=150/);
+  assert.match(pageSource, /RC 벽체 t=\{formatMillimeters\(draft\.roomWallThickness/);
   assert.match(pageSource, /SNAP/);
   assert.match(pageSource, /ORTHO/);
   assert.match(pageSource, /OSNAP/);
@@ -89,11 +89,11 @@ test("PC에서는 그림 블록을 도면으로 직접 드래그해 넣는다", 
   assert.match(pageSource, /onDrop=\{handleBoardDrop\}/);
 });
 
-test("현장 실측은 공간부터 검수까지 단계별로 진행한다", () => {
-  for (const id of ["room", "door", "window", "structure", "facility", "review"]) {
+test("현장 실측은 공간부터 현장조건과 검수까지 단계별로 진행한다", () => {
+  for (const id of ["room", "door", "window", "structure", "facility", "checklist", "review"]) {
     assert.match(pageSource, new RegExp(`id: "${id}"`));
   }
-  for (const text of ["공간 크기 입력", "출입문 형태와 치수", "창호 형태와 분할", "기둥과 보 실측", "에어컨과 고정 시설", "CAD팀 전달 전 검수"]) {
+  for (const text of ["공간 크기 입력", "출입문 형태와 치수", "창호 형태와 분할", "기둥과 보 실측", "에어컨과 고정 시설", "인터넷·전기·공사 조건", "CAD팀 전달 전 검수"]) {
     assert.match(pageSource, new RegExp(text));
   }
   assert.match(pageSource, /확인 완료/);
@@ -109,7 +109,38 @@ test("문·창호는 설치 벽과 실측 치수를 저장한다", () => {
   assert.match(pageSource, /openingHeight/);
   assert.match(pageSource, /sillHeight/);
   assert.match(pageSource, /handing/);
-  assert.match(pageSource, /기준 모서리 거리/);
+  assert.match(pageSource, /모서리→개구부 시작/);
   assert.match(pageSource, /바닥에서 창 하단/);
   assert.match(pageSource, /placeOpeningOnWall/);
+  assert.match(pageSource, /실내·실외 열림/);
+  assert.match(pageSource, /swing/);
+});
+
+test("에어컨과 구조물은 CAD팀 전달용 기준거리와 높이를 저장한다", () => {
+  assert.match(pageSource, /모서리→에어컨 중심/);
+  assert.match(pageSource, /바닥→에어컨 하단/);
+  assert.match(pageSource, /좌측 D벽→중심/);
+  assert.match(pageSource, /상단 A벽→중심/);
+  assert.match(pageSource, /바닥→보 하단/);
+  assert.match(pageSource, /다음 보까지 유효거리/);
+  assert.match(pageSource, /isWallMounted/);
+  assert.match(pageSource, /snapPlacement/);
+});
+
+test("인터넷·전기·공사 체크표와 현장 메모를 A3 출력에 포함한다", () => {
+  for (const text of ["인터넷 사용", "연결 방식", "사용 망", "사용 가능한 전원", "전용 회로", "암막커튼", "바닥공사", "엘리베이터", "천장 조명 철거", "에어컨 간섭", "CAD팀 전달 메모"]) {
+    assert.match(pageSource, new RegExp(text));
+  }
+  assert.match(pageSource, /siteChecklist/);
+  assert.match(pageSource, /normalizeChecklist/);
+  assert.match(pageSource, /현장 통신/);
+  assert.match(pageSource, /전기·시공/);
+  assert.match(stylesSource, /site-layout-site-checklist/);
+});
+
+test("기존 브라우저 저장본은 새 현장조사 필드로 안전하게 보완한다", () => {
+  assert.match(pageSource, /parsed\.roomWallThickness \?\? defaultDraft\.roomWallThickness/);
+  assert.match(pageSource, /normalizeChecklist\(parsed\.siteChecklist\)/);
+  assert.match(pageSource, /item\.swing === "outside" \? "outside" : "inside"/);
+  assert.match(pageSource, /fieldNotes: typeof parsed\.fieldNotes === "string"/);
 });
