@@ -18311,3 +18311,122 @@ button:is(
   .site-layout-item.kind-door,
   .site-layout-item.kind-window { min-width: 24px; min-height: 20px; }
 }
+
+/* Site layout studio v7: friendly measurement editing and production-quality A3 preview. */
+.site-layout-size-fields.is-square { grid-template-columns: minmax(0, 1fr); }
+
+.site-layout-paper-plan {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px 22px 13px;
+  place-items: stretch;
+}
+.site-layout-paper-note {
+  position: static;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 24px;
+  padding: 0 2px 7px;
+  border-bottom: 1px solid #89919a;
+  color: #20262d;
+}
+.site-layout-paper-note b { font-size: 10px; letter-spacing: .08em; }
+.site-layout-paper-note span { font-size: 8px; font-weight: 750; text-align: right; }
+.site-layout-paper-drawing {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  padding: 34px 18px 24px 44px;
+  place-items: center;
+}
+.site-layout-paper-room {
+  position: relative;
+  width: 94%;
+  min-height: 250px;
+  max-height: 100%;
+}
+.site-layout-paper-dimension {
+  position: absolute;
+  z-index: 5;
+  color: #b64036;
+  font: 700 8px Consolas, monospace;
+  pointer-events: none;
+}
+.site-layout-paper-dimension::before,
+.site-layout-paper-dimension::after { content: ""; position: absolute; background: currentColor; }
+.site-layout-paper-dimension.dimension-width {
+  top: 8px;
+  right: 5%;
+  left: 11%;
+  height: 12px;
+  border-top: 1px solid currentColor;
+  text-align: center;
+}
+.site-layout-paper-dimension.dimension-width::before,
+.site-layout-paper-dimension.dimension-width::after { top: -4px; width: 1px; height: 8px; }
+.site-layout-paper-dimension.dimension-width::before { left: 0; }
+.site-layout-paper-dimension.dimension-width::after { right: 0; }
+.site-layout-paper-dimension.dimension-width span { position: relative; top: -14px; padding: 0 5px; background: #fff; }
+.site-layout-paper-dimension.dimension-height {
+  top: 15%;
+  bottom: 9%;
+  left: 15px;
+  width: 12px;
+  border-left: 1px solid currentColor;
+}
+.site-layout-paper-dimension.dimension-height::before,
+.site-layout-paper-dimension.dimension-height::after { left: -4px; width: 8px; height: 1px; }
+.site-layout-paper-dimension.dimension-height::before { top: 0; }
+.site-layout-paper-dimension.dimension-height::after { bottom: 0; }
+.site-layout-paper-dimension.dimension-height span {
+  position: absolute;
+  top: 50%;
+  left: -28px;
+  width: 68px;
+  padding: 0 4px;
+  background: #fff;
+  text-align: center;
+  transform: rotate(-90deg);
+}
+.site-layout-paper-title {
+  position: static;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  min-height: 31px;
+  padding: 6px 2px 3px;
+  border-top: 2px solid #20262d;
+  border-bottom: 1px solid #20262d;
+}
+.site-layout-paper-title b { font-size: 15px; letter-spacing: -.02em; }
+.site-layout-paper-title span { font-size: 8px; font-weight: 750; }
+.site-layout-paper-item .site-layout-cad-symbol { stroke-width: 1.8; }
+.site-layout-paper-item .site-layout-item-caption {
+  top: calc(100% + 3px);
+  gap: 1px;
+  padding: 1px 3px 2px;
+  border: 1px solid #aeb4ba;
+  border-radius: 2px;
+  background: #fff;
+  color: #1d242a;
+  line-height: 1.05;
+}
+.site-layout-paper-item .site-layout-item-caption b { font-size: 6.5px; }
+.site-layout-paper-item .site-layout-item-caption small { display: block; font-size: 5px; opacity: .78; }
+.site-layout-paper-item.wall-bottom .site-layout-item-caption {
+  top: auto;
+  bottom: calc(100% + 3px);
+}
+.site-layout-paper-item.symbol-aircon-ceiling { min-width: 34px; min-height: 34px; }
+.site-layout-paper-item.symbol-aircon-ceiling .site-layout-cad-symbol { aspect-ratio: 1; }
+
+@media (max-width: 760px) {
+  .site-layout-size-fields.is-square { grid-template-columns: minmax(0, 1fr); }
+  .site-layout-paper-note { align-items: flex-start; flex-direction: column; gap: 2px; }
+  .site-layout-paper-note span { text-align: left; }
+}

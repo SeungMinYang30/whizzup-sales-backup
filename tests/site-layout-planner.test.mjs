@@ -176,3 +176,31 @@ test("기존 브라우저 저장본은 새 현장조사 필드로 안전하게 �
   assert.match(pageSource, /item\.swing === "outside" \? "outside" : "inside"/);
   assert.match(pageSource, /fieldNotes: typeof parsed\.fieldNotes === "string"/);
 });
+
+test("수치 입력은 클릭 즉시 기존 값을 전체 선택하고 자연스럽게 교체한다", () => {
+  assert.match(pageSource, /function FriendlyNumberInput/);
+  assert.match(pageSource, /onClick=\{\(event\) => event\.currentTarget\.select\(\)\}/);
+  assert.match(pageSource, /inputMode=\{decimals \? "decimal" : "numeric"\}/);
+  assert.match(pageSource, /if \(next && next !== "\."\) commit\(next\)/);
+  assert.match(pageSource, /label="공간 가로\(m\)"/);
+  assert.match(pageSource, /label="좌측 D벽에서 중심\(m\)"/);
+});
+
+test("천장형 에어컨은 저장본과 편집 화면 모두 정사각형을 유지한다", () => {
+  assert.match(pageSource, /preset\.id === "aircon-ceiling" \? normalizedWidth/);
+  assert.match(pageSource, /selectedItem\.presetId === "aircon-ceiling"[\s\S]*?width: value, height: value/);
+  assert.match(pageSource, /정사각형 한 변\(m\)/);
+  assert.match(pageSource, /label="천장형 에어컨 한 변\(m\)"/);
+  assert.match(pageSource, /symbol === "aircon-ceiling"[\s\S]*?<rect x="20" y="5" width="60" height="60"/);
+  assert.match(stylesSource, /\.site-layout-size-fields\.is-square \{ grid-template-columns: minmax\(0, 1fr\)/);
+});
+
+test("A3 출력은 도면·치수선·제목란을 분리하고 블록 규격을 표시한다", () => {
+  assert.match(pageSource, /site-layout-paper-drawing/);
+  assert.match(pageSource, /site-layout-paper-dimension dimension-width/);
+  assert.match(pageSource, /site-layout-paper-dimension dimension-height/);
+  assert.match(pageSource, /현장 실측 기준 · 축척 1\/60 \(A3\)/);
+  assert.match(pageSource, /formatMillimeters\(item\.width\).*?formatMillimeters\(isOpening/);
+  assert.match(stylesSource, /Site layout studio v7: friendly measurement editing and production-quality A3 preview/);
+  assert.match(stylesSource, /\.site-layout-paper-item\.wall-bottom \.site-layout-item-caption[\s\S]*?bottom: calc\(100% \+ 3px\)/);
+});

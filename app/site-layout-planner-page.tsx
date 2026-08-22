@@ -189,18 +189,19 @@ function surveyChoiceLabel(value: SurveyChoice) { return ({ "": "미확인", yes
 function internetModeLabel(value: InternetMode) { return ({ "": "미확인", wired: "유선", wireless: "무선", both: "유선·무선", none: "사용 불가" } as const)[value]; }
 function networkTypeLabel(value: NetworkType) { return ({ "": "미확인", education: "교육망", private: "사설망", both: "교육망·사설망", unknown: "현장 확인" } as const)[value]; }
 
-function MillimeterInput({ valueMeters, minMm, maxMm, label, onCommit }: { valueMeters: number; minMm: number; maxMm: number; label: string; onCommit: (meters: number) => void }) {
-  const formattedValue = String(Math.round(valueMeters * 1000));
-  const safeMaxMm = Math.max(minMm, maxMm);
+function FriendlyNumberInput({ value, min, max, decimals = 3, label, onCommit }: { value: number; min: number; max: number; decimals?: number; label: string; onCommit: (value: number) => void }) {
+  const formattedValue = String(Number(value.toFixed(decimals)));
+  const safeMax = Math.max(min, max);
   const [textValue, setTextValue] = useState(formattedValue);
   const [editing, setEditing] = useState(false);
   function commit(raw: string, clamp = false) {
-    const parsed = Number(raw.replaceAll(",", ""));
+    const parsed = Number(raw.replace(",", "."));
     if (!Number.isFinite(parsed)) return false;
-    const next = clamp ? Math.min(safeMaxMm, Math.max(minMm, parsed)) : parsed;
-    if (next < minMm || next > safeMaxMm) return false;
-    onCommit(Math.round(next) / 1000);
-    if (clamp) setTextValue(String(Math.round(next)));
+    const next = clamp ? Math.min(safeMax, Math.max(min, parsed)) : parsed;
+    if (next < min || next > safeMax) return false;
+    const rounded = Number(next.toFixed(decimals));
+    onCommit(rounded);
+    if (clamp) setTextValue(String(rounded));
     return true;
   }
   function handleBlur(event: ReactFocusEvent<HTMLInputElement>) {
@@ -208,7 +209,15 @@ function MillimeterInput({ valueMeters, minMm, maxMm, label, onCommit }: { value
     if (!event.currentTarget.value.trim()) { setTextValue(formattedValue); return; }
     if (!commit(event.currentTarget.value, true)) setTextValue(formattedValue);
   }
-  return <input aria-label={label} inputMode="numeric" type="text" value={editing ? textValue : formattedValue} onFocus={(event) => { setTextValue(formattedValue); setEditing(true); event.currentTarget.select(); }} onChange={(event) => { const next = event.target.value.replace(/[^0-9]/g, ""); setTextValue(next); commit(next); }} onBlur={handleBlur} />;
+  return <input aria-label={label} inputMode={decimals ? "decimal" : "numeric"} type="text" value={editing ? textValue : formattedValue}
+    onFocus={(event) => { setTextValue(formattedValue); setEditing(true); event.currentTarget.select(); }}
+    onClick={(event) => event.currentTarget.select()}
+    onChange={(event) => { const next = event.target.value.replace(",", ".").replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1"); setTextValue(next); if (next && next !== ".") commit(next); }}
+    onBlur={handleBlur} />;
+}
+
+function MillimeterInput({ valueMeters, minMm, maxMm, label, onCommit }: { valueMeters: number; minMm: number; maxMm: number; label: string; onCommit: (meters: number) => void }) {
+  return <FriendlyNumberInput value={Math.round(valueMeters * 1000)} min={minMm} max={maxMm} decimals={0} label={label} onCommit={(value) => onCommit(value / 1000)} />;
 }
 
 function openingPlanDepthMeters(item: LayoutItem, wallThickness: number) {
@@ -263,7 +272,7 @@ function CadSymbol({ symbol, compact = false, wall, handing = "left", swing = "i
       {symbol === "pillar-round" && <><circle cx="50" cy="35" r="27" /><circle cx="50" cy="35" r="21" /><path className="cad-center" {...shared} d="M50 3V67 M18 35H82" /></>}
       {symbol === "beam" && <><rect className="cad-dash" x="5" y="20" width="90" height="30" /><path className="cad-center" {...shared} d="M3 35H97" />{!compact && <text x="50" y="15" textAnchor="middle">BEAM</text>}</>}
       {symbol === "aircon-wall" && <><rect x="8" y="18" width="84" height="34" rx="5" /><path {...shared} d="M15 31H85 M20 39H80 M30 47H70" /><circle cx="79" cy="25" r="2" /></>}
-      {symbol === "aircon-ceiling" && <><rect x="19" y="5" width="62" height="60" /><rect x="27" y="13" width="46" height="44" /><path {...shared} d="M27 13L73 57 M73 13L27 57 M50 13V57 M27 35H73" /><circle cx="50" cy="35" r="7" /></>}
+      {symbol === "aircon-ceiling" && <><rect x="20" y="5" width="60" height="60" /><rect x="28" y="13" width="44" height="44" /><path {...shared} d="M28 13L72 57 M72 13L28 57 M50 13V57 M28 35H72" /><circle cx="50" cy="35" r="7" /></>}
       {symbol === "note" && <><path {...shared} d="M7 12H78L93 27V61H7Z M78 12V27H93" /><path {...shared} d="M17 30H72 M17 40H82 M17 50H62" /></>}
       {!compact && !isOpening && <path className="cad-center" {...shared} d="M1 35H99" />}
       </g></g>
@@ -299,24 +308,28 @@ export default function SiteLayoutPlannerPage() {
             roomHeight: positiveDimension(parsed.roomHeight, defaultDraft.roomHeight),
             roomCeilingHeight: positiveDimension(parsed.roomCeilingHeight ?? defaultDraft.roomCeilingHeight ?? 2.7, 2.7),
             roomWallThickness: positiveDimension(parsed.roomWallThickness ?? defaultDraft.roomWallThickness ?? 0.15, 0.15),
-            items: parsed.items.filter(validStoredItem).map((item) => ({
-              ...item,
-              presetId: presetForItem(item).id,
-              name: item.name.slice(0, 60),
-              x: clampPercent(item.x),
-              y: clampPercent(item.y),
-              width: positiveDimension(item.width, 1),
-              height: positiveDimension(item.height, 1),
-              openingHeight: item.openingHeight ? positiveDimension(item.openingHeight, item.kind === "door" ? 2.1 : 1.5) : undefined,
-              sillHeight: item.sillHeight === undefined ? undefined : Math.max(0, positiveDimension(item.sillHeight, 0.9)),
-              offset: item.offset === undefined ? undefined : Math.max(0, item.offset),
-              wall: item.wall,
-              handing: item.handing,
-              swing: item.swing === "outside" ? "outside" : "inside",
-              mountingHeight: item.mountingHeight === undefined ? undefined : Math.max(0, positiveDimension(item.mountingHeight, 2.1)),
-              beamBottomHeight: item.beamBottomHeight === undefined ? undefined : Math.max(0, positiveDimension(item.beamBottomHeight, 2.2)),
-              beamSpacing: item.beamSpacing === undefined ? undefined : Math.max(0, positiveDimension(item.beamSpacing, 1)),
-            })),
+            items: parsed.items.filter(validStoredItem).map((item) => {
+              const preset = presetForItem(item);
+              const normalizedWidth = positiveDimension(item.width, 1);
+              return {
+                ...item,
+                presetId: preset.id,
+                name: item.name.slice(0, 60),
+                x: clampPercent(item.x),
+                y: clampPercent(item.y),
+                width: normalizedWidth,
+                height: preset.id === "aircon-ceiling" ? normalizedWidth : positiveDimension(item.height, 1),
+                openingHeight: item.openingHeight ? positiveDimension(item.openingHeight, item.kind === "door" ? 2.1 : 1.5) : undefined,
+                sillHeight: item.sillHeight === undefined ? undefined : Math.max(0, positiveDimension(item.sillHeight, 0.9)),
+                offset: item.offset === undefined ? undefined : Math.max(0, item.offset),
+                wall: item.wall,
+                handing: item.handing,
+                swing: item.swing === "outside" ? "outside" : "inside",
+                mountingHeight: item.mountingHeight === undefined ? undefined : Math.max(0, positiveDimension(item.mountingHeight, 2.1)),
+                beamBottomHeight: item.beamBottomHeight === undefined ? undefined : Math.max(0, positiveDimension(item.beamBottomHeight, 2.2)),
+                beamSpacing: item.beamSpacing === undefined ? undefined : Math.max(0, positiveDimension(item.beamSpacing, 1)),
+              };
+            }),
             stageChecks: Object.fromEntries(Object.entries(storedChecks).filter((entry): entry is [string, StageCheckStatus] => validStageCheck(entry[1]))),
             siteChecklist: normalizeChecklist(parsed.siteChecklist),
             fieldNotes: typeof parsed.fieldNotes === "string" ? parsed.fieldNotes.slice(0, 1000) : "",
@@ -508,6 +521,10 @@ export default function SiteLayoutPlannerPage() {
   function updateSelectedDimension(axis: "width" | "height", rawValue: number) {
     if (!selectedItem) return;
     const value = positiveDimension(rawValue, selectedItem[axis]);
+    if (selectedItem.presetId === "aircon-ceiling") {
+      updateSelected({ width: value, height: value });
+      return;
+    }
     if (axis === "width" && isWallMounted(selectedItem)) {
       const next = { ...selectedItem, width: value };
       updateSelected({ width: value, ...placeWallMountedItem(next, next.wall ?? "top", next.offset ?? (next.presetId === "aircon-wall" ? value / 2 : 0)) });
@@ -588,7 +605,7 @@ export default function SiteLayoutPlannerPage() {
           style={{ left: `${renderedLeft}%`, top: `${renderedTop}%`, width: `${renderedWidth}%`, height: `${renderedHeight}%` }}
           onPointerDown={className === "site-layout-item" ? (event) => startDrag(event, item) : undefined} onClick={() => setSelectedId(item.id)} aria-label={`${item.name} ${className === "site-layout-item" ? "이동" : "선택"}`}>
           <CadSymbol symbol={preset.id} wall={isOpening ? item.wall : undefined} handing={item.handing} swing={item.swing} />
-          <span className="site-layout-item-caption"><b>{item.name}</b><small>{preset.code}</small></span>
+          <span className="site-layout-item-caption"><b>{item.name}</b><small>{className === "site-layout-paper-item" ? `${preset.code} · ${formatMillimeters(item.width)}×${formatMillimeters(isOpening ? item.openingHeight ?? item.height : item.height)}mm` : preset.code}</small></span>
         </button>
       );
     });
@@ -610,10 +627,10 @@ export default function SiteLayoutPlannerPage() {
           <div className="site-layout-guide-copy"><small>STEP {activeStepIndex + 1} / {guideSteps.length}</small><h2>{activeStep.title}</h2><p>{activeStep.description}</p></div>
           {activeStep.id === "room" && <div className="site-layout-room-settings">
             <label><span>실 이름</span><input value={draft.roomName} onChange={(event) => updateDraft({ roomName: event.target.value.slice(0, 80) })} placeholder="예: 2층 스마트 체험교실" /></label>
-            <label><span>가로</span><div><input inputMode="decimal" type="number" min="0.1" max="100" step="0.001" value={draft.roomWidth} onChange={(event) => updateDraft({ roomWidth: positiveDimension(Number(event.target.value), draft.roomWidth) })} /><em>m</em></div></label>
-            <label><span>세로</span><div><input inputMode="decimal" type="number" min="0.1" max="100" step="0.001" value={draft.roomHeight} onChange={(event) => updateDraft({ roomHeight: positiveDimension(Number(event.target.value), draft.roomHeight) })} /><em>m</em></div></label>
-            <label><span>천장 높이</span><div><input inputMode="decimal" type="number" min="0.1" max="20" step="0.001" value={ceilingHeight} onChange={(event) => updateDraft({ roomCeilingHeight: positiveDimension(Number(event.target.value), ceilingHeight) })} /><em>m</em></div></label>
-            <label><span>벽 두께</span><div><input inputMode="numeric" type="number" min="100" max="1000" step="10" value={Math.round((draft.roomWallThickness ?? 0.15) * 1000)} onChange={(event) => updateDraft({ roomWallThickness: positiveDimension(Number(event.target.value) / 1000, draft.roomWallThickness ?? 0.15) })} /><em>mm</em></div></label>
+            <label><span>가로</span><div><FriendlyNumberInput label="공간 가로(m)" value={draft.roomWidth} min={0.1} max={100} onCommit={(value) => updateDraft({ roomWidth: positiveDimension(value, draft.roomWidth) })} /><em>m</em></div></label>
+            <label><span>세로</span><div><FriendlyNumberInput label="공간 세로(m)" value={draft.roomHeight} min={0.1} max={100} onCommit={(value) => updateDraft({ roomHeight: positiveDimension(value, draft.roomHeight) })} /><em>m</em></div></label>
+            <label><span>천장 높이</span><div><FriendlyNumberInput label="천장 높이(m)" value={ceilingHeight} min={0.1} max={20} onCommit={(value) => updateDraft({ roomCeilingHeight: positiveDimension(value, ceilingHeight) })} /><em>m</em></div></label>
+            <label><span>벽 두께</span><div><FriendlyNumberInput label="벽 두께(mm)" value={Math.round((draft.roomWallThickness ?? 0.15) * 1000)} min={100} max={1000} decimals={0} onCommit={(value) => updateDraft({ roomWallThickness: positiveDimension(value / 1000, draft.roomWallThickness ?? 0.15) })} /><em>mm</em></div></label>
             <button type="button" className="site-layout-generate" onClick={generateRoom}>이 크기로 시작</button>
             <button type="button" className="site-layout-reset" onClick={resetDraft}>새 도면</button>
           </div>}
@@ -668,7 +685,15 @@ export default function SiteLayoutPlannerPage() {
             {!visibleBasicItemCount && activeStep.id !== "room" && <div className="site-layout-empty"><b>{activeStep.label} 모양을 선택해 도면을 시작하세요.</b><span>모바일에서는 그림을 누른 뒤 도면의 위치를 터치하세요.</span></div>}
             <small className="site-layout-coordinates">X 8,410.000&nbsp;&nbsp;Y 4,215.000&nbsp;&nbsp;Z 0.000</small>
           </div>
-          <div className="site-layout-paper-space"><div className="site-layout-paper-sheet"><div className="site-layout-paper-plan"><div className="site-layout-paper-note">RC 벽체 t={formatMillimeters(draft.roomWallThickness ?? 0.15)} / 천장 높이 {formatMillimeters(ceilingHeight)}mm / 현장 실측 기준 예상 도면</div><div className="site-layout-paper-room" style={{ aspectRatio: `${draft.roomWidth} / ${draft.roomHeight}` }}>{renderItems("site-layout-paper-item")}</div><div className="site-layout-paper-title"><b>{draft.roomName} 평면도</b><span>축척 1/60 (A3)</span></div></div><aside className="site-layout-title-block"><strong>{draft.roomName}</strong><section><b>도면 구성</b><p>RC 벽체 · 문 · 창호 · 기둥 · 보 · 에어컨</p></section><section><b>현장 통신</b><p>인터넷 {surveyChoiceLabel(checklist.internetAvailable)} · {internetModeLabel(checklist.internetMode)}<br />망 {networkTypeLabel(checklist.networkType)}</p></section><section><b>전기·시공</b><p>전원 {surveyChoiceLabel(checklist.powerOutlet)} · 전용회로 {surveyChoiceLabel(checklist.dedicatedCircuit)}<br />암막 {surveyChoiceLabel(checklist.blackoutCurtain)} · 바닥 {surveyChoiceLabel(checklist.floorWork)}<br />E/V {surveyChoiceLabel(checklist.elevator)} · 에어컨 간섭 {surveyChoiceLabel(checklist.airconConflict)}</p></section><section><b>CAD팀 전달 메모</b><p>{draft.fieldNotes || "특이사항 없음"}</p></section><dl><dt>PROJECT</dt><dd>{draft.roomName}</dd><dt>DATE</dt><dd>{new Intl.DateTimeFormat("ko-KR").format(new Date())}</dd><dt>SCALE</dt><dd>A3 1/60</dd></dl></aside></div></div>
+          <div className="site-layout-paper-space"><div className="site-layout-paper-sheet"><div className="site-layout-paper-plan">
+            <div className="site-layout-paper-note"><b>기초 평면도</b><span>RC 벽체 t={formatMillimeters(draft.roomWallThickness ?? 0.15)} · 천장 H={formatMillimeters(ceilingHeight)} · 현장 실측 기준 예상 도면</span></div>
+            <div className="site-layout-paper-drawing">
+              <div className="site-layout-paper-dimension dimension-width"><span>{formatMillimeters(draft.roomWidth)} mm</span></div>
+              <div className="site-layout-paper-dimension dimension-height"><span>{formatMillimeters(draft.roomHeight)} mm</span></div>
+              <div className="site-layout-paper-room" style={{ aspectRatio: `${draft.roomWidth} / ${draft.roomHeight}` }}>{renderItems("site-layout-paper-item")}</div>
+            </div>
+            <div className="site-layout-paper-title"><b>{draft.roomName} 평면도</b><span>현장 실측 기준 · 축척 1/60 (A3)</span></div>
+          </div><aside className="site-layout-title-block"><strong>{draft.roomName}</strong><section><b>도면 구성</b><p>RC 벽체 · 문 · 창호 · 기둥 · 보 · 에어컨</p></section><section><b>현장 통신</b><p>인터넷 {surveyChoiceLabel(checklist.internetAvailable)} · {internetModeLabel(checklist.internetMode)}<br />망 {networkTypeLabel(checklist.networkType)}</p></section><section><b>전기·시공</b><p>전원 {surveyChoiceLabel(checklist.powerOutlet)} · 전용회로 {surveyChoiceLabel(checklist.dedicatedCircuit)}<br />암막 {surveyChoiceLabel(checklist.blackoutCurtain)} · 바닥 {surveyChoiceLabel(checklist.floorWork)}<br />E/V {surveyChoiceLabel(checklist.elevator)} · 에어컨 간섭 {surveyChoiceLabel(checklist.airconConflict)}</p></section><section><b>CAD팀 전달 메모</b><p>{draft.fieldNotes || "특이사항 없음"}</p></section><dl><dt>PROJECT</dt><dd>{draft.roomName}</dd><dt>DATE</dt><dd>{new Intl.DateTimeFormat("ko-KR").format(new Date())}</dd><dt>SCALE</dt><dd>A3 1/60</dd></dl></aside></div></div>
         </main>
 
         <aside className="site-layout-inspector">
@@ -678,9 +703,14 @@ export default function SiteLayoutPlannerPage() {
           {selectedItem && selectedPreset && itemLayer(selectedItem) !== "equipment" ? <div className="site-layout-inspector-form">
             <div className="site-layout-inspector-preview"><CadSymbol symbol={selectedPreset.id} /><span>{selectedPreset.label}</span></div>
             <label><span>이름</span><input value={selectedItem.name} onChange={(event) => updateSelected({ name: event.target.value.slice(0, 60) })} /></label>
-            <div className="site-layout-size-fields">
-              {selectedItem.kind === "door" || selectedItem.kind === "window" ? <label><span>개구부 폭(mm)</span><MillimeterInput label="개구부 폭(mm)" valueMeters={selectedItem.width} minMm={300} maxMm={Math.round(((selectedItem.wall === "left" || selectedItem.wall === "right") ? draft.roomHeight : draft.roomWidth) * 1000)} onCommit={updateOpeningWidth} /></label> : <label><span>가로(m)</span><input inputMode="decimal" type="number" min="0.1" max="30" step="0.01" value={selectedItem.width} onChange={(event) => updateSelectedDimension("width", Number(event.target.value))} /></label>}
-              {selectedItem.kind === "door" || selectedItem.kind === "window" ? <label><span>개구부 높이(mm)</span><MillimeterInput label="개구부 높이(mm)" valueMeters={selectedItem.openingHeight ?? (selectedItem.kind === "door" ? 2.1 : 1.5)} minMm={300} maxMm={Math.round(Math.max(0.3, ceilingHeight - (selectedItem.kind === "window" ? selectedItem.sillHeight ?? 0.9 : 0)) * 1000)} onCommit={updateOpeningHeight} /></label> : <label><span>세로(m)</span><input inputMode="decimal" type="number" min="0.1" max="30" step="0.01" value={selectedItem.height} onChange={(event) => updateSelectedDimension("height", Number(event.target.value))} /></label>}
+            <div className={`site-layout-size-fields ${selectedItem.presetId === "aircon-ceiling" ? "is-square" : ""}`}>
+              {selectedItem.kind === "door" || selectedItem.kind === "window" ? <>
+                <label><span>개구부 폭(mm)</span><MillimeterInput label="개구부 폭(mm)" valueMeters={selectedItem.width} minMm={300} maxMm={Math.round(((selectedItem.wall === "left" || selectedItem.wall === "right") ? draft.roomHeight : draft.roomWidth) * 1000)} onCommit={updateOpeningWidth} /></label>
+                <label><span>개구부 높이(mm)</span><MillimeterInput label="개구부 높이(mm)" valueMeters={selectedItem.openingHeight ?? (selectedItem.kind === "door" ? 2.1 : 1.5)} minMm={300} maxMm={Math.round(Math.max(0.3, ceilingHeight - (selectedItem.kind === "window" ? selectedItem.sillHeight ?? 0.9 : 0)) * 1000)} onCommit={updateOpeningHeight} /></label>
+              </> : selectedItem.presetId === "aircon-ceiling" ? <label><span>정사각형 한 변(m)</span><FriendlyNumberInput label="천장형 에어컨 한 변(m)" value={selectedItem.width} min={0.3} max={3} onCommit={(value) => updateSelectedDimension("width", value)} /></label> : <>
+                <label><span>가로(m)</span><FriendlyNumberInput label="객체 가로(m)" value={selectedItem.width} min={0.1} max={30} onCommit={(value) => updateSelectedDimension("width", value)} /></label>
+                <label><span>세로(m)</span><FriendlyNumberInput label="객체 세로(m)" value={selectedItem.height} min={0.1} max={30} onCommit={(value) => updateSelectedDimension("height", value)} /></label>
+              </>}
             </div>
             {(selectedItem.kind === "door" || selectedItem.kind === "window") && <div className="site-layout-opening-fields">
               <label><span>설치 벽</span><select value={selectedItem.wall ?? "top"} onChange={(event) => updateWallMountedWall(event.target.value as WallSide)}><option value="top">상단 A벽</option><option value="right">우측 B벽</option><option value="bottom">하단 C벽</option><option value="left">좌측 D벽</option></select></label>
@@ -691,17 +721,17 @@ export default function SiteLayoutPlannerPage() {
             </div>}
             {selectedItem.presetId === "aircon-wall" && <div className="site-layout-opening-fields site-layout-aircon-fields">
               <label><span>설치 벽</span><select value={selectedItem.wall ?? "top"} onChange={(event) => updateWallMountedWall(event.target.value as WallSide)}><option value="top">상단 A벽</option><option value="right">우측 B벽</option><option value="bottom">하단 C벽</option><option value="left">좌측 D벽</option></select></label>
-              <label><span>모서리→에어컨 중심(m)</span><input inputMode="decimal" type="number" min="0" step="0.01" value={selectedItem.offset ?? selectedItem.width / 2} onChange={(event) => updateWallMountedOffset(Number(event.target.value))} /></label>
-              <label><span>바닥→에어컨 하단(m)</span><input inputMode="decimal" type="number" min="0" max="10" step="0.01" value={selectedItem.mountingHeight ?? 2.1} onChange={(event) => updateSelected({ mountingHeight: Math.max(0, Number(event.target.value) || 0) })} /></label>
+              <label><span>모서리→에어컨 중심(m)</span><FriendlyNumberInput label="모서리에서 에어컨 중심(m)" value={selectedItem.offset ?? selectedItem.width / 2} min={0} max={(selectedItem.wall === "left" || selectedItem.wall === "right") ? draft.roomHeight : draft.roomWidth} onCommit={updateWallMountedOffset} /></label>
+              <label><span>바닥→에어컨 하단(m)</span><FriendlyNumberInput label="바닥에서 에어컨 하단(m)" value={selectedItem.mountingHeight ?? 2.1} min={0} max={10} onCommit={(value) => updateSelected({ mountingHeight: value })} /></label>
             </div>}
             {!isWallMounted(selectedItem) && <div className="site-layout-reference-fields">
-              <label><span>좌측 D벽→중심(m)</span><input inputMode="decimal" type="number" min="0" step="0.01" value={centerDistance(selectedItem, "x")} onChange={(event) => updateCenterDistance("x", Number(event.target.value))} /></label>
-              <label><span>상단 A벽→중심(m)</span><input inputMode="decimal" type="number" min="0" step="0.01" value={centerDistance(selectedItem, "y")} onChange={(event) => updateCenterDistance("y", Number(event.target.value))} /></label>
+              <label><span>좌측 D벽→중심(m)</span><FriendlyNumberInput label="좌측 D벽에서 중심(m)" value={centerDistance(selectedItem, "x")} min={0} max={draft.roomWidth} onCommit={(value) => updateCenterDistance("x", value)} /></label>
+              <label><span>상단 A벽→중심(m)</span><FriendlyNumberInput label="상단 A벽에서 중심(m)" value={centerDistance(selectedItem, "y")} min={0} max={draft.roomHeight} onCommit={(value) => updateCenterDistance("y", value)} /></label>
             </div>}
-            {selectedItem.presetId === "aircon-ceiling" && <div className="site-layout-structure-fields"><label><span>바닥→설치면 높이(m)</span><input inputMode="decimal" type="number" min="0" max="20" step="0.01" value={selectedItem.mountingHeight ?? ceilingHeight} onChange={(event) => updateSelected({ mountingHeight: Math.max(0, Number(event.target.value) || 0) })} /></label></div>}
+            {selectedItem.presetId === "aircon-ceiling" && <div className="site-layout-structure-fields"><label><span>바닥→설치면 높이(m)</span><FriendlyNumberInput label="바닥에서 설치면 높이(m)" value={selectedItem.mountingHeight ?? ceilingHeight} min={0} max={20} onCommit={(value) => updateSelected({ mountingHeight: value })} /></label></div>}
             {selectedItem.kind === "beam" && <div className="site-layout-structure-fields">
-              <label><span>바닥→보 하단(m)</span><input inputMode="decimal" type="number" min="0" max="20" step="0.01" value={selectedItem.beamBottomHeight ?? 2.2} onChange={(event) => updateSelected({ beamBottomHeight: Math.max(0, Number(event.target.value) || 0) })} /></label>
-              <label><span>다음 보까지 유효거리(m)</span><input inputMode="decimal" type="number" min="0" max="30" step="0.01" value={selectedItem.beamSpacing ?? 1} onChange={(event) => updateSelected({ beamSpacing: Math.max(0, Number(event.target.value) || 0) })} /></label>
+              <label><span>바닥→보 하단(m)</span><FriendlyNumberInput label="바닥에서 보 하단(m)" value={selectedItem.beamBottomHeight ?? 2.2} min={0} max={20} onCommit={(value) => updateSelected({ beamBottomHeight: value })} /></label>
+              <label><span>다음 보까지 유효거리(m)</span><FriendlyNumberInput label="다음 보까지 유효거리(m)" value={selectedItem.beamSpacing ?? 1} min={0} max={30} onCommit={(value) => updateSelected({ beamSpacing: value })} /></label>
             </div>}
             <div className="site-layout-object-facts"><span>블록명 <b>{selectedPreset.code}</b></span><span>레이어 <b>{itemLayer(selectedItem).toUpperCase()}</b></span><span>스냅 <b>{isWallMounted(selectedItem) ? `${wallLabel(selectedItem.wall)} 기준거리` : "두 벽 중심거리"}</b></span></div>
             {selectedPreset.guide && <div className="site-layout-install-guide"><span>현장 확인</span><p>{selectedPreset.guide}</p></div>}
