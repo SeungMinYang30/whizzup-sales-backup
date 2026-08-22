@@ -295,8 +295,12 @@ function WindowSymbol({ draft, item, geometry, color, fillColor, strokeWidth }: 
   const start = geometry.spanStartMm;
   const end = geometry.spanEndMm;
   const count = windowPartitionCount(item.presetId);
-  const outerOffset = -draft.roomWallThicknessMm * 0.42;
-  const innerOffset = draft.roomWallThicknessMm * 0.42;
+  // A window is shown as a centered three-line frame inside the opening.
+  // Keeping the frame away from both wall faces prevents the opening from
+  // becoming a solid cyan bar when an A3 sheet is fitted to a small screen.
+  const outerOffset = -draft.roomWallThicknessMm * 0.28;
+  const centerOffset = 0;
+  const innerOffset = draft.roomWallThicknessMm * 0.28;
   const fillPoints = [
     pointForWall(draft, item.wall, start, outerOffset),
     pointForWall(draft, item.wall, end, outerOffset),
@@ -309,9 +313,12 @@ function WindowSymbol({ draft, item, geometry, color, fillColor, strokeWidth }: 
   });
   return (
     <g fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke">
-      <polygon points={fillPoints.map((point) => `${point.x},${point.y}`).join(" ")} fill={fillColor} stroke="none" />
+      <polygon points={fillPoints.map((point) => `${point.x},${point.y}`).join(" ")} fill={fillColor} fillOpacity={0.18} stroke="none" />
       <path d={wallStrokePath(draft, item.wall, start, end, outerOffset)} />
+      <path d={wallStrokePath(draft, item.wall, start, end, centerOffset)} opacity={0.72} strokeWidth={Math.max(1.2, strokeWidth * 0.68)} />
       <path d={wallStrokePath(draft, item.wall, start, end, innerOffset)} />
+      <path d={linePath(pointForWall(draft, item.wall, start, outerOffset), pointForWall(draft, item.wall, start, innerOffset))} />
+      <path d={linePath(pointForWall(draft, item.wall, end, outerOffset), pointForWall(draft, item.wall, end, innerOffset))} />
       {mullions.map((_, index) => {
         const along = start + ((end - start) * (index + 1)) / count;
         const first = pointForWall(draft, item.wall as SiteLayoutWallSide, along, outerOffset);
@@ -681,7 +688,8 @@ export function SiteLayoutGeometryView({
     .map((item) => computeOpeningCutGeometryMm(draft, item))
     .filter((rect): rect is GeometryRectMm => rect !== null);
   const symbolStrokeWidth = mode === "paper" ? 3.2 : 1.55;
-  const openingStrokeWidth = mode === "paper" ? 5.2 : 2.4;
+  const pillarStrokeWidth = mode === "paper" ? 1.45 : 1.25;
+  const openingStrokeWidth = mode === "paper" ? 3 : 2.4;
 
   function modelPoint(event: { clientX: number; clientY: number; currentTarget: SVGElement }) {
     const bounds = event.currentTarget.ownerSVGElement?.getBoundingClientRect()
@@ -821,7 +829,7 @@ export function SiteLayoutGeometryView({
             ) : item.kind === "window" ? (
               <WindowSymbol draft={draft} item={item} geometry={geometry} color={color} fillColor={palette.openingFill} strokeWidth={openingStrokeWidth} />
             ) : (
-              <GenericItemSymbol item={item} geometry={geometry} color={color} wallHatchId={hatchId} strokeWidth={symbolStrokeWidth} />
+              <GenericItemSymbol item={item} geometry={geometry} color={color} wallHatchId={hatchId} strokeWidth={item.kind === "pillar" ? pillarStrokeWidth : symbolStrokeWidth} />
             )}
             {showLabels && <ItemLabel draft={draft} item={item} geometry={geometry} color={color} compact={compact} paper={mode === "paper"} placement={itemLabelLayout.placements.get(item.id)} />}
           </g>

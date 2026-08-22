@@ -18798,6 +18798,15 @@ button:is(
   padding: 38px 28px 34px;
   place-items: center;
 }
+.site-layout-workspace.is-mobile-expanded .site-layout-canvas-panel.view-paper .site-layout-model-space {
+  display: none;
+}
+.site-layout-workspace.is-mobile-expanded .site-layout-canvas-panel.view-model .site-layout-paper-space {
+  display: none;
+}
+.site-layout-workspace.is-mobile-expanded .site-layout-canvas-panel.view-paper .site-layout-paper-space {
+  display: grid;
+}
 .site-layout-workspace.is-mobile-expanded .site-layout-board-wrap {
   width: min(100%, 1280px) !important;
   min-width: 0;

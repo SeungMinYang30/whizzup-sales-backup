@@ -309,6 +309,9 @@ test("모바일 도면 크게 보기는 CSS immersive와 전체화면·가로 �
   assertContainsAll(stylesSource, [
     /\.site-layout-workspace\.is-mobile-expanded \{[\s\S]*?position: fixed;[\s\S]*?height: 100dvh;/,
     /\.site-layout-workspace\.is-mobile-expanded \.site-layout-model-space,[\s\S]*?overflow: auto;/,
+    /\.site-layout-workspace\.is-mobile-expanded \.site-layout-canvas-panel\.view-paper \.site-layout-model-space \{[\s\S]*?display: none;/,
+    /\.site-layout-workspace\.is-mobile-expanded \.site-layout-canvas-panel\.view-model \.site-layout-paper-space \{[\s\S]*?display: none;/,
+    /\.site-layout-workspace\.is-mobile-expanded \.site-layout-canvas-panel\.view-paper \.site-layout-paper-space \{[\s\S]*?display: grid;/,
     /@media \(max-width: 760px\) and \(orientation: portrait\)/,
     /@media \(max-height: 500px\) and \(orientation: landscape\)/,
     /\.site-layout-workspace\.is-mobile-expanded\.is-guided \.site-layout-board > svg \[data-item-id\] \{[\s\S]*?touch-action: pan-x pan-y pinch-zoom;/,
@@ -428,8 +431,12 @@ test("A3 도면은 객체별 실제 치수와 측정 기준을 진한 선으로 
     /segment\.end\.xMm/,
     /showDimensions && mode === "paper" && <ObjectDimensionLayer/,
     /const symbolStrokeWidth = mode === "paper" \? 3\.2 : 1\.55/,
-    /const openingStrokeWidth = mode === "paper" \? 5\.2 : 2\.4/,
+    /const pillarStrokeWidth = mode === "paper" \? 1\.45 : 1\.25/,
+    /const openingStrokeWidth = mode === "paper" \? 3 : 2\.4/,
     /openingFill: "#bfe8f2"/,
+    /fillOpacity=\{0\.18\}/,
+    /const centerOffset = 0/,
+    /item\.kind === "pillar" \? pillarStrokeWidth : symbolStrokeWidth/,
     /paintOrder="stroke"/,
   ]);
   const measurementLabelSource = geometryViewSource.match(/function measurementLabel[\s\S]*?\n}\n\ntype ItemLabelPlacement/)?.[0] ?? "";
