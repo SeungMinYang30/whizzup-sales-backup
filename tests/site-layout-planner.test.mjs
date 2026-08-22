@@ -22,7 +22,7 @@ test("기본판은 기관·견적 DB 대신 브라우저에만 저장한다", ()
 });
 
 test("실 크기와 CAD 표준 블록을 편집하고 드래그할 수 있다", () => {
-  for (const label of ["단문형", "양문형", "미닫이", "3분할", "4분할", "6분할", "장비", "모듈 책상", "기둥", "현장 메모"]) {
+  for (const label of ["단문형", "양문형", "미닫이", "3분할", "4분할", "6분할", "프로젝터", "모듈 책상", "기둥", "현장 메모"]) {
     assert.match(pageSource, new RegExp(`label: "${label}"`));
   }
   assert.match(pageSource, /roomWidth/);
@@ -33,6 +33,33 @@ test("실 크기와 CAD 표준 블록을 편집하고 드래그할 수 있다", 
   assert.match(pageSource, /snapOpening/);
   assert.match(pageSource, /90° 회전/);
   assert.match(pageSource, /duplicateSelected/);
+});
+
+test("DWG와 브로셔를 참고한 에어패스 장비를 제품 DB 명칭에 매칭한다", () => {
+  for (const productName of [
+    "3X비전센서",
+    "라이더센서",
+    "에어패스 가상사격시스템",
+    "멀티미디어학습장치 3D motion sports",
+    "아이핏 전자칠판형 (AiFit)",
+    "아이핏 슬림형 (AiFit)",
+    "터치테이블",
+  ]) {
+    assert.match(pageSource, new RegExp(productName.replace(/[()]/g, "\\$&"), "i"));
+  }
+  assert.match(pageSource, /제품 DB 매칭/);
+  assert.match(pageSource, /DWG·브로셔·제품 DB 기준 VR 스포츠실 예시/);
+  assert.match(pageSource, /CAT6 네트워크 4회선/);
+  assert.match(pageSource, /스크린 폭 × 0\.42/);
+});
+
+test("문·창호와 장비는 CSS 의사 요소가 아닌 재사용 SVG CAD 심벌로 그린다", () => {
+  assert.match(pageSource, /function CadSymbol/);
+  assert.match(pageSource, /viewBox="0 0 100 70"/);
+  assert.match(pageSource, /M8 10A56 56/);
+  assert.match(pageSource, /Array\.from\(\{ length: panels - 1 \}/);
+  assert.match(stylesSource, /\.site-layout-cad-symbol/);
+  assert.match(pageSource, /vectorEffect: "non-scaling-stroke"/);
 });
 
 test("모델 공간과 A3 출력 도면에 CAD 정보 구조를 제공한다", () => {
