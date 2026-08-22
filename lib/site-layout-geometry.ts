@@ -475,15 +475,30 @@ export function computeSvgViewBox(
   options: { paddingMm?: number } = {},
 ): SvgViewBoxMm {
   const automaticPadding = Math.max(300, Math.round(Math.min(draft.roomWidthMm, draft.roomHeightMm) * 0.04));
-  const outsideDoorPadding = (draft.items ?? []).reduce((largest, item) => {
-    if (item.kind !== "door" || item.swing !== "outside") return largest;
-    return Math.max(largest, item.widthMm + draft.roomWallThicknessMm + 180);
-  }, 0);
-  const paddingMm = normalizedMm(Math.max(options.paddingMm ?? automaticPadding, outsideDoorPadding), automaticPadding, 0, 20_000);
-  const minX = -draft.roomWallThicknessMm - paddingMm;
-  const minY = -draft.roomWallThicknessMm - paddingMm;
-  const width = draft.roomWidthMm + draft.roomWallThicknessMm * 2 + paddingMm * 2;
-  const height = draft.roomHeightMm + draft.roomWallThicknessMm * 2 + paddingMm * 2;
+  const paddingMm = normalizedMm(options.paddingMm ?? automaticPadding, automaticPadding, 0, 20_000);
+  let topPaddingMm = paddingMm;
+  let rightPaddingMm = paddingMm;
+  let bottomPaddingMm = paddingMm;
+  let leftPaddingMm = paddingMm;
+
+  for (const item of draft.items ?? []) {
+    if (item.kind !== "door" || item.swing !== "outside" || !item.wall) continue;
+    const outsideDoorPaddingMm = normalizedMm(
+      item.widthMm + draft.roomWallThicknessMm + 180,
+      paddingMm,
+      0,
+      20_000,
+    );
+    if (item.wall === "top") topPaddingMm = Math.max(topPaddingMm, outsideDoorPaddingMm);
+    else if (item.wall === "right") rightPaddingMm = Math.max(rightPaddingMm, outsideDoorPaddingMm);
+    else if (item.wall === "bottom") bottomPaddingMm = Math.max(bottomPaddingMm, outsideDoorPaddingMm);
+    else leftPaddingMm = Math.max(leftPaddingMm, outsideDoorPaddingMm);
+  }
+
+  const minX = -draft.roomWallThicknessMm - leftPaddingMm;
+  const minY = -draft.roomWallThicknessMm - topPaddingMm;
+  const width = draft.roomWidthMm + draft.roomWallThicknessMm * 2 + leftPaddingMm + rightPaddingMm;
+  const height = draft.roomHeightMm + draft.roomWallThicknessMm * 2 + topPaddingMm + bottomPaddingMm;
   return { minX, minY, width, height, value: `${minX} ${minY} ${width} ${height}` };
 }
 

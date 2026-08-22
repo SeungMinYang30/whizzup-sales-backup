@@ -165,13 +165,39 @@ test("panel width, full-screen mode, and mobile viewport change only pixels, not
   }
 });
 
-test("outside-swing doors expand model padding so the complete leaf remains visible", () => {
+test("outside-swing doors expand only their mounted wall side without shrinking the opposite axis", () => {
   const base = createDefaultDraft();
-  const outsideDoor = placeItemOnWall(base, makeItem({ widthMm: 1_800, swing: "outside" }), "top", 1_000);
-  const viewBox = computeSvgViewBox({ ...base, items: [outsideDoor] }, { paddingMm: 650 });
+  const baseViewBox = computeSvgViewBox({ ...base, items: [] }, { paddingMm: 650 });
+  const outsidePadding = 1_800 + base.roomWallThicknessMm + 180;
+  const oppositeX = baseViewBox.minX + baseViewBox.width;
+  const oppositeY = baseViewBox.minY + baseViewBox.height;
 
-  assert.ok(-viewBox.minY >= 1_800 + base.roomWallThicknessMm + 180);
-  assert.ok(viewBox.height >= base.roomHeightMm + base.roomWallThicknessMm * 2 + (1_800 + base.roomWallThicknessMm + 180) * 2);
+  for (const wall of ["top", "right", "bottom", "left"]) {
+    const outsideDoor = placeItemOnWall(base, makeItem({ id: `outside-${wall}`, widthMm: 1_800, swing: "outside" }), wall, 1_000);
+    const viewBox = computeSvgViewBox({ ...base, items: [outsideDoor] }, { paddingMm: 650 });
+
+    if (wall === "top") {
+      assert.equal(viewBox.minY, -base.roomWallThicknessMm - outsidePadding);
+      assert.equal(viewBox.minY + viewBox.height, oppositeY);
+      assert.equal(viewBox.minX, baseViewBox.minX);
+      assert.equal(viewBox.width, baseViewBox.width);
+    } else if (wall === "right") {
+      assert.equal(viewBox.minX, baseViewBox.minX);
+      assert.equal(viewBox.minX + viewBox.width, base.roomWidthMm + base.roomWallThicknessMm + outsidePadding);
+      assert.equal(viewBox.minY, baseViewBox.minY);
+      assert.equal(viewBox.height, baseViewBox.height);
+    } else if (wall === "bottom") {
+      assert.equal(viewBox.minY, baseViewBox.minY);
+      assert.equal(viewBox.minY + viewBox.height, base.roomHeightMm + base.roomWallThicknessMm + outsidePadding);
+      assert.equal(viewBox.minX, baseViewBox.minX);
+      assert.equal(viewBox.width, baseViewBox.width);
+    } else {
+      assert.equal(viewBox.minX, -base.roomWallThicknessMm - outsidePadding);
+      assert.equal(viewBox.minX + viewBox.width, oppositeX);
+      assert.equal(viewBox.minY, baseViewBox.minY);
+      assert.equal(viewBox.height, baseViewBox.height);
+    }
+  }
 });
 
 test("room-percent projection is derived from mm geometry without pixel minimums", () => {
