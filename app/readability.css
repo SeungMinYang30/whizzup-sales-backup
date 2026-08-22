@@ -2513,3 +2513,21 @@
   .unified-management-table .award-complete-action { min-height: 38px; font-size: 11px; }
   .unified-management-table td:nth-child(11) select { width: 100%; min-height: 38px; }
 }
+
+/* Keep the dashboard activity switch centered instead of inheriting the
+   generic three-column mobile action grid used by management toolbars. */
+@media (max-width: 760px) {
+  .dashboard-records .records-heading-actions {
+    grid-template-columns: minmax(0, 1fr) !important;
+    justify-items: center;
+  }
+  .dashboard-records .records-heading-actions > .dashboard-activity-scope {
+    width: 176px;
+    max-width: 100%;
+    justify-self: center;
+  }
+  .dashboard-records .records-heading-actions > .record-count {
+    grid-column: 1;
+    width: 100%;
+  }
+}
