@@ -28,7 +28,7 @@ test("실 크기와 CAD 표준 블록을 편집하고 드래그할 수 있다", 
   assert.match(pageSource, /roomWidth/);
   assert.match(pageSource, /roomHeight/);
   assert.match(pageSource, /roomCeilingHeight/);
-  assert.match(pageSource, /공간 자동 생성/);
+  assert.match(pageSource, /이 크기로 시작/);
   assert.match(pageSource, /onPointerMove=\{moveDrag\}/);
   assert.match(pageSource, /snapOpening/);
   assert.match(pageSource, /90° 회전/);
@@ -47,10 +47,11 @@ test("제품 블록은 보존하되 기초 도면 UI와 출력에서 숨긴다",
 
 test("문·창호는 중복 의사 요소 없이 재사용 SVG CAD 심벌로 그린다", () => {
   assert.match(pageSource, /function CadSymbol/);
-  assert.match(pageSource, /viewBox="0 0 100 70"/);
+  assert.match(pageSource, /vertical \? "0 0 70 100" : "0 0 100 70"/);
   assert.match(pageSource, /M74 66A64 64/);
   assert.match(pageSource, /M50 66A40 40/);
   assert.match(pageSource, /Array\.from\(\{ length: panels - 1 \}/);
+  assert.match(pageSource, /openingCadTransform/);
   assert.match(stylesSource, /\.site-layout-cad-symbol/);
   assert.match(stylesSource, /\.site-layout-item\.kind-door:not\(\.selected\)::before,[\s\S]*?content: none/);
   assert.match(pageSource, /vectorEffect: "non-scaling-stroke"/);
@@ -109,11 +110,42 @@ test("문·창호는 설치 벽과 실측 치수를 저장한다", () => {
   assert.match(pageSource, /openingHeight/);
   assert.match(pageSource, /sillHeight/);
   assert.match(pageSource, /handing/);
-  assert.match(pageSource, /모서리→개구부 시작/);
-  assert.match(pageSource, /바닥에서 창 하단/);
+  assert.match(pageSource, /개구부 폭\(mm\)/);
+  assert.match(pageSource, /개구부 높이\(mm\)/);
+  assert.match(pageSource, /모서리→개구부 시작\(mm\)/);
+  assert.match(pageSource, /창 하단 높이\(mm\)/);
+  assert.match(pageSource, /function MillimeterInput/);
   assert.match(pageSource, /placeOpeningOnWall/);
   assert.match(pageSource, /실내·실외 열림/);
   assert.match(pageSource, /swing/);
+});
+
+test("여닫이·미닫이·폴딩도어는 종류별 실제 평면 깊이와 벽 축을 사용한다", () => {
+  assert.match(pageSource, /function openingPlanDepthMeters/);
+  assert.match(pageSource, /door-sliding/);
+  assert.match(pageSource, /door-folding/);
+  assert.match(pageSource, /verticalOpening/);
+  assert.match(pageSource, /\(verticalOpening \? openingDepth : item\.width\) \/ draft\.roomWidth/);
+  assert.match(pageSource, /\(verticalOpening \? item\.width : openingDepth\) \/ draft\.roomHeight/);
+  assert.doesNotMatch(pageSource, /item\.width \* 0\.72/);
+  assert.match(pageSource, /item\.wall === "top" && outside \? -renderedHeight/);
+  assert.match(pageSource, /wallBoundCount = draft\.items\.filter\(isWallMounted\)\.length/);
+});
+
+test("기둥과 보는 혼동되는 해칭 대신 구조 외곽선과 중심선으로 표시한다", () => {
+  assert.match(pageSource, /symbol === "pillar"[\s\S]*?<rect x="22" y="15" width="56" height="40"/);
+  assert.match(pageSource, /symbol === "pillar-round"[\s\S]*?<circle cx="50" cy="35" r="21"/);
+  assert.match(pageSource, /symbol === "beam"[\s\S]*?<rect className="cad-dash"/);
+  assert.match(stylesSource, /Site layout studio v6[\s\S]*?\.site-layout-item\.kind-pillar,[\s\S]*?background: rgba/);
+});
+
+test("도면 크게 보기에서는 양쪽 패널을 접고 A3와 모델 공간을 확대한다", () => {
+  assert.match(pageSource, /canvasFocus/);
+  assert.match(pageSource, /도면 크게/);
+  assert.match(pageSource, /패널 보기/);
+  assert.match(pageSource, /Math\.round\(920 \* roomRatio\)/);
+  assert.match(stylesSource, /\.site-layout-workspace\.is-canvas-focus[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(stylesSource, /\.site-layout-workspace\.is-canvas-focus > \.site-layout-library,[\s\S]*?display: none/);
 });
 
 test("에어컨과 구조물은 CAD팀 전달용 기준거리와 높이를 저장한다", () => {
