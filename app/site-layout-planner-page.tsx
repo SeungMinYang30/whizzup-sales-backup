@@ -37,6 +37,8 @@ type GuideStepId = "room" | "door" | "window" | "structure" | "facility" | "chec
 type StageCheckKey = Exclude<GuideStepId, "review">;
 type StageCheckStatus = "pending" | "complete" | "none" | "review";
 type WorkflowMode = "guided" | "direct";
+type RemoteOperation = "idle" | "listing" | "saving" | "retrying" | "loading" | "deleting";
+type RemoteSavePhase = "idle" | "saving" | "db-saved" | "drive-syncing" | "drive-ready" | "drive-error" | "conflict" | "failed";
 
 type SiteChecklist = {
   internetAvailable: SurveyChoice;
@@ -74,6 +76,9 @@ type LayoutItem = {
   structureMeasurement?: StructureMeasurement;
   openingMeasurement?: OpeningMeasurement;
   offsetReference?: OffsetReference;
+  wallInset?: number;
+  freeReferenceX?: "left" | "right";
+  freeReferenceY?: "top" | "bottom";
 };
 
 type LayoutDraft = {
@@ -213,6 +218,7 @@ function positiveDimension(value: number, fallback: number) {
 }
 function clampPercent(value: number) { return Math.min(96, Math.max(0, value)); }
 function snapGrid(value: number) { return clampPercent(Math.round(value * 5) / 5); }
+function isWallSide(value: unknown): value is WallSide { return value === "top" || value === "right" || value === "bottom" || value === "left"; }
 function structureFootprint(item: LayoutItem) {
   return item.rotation === 90 ? { width: item.height, height: item.width } : { width: item.width, height: item.height };
 }
@@ -220,12 +226,15 @@ function placePillarOnWall(item: LayoutItem, wall: WallSide, x: number, y: numbe
   const size = structureFootprint(item);
   const widthPercent = Math.min(100, (size.width / roomWidth) * 100);
   const heightPercent = Math.min(100, (size.height / roomHeight) * 100);
+  const inset = Math.max(0, Number.isFinite(item.wallInset) ? item.wallInset ?? 0 : 0);
+  const insetXPercent = Math.min(Math.max(0, 100 - widthPercent), (inset / roomWidth) * 100);
+  const insetYPercent = Math.min(Math.max(0, 100 - heightPercent), (inset / roomHeight) * 100);
   const clampedX = Math.min(Math.max(0, 100 - widthPercent), Math.max(0, snapGrid(x)));
   const clampedY = Math.min(Math.max(0, 100 - heightPercent), Math.max(0, snapGrid(y)));
-  if (wall === "top") return { wall, x: clampedX, y: 0 };
-  if (wall === "bottom") return { wall, x: clampedX, y: Math.max(0, 100 - heightPercent) };
-  if (wall === "left") return { wall, x: 0, y: clampedY };
-  return { wall, x: Math.max(0, 100 - widthPercent), y: clampedY };
+  if (wall === "top") return { wall, x: clampedX, y: insetYPercent };
+  if (wall === "bottom") return { wall, x: clampedX, y: Math.max(0, 100 - heightPercent - insetYPercent) };
+  if (wall === "left") return { wall, x: insetXPercent, y: clampedY };
+  return { wall, x: Math.max(0, 100 - widthPercent - insetXPercent), y: clampedY };
 }
 function snapPillarPlacement(item: LayoutItem, x: number, y: number, roomWidth: number, roomHeight: number) {
   const freePlacement = { wall: undefined, x: snapGrid(x), y: snapGrid(y), rotation: item.rotation };
@@ -265,6 +274,19 @@ function itemLayer(item: LayoutItem): LayoutLayer {
   if (item.kind === "fixture") return "fixture";
   if (item.kind === "note") return "note";
   return "equipment";
+}
+
+function stageForItem(item: LayoutItem): StageCheckKey | null {
+  if (item.kind === "door") return "door";
+  if (item.kind === "window") return "window";
+  if (item.kind === "pillar" || item.kind === "beam") return "structure";
+  if (item.kind === "fixture") return "facility";
+  return null;
+}
+
+function pendingStageChecks(draft: LayoutDraft, item: LayoutItem) {
+  const stage = stageForItem(item);
+  return stage ? { ...draft.stageChecks, [stage]: "pending" as const } : draft.stageChecks;
 }
 function formatMillimeters(meters: number) { return new Intl.NumberFormat("ko-KR").format(Math.round(meters * 1000)); }
 function wallLabel(wall?: WallSide) { return ({ top: "상단 A벽", right: "우측 B벽", bottom: "하단 C벽", left: "좌측 D벽" } as const)[wall ?? "top"]; }
@@ -349,11 +371,16 @@ function normalizeStoredDraft(value: unknown): LayoutDraft | null {
           }
           : undefined,
         offsetReference: item.offsetReference === "end" ? "end" : "start",
+        wallInset: item.wallInset === undefined ? undefined : Math.max(0, Number(item.wallInset) || 0),
+        freeReferenceX: item.freeReferenceX === "right" ? "right" : "left",
+        freeReferenceY: item.freeReferenceY === "bottom" ? "bottom" : "top",
       };
       if (normalizedItem.kind !== "pillar") return normalizedItem;
-      const placement = normalizedItem.wall
-        ? placePillarOnWall(normalizedItem, normalizedItem.wall, normalizedItem.x, normalizedItem.y, storedRoomWidth, storedRoomHeight)
-        : snapPillarPlacement(normalizedItem, normalizedItem.x, normalizedItem.y, storedRoomWidth, storedRoomHeight);
+      const placement = normalizedItem.structureAttachment?.mode === "free"
+        ? { wall: undefined, x: normalizedItem.x, y: normalizedItem.y, rotation: normalizedItem.rotation }
+        : normalizedItem.wall
+          ? placePillarOnWall(normalizedItem, normalizedItem.wall, normalizedItem.x, normalizedItem.y, storedRoomWidth, storedRoomHeight)
+          : snapPillarPlacement(normalizedItem, normalizedItem.x, normalizedItem.y, storedRoomWidth, storedRoomHeight);
       return { ...normalizedItem, ...placement };
     }),
     stageChecks: Object.fromEntries(Object.entries(storedChecks).filter((entry): entry is [string, StageCheckStatus] => validStageCheck(entry[1]))),
@@ -544,7 +571,9 @@ export default function SiteLayoutPlannerPage() {
   const [activeLocalDraftFingerprint, setActiveLocalDraftFingerprint] = useState("");
   const [draftLibraryOpen, setDraftLibraryOpen] = useState(false);
   const [remoteLayouts, setRemoteLayouts] = useState<RemoteLayoutSummary[]>([]);
-  const [remoteLoading, setRemoteLoading] = useState(false);
+  const [remoteOperation, setRemoteOperation] = useState<RemoteOperation>("idle");
+  const [remoteSavePhase, setRemoteSavePhase] = useState<RemoteSavePhase>("idle");
+  const [remoteSaveDetail, setRemoteSaveDetail] = useState("");
   const [activeRemoteId, setActiveRemoteId] = useState<number | null>(null);
   const [activeRemoteVersion, setActiveRemoteVersion] = useState<number | null>(null);
   const [activeRemoteFingerprint, setActiveRemoteFingerprint] = useState("");
@@ -579,6 +608,7 @@ export default function SiteLayoutPlannerPage() {
   const suppressExpandedPopRef = useRef(false);
   const closingExpandedRef = useRef(false);
   const fullscreenEnteredRef = useRef(false);
+  const remoteLoading = remoteOperation !== "idle";
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -594,9 +624,9 @@ export default function SiteLayoutPlannerPage() {
         const storedMode = window.localStorage.getItem(WORKFLOW_MODE_KEY);
         setWorkflowMode(storedMode === "guided" || storedMode === "direct"
           ? storedMode
-          : window.matchMedia("(max-width: 760px), (pointer: coarse)").matches ? "guided" : "direct");
+          : window.matchMedia("(max-width: 760px)").matches ? "guided" : "direct");
       } catch {
-        setWorkflowMode(window.matchMedia("(max-width: 760px), (pointer: coarse)").matches ? "guided" : "direct");
+        setWorkflowMode(window.matchMedia("(max-width: 760px)").matches ? "guided" : "direct");
       }
       try {
         setLocalDrafts(parseLocalDraftLibrary(window.localStorage.getItem(DRAFT_LIBRARY_KEY)));
@@ -604,12 +634,16 @@ export default function SiteLayoutPlannerPage() {
         setLocalDrafts([]);
       }
       try {
-        const context = JSON.parse(window.localStorage.getItem(REMOTE_CONTEXT_KEY) ?? "null") as { id?: unknown; editVersion?: unknown; fingerprint?: unknown } | null;
+        const context = JSON.parse(window.localStorage.getItem(REMOTE_CONTEXT_KEY) ?? "null") as { id?: unknown; editVersion?: unknown; fingerprint?: unknown; driveSyncStatus?: unknown } | null;
         const id = Number(context?.id);
         const editVersion = Number(context?.editVersion);
         if (Number.isInteger(id) && id > 0) setActiveRemoteId(id);
         if (Number.isInteger(editVersion) && editVersion > 0) setActiveRemoteVersion(editVersion);
         if (typeof context?.fingerprint === "string") setActiveRemoteFingerprint(context.fingerprint);
+        if (typeof context?.driveSyncStatus === "string") {
+          setActiveDriveSyncStatus(context.driveSyncStatus);
+          setRemoteSavePhase(context.driveSyncStatus === "ready" ? "drive-ready" : context.driveSyncStatus === "error" ? "drive-error" : "drive-syncing");
+        }
       } catch {
         // The recovery draft remains usable even when its remote context is malformed.
       } finally { setHydrated(true); }
@@ -623,16 +657,16 @@ export default function SiteLayoutPlannerPage() {
       try {
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
         if (activeRemoteId && activeRemoteVersion) {
-          window.localStorage.setItem(REMOTE_CONTEXT_KEY, JSON.stringify({ id: activeRemoteId, editVersion: activeRemoteVersion, fingerprint: activeRemoteFingerprint }));
+          window.localStorage.setItem(REMOTE_CONTEXT_KEY, JSON.stringify({ id: activeRemoteId, editVersion: activeRemoteVersion, fingerprint: activeRemoteFingerprint, driveSyncStatus: activeDriveSyncStatus }));
         }
-        if (!activeRemoteId) setSaveMessage("아직 기관 도면 저장 전입니다. 현재 입력은 이 기기에 복구용으로 보관됩니다.");
+        if (!activeRemoteId && remoteSavePhase === "idle") setSaveMessage("아직 기관 도면 저장 전입니다. 현재 입력은 이 기기에 복구용으로 보관됩니다.");
         setSavedAt(new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date()));
       } catch {
-        setSaveMessage("자동 저장에 실패했습니다. 브라우저 저장 공간을 확인해 주세요.");
+        if (remoteSavePhase === "idle") setSaveMessage("자동 저장에 실패했습니다. 브라우저 저장 공간을 확인해 주세요.");
       }
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [activeRemoteFingerprint, activeRemoteId, activeRemoteVersion, draft, hydrated]);
+  }, [activeDriveSyncStatus, activeRemoteFingerprint, activeRemoteId, activeRemoteVersion, draft, hydrated, remoteSavePhase]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -727,8 +761,20 @@ export default function SiteLayoutPlannerPage() {
     if (selectedItem && activeStep.groups.includes(presetForItem(selectedItem).group)) return selectedItem;
     return [...draft.items].reverse().find((item) => activeStep.groups.includes(presetForItem(item).group)) ?? null;
   }, [activeStep.groups, draft.items, selectedItem]);
+  const activeStageItems = useMemo(
+    () => draft.items.filter((item) => activeStep.groups.includes(presetForItem(item).group)),
+    [activeStep.groups, draft.items],
+  );
 
-  function updateDraft(patch: Partial<LayoutDraft>) { setDraft((current) => ({ ...current, ...patch })); }
+  function updateDraft(patch: Partial<LayoutDraft>) {
+    setDraft((current) => ({
+      ...current,
+      ...patch,
+      ...((patch.roomName !== undefined || patch.roomWidth !== undefined || patch.roomHeight !== undefined || patch.roomCeilingHeight !== undefined)
+        ? { stageChecks: { ...current.stageChecks, room: "pending" as const } }
+        : {}),
+    }));
+  }
   function selectWorkflowMode(mode: WorkflowMode) {
     setWorkflowMode(mode);
     setView("model");
@@ -737,10 +783,17 @@ export default function SiteLayoutPlannerPage() {
   }
   function updateSelected(patch: Partial<LayoutItem>) {
     if (!selectedId) return;
-    setDraft((current) => ({ ...current, items: current.items.map((item) => item.id === selectedId ? { ...item, ...patch } : item) }));
+    setDraft((current) => {
+      const selected = current.items.find((item) => item.id === selectedId);
+      return {
+        ...current,
+        items: resolveWindowReferences(current.items.map((item) => item.id === selectedId ? { ...item, ...patch } : item)),
+        ...(selected ? { stageChecks: pendingStageChecks(current, selected) } : {}),
+      };
+    });
   }
   function updateChecklist<K extends keyof SiteChecklist>(key: K, value: SiteChecklist[K]) {
-    setDraft((current) => ({ ...current, siteChecklist: { ...(current.siteChecklist ?? defaultSiteChecklist), [key]: value } }));
+    setDraft((current) => ({ ...current, siteChecklist: { ...(current.siteChecklist ?? defaultSiteChecklist), [key]: value }, stageChecks: { ...current.stageChecks, checklist: "pending" } }));
   }
   function persistLocalDrafts(nextDrafts: StoredLocalDraft[]) {
     const trimmed = nextDrafts.slice(0, 20);
@@ -764,22 +817,35 @@ export default function SiteLayoutPlannerPage() {
     return record;
   }
   async function refreshRemoteLayouts() {
-    setRemoteLoading(true);
+    setRemoteOperation("listing");
     try {
       const response = await fetch("/api/site-layouts", { method: "GET", cache: "no-store" });
       const payload: unknown = await response.json().catch(() => null);
       if (!response.ok) throw new Error((payload as { error?: string } | null)?.error || "기관 도면 목록을 불러오지 못했습니다.");
-      setRemoteLayouts(remoteLayoutsFromPayload(payload));
+      const layouts = remoteLayoutsFromPayload(payload);
+      setRemoteLayouts(layouts);
+      const active = activeRemoteId ? layouts.find((layout) => layout.id === activeRemoteId) : null;
+      if (active) {
+        setActiveDriveSyncStatus(active.driveSyncStatus);
+        setRemoteSavePhase(active.driveSyncStatus === "ready" ? "drive-ready" : active.driveSyncStatus === "error" ? "drive-error" : "drive-syncing");
+        setRemoteSaveDetail(active.driveSyncStatus === "ready"
+          ? "기관 DB와 Google Drive 원본 저장을 확인했습니다."
+          : active.driveSyncStatus === "error"
+            ? active.driveSyncError || "기관 DB 저장은 유지됐으며 Drive 저장을 다시 시도할 수 있습니다."
+            : "기관 DB 최신본 · Drive 동기화 중입니다.");
+      }
     } catch (error) {
       setSaveMessage(error instanceof Error ? `${error.message} 이 기기 복구본은 계속 유지됩니다.` : "기관 도면 목록을 불러오지 못했습니다. 이 기기 복구본은 계속 유지됩니다.");
     } finally {
-      setRemoteLoading(false);
+      setRemoteOperation("idle");
     }
   }
   async function saveCurrentDraft() {
     const recovery = persistNamedRecovery();
     if (!recovery) return;
-    setRemoteLoading(true);
+    setRemoteOperation("saving");
+    setRemoteSavePhase("saving");
+    setRemoteSaveDetail("기관 DB에 도면을 저장하고 있습니다.");
     setSaveMessage("기관 도면 저장소와 Google Drive에 저장하고 있습니다…");
     try {
       const response = await fetch("/api/site-layouts", {
@@ -799,6 +865,8 @@ export default function SiteLayoutPlannerPage() {
       if (response.status === 409) {
         const latest = normalizeRemoteLayout((payload as { layout?: unknown } | null)?.layout);
         if (latest) setRemoteLayouts((current) => [latest, ...current.filter((item) => item.id !== latest.id)]);
+        setRemoteSavePhase("conflict");
+        setRemoteSaveDetail("다른 사용자의 최신본을 먼저 불러온 뒤 다시 저장해 주세요.");
         setSaveMessage("다른 사용자가 먼저 수정했습니다. 내 입력은 이 기기에 보존했습니다. 기관 도면 목록에서 최신본을 불러온 뒤 다시 저장해 주세요.");
         return;
       }
@@ -811,20 +879,68 @@ export default function SiteLayoutPlannerPage() {
       setActiveDriveSyncStatus(saved.driveSyncStatus);
       setActiveLocalDraftFingerprint(JSON.stringify(draft));
       setRemoteLayouts((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
-      window.localStorage.setItem(REMOTE_CONTEXT_KEY, JSON.stringify({ id: saved.id, editVersion: saved.editVersion, fingerprint: JSON.stringify(draft) }));
+      window.localStorage.setItem(REMOTE_CONTEXT_KEY, JSON.stringify({ id: saved.id, editVersion: saved.editVersion, fingerprint: JSON.stringify(draft), driveSyncStatus: saved.driveSyncStatus }));
+      setRemoteSavePhase("db-saved");
+      if (saved.driveSyncStatus === "ready") {
+        setRemoteSavePhase("drive-ready");
+        setRemoteSaveDetail("기관 DB와 Google Drive 원본 저장을 모두 확인했습니다.");
+      } else if (saved.driveSyncStatus === "error") {
+        setRemoteSavePhase("drive-error");
+        setRemoteSaveDetail(saved.driveSyncError || "기관 DB 저장은 완료됐지만 Drive 동기화를 다시 확인해야 합니다.");
+      } else {
+        setRemoteSavePhase("drive-syncing");
+        setRemoteSaveDetail("기관 DB 저장 완료 · Google Drive 원본 동기화 중입니다.");
+      }
       setSaveMessage(saved.driveSyncStatus === "ready"
         ? `“${saved.title}” 기관 도면 저장과 Google Drive 보관이 완료되었습니다.`
         : saved.driveSyncStatus === "error"
           ? `기관 도면 저장은 완료됐지만 Google Drive 동기화는 재시도가 필요합니다.${saved.driveSyncError ? ` ${saved.driveSyncError}` : ""}`
           : `“${saved.title}” 기관 도면 저장 완료 · Google Drive 동기화 중입니다.`);
     } catch (error) {
+      setRemoteSavePhase("failed");
+      setRemoteSaveDetail(error instanceof Error ? error.message : "기관 도면 저장 요청에 실패했습니다.");
       setSaveMessage(`${error instanceof Error ? error.message : "기관 도면 저장에 실패했습니다."} 내 입력은 이 기기 복구본에 안전하게 남아 있습니다.`);
     } finally {
-      setRemoteLoading(false);
+      setRemoteOperation("idle");
+    }
+  }
+  async function retryRemoteDrive(record: RemoteLayoutSummary) {
+    setRemoteOperation("retrying");
+    if (activeRemoteId === record.id) {
+      setRemoteSavePhase("drive-syncing");
+      setRemoteSaveDetail("기관 DB의 최신 도면을 Google Drive에 다시 저장하고 있습니다.");
+    }
+    setSaveMessage(`“${record.title}” Google Drive 저장을 다시 시도하고 있습니다…`);
+    try {
+      const response = await fetch("/api/site-layouts/files", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: record.id }),
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error((payload as { error?: string } | null)?.error || "Google Drive 저장을 다시 시도하지 못했습니다.");
+      const latest = normalizeRemoteSummary((payload as { layout?: unknown } | null)?.layout);
+      if (!latest) throw new Error("Google Drive 재시도 결과를 확인하지 못했습니다.");
+      setRemoteLayouts((current) => [latest, ...current.filter((item) => item.id !== latest.id)]);
+      if (activeRemoteId === latest.id) {
+        setActiveDriveSyncStatus(latest.driveSyncStatus);
+        setRemoteSavePhase(latest.driveSyncStatus === "ready" ? "drive-ready" : latest.driveSyncStatus === "error" ? "drive-error" : "drive-syncing");
+        setRemoteSaveDetail(latest.driveSyncStatus === "ready" ? "기관 DB와 Google Drive 원본 저장을 모두 확인했습니다." : latest.driveSyncError || "Google Drive 동기화를 다시 확인해야 합니다.");
+        window.localStorage.setItem(REMOTE_CONTEXT_KEY, JSON.stringify({ id: latest.id, editVersion: activeRemoteVersion ?? latest.editVersion, fingerprint: activeRemoteFingerprint, driveSyncStatus: latest.driveSyncStatus }));
+      }
+      setSaveMessage(latest.driveSyncStatus === "ready" ? `“${latest.title}” Google Drive 보관을 완료했습니다.` : `“${latest.title}” Drive 동기화 상태를 다시 확인해 주세요.`);
+    } catch (error) {
+      if (activeRemoteId === record.id) {
+        setRemoteSavePhase("drive-error");
+        setRemoteSaveDetail(error instanceof Error ? error.message : "Google Drive 저장 재시도에 실패했습니다.");
+      }
+      setSaveMessage(`${error instanceof Error ? error.message : "Google Drive 저장 재시도에 실패했습니다."} 기관 DB와 기기 복구본은 유지됩니다.`);
+    } finally {
+      setRemoteOperation("idle");
     }
   }
   async function loadRemoteDraft(record: RemoteLayoutSummary) {
-    setRemoteLoading(true);
+    setRemoteOperation("loading");
     try {
       const response = await fetch(`/api/site-layouts?id=${encodeURIComponent(String(record.id))}`, { method: "GET", cache: "no-store" });
       const payload: unknown = await response.json().catch(() => null);
@@ -839,6 +955,8 @@ export default function SiteLayoutPlannerPage() {
       setActiveRemoteVersion(latest.editVersion);
       setActiveRemoteFingerprint(mergedFingerprint);
       setActiveDriveSyncStatus(latest.driveSyncStatus);
+      setRemoteSavePhase(latest.driveSyncStatus === "ready" ? "drive-ready" : latest.driveSyncStatus === "error" ? "drive-error" : "drive-syncing");
+      setRemoteSaveDetail(latest.driveSyncStatus === "ready" ? "기관 DB와 Google Drive 원본을 불러왔습니다." : latest.driveSyncStatus === "error" ? latest.driveSyncError || "Drive 동기화 재확인이 필요합니다." : "기관 DB 최신본 · Drive 동기화 중입니다.");
       setActiveLocalDraftId("");
       setActiveLocalDraftFingerprint(mergedFingerprint);
       setSelectedId("");
@@ -848,18 +966,18 @@ export default function SiteLayoutPlannerPage() {
       setView("model");
       setCanvasFocus(false);
       setDraftLibraryOpen(false);
-      window.localStorage.setItem(REMOTE_CONTEXT_KEY, JSON.stringify({ id: latest.id, editVersion: latest.editVersion, fingerprint: mergedFingerprint }));
+      window.localStorage.setItem(REMOTE_CONTEXT_KEY, JSON.stringify({ id: latest.id, editVersion: latest.editVersion, fingerprint: mergedFingerprint, driveSyncStatus: latest.driveSyncStatus }));
       setRemoteLayouts((current) => [latest, ...current.filter((item) => item.id !== latest.id)]);
       setSaveMessage(`“${latest.title}” 기관 도면 최신본을 불러왔습니다.`);
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "기관 도면을 불러오지 못했습니다.");
     } finally {
-      setRemoteLoading(false);
+      setRemoteOperation("idle");
     }
   }
   async function deleteRemoteDraft(record: RemoteLayoutSummary) {
     if (!window.confirm(`“${record.title}” 기관 도면을 삭제할까요?`)) return;
-    setRemoteLoading(true);
+    setRemoteOperation("deleting");
     try {
       const response = await fetch(`/api/site-layouts?id=${encodeURIComponent(String(record.id))}&baseVersion=${encodeURIComponent(String(record.editVersion))}`, { method: "DELETE" });
       const payload: unknown = await response.json().catch(() => null);
@@ -870,13 +988,15 @@ export default function SiteLayoutPlannerPage() {
         setActiveRemoteVersion(null);
         setActiveRemoteFingerprint("");
         setActiveDriveSyncStatus("");
+        setRemoteSavePhase("idle");
+        setRemoteSaveDetail("");
         window.localStorage.removeItem(REMOTE_CONTEXT_KEY);
       }
       setSaveMessage(`“${record.title}” 기관 도면을 삭제했습니다.`);
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "기관 도면을 삭제하지 못했습니다.");
     } finally {
-      setRemoteLoading(false);
+      setRemoteOperation("idle");
     }
   }
   function loadLocalDraft(record: StoredLocalDraft) {
@@ -892,6 +1012,8 @@ export default function SiteLayoutPlannerPage() {
     setActiveRemoteVersion(null);
     setActiveRemoteFingerprint("");
     setActiveDriveSyncStatus("");
+    setRemoteSavePhase("idle");
+    setRemoteSaveDetail("");
     window.localStorage.removeItem(REMOTE_CONTEXT_KEY);
     setSaveMessage(`“${record.name}” 기기 복구본을 새 기관 도면으로 불러왔습니다.`);
     setDraftLibraryOpen(false);
@@ -967,7 +1089,14 @@ export default function SiteLayoutPlannerPage() {
     updateSelectedById(selectedStageItem.id, placeWallMountedItem(selectedStageItem, selectedStageItem.wall ?? "top", canonical));
   }
   function updateSelectedById(id: string, patch: Partial<LayoutItem>) {
-    setDraft((current) => ({ ...current, items: current.items.map((item) => item.id === id ? { ...item, ...patch } : item) }));
+    setDraft((current) => {
+      const selected = current.items.find((item) => item.id === id);
+      return {
+        ...current,
+        items: resolveWindowReferences(current.items.map((item) => item.id === id ? { ...item, ...patch } : item)),
+        ...(selected ? { stageChecks: pendingStageChecks(current, selected) } : {}),
+      };
+    });
   }
   function makeItem(presetId: LayoutSymbol, x: number, y: number, rotation: 0 | 90 = 0, suffix = ""): LayoutItem {
     const preset = itemPresets.find((item) => item.id === presetId) ?? itemPresets[0];
@@ -1096,6 +1225,25 @@ export default function SiteLayoutPlannerPage() {
     }
     return placeOpeningOnWall(item, wall, start);
   }
+  function resolveWindowReferences(items: LayoutItem[]) {
+    let resolved = items;
+    for (let pass = 0; pass < items.length; pass += 1) {
+      let changed = false;
+      const byId = new Map(resolved.map((item) => [item.id, item]));
+      const next = resolved.map((item) => {
+        if (item.kind !== "window" || item.openingMeasurement?.referenceType !== "item") return item;
+        const reference = item.openingMeasurement.referenceItemId ? byId.get(item.openingMeasurement.referenceItemId) : null;
+        if (!reference || reference.kind !== "window" || (reference.wall ?? "top") !== (item.wall ?? "top")) return item;
+        const placement = placeWindowByMeasurement(item, item.openingMeasurement, reference);
+        if (placement.x === item.x && placement.y === item.y && placement.offset === item.offset && placement.rotation === item.rotation) return item;
+        changed = true;
+        return { ...item, ...placement };
+      });
+      resolved = next;
+      if (!changed) break;
+    }
+    return resolved;
+  }
   function updateWindowMeasurement(item: LayoutItem, measurement: OpeningMeasurement) {
     const reference = measurement.referenceType === "item"
       ? draft.items.find((candidate) => candidate.id === measurement.referenceItemId && candidate.kind === "window") ?? null
@@ -1113,7 +1261,7 @@ export default function SiteLayoutPlannerPage() {
       const measurement: StructureMeasurement = reference
         ? { axis: wall === "top" || wall === "bottom" ? "x" : "y", referenceType: "item", referenceItemId: reference.id, direction: 1, distanceMode: item.structureMeasurement?.distanceMode ?? "clear", distanceMm: item.structureMeasurement?.distanceMm ?? 1000 }
         : wallMeasurement(wall, item.offsetReference ?? "start", 0);
-      const next = { ...item, wall, structureAttachment: { mode: "wall" as const, wall }, structureMeasurement: measurement };
+      const next = { ...item, wall, wallInset: item.wallInset ?? 0, structureAttachment: { mode: "wall" as const, wall }, structureMeasurement: measurement };
       updateSelectedById(item.id, { ...next, ...placePillarByMeasurement(next, measurement, reference) });
       return;
     }
@@ -1137,6 +1285,60 @@ export default function SiteLayoutPlannerPage() {
     const next = { ...item, wall, structureAttachment: { mode: "wall" as const, wall }, structureMeasurement: measurement };
     updateSelectedById(item.id, { ...next, ...placeBeamByMeasurement(next, measurement, reference) });
   }
+  function setGuidedPillarAttachment(item: LayoutItem, mode: "wall" | "free") {
+    setSelectedId(item.id);
+    if (mode === "free") {
+      updateSelectedById(item.id, {
+        wall: undefined,
+        offset: undefined,
+        wallInset: undefined,
+        structureAttachment: { mode: "free" },
+        structureMeasurement: undefined,
+        freeReferenceX: item.freeReferenceX ?? "left",
+        freeReferenceY: item.freeReferenceY ?? "top",
+      });
+      return;
+    }
+    selectGuidedWall({ ...item, wallInset: item.wallInset ?? 0 }, item.wall ?? "top");
+  }
+  function updatePillarWallInset(item: LayoutItem, rawValue: number) {
+    if (item.kind !== "pillar" || item.structureAttachment?.mode !== "wall") return;
+    const size = structureFootprint(item);
+    const crossRoom = item.wall === "left" || item.wall === "right" ? draft.roomWidth : draft.roomHeight;
+    const crossSize = item.wall === "left" || item.wall === "right" ? size.width : size.height;
+    const wallInset = Math.min(Math.max(0, crossRoom - crossSize), Math.max(0, Number.isFinite(rawValue) ? rawValue : 0));
+    const next = { ...item, wallInset };
+    const measurement = next.structureMeasurement ?? wallMeasurement(next.wall ?? "top", next.offsetReference ?? "start", displayedWallDistance(next));
+    const reference = measurement.referenceType === "item" ? previousPillar(next, next.wall ?? "top") : null;
+    updateSelectedById(item.id, { wallInset, ...placePillarByMeasurement(next, measurement, reference) });
+  }
+  function updateFreePillarDistance(item: LayoutItem, axis: "x" | "y", reference: "left" | "right" | "top" | "bottom", rawValue: number) {
+    if (item.kind !== "pillar") return;
+    const size = structureFootprint(item);
+    const roomSize = axis === "x" ? draft.roomWidth : draft.roomHeight;
+    const objectSize = axis === "x" ? size.width : size.height;
+    const distance = Math.min(Math.max(0, roomSize - objectSize), Math.max(0, Number.isFinite(rawValue) ? rawValue : 0));
+    const start = reference === "right" || reference === "bottom" ? roomSize - objectSize - distance : distance;
+    updateSelectedById(item.id, {
+      wall: undefined,
+      offset: undefined,
+      structureAttachment: { mode: "free" },
+      structureMeasurement: undefined,
+      ...(axis === "x" ? { x: (start / draft.roomWidth) * 100, freeReferenceX: reference as "left" | "right" } : { y: (start / draft.roomHeight) * 100, freeReferenceY: reference as "top" | "bottom" }),
+    });
+  }
+  function freePillarDistance(item: LayoutItem, axis: "x" | "y") {
+    const size = structureFootprint(item);
+    if (axis === "x") {
+      const start = (item.x / 100) * draft.roomWidth;
+      return item.freeReferenceX === "right" ? Math.max(0, draft.roomWidth - size.width - start) : Math.max(0, start);
+    }
+    const start = (item.y / 100) * draft.roomHeight;
+    return item.freeReferenceY === "bottom" ? Math.max(0, draft.roomHeight - size.height - start) : Math.max(0, start);
+  }
+  function appendItem(current: LayoutDraft, item: LayoutItem) {
+    return { ...current, items: [...current.items, item], stageChecks: pendingStageChecks(current, item) };
+  }
   function addItem(presetId: LayoutSymbol, targetX?: number, targetY?: number) {
     const preset = itemPresets.find((item) => item.id === presetId) ?? itemPresets[0];
     const samePresetCount = draft.items.filter((item) => presetForItem(item).id === preset.id).length;
@@ -1146,15 +1348,20 @@ export default function SiteLayoutPlannerPage() {
     const startY = targetY ?? (isWallBound ? 0 : 22 + ((draft.items.length * 11) % 42));
     let rawItem = makeItem(presetId, startX, startY, 0, samePresetCount ? ` ${samePresetCount + 1}` : "");
     if (preset.kind === "pillar" && workflowMode === "guided") {
-      const reference = [...draft.items].reverse().find((candidate) => candidate.kind === "pillar" && (candidate.wall ?? "top") === "top") ?? null;
-      const measurement: StructureMeasurement = reference
-        ? { axis: "x", referenceType: "item", referenceItemId: reference.id, direction: 1, distanceMode: "clear", distanceMm: 1000 }
-        : wallMeasurement("top", "start", 0);
-      rawItem = { ...rawItem, wall: "top", offset: 0, offsetReference: "start", structureAttachment: { mode: "wall", wall: "top" }, structureMeasurement: measurement };
-      const item = { ...rawItem, ...placePillarByMeasurement(rawItem, measurement, reference) };
-      setDraft((current) => ({ ...current, items: [...current.items, item] }));
+      const item: LayoutItem = {
+        ...rawItem,
+        wall: undefined,
+        offset: undefined,
+        offsetReference: "start",
+        structureAttachment: { mode: "free" },
+        structureMeasurement: undefined,
+        wallInset: 0,
+        freeReferenceX: "left",
+        freeReferenceY: "top",
+      };
+      setDraft((current) => appendItem(current, item));
       setSelectedId(item.id); setPendingPresetId(null); setView("model");
-      setCommand(`명령: ${preset.label} ${preset.code} 벽 밀착 배치 완료 · 이전 기둥과의 면 사이 거리를 입력하세요.`);
+      setCommand(`명령: ${preset.label} ${preset.code} 생성 완료 · 벽 부착 또는 실내 독립 배치 방식을 선택하세요.`);
       return item;
     }
     if (preset.kind === "beam") {
@@ -1164,12 +1371,21 @@ export default function SiteLayoutPlannerPage() {
         : wallMeasurement("top", "start", 0);
       rawItem = { ...rawItem, wall: "top", offsetReference: "start", structureAttachment: { mode: "wall", wall: "top" }, structureMeasurement: measurement };
       const item = { ...rawItem, ...placeBeamByMeasurement(rawItem, measurement, reference) };
-      setDraft((current) => ({ ...current, items: [...current.items, item] }));
+      setDraft((current) => appendItem(current, item));
       setSelectedId(item.id); setPendingPresetId(null); setView("model");
       setCommand(`명령: ${preset.label} ${preset.code} 배치 완료 · 벽과 기준거리를 입력해 위치를 확정하세요.`);
       return item;
     }
     let item = { ...rawItem, ...snapPlacement(rawItem, startX, startY) };
+    if (item.kind === "pillar") {
+      const placement = snapPillarPlacement(rawItem, startX, startY, draft.roomWidth, draft.roomHeight);
+      const wallPlacement = placement.wall
+        ? placeWallMountedItem(rawItem, placement.wall, (placement.wall === "top" || placement.wall === "bottom" ? startX / 100 * draft.roomWidth : startY / 100 * draft.roomHeight))
+        : null;
+      item = wallPlacement
+        ? { ...rawItem, ...rebasePillarToWall(rawItem, wallPlacement) }
+        : { ...rawItem, ...placement, wall: undefined, offset: undefined, structureAttachment: { mode: "free" }, structureMeasurement: undefined, freeReferenceX: "left", freeReferenceY: "top" };
+    }
     if (item.kind === "window") {
       const reference = [...draft.items].reverse().find((candidate) => candidate.kind === "window" && (candidate.wall ?? "top") === (item.wall ?? "top")) ?? null;
       const measurement: OpeningMeasurement = reference
@@ -1177,7 +1393,7 @@ export default function SiteLayoutPlannerPage() {
         : wallMeasurement(item.wall ?? "top", "start", item.offset ?? 0);
       item = { ...item, openingMeasurement: measurement, ...placeWindowByMeasurement(item, measurement, reference) };
     }
-    setDraft((current) => ({ ...current, items: [...current.items, item] }));
+    setDraft((current) => appendItem(current, item));
     setSelectedId(item.id); setPendingPresetId(null); setView("model");
     setCommand(`명령: ${preset.label} ${preset.code} 배치 완료 · 선택한 블록은 손가락으로 다시 이동할 수 있습니다.`);
     return item;
@@ -1233,13 +1449,30 @@ export default function SiteLayoutPlannerPage() {
       structureMeasurement: measurement,
     };
     const item = { ...raw, ...placeBeamByMeasurement(raw, measurement, reference) };
-    setDraft((current) => ({ ...current, items: [...current.items, item] }));
+    setDraft((current) => appendItem(current, item));
     setSelectedId(item.id);
     setActiveQuestionIndex(2);
     setSaveMessage(`${reference.name} 다음 위치의 보를 추가했습니다. 면 사이 또는 중심 사이 거리를 입력해 주세요.`);
   }
   function addFollowupPillar(reference: LayoutItem) {
     const samePresetCount = draft.items.filter((item) => item.kind === "pillar").length;
+    const presetId: LayoutSymbol = reference.presetId === "pillar-round" ? "pillar-round" : "pillar";
+    if (reference.structureAttachment?.mode !== "wall") {
+      const size = structureFootprint(reference);
+      const raw = {
+        ...makeItem(presetId, reference.x, reference.y, reference.rotation, samePresetCount ? ` ${samePresetCount + 1}` : ""),
+        structureAttachment: { mode: "free" as const },
+        freeReferenceX: reference.freeReferenceX ?? "left" as const,
+        freeReferenceY: reference.freeReferenceY ?? "top" as const,
+      };
+      const nextStart = Math.min(Math.max(0, draft.roomWidth - structureFootprint(raw).width), (reference.x / 100) * draft.roomWidth + size.width + 1);
+      const item = { ...raw, x: (nextStart / draft.roomWidth) * 100 };
+      setDraft((current) => appendItem(current, item));
+      setSelectedId(item.id);
+      setActiveQuestionIndex(2);
+      setSaveMessage(`${reference.name} 다음 독립 기둥을 추가했습니다. 좌·우벽과 상·하벽 중 현장에서 잰 기준을 골라 면 거리 두 축을 입력해 주세요.`);
+      return;
+    }
     const wall = reference.wall ?? "top";
     const measurement: StructureMeasurement = {
       axis: wall === "top" || wall === "bottom" ? "x" : "y",
@@ -1249,16 +1482,16 @@ export default function SiteLayoutPlannerPage() {
       distanceMode: "clear",
       distanceMm: 1000,
     };
-    const presetId: LayoutSymbol = reference.presetId === "pillar-round" ? "pillar-round" : "pillar";
     const raw = {
       ...makeItem(presetId, 0, 0, wall === "left" || wall === "right" ? 90 : 0, samePresetCount ? ` ${samePresetCount + 1}` : ""),
       wall,
       offsetReference: "start" as const,
       structureAttachment: { mode: "wall" as const, wall },
       structureMeasurement: measurement,
+      wallInset: reference.wallInset ?? 0,
     };
     const item = { ...raw, ...placePillarByMeasurement(raw, measurement, reference) };
-    setDraft((current) => ({ ...current, items: [...current.items, item] }));
+    setDraft((current) => appendItem(current, item));
     setSelectedId(item.id);
     setActiveQuestionIndex(2);
     setSaveMessage(`${reference.name} 다음 기둥을 추가했습니다. 이전 기둥 끝면부터 이번 기둥 시작면까지 거리를 입력해 주세요.`);
@@ -1284,7 +1517,7 @@ export default function SiteLayoutPlannerPage() {
       openingMeasurement: measurement,
     };
     const item = { ...raw, ...placeWindowByMeasurement(raw, measurement, reference) };
-    setDraft((current) => ({ ...current, items: [...current.items, item] }));
+    setDraft((current) => appendItem(current, item));
     setSelectedId(item.id);
     setActiveQuestionIndex(2);
     setSaveMessage(`${reference.name} 다음 창호를 추가했습니다. 창호 사이 거리 또는 중심 간 거리를 입력해 주세요.`);
@@ -1483,14 +1716,23 @@ export default function SiteLayoutPlannerPage() {
       updateSelected({ [axis]: value, ...placePillarByMeasurement(next, measurement, reference) });
       return;
     }
+    if (selectedItem.kind === "pillar") {
+      const distanceX = freePillarDistance(selectedItem, "x");
+      const distanceY = freePillarDistance(selectedItem, "y");
+      const next = { ...selectedItem, [axis]: value };
+      const size = structureFootprint(next);
+      const startX = next.freeReferenceX === "right" ? draft.roomWidth - size.width - distanceX : distanceX;
+      const startY = next.freeReferenceY === "bottom" ? draft.roomHeight - size.height - distanceY : distanceY;
+      updateSelected({
+        [axis]: value,
+        x: (Math.max(0, startX) / draft.roomWidth) * 100,
+        y: (Math.max(0, startY) / draft.roomHeight) * 100,
+      });
+      return;
+    }
     if (axis === "width" && isWallMounted(selectedItem)) {
       const next = { ...selectedItem, width: value };
       updateSelected({ width: value, ...placeWallMountedItem(next, next.wall ?? "top", next.offset ?? (next.presetId === "aircon-wall" ? value / 2 : 0)) });
-      return;
-    }
-    if (selectedItem.kind === "pillar" && selectedItem.wall) {
-      const next = { ...selectedItem, [axis]: value };
-      updateSelected({ [axis]: value, ...placePillarOnWall(next, selectedItem.wall, next.x, next.y, draft.roomWidth, draft.roomHeight) });
       return;
     }
     updateSelected({ [axis]: value });
@@ -1531,40 +1773,138 @@ export default function SiteLayoutPlannerPage() {
     if (!active || active.pointerId !== pointerId) return;
     const nextX = active.startX + ((point.xMm - active.startModelX) / physicalDraft.roomWidthMm) * 100;
     const nextY = active.startY + ((point.yMm - active.startModelY) / physicalDraft.roomHeightMm) * 100;
-    setDraft((current) => ({ ...current, items: current.items.map((item) => {
-      if (item.id !== active.id) return item;
-      const placement = snapPlacement(item, nextX, nextY);
-      return {
-        ...item,
-        ...(item.kind === "beam"
-          ? rebaseBeamToWall(item, placement as ReturnType<typeof placeWallMountedItem>)
-          : item.kind === "pillar" && "wall" in placement && placement.wall
-            ? rebasePillarToWall(item, placement as ReturnType<typeof placeWallMountedItem>)
-            : placement),
-      };
-    }) }));
+    setDraft((current) => {
+      const moved: LayoutItem[] = current.items.map((item): LayoutItem => {
+        if (item.id !== active.id) return item;
+        const placement = snapPlacement(item, nextX, nextY);
+        if (item.kind === "window" && "wall" in placement && isWallSide(placement.wall) && "offset" in placement && typeof placement.offset === "number") {
+          const openingMeasurement = wallMeasurement(placement.wall, "start", placement.offset);
+          return { ...item, ...placeOpeningOnWall(item, placement.wall, placement.offset), openingMeasurement, offsetReference: "start" as const };
+        }
+        return {
+          ...item,
+          ...(item.kind === "beam"
+            ? rebaseBeamToWall(item, placement as ReturnType<typeof placeWallMountedItem>)
+            : item.kind === "pillar" && "wall" in placement && isWallSide(placement.wall)
+              ? rebasePillarToWall(item, placeWallMountedItem(item, placement.wall, (placement.wall === "top" || placement.wall === "bottom" ? nextX / 100 * current.roomWidth : nextY / 100 * current.roomHeight)))
+              : item.kind === "pillar"
+                ? { ...placement, wall: undefined, offset: undefined, structureAttachment: { mode: "free" as const }, structureMeasurement: undefined, freeReferenceX: item.freeReferenceX ?? "left" as const, freeReferenceY: item.freeReferenceY ?? "top" as const }
+                : placement),
+        };
+      });
+      const selected = current.items.find((item) => item.id === active.id);
+      return { ...current, items: resolveWindowReferences(moved), ...(selected ? { stageChecks: pendingStageChecks(current, selected) } : {}) };
+    });
   }
   function finishGeometryDrag(pointerId: number) {
     const active = dragRef.current;
     if (!active || active.pointerId !== pointerId) return;
-    setDraft((current) => ({ ...current, items: current.items.map((item) => {
-      if (item.id !== active.id) return item;
-      if (item.kind === "beam") {
-        const placement = placeWallMountedItem(item, item.wall ?? "top", item.offset ?? 0);
-        return { ...item, ...rebaseBeamToWall(item, placement) };
+    setDraft((current) => {
+      const finished = current.items.map((item) => {
+        if (item.id !== active.id) return item;
+        if (item.kind === "beam") {
+          const placement = placeWallMountedItem(item, item.wall ?? "top", item.offset ?? 0);
+          return { ...item, ...rebaseBeamToWall(item, placement) };
+        }
+        if (item.kind === "pillar" && item.structureAttachment?.mode === "wall" && item.wall) {
+          const placement = placeWallMountedItem(item, item.wall, item.offset ?? 0);
+          return { ...item, ...rebasePillarToWall(item, placement) };
+        }
+        if (item.kind === "window") {
+          const wall = item.wall ?? "top";
+          const measurement = wallMeasurement(wall, "start", item.offset ?? 0);
+          return { ...item, openingMeasurement: measurement, offsetReference: "start" as const, ...placeOpeningOnWall(item, wall, item.offset ?? 0) };
+        }
+        return item;
+      });
+      const selected = current.items.find((item) => item.id === active.id);
+      return { ...current, items: resolveWindowReferences(finished), ...(selected ? { stageChecks: pendingStageChecks(current, selected) } : {}) };
+    });
+    dragRef.current = null; setActiveTool("선택"); setCommand("명령: 객체 이동 완료 · 고정 시설은 기준거리 입력으로 정밀 보정할 수 있습니다.");
+  }
+  function duplicateGuidedItem(item: LayoutItem) {
+    if (item.kind === "beam") { addFollowupBeam(item); return; }
+    if (item.kind === "pillar") { addFollowupPillar(item); return; }
+    if (item.kind === "window") { addFollowupWindow(item); return; }
+    const copyBase: LayoutItem = { ...item, id: crypto.randomUUID(), name: `${item.name} 복사` };
+    const placement = isWallMounted(item)
+      ? placeWallMountedItem(copyBase, item.wall ?? "top", (item.offset ?? 0) + item.width + 0.2)
+      : snapPlacement(copyBase, clampPercent(item.x + 4), clampPercent(item.y + 4));
+    const copy = { ...copyBase, ...placement };
+    setDraft((current) => appendItem(current, copy));
+    setSelectedId(copy.id);
+    setActiveQuestionIndex(2);
+    setSaveMessage(`${item.name}을 복사했습니다. 새 객체의 기준거리와 치수를 확인해 주세요.`);
+  }
+  function editGuidedItem(item: LayoutItem) {
+    const group = presetForItem(item).group;
+    const stepIndex = guideSteps.findIndex((step) => step.groups.includes(group));
+    if (stepIndex >= 0) setActiveStepIndex(stepIndex);
+    setSelectedId(item.id);
+    setActiveQuestionIndex(1);
+    setView("model");
+    window.requestAnimationFrame(() => boardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }
+  function measuredFromReference(subject: LayoutItem, reference: LayoutItem, measurement: StructureMeasurement): StructureMeasurement {
+    const horizontal = measurement.axis === "x";
+    const subjectStart = subject.offset ?? ((horizontal ? subject.x / 100 * draft.roomWidth : subject.y / 100 * draft.roomHeight));
+    const referenceStart = reference.offset ?? ((horizontal ? reference.x / 100 * draft.roomWidth : reference.y / 100 * draft.roomHeight));
+    const subjectCenter = subjectStart + subject.width / 2;
+    const referenceCenter = referenceStart + reference.width / 2;
+    const direction: 1 | -1 = subjectCenter >= referenceCenter ? 1 : -1;
+    const distanceMeters = measurement.distanceMode === "center"
+      ? Math.abs(subjectCenter - referenceCenter)
+      : direction === 1
+        ? Math.max(0, subjectStart - referenceStart - reference.width)
+        : Math.max(0, referenceStart - subjectStart - subject.width);
+    return { ...measurement, referenceType: "item", referenceItemId: reference.id, direction, distanceMm: Math.round(distanceMeters * 1000) };
+  }
+  function rebaseReferencesAfterDeletion(items: LayoutItem[], deleted: LayoutItem) {
+    const remaining = items.filter((item) => item.id !== deleted.id);
+    const deletedIndex = items.findIndex((item) => item.id === deleted.id);
+    return remaining.map((item) => {
+      const structureDependsOnDeleted = item.structureMeasurement?.referenceType === "item" && item.structureMeasurement.referenceItemId === deleted.id;
+      const openingDependsOnDeleted = item.openingMeasurement?.referenceType === "item" && item.openingMeasurement.referenceItemId === deleted.id;
+      if (!structureDependsOnDeleted && !openingDependsOnDeleted) return item;
+      const subjectIndex = items.findIndex((candidate) => candidate.id === item.id);
+      const sameWallAndKind = (candidate: LayoutItem) => candidate.id !== deleted.id && candidate.id !== item.id && candidate.kind === item.kind && (candidate.wall ?? "top") === (item.wall ?? "top");
+      const deletedParentId = deleted.kind === "window" ? deleted.openingMeasurement?.referenceItemId : deleted.structureMeasurement?.referenceItemId;
+      const directParent = deletedParentId ? remaining.find((candidate) => candidate.id === deletedParentId && sameWallAndKind(candidate)) ?? null : null;
+      const earlier = items.slice(0, Math.max(deletedIndex, subjectIndex)).reverse().find((candidate) => remaining.some((entry) => entry.id === candidate.id) && sameWallAndKind(candidate)) ?? null;
+      const fallback = directParent ?? earlier;
+      if (structureDependsOnDeleted && item.structureMeasurement) {
+        const structureMeasurement = fallback
+          ? measuredFromReference(item, fallback, item.structureMeasurement)
+          : wallMeasurement(item.wall ?? "top", item.offsetReference ?? "start", displayedWallDistance(item));
+        return { ...item, structureMeasurement };
       }
-      if (item.kind === "pillar" && item.wall) {
-        const placement = placeWallMountedItem(item, item.wall, item.offset ?? 0);
-        return { ...item, ...rebasePillarToWall(item, placement) };
-      }
-      if (item.kind === "window") {
-        const wall = item.wall ?? "top";
-        const measurement = wallMeasurement(wall, "start", item.offset ?? 0);
-        return { ...item, openingMeasurement: measurement, offsetReference: "start" as const, ...placeOpeningOnWall(item, wall, item.offset ?? 0) };
+      if (openingDependsOnDeleted && item.openingMeasurement) {
+        const openingMeasurement = fallback
+          ? measuredFromReference(item, fallback, item.openingMeasurement)
+          : wallMeasurement(item.wall ?? "top", item.offsetReference ?? "start", displayedWallDistance(item));
+        return { ...item, openingMeasurement };
       }
       return item;
-    }) }));
-    dragRef.current = null; setActiveTool("선택"); setCommand("명령: 객체 이동 완료 · 고정 시설은 기준거리 입력으로 정밀 보정할 수 있습니다.");
+    });
+  }
+  function removeItemById(id: string) {
+    const deleted = draft.items.find((item) => item.id === id);
+    if (!deleted) return;
+    const nextItems = resolveWindowReferences(rebaseReferencesAfterDeletion(draft.items, deleted));
+    setDraft((current) => ({ ...current, items: nextItems, stageChecks: pendingStageChecks(current, deleted) }));
+    if (selectedId === id) setSelectedId("");
+    setCommand("명령: 객체를 삭제하고 연결된 연속 치수 기준을 안전하게 다시 설정했습니다.");
+  }
+  function removeAllItems() {
+    if (!draft.items.length || !window.confirm("도면에 등록한 모든 객체를 삭제할까요? 공간 크기와 현장 조건은 유지됩니다.")) return;
+    setDraft((current) => ({
+      ...current,
+      items: [],
+      stageChecks: { ...current.stageChecks, door: "pending", window: "pending", structure: "pending", facility: "pending" },
+    }));
+    setSelectedId("");
+    setActiveQuestionIndex(0);
+    setCommand("명령: 공간 크기와 현장 조건을 남기고 모든 객체를 삭제했습니다.");
   }
   function duplicateSelected() {
     if (!selectedItem) return;
@@ -1624,11 +1964,11 @@ export default function SiteLayoutPlannerPage() {
         : snapPlacement(baseCopy, clampPercent(selectedItem.x + 4), clampPercent(selectedItem.y + 4));
       copy = { ...baseCopy, ...placement };
     }
-    setDraft((current) => ({ ...current, items: [...current.items, copy] })); setSelectedId(copy.id);
+    setDraft((current) => appendItem(current, copy)); setSelectedId(copy.id);
   }
   function removeSelected() {
     if (!selectedId) return;
-    setDraft((current) => ({ ...current, items: current.items.filter((item) => item.id !== selectedId) })); setSelectedId(""); setCommand("명령: 선택 객체를 삭제했습니다.");
+    removeItemById(selectedId);
   }
   function updateStageItemDimension(item: LayoutItem, axis: "width" | "height", rawValue: number) {
     const value = positiveDimension(rawValue, item[axis]);
@@ -1645,8 +1985,13 @@ export default function SiteLayoutPlannerPage() {
         ? placeWindowByMeasurement(sized, sized.openingMeasurement, sized.openingMeasurement.referenceType === "item" ? previousWindow(sized, sized.wall ?? "top") : null)
       : isWallMounted(sized)
       ? placeWallMountedItem(sized, sized.wall ?? "top", sized.offset ?? (sized.presetId === "aircon-wall" ? sized.width / 2 : 0))
-      : sized.kind === "pillar" && sized.wall
-        ? placePillarOnWall(sized, sized.wall, sized.x, sized.y, draft.roomWidth, draft.roomHeight)
+      : sized.kind === "pillar"
+        ? sized.wall
+          ? placePillarOnWall(sized, sized.wall, sized.x, sized.y, draft.roomWidth, draft.roomHeight)
+          : {
+            x: (Math.max(0, sized.freeReferenceX === "right" ? draft.roomWidth - structureFootprint(sized).width - freePillarDistance(item, "x") : freePillarDistance(item, "x")) / draft.roomWidth) * 100,
+            y: (Math.max(0, sized.freeReferenceY === "bottom" ? draft.roomHeight - structureFootprint(sized).height - freePillarDistance(item, "y") : freePillarDistance(item, "y")) / draft.roomHeight) * 100,
+          }
         : {};
     updateSelectedById(item.id, { ...sized, ...placement });
   }
@@ -1698,10 +2043,19 @@ export default function SiteLayoutPlannerPage() {
       ? item.structureMeasurement ?? wallMeasurement(item.wall ?? "top", item.offsetReference ?? "start", displayedWallDistance(item))
       : null;
     if (activeQuestionIndex === 1) {
-      const mountedQuestion = item.kind === "beam" ? "보가 붙어 있는 벽을 골라 주세요." : item.kind === "pillar" ? "기둥이 붙어 있는 벽을 골라 주세요." : "어느 벽에 설치되어 있나요?";
-      return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 2/{currentQuestionCount}</small><b>{mounted ? mountedQuestion : "배치 기준을 확인해 주세요."}</b><span>{mounted ? item.kind === "pillar" ? "첫 기둥은 선택한 벽에 붙고, 모서리부터 기둥 시작면까지 0m를 기본값으로 사용합니다." : "현장에서 바라본 도면 기준으로 큰 벽 버튼을 누르세요." : "실내 객체는 좌측벽과 상단벽에서 중심까지의 거리로 기록합니다."}</span></div>{mounted ? <div className="site-layout-wall-picker">{(["top", "right", "bottom", "left"] as WallSide[]).map((wall) => <button key={wall} type="button" className={(item.wall ?? "top") === wall ? "active" : ""} onClick={() => selectGuidedWall(item, wall)}>{wallLabel(wall)}</button>)}</div> : <div className="site-layout-reference-diagram"><b>좌측 D벽 → 중심</b><b>상단 A벽 → 중심</b></div>}</div>;
+      if (item.kind === "pillar") {
+        const wallAttached = item.structureAttachment?.mode === "wall";
+        return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>기둥·보 2/{currentQuestionCount}</small><b>기둥이 벽에 붙어 있나요, 실내에 따로 있나요?</b><span>벽에 붙은 기둥은 벽·모서리·진행거리로, 독립 기둥은 두 기준벽에서 기둥 면까지의 거리로 기록합니다.</span></div><div className="site-layout-choice-grid two"><button type="button" className={wallAttached ? "active" : ""} onClick={() => setGuidedPillarAttachment(item, "wall")}>벽 부착 기둥</button><button type="button" className={!wallAttached ? "active" : ""} onClick={() => setGuidedPillarAttachment(item, "free")}>실내 독립 기둥</button></div>{wallAttached ? <div className="site-layout-wall-picker">{(["top", "right", "bottom", "left"] as WallSide[]).map((wall) => <button key={wall} type="button" className={(item.wall ?? "top") === wall ? "active" : ""} onClick={() => selectGuidedWall(item, wall)}>{wallLabel(wall)}</button>)}</div> : <div className="site-layout-reference-diagram"><b>좌·우벽 중 하나 → 기둥 면</b><b>상·하벽 중 하나 → 기둥 면</b></div>}</div>;
+      }
+      const mountedQuestion = item.kind === "beam" ? "보가 붙어 있는 벽을 골라 주세요." : "어느 벽에 설치되어 있나요?";
+      return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 2/{currentQuestionCount}</small><b>{mounted ? mountedQuestion : "배치 기준을 확인해 주세요."}</b><span>{mounted ? "현장에서 바라본 도면 기준으로 큰 벽 버튼을 누르세요." : "실내 객체는 좌측벽과 상단벽에서 중심까지의 거리로 기록합니다."}</span></div>{mounted ? <div className="site-layout-wall-picker">{(["top", "right", "bottom", "left"] as WallSide[]).map((wall) => <button key={wall} type="button" className={(item.wall ?? "top") === wall ? "active" : ""} onClick={() => selectGuidedWall(item, wall)}>{wallLabel(wall)}</button>)}</div> : <div className="site-layout-reference-diagram"><b>좌측 D벽 → 중심</b><b>상단 A벽 → 중심</b></div>}</div>;
     }
     if (activeQuestionIndex === 2) {
+      if (item.kind === "pillar" && item.structureAttachment?.mode !== "wall") {
+        const xReference = item.freeReferenceX ?? "left";
+        const yReference = item.freeReferenceY ?? "top";
+        return <div className="site-layout-question-card site-layout-beam-question"><div className="site-layout-question-heading"><small>기둥·보 3/{currentQuestionCount}</small><b>두 기준벽에서 기둥 면까지의 거리를 입력해 주세요.</b><span>현장에서 줄자를 댄 벽을 각각 고르면 기둥의 좌표를 mm 단위로 정확히 환산합니다.</span></div><div className="site-layout-guided-measurements"><div><span>가로 기준벽</span><div className="site-layout-choice-grid two"><button type="button" className={xReference === "left" ? "active" : ""} onClick={() => updateSelectedById(item.id, { freeReferenceX: "left" })}>좌측 D벽</button><button type="button" className={xReference === "right" ? "active" : ""} onClick={() => updateSelectedById(item.id, { freeReferenceX: "right" })}>우측 B벽</button></div><label><span>{xReference === "left" ? "좌측 D벽" : "우측 B벽"} → 기둥 면(mm)</span><MillimeterInput label="가로 기준벽에서 기둥 면까지(mm)" valueMeters={freePillarDistance(item, "x")} minMm={0} maxMm={Math.round(Math.max(0, draft.roomWidth - structureFootprint(item).width) * 1000)} onCommit={(value) => updateFreePillarDistance(item, "x", xReference, value)} /></label></div><div><span>세로 기준벽</span><div className="site-layout-choice-grid two"><button type="button" className={yReference === "top" ? "active" : ""} onClick={() => updateSelectedById(item.id, { freeReferenceY: "top" })}>상단 A벽</button><button type="button" className={yReference === "bottom" ? "active" : ""} onClick={() => updateSelectedById(item.id, { freeReferenceY: "bottom" })}>하단 C벽</button></div><label><span>{yReference === "top" ? "상단 A벽" : "하단 C벽"} → 기둥 면(mm)</span><MillimeterInput label="세로 기준벽에서 기둥 면까지(mm)" valueMeters={freePillarDistance(item, "y")} minMm={0} maxMm={Math.round(Math.max(0, draft.roomHeight - structureFootprint(item).height) * 1000)} onCommit={(value) => updateFreePillarDistance(item, "y", yReference, value)} /></label></div></div></div>;
+      }
       if (item.kind === "pillar" && pillarMeasurement) {
         const usingPrevious = pillarMeasurement.referenceType === "item" && Boolean(pillarReference);
         return (
@@ -1736,9 +2090,10 @@ export default function SiteLayoutPlannerPage() {
                   <span>{(item.offsetReference ?? "start") === "start" ? references.start : references.end} → 기둥 시작면 거리(m)</span>
                   <FriendlyNumberInput label="벽 모서리에서 첫 기둥까지 거리(m)" value={displayedWallDistance(item)} min={0} max={wallLength(item)} onCommit={updateDisplayedWallDistance} />
                 </label>
-                <div className="site-layout-beam-summary"><span>벽 부착</span><b>{wallLabel(item.wall)} · 벽에서 실내 방향 0m</b></div>
+                <div className="site-layout-beam-summary"><span>벽 기준 배치</span><b>{wallLabel(item.wall)} · 시작 모서리에서 진행</b></div>
               </>
             )}
+            <label><span>{wallLabel(item.wall)} → 기둥 면 직각거리(mm)</span><MillimeterInput label="벽에서 기둥 면 직각거리(mm)" valueMeters={item.wallInset ?? 0} minMm={0} maxMm={Math.round(Math.max(0, ((item.wall === "left" || item.wall === "right") ? draft.roomWidth - structureFootprint(item).width : draft.roomHeight - structureFootprint(item).height)) * 1000)} onCommit={(value) => updatePillarWallInset(item, value)} /></label>
           </div>
         );
       }
@@ -1754,12 +2109,24 @@ export default function SiteLayoutPlannerPage() {
       return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 3/{currentQuestionCount}</small><b>{mounted ? "어느 모서리에서 거리를 쟀나요?" : item.kind === "pillar" ? "두 벽에서 기둥 면까지 거리를 입력해 주세요." : "두 벽에서 중심까지 거리를 입력해 주세요."}</b><span>손에 든 줄자 기준 그대로 입력하면 자동으로 도면 좌표로 환산됩니다.</span></div>{mounted ? <><div className="site-layout-choice-grid two">{(["start", "end"] as OffsetReference[]).map((reference) => <button key={reference} type="button" className={(item.offsetReference ?? "start") === reference ? "active" : ""} onClick={() => updateSelectedById(item.id, { offsetReference: reference })}>{references[reference]}</button>)}</div><label><span>{(item.offsetReference ?? "start") === "start" ? references.start : references.end} → {item.presetId === "aircon-wall" ? "에어컨 끝" : "개구부 시작"} 거리(m)</span><FriendlyNumberInput label="벽 기준거리(m)" value={displayedWallDistance(item)} min={0} max={wallLength(item)} onCommit={updateDisplayedWallDistance} /></label></> : <div className="site-layout-guided-measurements"><label><span>좌측 D벽 → {item.kind === "pillar" ? "기둥 면" : "중심"}(m)</span><FriendlyNumberInput label="좌측벽 기준거리(m)" value={item.kind === "pillar" ? faceDistance(item, "x") : centerDistance(item, "x")} min={0} max={draft.roomWidth} onCommit={(value) => { setSelectedId(item.id); if (item.kind === "pillar") updateFaceDistance("x", value); else { const size = footprint(item); updateSelectedById(item.id, { x: snapGrid(((value - size.width / 2) / draft.roomWidth) * 100) }); } }} /></label><label><span>상단 A벽 → {item.kind === "pillar" ? "기둥 면" : "중심"}(m)</span><FriendlyNumberInput label="상단벽 기준거리(m)" value={item.kind === "pillar" ? faceDistance(item, "y") : centerDistance(item, "y")} min={0} max={draft.roomHeight} onCommit={(value) => { setSelectedId(item.id); if (item.kind === "pillar") updateFaceDistance("y", value); else { const size = footprint(item); updateSelectedById(item.id, { y: snapGrid(((value - size.height / 2) / draft.roomHeight) * 100) }); } }} /></label></div>}</div>;
     }
     if (activeQuestionIndex === 3) {
+      if (item.kind === "pillar") {
+        return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>기둥·보 4/{currentQuestionCount}</small><b>기둥의 폭과 깊이를 mm로 입력해 주세요.</b><span>사각 기둥은 가로 폭과 세로 깊이를 각각 기록하며, 원형 기둥은 두 값에 같은 지름을 입력합니다.</span></div><div className="site-layout-guided-measurements"><label><span>기둥 폭(mm)</span><MillimeterInput label="기둥 폭(mm)" valueMeters={item.width} minMm={100} maxMm={Math.round(draft.roomWidth * 1000)} onCommit={(value) => updateStageItemDimension(item, "width", value)} /></label><label><span>기둥 깊이(mm)</span><MillimeterInput label="기둥 깊이(mm)" valueMeters={item.height} minMm={100} maxMm={Math.round(draft.roomHeight * 1000)} onCommit={(value) => updateStageItemDimension(item, "height", value)} /></label></div></div>;
+      }
       const wallMax = (item.wall === "left" || item.wall === "right") ? draft.roomHeight : draft.roomWidth;
       const widthLabel = item.kind === "door" || item.kind === "window" ? "개구부 폭" : item.kind === "beam" ? "벽과 나란한 보 길이" : item.presetId === "aircon-ceiling" ? "정사각형 한 변" : "가로";
       return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 4/{currentQuestionCount}</small><b>현장에서 잰 실제 크기를 입력해 주세요.</b><span>도면 확대·축소와 관계없이 실제 mm 치수는 그대로 유지됩니다.</span></div><div className="site-layout-guided-measurements"><label><span>{widthLabel}(m)</span><FriendlyNumberInput label="객체 가로(m)" value={item.width} min={0.1} max={mounted ? wallMax : 100} onCommit={(value) => updateStageItemDimension(item, "width", value)} /></label>{item.kind === "door" || item.kind === "window" ? <label><span>개구부 높이(m)</span><FriendlyNumberInput label="개구부 높이(m)" value={item.openingHeight ?? (item.kind === "door" ? 2.1 : 1.5)} min={0.3} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { openingHeight: Math.min(value, ceilingHeight - (item.kind === "window" ? item.sillHeight ?? 0.9 : 0)) })} /></label> : item.presetId !== "aircon-ceiling" && <label><span>{item.kind === "beam" ? "벽에서 실내 방향 보 폭" : "세로"}(m)</span><FriendlyNumberInput label="객체 세로(m)" value={item.height} min={0.1} max={100} onCommit={(value) => updateStageItemDimension(item, "height", value)} /></label>}</div></div>;
     }
-    const addLabel = item.kind === "beam" ? "+ 다음 보 추가" : item.kind === "window" ? "+ 창호 추가" : item.kind === "door" ? "+ 출입문 추가" : item.kind === "fixture" ? "+ 에어컨 추가" : "+ 기둥 추가";
-    return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 5/{currentQuestionCount}</small><b>{preset.label} 세부 조건을 확인해 주세요.</b><span>같은 종류가 더 있으면 아래 버튼으로 추가하고, 없으면 바로 다음 단계로 이동하세요.</span></div>{item.kind === "door" && <div className="site-layout-guided-measurements"><label><span>경첩 방향</span><select value={item.handing ?? "left"} onChange={(event) => updateSelectedById(item.id, { handing: event.target.value as OpeningHand })}><option value="left">좌경첩</option><option value="right">우경첩</option></select></label><label><span>열림 방향</span><select value={item.swing ?? "inside"} onChange={(event) => updateSelectedById(item.id, { swing: event.target.value as OpeningSwing })}><option value="inside">실 안쪽</option><option value="outside">실 바깥쪽</option></select></label></div>}{item.kind === "window" && <label><span>바닥 → 창 하단 높이(m)</span><FriendlyNumberInput label="창 하단 높이(m)" value={item.sillHeight ?? 0.9} min={0} max={ceilingHeight - (item.openingHeight ?? 1.5)} onCommit={(value) => updateSelectedById(item.id, { sillHeight: value })} /></label>}{item.kind === "beam" && <div className="site-layout-guided-measurements"><label><span>바닥 → 보 하단(m)</span><FriendlyNumberInput label="보 하단 높이(m)" value={item.beamBottomHeight ?? 2.2} min={0} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { beamBottomHeight: value })} /></label><div className="site-layout-beam-summary"><span>배치 기준</span><b>{beamMeasurement?.referenceType === "item" ? `${beamMeasurement.distanceMode === "center" ? "중심 간" : "면 간"} ${Number(((beamMeasurement.distanceMm || 0) / 1000).toFixed(3))}m` : `${references[item.offsetReference ?? "start"]} 기준`}</b></div></div>}{item.kind === "pillar" && <div className="site-layout-beam-summary"><span>배치 기준</span><b>{pillarMeasurement?.referenceType === "item" ? `${pillarMeasurement.distanceMode === "center" ? "중심 간" : "끝면→시작면"} ${Number(((pillarMeasurement.distanceMm || 0) / 1000).toFixed(3))}m` : `${wallLabel(item.wall)} 밀착 · ${references[item.offsetReference ?? "start"]}에서 ${Number((displayedWallDistance(item) || 0).toFixed(3))}m`}</b></div>}{item.kind === "fixture" && <label><span>바닥 → 설치면 높이(m)</span><FriendlyNumberInput label="에어컨 설치 높이(m)" value={item.mountingHeight ?? (item.presetId === "aircon-ceiling" ? ceilingHeight : 2.1)} min={0} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { mountingHeight: value })} /></label>}<div className="site-layout-question-actions"><button type="button" onClick={() => { if (item.kind === "beam") addFollowupBeam(item); else if (item.kind === "pillar") addFollowupPillar(item); else if (item.kind === "window") addFollowupWindow(item); else { setSelectedId(""); setActiveQuestionIndex(0); } }}>{addLabel}</button></div></div>;
+    const addLabel = item.kind === "beam" ? "+ 다음 보 추가" : item.kind === "window" ? "+ 다음 창호 추가" : item.kind === "door" ? "+ 출입문 추가" : item.kind === "fixture" ? "+ 에어컨 추가" : "+ 다음 기둥 추가";
+    const windowMeasurement = item.kind === "window" ? item.openingMeasurement : null;
+    return <div className="site-layout-question-card">
+      <div className="site-layout-question-heading"><small>{activeStep.label} 5/{currentQuestionCount}</small><b>{preset.label} 세부 조건을 확인해 주세요.</b><span>같은 종류가 더 있으면 아래 버튼으로 추가하고, 없으면 바로 다음 단계로 이동하세요.</span></div>
+      {item.kind === "door" && <div className="site-layout-guided-measurements"><label><span>경첩 방향</span><select value={item.handing ?? "left"} onChange={(event) => updateSelectedById(item.id, { handing: event.target.value as OpeningHand })}><option value="left">좌경첩</option><option value="right">우경첩</option></select></label><label><span>열림 방향</span><select value={item.swing ?? "inside"} onChange={(event) => updateSelectedById(item.id, { swing: event.target.value as OpeningSwing })}><option value="inside">실 안쪽</option><option value="outside">실 바깥쪽</option></select></label></div>}
+      {item.kind === "window" && <div className="site-layout-guided-measurements"><label><span>바닥 → 창 하단 높이(m)</span><FriendlyNumberInput label="창 하단 높이(m)" value={item.sillHeight ?? 0.9} min={0} max={ceilingHeight - (item.openingHeight ?? 1.5)} onCommit={(value) => updateSelectedById(item.id, { sillHeight: value })} /></label><div className="site-layout-beam-summary"><span>연속 창호 기준</span><b>{windowMeasurement?.referenceType === "item" ? `${windowMeasurement.distanceMode === "center" ? "중심 간" : "이전 끝면→다음 시작면"} ${Number(((windowMeasurement.distanceMm || 0) / 1000).toFixed(3))}m` : `${references[item.offsetReference ?? "start"]}에서 ${Number(displayedWallDistance(item).toFixed(3))}m`}</b></div></div>}
+      {item.kind === "beam" && <div className="site-layout-guided-measurements"><label><span>바닥 → 보 하단(m)</span><FriendlyNumberInput label="보 하단 높이(m)" value={item.beamBottomHeight ?? 2.2} min={0} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { beamBottomHeight: value })} /></label><div className="site-layout-beam-summary"><span>배치 기준</span><b>{beamMeasurement?.referenceType === "item" ? `${beamMeasurement.distanceMode === "center" ? "중심 간" : "면 간"} ${Number(((beamMeasurement.distanceMm || 0) / 1000).toFixed(3))}m` : `${references[item.offsetReference ?? "start"]} 기준`}</b></div></div>}
+      {item.kind === "pillar" && <div className="site-layout-beam-summary"><span>배치 기준</span><b>{item.structureAttachment?.mode === "wall" ? pillarMeasurement?.referenceType === "item" ? `${pillarMeasurement.distanceMode === "center" ? "중심 간" : "끝면→시작면"} ${Number(((pillarMeasurement.distanceMm || 0) / 1000).toFixed(3))}m · 직각 ${formatMillimeters(item.wallInset ?? 0)}mm` : `${wallLabel(item.wall)} · ${references[item.offsetReference ?? "start"]}에서 ${Number((displayedWallDistance(item) || 0).toFixed(3))}m · 직각 ${formatMillimeters(item.wallInset ?? 0)}mm` : `${item.freeReferenceX === "right" ? "우측 B벽" : "좌측 D벽"} ${formatMillimeters(freePillarDistance(item, "x"))}mm · ${item.freeReferenceY === "bottom" ? "하단 C벽" : "상단 A벽"} ${formatMillimeters(freePillarDistance(item, "y"))}mm`}</b></div>}
+      {item.kind === "fixture" && <label><span>바닥 → 설치면 높이(m)</span><FriendlyNumberInput label="에어컨 설치 높이(m)" value={item.mountingHeight ?? (item.presetId === "aircon-ceiling" ? ceilingHeight : 2.1)} min={0} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { mountingHeight: value })} /></label>}
+      <div className="site-layout-question-actions"><button type="button" onClick={() => { if (item.kind === "beam") addFollowupBeam(item); else if (item.kind === "pillar") addFollowupPillar(item); else if (item.kind === "window") addFollowupWindow(item); else { setSelectedId(""); setActiveQuestionIndex(0); } }}>{addLabel}</button></div>
+    </div>;
   }
   async function leaveCanvasExpanded({ historyAlreadyPopped = false }: { historyAlreadyPopped?: boolean } = {}) {
     if (closingExpandedRef.current) return;
@@ -1832,7 +2199,7 @@ export default function SiteLayoutPlannerPage() {
       || draft.roomCeilingHeight !== defaultDraft.roomCeilingHeight
       || draft.roomWallThickness !== defaultDraft.roomWallThickness;
     if (changed && !window.confirm("현재 입력 내용을 지우고 새 초안을 시작할까요? 저장하지 않은 내용은 복구할 수 없습니다.")) return;
-    setDraft(cloneDraft(defaultDraft)); setSelectedId(""); setPendingPresetId(null); setActiveLocalDraftId(""); setActiveLocalDraftFingerprint(""); setActiveRemoteId(null); setActiveRemoteVersion(null); setActiveRemoteFingerprint(""); setActiveDriveSyncStatus(""); window.localStorage.removeItem(REMOTE_CONTEXT_KEY); setActiveStepIndex(0); setActiveQuestionIndex(0); setView("model"); setCanvasFocus(false); setCommand("명령: 새 기초도면을 준비했습니다.");
+    setDraft(cloneDraft(defaultDraft)); setSelectedId(""); setPendingPresetId(null); setActiveLocalDraftId(""); setActiveLocalDraftFingerprint(""); setActiveRemoteId(null); setActiveRemoteVersion(null); setActiveRemoteFingerprint(""); setActiveDriveSyncStatus(""); setRemoteSavePhase("idle"); setRemoteSaveDetail(""); window.localStorage.removeItem(REMOTE_CONTEXT_KEY); setActiveStepIndex(0); setActiveQuestionIndex(0); setView("model"); setCanvasFocus(false); setCommand("명령: 새 기초도면을 준비했습니다.");
   }
   function printA3Draft() {
     setView("paper");
@@ -1845,25 +2212,42 @@ export default function SiteLayoutPlannerPage() {
       window.setTimeout(cleanup, 2_000);
     });
   }
-  const saveStateTitle = remoteLoading
-    ? "기관 도면 저장소 확인 중"
-    : activeRemoteId
-      ? activeRemoteFingerprint === currentDraftFingerprint ? "기관 도면 저장됨" : "저장 후 수정됨"
-      : activeLocalDraftId
-        ? activeLocalDraftFingerprint === currentDraftFingerprint ? "기기 복구됨" : "복구 후 수정됨"
-        : savedAt ? "기기 자동 복구" : "도면 준비됨";
-  const saveStateDetail = activeRemoteId
-    ? activeRemoteFingerprint !== currentDraftFingerprint
-      ? "기관 도면 저장 이후 수정 · 기기 복구 중"
-      : activeDriveSyncStatus === "ready"
-        ? "Google Drive 보관 완료"
-        : activeDriveSyncStatus === "error" ? "Drive 재시도 필요" : "기관 도면 편집 중"
-    : savedAt || "새 기관 도면";
+  const remoteDraftDirty = Boolean(activeRemoteId && activeRemoteFingerprint !== currentDraftFingerprint);
+  const saveStateTitle = remoteOperation === "saving" || remoteSavePhase === "saving"
+    ? "기관 도면 저장 중"
+    : remoteSavePhase === "conflict"
+      ? "최신본 재확인 필요"
+      : remoteSavePhase === "failed"
+        ? "기관 도면 저장 실패"
+        : remoteSavePhase === "drive-error"
+          ? "DB 저장 완료 · Drive 재시도"
+          : remoteDraftDirty
+            ? "기관 저장 후 수정됨"
+            : remoteSavePhase === "drive-syncing" || remoteSavePhase === "db-saved"
+              ? "DB 저장 완료 · Drive 동기화 중"
+              : remoteSavePhase === "drive-ready"
+                ? "기관·Drive 저장 완료"
+                : remoteOperation === "retrying"
+                  ? "Google Drive 다시 저장 중"
+                  : remoteOperation === "listing"
+                  ? "기관 도면 목록 확인 중"
+                  : remoteOperation === "loading"
+                    ? "기관 도면 불러오는 중"
+                    : remoteOperation === "deleting"
+                      ? "기관 도면 삭제 중"
+                      : activeLocalDraftId
+                        ? activeLocalDraftFingerprint === currentDraftFingerprint ? "기기 복구됨" : "복구 후 수정됨"
+                        : savedAt ? "기기 자동 복구" : "도면 준비됨";
+  const saveStateDetail = remoteDraftDirty
+    ? `기관 저장본 이후 수정 · ${remoteSaveDetail || "현재 변경은 기기에 자동 복구 중"}`
+    : remoteSaveDetail || (activeRemoteId
+      ? activeDriveSyncStatus === "ready" ? "Google Drive 보관 완료" : activeDriveSyncStatus === "error" ? "Drive 재시도 필요" : "기관 도면 편집 중"
+      : savedAt || "새 기관 도면");
   return (
     <section className="site-layout-planner" aria-label="현장 실측 기초도면 작성기">
       <header className="site-layout-intro">
         <div className="site-layout-brand"><span>W</span><div><b>기초도면 작성</b><small>현장 실측 → CAD팀 전달 · MOBILE FIRST BETA</small></div></div>
-        <div className="site-layout-header-actions"><div className="site-layout-save-state" role="status"><b>{saveStateTitle}</b><small>{saveStateDetail}</small></div><button type="button" onClick={resetDraft}>새 도면</button><button type="button" className="secondary" onClick={() => setDraftLibraryOpen((current) => !current)}>기관 도면 {remoteLayouts.length}</button><button type="button" className="primary" disabled={remoteLoading} onClick={() => void saveCurrentDraft()}>{remoteLoading ? "저장 중…" : "기관 도면 저장"}</button><button type="button" onClick={view === "paper" ? printA3Draft : () => { setView("paper"); setCanvasFocus(true); }}>{view === "paper" ? "A3 인쇄" : "A3 미리보기"}</button></div>
+        <div className="site-layout-header-actions"><div className="site-layout-save-state" role="status"><b>{saveStateTitle}</b><small>{saveStateDetail}</small></div><button type="button" onClick={resetDraft}>새 도면</button><button type="button" className="secondary" onClick={() => setDraftLibraryOpen((current) => !current)}>기관 도면 {remoteLayouts.length}</button><button type="button" className="primary" disabled={remoteLoading} onClick={() => void saveCurrentDraft()}>{remoteOperation === "saving" ? "저장 중…" : "기관 도면 저장"}</button>{activeRemoteId && remoteSavePhase === "drive-error" && <button type="button" disabled={remoteLoading} onClick={() => { const record = remoteLayouts.find((item) => item.id === activeRemoteId); if (record) void retryRemoteDrive(record); }}>Drive 다시 시도</button>}<button type="button" onClick={view === "paper" ? printA3Draft : () => { setView("paper"); setCanvasFocus(true); }}>{view === "paper" ? "A3 인쇄" : "A3 미리보기"}</button></div>
       </header>
       <div className="site-layout-beta-notice" role="note"><b>BETA · 개발 중</b><span>현재 개발 중인 기능입니다. 현장 실측 초안 및 CAD팀 전달용이며 최종 시공 도면으로 사용할 수 없습니다.</span></div>
       <div className="site-layout-local-state" role="status"><span>{saveMessage}</span><small>기관별 도면 목록 · Google Drive JSON 원본 · 기기 자동 복구</small></div>
@@ -1878,7 +2262,7 @@ export default function SiteLayoutPlannerPage() {
       </details>
       {draftLibraryOpen && <section className="site-layout-draft-library" aria-label="기관별 기초도면 목록">
         <div><div><b>기관별 기초도면</b><span>기관과 사업 차수별로 저장하고 함께 편집합니다.</span></div><button type="button" disabled={remoteLoading} onClick={() => void refreshRemoteLayouts()}>새로고침</button></div>
-        {remoteLayouts.length ? <ul>{remoteLayouts.map((record) => <li key={record.id}><div><b>{record.organizationName} · {record.businessRound}차 · {record.roomName}</b><small>v{record.editVersion} · {record.updatedByName || "사용자"} · {new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(record.updatedAt))}</small><em className={`drive-${record.driveSyncStatus}`}>{record.driveSyncStatus === "ready" ? "Drive 완료" : record.driveSyncStatus === "error" ? "Drive 재시도" : "Drive 동기화 중"}</em></div><button type="button" disabled={remoteLoading} onClick={() => void loadRemoteDraft(record)}>불러오기</button><button type="button" className="danger" disabled={remoteLoading} onClick={() => void deleteRemoteDraft(record)}>삭제</button></li>)}</ul> : <p>{remoteLoading ? "기관 도면을 불러오는 중입니다…" : "아직 저장한 기관별 기초도면이 없습니다."}</p>}
+        {remoteLayouts.length ? <ul>{remoteLayouts.map((record) => <li key={record.id}><div><b>{record.organizationName} · {record.businessRound}차 · {record.roomName}</b><small>v{record.editVersion} · {record.updatedByName || "사용자"} · {new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(record.updatedAt))}</small><em className={`drive-${record.driveSyncStatus}`}>{record.driveSyncStatus === "ready" ? "Drive 완료" : record.driveSyncStatus === "error" ? "Drive 재시도" : "Drive 동기화 중"}</em></div><button type="button" disabled={remoteLoading} onClick={() => void loadRemoteDraft(record)}>불러오기</button>{record.driveSyncStatus === "error" && <button type="button" disabled={remoteLoading} onClick={() => void retryRemoteDrive(record)}>Drive 다시 시도</button>}<button type="button" className="danger" disabled={remoteLoading} onClick={() => void deleteRemoteDraft(record)}>삭제</button></li>)}</ul> : <p>{remoteLoading ? "기관 도면을 불러오는 중입니다…" : "아직 저장한 기관별 기초도면이 없습니다."}</p>}
         <details className="site-layout-recovery-library"><summary>이 기기 복구본 {localDrafts.length}개</summary>{localDrafts.length ? <ul>{localDrafts.map((record) => <li key={record.id}><div><b>{record.name}</b><small>{new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(record.updatedAt))}</small></div><button type="button" onClick={() => loadLocalDraft(record)}>복구</button><button type="button" className="danger" onClick={() => deleteLocalDraft(record)}>삭제</button></li>)}</ul> : <p>기기 복구본이 없습니다.</p>}</details>
       </section>}
       <div className="site-layout-mode-toggle" role="group" aria-label="작성 방식"><button type="button" className={workflowMode === "direct" ? "active" : ""} onClick={() => selectWorkflowMode("direct")}>도면 직접 편집</button><button type="button" className={workflowMode === "guided" ? "active" : ""} onClick={() => selectWorkflowMode("guided")}>현장 실측 도우미</button><span>{workflowMode === "guided" ? "모바일에서 질문을 하나씩 따라가며 빠짐없이 실측합니다." : "PC에서 블록을 끌어 놓고 세부 수치를 빠르게 조정합니다."}</span></div>
@@ -1891,6 +2275,13 @@ export default function SiteLayoutPlannerPage() {
         <div className="site-layout-guide-card">
           <div className="site-layout-guide-copy"><small>STEP {activeStepIndex + 1} / {guideSteps.length}</small><h2>{activeStep.title}</h2><p>{activeStep.description}</p></div>
           {workflowMode === "guided" && renderGuidedQuestion()}
+          {workflowMode === "guided" && activeStageItems.length > 0 && <section className="site-layout-guided-stage-items" aria-label={`${activeStep.label} 등록 객체`} style={{ display: "grid", gap: 8, marginTop: 12, padding: 12, border: "1px solid #d8e0f0", borderRadius: 12, background: "#fff" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}><div><b>{activeStep.label} 등록 객체 {activeStageItems.length}개</b><small style={{ display: "block", color: "#667085" }}>도면이나 아래 목록에서 객체를 골라 수정·복사·삭제할 수 있습니다.</small></div><button type="button" className="danger" onClick={removeAllItems}>모든 객체 삭제</button></div>
+            <ul style={{ display: "grid", gap: 8, margin: 0, padding: 0, listStyle: "none" }}>{activeStageItems.map((stageItem) => <li key={stageItem.id} className={selectedId === stageItem.id ? "active" : ""} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto auto", alignItems: "center", gap: 6, padding: 8, border: selectedId === stageItem.id ? "2px solid #3157e8" : "1px solid #e1e6f0", borderRadius: 10 }}>
+              <button type="button" onClick={() => { setSelectedId(stageItem.id); setView("model"); }} style={{ minWidth: 0, textAlign: "left", border: 0, background: "transparent" }}><b style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stageItem.name}</b><small>{formatMillimeters(stageItem.width)} × {formatMillimeters(stageItem.height)}mm{stageItem.wall ? ` · ${wallLabel(stageItem.wall)}` : " · 실내 독립"}</small></button>
+              <button type="button" onClick={() => editGuidedItem(stageItem)}>수정</button><button type="button" onClick={() => duplicateGuidedItem(stageItem)}>복사</button><button type="button" className="danger" onClick={() => removeItemById(stageItem.id)}>삭제</button>
+            </li>)}</ul>
+          </section>}
           {workflowMode === "direct" && activeStep.id === "room" && <div className="site-layout-room-settings">
             <label><span>가로</span><div><FriendlyNumberInput label="공간 가로(m)" value={draft.roomWidth} min={0.1} max={100} onCommit={(value) => updateDraft({ roomWidth: positiveDimension(value, draft.roomWidth) })} /><em>m</em></div></label>
             <label><span>세로</span><div><FriendlyNumberInput label="공간 세로(m)" value={draft.roomHeight} min={0.1} max={100} onCommit={(value) => updateDraft({ roomHeight: positiveDimension(value, draft.roomHeight) })} /><em>m</em></div></label>
@@ -1940,10 +2331,10 @@ export default function SiteLayoutPlannerPage() {
         </aside>
 
         <main className={`site-layout-canvas-panel view-${view}`}>
-          <div className="site-layout-canvas-head"><div><button type="button" className={view === "model" ? "active" : ""} onClick={() => setView("model")}>모델</button><button type="button" className={view === "paper" ? "active" : ""} onClick={() => { setView("paper"); setCanvasFocus(true); }}>A3 출력</button></div><div className="site-layout-canvas-meta">{pendingPreset ? <button type="button" className="site-layout-pending-placement" onClick={() => { setPendingPresetId(null); setActiveTool("선택"); setCommand("명령: 블록 배치를 취소했습니다."); }}>{pendingPreset.label} 배치 대기 · 취소</button> : <span>TOP · 1:60 · mm</span>}{view === "paper" && <select aria-label="A3 미리보기 배율" value={paperZoom} onChange={(event) => setPaperZoom(event.target.value === "fit" ? "fit" : Number(event.target.value) as 100 | 125)}><option value="fit">화면 맞춤</option><option value="100">100%</option><option value="125">125%</option></select>}{view === "paper" && <button type="button" className="site-layout-paper-print" onClick={printA3Draft}>A3 인쇄</button>}<button type="button" className="site-layout-focus-toggle" aria-pressed={canvasFocus || canvasExpanded} onClick={() => void toggleCanvasExpanded()}>{canvasExpanded ? "크게 보기 닫기" : canvasFocus ? "패널 보기" : "도면 크게"}</button></div></div>
+          <div className="site-layout-canvas-head"><div><button type="button" className={view === "model" ? "active" : ""} onClick={() => setView("model")}>모델</button><button type="button" className={view === "paper" ? "active" : ""} onClick={() => { setView("paper"); setCanvasFocus(true); }}>A3 출력</button></div><div className="site-layout-canvas-meta">{pendingPreset ? <button type="button" className="site-layout-pending-placement" onClick={() => { setPendingPresetId(null); setActiveTool("선택"); setCommand("명령: 블록 배치를 취소했습니다."); }}>{pendingPreset.label} 배치 대기 · 취소</button> : <span>TOP · NTS · mm</span>}{view === "paper" && <select aria-label="A3 미리보기 배율" value={paperZoom} onChange={(event) => setPaperZoom(event.target.value === "fit" ? "fit" : Number(event.target.value) as 100 | 125)}><option value="fit">화면 맞춤</option><option value="100">100%</option><option value="125">125%</option></select>}{view === "paper" && <button type="button" className="site-layout-paper-print" onClick={printA3Draft}>A3 인쇄</button>}<button type="button" className="site-layout-focus-toggle" aria-pressed={canvasFocus || canvasExpanded} onClick={() => void toggleCanvasExpanded()}>{canvasExpanded ? "크게 보기 닫기" : canvasFocus ? "패널 보기" : "도면 크게"}</button></div></div>
           {orientationHint && <div className="site-layout-orientation-hint" role="status">휴대폰을 가로로 돌리면 도면을 더 넓게 볼 수 있습니다. 세로 화면에서도 계속 사용할 수 있습니다.</div>}
           <div className="site-layout-model-space">
-            <div className="site-layout-board-wrap" style={{ ...physicalRoomStyle, maxWidth: `${Math.round(920 * roomRatio)}px` }}><div ref={boardRef} className={`site-layout-board site-layout-geometry-host ${pendingPreset ? "placing" : ""}`} style={physicalRoomStyle} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDrop={handleBoardDrop}><SiteLayoutGeometryView draft={physicalDraft} mode="model" paddingMm={650} selectedItemId={selectedId} interactive={workflowMode === "direct"} showDimensions showLabels={workflowMode === "direct"} isItemVisible={(item) => { const legacy = draft.items.find((candidate) => candidate.id === item.id); return Boolean(legacy && itemLayer(legacy) !== "equipment" && visibleLayers[itemLayer(legacy)]); }} onBackgroundPointerDown={(point) => { if (pendingPresetId) addItem(pendingPresetId, (point.xMm / physicalDraft.roomWidthMm) * 100, (point.yMm / physicalDraft.roomHeightMm) * 100); else setSelectedId(""); }} onItemSelect={(item) => setSelectedId(item.id)} onItemPointerDown={startGeometryDrag} onModelPointerMove={(point, event) => moveGeometryDrag(point, event.pointerId)} onModelPointerUp={(_, event) => finishGeometryDrag(event.pointerId)} onModelPointerCancel={(event) => finishGeometryDrag(event.pointerId)} /></div></div>
+            <div className="site-layout-board-wrap" style={{ ...physicalRoomStyle, maxWidth: `${Math.round(920 * roomRatio)}px` }}><div ref={boardRef} className={`site-layout-board site-layout-geometry-host ${pendingPreset ? "placing" : ""}`} style={physicalRoomStyle} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDrop={handleBoardDrop}><SiteLayoutGeometryView draft={physicalDraft} mode="model" paddingMm={650} selectedItemId={selectedId} interactive interactionMode={workflowMode === "direct" ? "drag" : "select"} showDimensions showLabels isItemVisible={(item) => { const legacy = draft.items.find((candidate) => candidate.id === item.id); return Boolean(legacy && itemLayer(legacy) !== "equipment" && visibleLayers[itemLayer(legacy)]); }} onBackgroundPointerDown={(point) => { if (pendingPresetId) addItem(pendingPresetId, (point.xMm / physicalDraft.roomWidthMm) * 100, (point.yMm / physicalDraft.roomHeightMm) * 100); else setSelectedId(""); }} onItemSelect={(item) => setSelectedId(item.id)} onItemPointerDown={workflowMode === "direct" ? startGeometryDrag : undefined} onModelPointerMove={(point, event) => moveGeometryDrag(point, event.pointerId)} onModelPointerUp={(_, event) => finishGeometryDrag(event.pointerId)} onModelPointerCancel={(event) => finishGeometryDrag(event.pointerId)} /></div></div>
             {!visibleBasicItemCount && activeStep.id !== "room" && <div className="site-layout-empty"><b>{activeStep.label} 모양을 선택해 도면을 시작하세요.</b><span>모바일에서는 그림을 누른 뒤 도면의 위치를 터치하세요.</span></div>}
             <small className="site-layout-coordinates">X 8,410.000&nbsp;&nbsp;Y 4,215.000&nbsp;&nbsp;Z 0.000</small>
           </div>
@@ -1952,8 +2343,8 @@ export default function SiteLayoutPlannerPage() {
             <div className="site-layout-paper-drawing">
               <SiteLayoutGeometryView className="site-layout-paper-room site-layout-geometry-paper" draft={physicalDraft} mode="paper" paddingMm={650} interactive={false} showDimensions showLabels isItemVisible={(item) => { const legacy = draft.items.find((candidate) => candidate.id === item.id); return Boolean(legacy && itemLayer(legacy) !== "equipment" && itemLayer(legacy) !== "note"); }} />
             </div>
-            <div className="site-layout-paper-title"><div><b>{draft.roomName} 평면도</b><small>BETA · 현장 실측 참고용 · CAD 검토 후 확정</small></div><span>현장 실측 기준 · 축척 1/60 (A3)</span></div>
-          </div><aside className="site-layout-title-block"><strong>{draft.roomName}</strong><section><b>기관·사업</b><p>{draft.organizationName || "기관 미지정"} · {draft.businessRound ?? 1}차 사업</p></section><section><b>도면 구성</b><p>표현용 RC 벽체 · 문 · 창호 · 기둥 · 보 · 에어컨</p></section><section><b>현장 통신</b><p>인터넷 {surveyChoiceLabel(checklist.internetAvailable)} · {internetModeLabel(checklist.internetMode)}<br />망 {networkTypeLabel(checklist.networkType)}</p></section><section><b>전기·시공</b><p>전원 {surveyChoiceLabel(checklist.powerOutlet)} · 천장조명 철거 {surveyChoiceLabel(checklist.ceilingLightRemoval)}<br />암막 {surveyChoiceLabel(checklist.blackoutCurtain)} · 바닥 {surveyChoiceLabel(checklist.floorWork)}<br />E/V {surveyChoiceLabel(checklist.elevator)} · 에어컨 간섭 {surveyChoiceLabel(checklist.airconConflict)}</p></section><section><b>CAD팀 전달 메모</b><p>{draft.fieldNotes || "특이사항 없음"}</p></section><dl><dt>PROJECT</dt><dd>{draft.organizationName || "기관 미지정"}</dd><dt>ROOM</dt><dd>{draft.roomName}</dd><dt>DATE</dt><dd>{new Intl.DateTimeFormat("ko-KR").format(new Date())}</dd><dt>SCALE</dt><dd>A3 1/60</dd></dl></aside></div></div>
+            <div className="site-layout-paper-title"><div><b>{draft.roomName} 평면도</b><small>BETA · 현장 실측 참고용 · CAD 검토 후 확정</small></div><span>치수 우선 · NTS (A3)</span></div>
+          </div><aside className="site-layout-title-block"><strong>{draft.roomName}</strong><section><b>기관·사업</b><p>{draft.organizationName || "기관 미지정"} · {draft.businessRound ?? 1}차 사업</p></section><section><b>도면 구성</b><p>표현용 RC 벽체 · 문 · 창호 · 기둥 · 보 · 에어컨</p></section><section><b>현장 통신</b><p>인터넷 {surveyChoiceLabel(checklist.internetAvailable)} · {internetModeLabel(checklist.internetMode)}<br />망 {networkTypeLabel(checklist.networkType)}</p></section><section><b>전기·시공</b><p>전원 {surveyChoiceLabel(checklist.powerOutlet)} · 천장조명 철거 {surveyChoiceLabel(checklist.ceilingLightRemoval)}<br />암막 {surveyChoiceLabel(checklist.blackoutCurtain)} · 바닥 {surveyChoiceLabel(checklist.floorWork)}<br />E/V {surveyChoiceLabel(checklist.elevator)} · 에어컨 간섭 {surveyChoiceLabel(checklist.airconConflict)}</p></section><section><b>CAD팀 전달 메모</b><p>{draft.fieldNotes || "특이사항 없음"}</p></section><dl><dt>PROJECT</dt><dd>{draft.organizationName || "기관 미지정"}</dd><dt>ROOM</dt><dd>{draft.roomName}</dd><dt>DATE</dt><dd>{new Intl.DateTimeFormat("ko-KR").format(new Date())}</dd><dt>SCALE</dt><dd>NTS · 치수 mm 우선</dd></dl></aside></div></div>
         </main>
 
         <aside className="site-layout-inspector">
@@ -1963,6 +2354,12 @@ export default function SiteLayoutPlannerPage() {
           {selectedItem && selectedPreset && itemLayer(selectedItem) !== "equipment" ? <div className="site-layout-inspector-form">
             <div className="site-layout-inspector-preview"><CadSymbol symbol={selectedPreset.id} /><span>{selectedPreset.label}</span></div>
             <label><span>이름</span><input value={selectedItem.name} onChange={(event) => updateSelected({ name: event.target.value.slice(0, 60) })} /></label>
+            {selectedItem.kind === "pillar" && <div className="site-layout-structure-fields site-layout-pillar-mode-fields">
+              <div className="site-layout-choice-grid two" role="group" aria-label="기둥 배치 방식">
+                <button type="button" className={selectedItem.structureAttachment?.mode === "wall" ? "active" : ""} onClick={() => setGuidedPillarAttachment(selectedItem, "wall")}>벽 부착 기둥</button>
+                <button type="button" className={selectedItem.structureAttachment?.mode !== "wall" ? "active" : ""} onClick={() => setGuidedPillarAttachment(selectedItem, "free")}>실내 독립 기둥</button>
+              </div>
+            </div>}
             <div className={`site-layout-size-fields ${selectedItem.presetId === "aircon-ceiling" ? "is-square" : ""}`}>
               {selectedItem.kind === "door" || selectedItem.kind === "window" ? <>
                 <label><span>개구부 폭(mm)</span><MillimeterInput label="개구부 폭(mm)" valueMeters={selectedItem.width} minMm={300} maxMm={Math.round(((selectedItem.wall === "left" || selectedItem.wall === "right") ? draft.roomHeight : draft.roomWidth) * 1000)} onCommit={updateOpeningWidth} /></label>
@@ -1987,9 +2384,15 @@ export default function SiteLayoutPlannerPage() {
               <label><span>모서리→에어컨 중심(m)</span><FriendlyNumberInput label="모서리에서 에어컨 중심(m)" value={selectedItem.offset ?? selectedItem.width / 2} min={0} max={(selectedItem.wall === "left" || selectedItem.wall === "right") ? draft.roomHeight : draft.roomWidth} onCommit={updateWallMountedOffset} /></label>
               <label><span>바닥→에어컨 하단(m)</span><FriendlyNumberInput label="바닥에서 에어컨 하단(m)" value={selectedItem.mountingHeight ?? 2.1} min={0} max={10} onCommit={(value) => updateSelected({ mountingHeight: value })} /></label>
             </div>}
-            {!isWallMounted(selectedItem) && <div className="site-layout-reference-fields">
-              <label><span>좌측 D벽→{selectedItem.kind === "pillar" ? "기둥 면" : "중심"}(m)</span><FriendlyNumberInput label="좌측 D벽 기준거리(m)" value={selectedItem.kind === "pillar" ? faceDistance(selectedItem, "x") : centerDistance(selectedItem, "x")} min={0} max={draft.roomWidth} onCommit={(value) => selectedItem.kind === "pillar" ? updateFaceDistance("x", value) : updateCenterDistance("x", value)} /></label>
-              <label><span>상단 A벽→{selectedItem.kind === "pillar" ? "기둥 면" : "중심"}(m)</span><FriendlyNumberInput label="상단 A벽 기준거리(m)" value={selectedItem.kind === "pillar" ? faceDistance(selectedItem, "y") : centerDistance(selectedItem, "y")} min={0} max={draft.roomHeight} onCommit={(value) => selectedItem.kind === "pillar" ? updateFaceDistance("y", value) : updateCenterDistance("y", value)} /></label>
+            {!isWallMounted(selectedItem) && selectedItem.kind !== "pillar" && <div className="site-layout-reference-fields">
+              <label><span>좌측 D벽→중심(m)</span><FriendlyNumberInput label="좌측 D벽 기준거리(m)" value={centerDistance(selectedItem, "x")} min={0} max={draft.roomWidth} onCommit={(value) => updateCenterDistance("x", value)} /></label>
+              <label><span>상단 A벽→중심(m)</span><FriendlyNumberInput label="상단 A벽 기준거리(m)" value={centerDistance(selectedItem, "y")} min={0} max={draft.roomHeight} onCommit={(value) => updateCenterDistance("y", value)} /></label>
+            </div>}
+            {selectedItem.kind === "pillar" && selectedItem.structureAttachment?.mode !== "wall" && <div className="site-layout-reference-fields site-layout-free-pillar-fields">
+              <label><span>가로 기준벽</span><select value={selectedItem.freeReferenceX ?? "left"} onChange={(event) => updateSelectedById(selectedItem.id, { freeReferenceX: event.target.value as "left" | "right" })}><option value="left">좌측 D벽</option><option value="right">우측 B벽</option></select></label>
+              <label><span>{selectedItem.freeReferenceX === "right" ? "우측 B벽" : "좌측 D벽"}→기둥 면(mm)</span><MillimeterInput label="가로 기준벽에서 기둥 면까지(mm)" valueMeters={freePillarDistance(selectedItem, "x")} minMm={0} maxMm={Math.round(Math.max(0, draft.roomWidth - structureFootprint(selectedItem).width) * 1000)} onCommit={(value) => updateFreePillarDistance(selectedItem, "x", selectedItem.freeReferenceX ?? "left", value)} /></label>
+              <label><span>세로 기준벽</span><select value={selectedItem.freeReferenceY ?? "top"} onChange={(event) => updateSelectedById(selectedItem.id, { freeReferenceY: event.target.value as "top" | "bottom" })}><option value="top">상단 A벽</option><option value="bottom">하단 C벽</option></select></label>
+              <label><span>{selectedItem.freeReferenceY === "bottom" ? "하단 C벽" : "상단 A벽"}→기둥 면(mm)</span><MillimeterInput label="세로 기준벽에서 기둥 면까지(mm)" valueMeters={freePillarDistance(selectedItem, "y")} minMm={0} maxMm={Math.round(Math.max(0, draft.roomHeight - structureFootprint(selectedItem).height) * 1000)} onCommit={(value) => updateFreePillarDistance(selectedItem, "y", selectedItem.freeReferenceY ?? "top", value)} /></label>
             </div>}
             {selectedItem.presetId === "aircon-ceiling" && <div className="site-layout-structure-fields"><label><span>바닥→설치면 높이(m)</span><FriendlyNumberInput label="바닥에서 설치면 높이(m)" value={selectedItem.mountingHeight ?? ceilingHeight} min={0} max={20} onCommit={(value) => updateSelected({ mountingHeight: value })} /></label></div>}
             {selectedItem.kind === "beam" && <div className="site-layout-structure-fields">
@@ -1997,16 +2400,19 @@ export default function SiteLayoutPlannerPage() {
               <label><span>{selectedItem.structureMeasurement?.referenceType === "item" ? "기준 보에서 거리(m)" : "기준 모서리→보 시작면 거리(m)"}</span><FriendlyNumberInput label="보 기준거리(m)" value={selectedItem.structureMeasurement ? selectedItem.structureMeasurement.distanceMm / 1000 : displayedWallDistance(selectedItem)} min={0} max={30} onCommit={(value) => updateBeamDistanceFromInspector(selectedItem, value)} /></label>
             </div>}
             {selectedItem.kind === "pillar" && selectedItem.structureAttachment?.mode === "wall" && <div className="site-layout-structure-fields">
+              <label><span>설치 벽</span><select value={selectedItem.wall ?? "top"} onChange={(event) => selectGuidedWall(selectedItem, event.target.value as WallSide)}><option value="top">상단 A벽</option><option value="right">우측 B벽</option><option value="bottom">하단 C벽</option><option value="left">좌측 D벽</option></select></label>
+              <label><span>벽→기둥 면 직각거리(mm)</span><MillimeterInput label="벽에서 기둥 면 직각거리(mm)" valueMeters={selectedItem.wallInset ?? 0} minMm={0} maxMm={Math.round(Math.max(0, ((selectedItem.wall === "left" || selectedItem.wall === "right") ? draft.roomWidth - structureFootprint(selectedItem).width : draft.roomHeight - structureFootprint(selectedItem).height)) * 1000)} onCommit={(value) => updatePillarWallInset(selectedItem, value)} /></label>
               <label><span>{selectedItem.structureMeasurement?.referenceType === "item" ? "이전 기둥 끝면→현재 기둥 시작면(m)" : "기준 모서리→기둥 시작면(m)"}</span><FriendlyNumberInput label="기둥 기준거리(m)" value={selectedItem.structureMeasurement ? selectedItem.structureMeasurement.distanceMm / 1000 : displayedWallDistance(selectedItem)} min={0} max={30} onCommit={(value) => updatePillarDistanceFromInspector(selectedItem, value)} /></label>
             </div>}
-            <div className="site-layout-object-facts"><span>블록명 <b>{selectedPreset.code}</b></span><span>레이어 <b>{itemLayer(selectedItem).toUpperCase()}</b></span><span>스냅 <b>{isWallMounted(selectedItem) ? `${wallLabel(selectedItem.wall)} 기준거리` : "두 벽 중심거리"}</b></span></div>
+            <div className="site-layout-object-facts"><span>블록명 <b>{selectedPreset.code}</b></span><span>레이어 <b>{itemLayer(selectedItem).toUpperCase()}</b></span><span>스냅 <b>{isWallMounted(selectedItem) ? `${wallLabel(selectedItem.wall)} 기준거리` : selectedItem.kind === "pillar" ? "두 기준벽→기둥 면거리" : "두 벽 중심거리"}</b></span></div>
             {selectedPreset.guide && <div className="site-layout-install-guide"><span>현장 확인</span><p>{selectedPreset.guide}</p></div>}
             <div className="site-layout-inspector-actions">{!isWallMounted(selectedItem) && <button type="button" onClick={() => updateSelected({ rotation: selectedItem.rotation === 90 ? 0 : 90 })}>90° 회전</button>}<button type="button" onClick={duplicateSelected}>복사</button><button type="button" className="danger" onClick={removeSelected}>삭제</button></div>
           </div> : <div className="site-layout-inspector-empty"><b>{activeStep.id === "room" ? "공간 크기를 먼저 입력하세요." : "배치한 블록을 선택하세요."}</b><span>선택하면 실제 치수와 설치 벽·기준 거리를 조정할 수 있습니다.</span></div>}
         </aside>
       </div>
+      {workflowMode === "guided" && selectedItem && <div className="site-layout-guided-selection-bar" role="group" aria-label="선택 객체 빠른 작업" style={{ position: "fixed", left: 12, right: 12, bottom: 72, zIndex: canvasExpanded ? 220 : 60, display: "grid", gridTemplateColumns: "minmax(0,1fr) repeat(3,auto)", alignItems: "center", gap: 8, maxWidth: 720, margin: "0 auto", padding: "10px 12px", border: "1px solid #cfd8ea", borderRadius: 14, background: "rgba(255,255,255,.98)", boxShadow: "0 -8px 24px rgba(25,43,80,.16)" }}><div style={{ minWidth: 0 }}><b style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedItem.name}</b><small>{presetForItem(selectedItem).label} · {formatMillimeters(selectedItem.width)}mm</small></div><button type="button" onClick={() => editGuidedItem(selectedItem)}>수정</button><button type="button" onClick={() => duplicateGuidedItem(selectedItem)}>복사</button><button type="button" className="danger" onClick={() => removeItemById(selectedItem.id)}>삭제</button></div>}
       {workflowMode === "guided" ? <div className="site-layout-step-actions site-layout-question-navigation"><button type="button" onClick={questionPrevious} disabled={activeStepIndex === 0 && activeQuestionIndex === 0}>이전 질문</button><div><b>{activeStepIndex + 1}단계 · {activeStep.label}</b><span>{currentQuestionNumber}/{currentQuestionCount} 질문 · 자동 복구 중</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => { void saveCurrentDraft(); setView("paper"); setCanvasFocus(true); }}>저장·A3 확인</button> : <button type="button" className="primary" onClick={questionNext}>{activeQuestionIndex === currentQuestionCount - 1 ? "단계 완료·다음" : "다음 질문"}</button>}</div> : <div className="site-layout-step-actions"><button type="button" onClick={() => goToStep(activeStepIndex - 1)} disabled={activeStepIndex === 0}>이전</button><div><b>{activeStepIndex + 1}/{guideSteps.length} · {activeStep.label}</b><span>입력 내용은 이 기기에 자동 복구됩니다.</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => { setView("paper"); setCanvasFocus(true); }}>A3 도면 확인</button> : <button type="button" className="primary" onClick={goNextStep}>저장하고 다음</button>}</div>}
-      <footer className="site-layout-statusbar"><div><b>SNAP</b><b>ORTHO</b><b>OSNAP</b><span>GRID 10</span></div><p>도면 단위 mm · 기관별 DB 및 Google Drive 저장 · CAD팀 전달용 기초도면</p></footer>
+      <footer className="site-layout-statusbar"><div><b>SNAP</b><b>ORTHO</b><b>OSNAP</b><span>GRID 10</span></div><p>BETA · 도면 단위 mm · 기관별 DB 및 Google Drive 저장 · CAD팀 전달용 기초도면</p></footer>
     </section>
   );
 }

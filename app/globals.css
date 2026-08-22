@@ -18130,6 +18130,8 @@ button:is(
 .site-layout-reference-fields label span,
 .site-layout-structure-fields label span { color: #52647d; font-size: 9px; font-weight: 800; }
 .site-layout-checklist-group select,
+.site-layout-reference-fields select,
+.site-layout-structure-fields select,
 .site-layout-reference-fields input,
 .site-layout-structure-fields input {
   width: 100%;
@@ -18142,6 +18144,7 @@ button:is(
   font: inherit;
   font-size: 10px;
 }
+.site-layout-pillar-mode-fields > .site-layout-choice-grid { grid-column: 1 / -1; }
 .site-layout-field-notes { grid-column: 1 / -1; }
 .site-layout-field-notes textarea {
   width: 100%;
@@ -18886,6 +18889,239 @@ button:is(
   .site-layout-guide-progress { padding-block: 6px; }
   .site-layout-question-card { gap: 9px; padding: 10px; }
   .site-layout-question-heading span { line-height: 1.35; }
+}
+
+/* Site layout studio v12: canvas-first desktop and compact field controls. */
+.site-layout-planner {
+  container-name: site-layout-planner;
+  container-type: inline-size;
+}
+
+.main-nav button .nav-beta-badge {
+  min-width: 34px;
+  margin-left: 6px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+@media (min-width: 761px) {
+  .site-layout-workspace:not(.is-guided):not(.is-canvas-focus) {
+    grid-template-columns: clamp(148px, 11vw, 176px) minmax(0, 1fr) clamp(184px, 14vw, 214px);
+  }
+
+  .site-layout-workspace:not(.is-guided) .site-layout-canvas-panel {
+    min-height: clamp(680px, 68vh, 920px);
+  }
+
+  .site-layout-workspace:not(.is-guided) .site-layout-model-space {
+    min-height: clamp(636px, calc(68vh - 44px), 876px);
+    padding: 36px 20px 38px;
+  }
+
+  .site-layout-workspace.is-canvas-focus .site-layout-model-space {
+    padding-inline: 18px;
+  }
+
+  .site-layout-board-wrap {
+    width: 100%;
+    min-width: 0;
+    max-width: none !important;
+  }
+
+  .site-layout-library,
+  .site-layout-inspector {
+    padding-inline: 11px;
+  }
+}
+
+@media (max-width: 760px) {
+  .site-layout-intro {
+    padding: 6px 8px;
+  }
+
+  .site-layout-header-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+    gap: 4px;
+  }
+
+  .site-layout-save-state {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    min-height: 30px;
+    padding: 5px 8px;
+    text-align: left;
+  }
+
+  .site-layout-save-state b {
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  .site-layout-save-state small {
+    display: block;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: 8px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .site-layout-header-actions > button {
+    min-width: 0;
+    min-height: 40px;
+    padding-inline: 3px;
+    font-size: 9px;
+    line-height: 1.15;
+    white-space: normal;
+    word-break: keep-all;
+  }
+
+  .site-layout-draft-library {
+    max-height: min(44dvh, 430px);
+    margin: 6px 8px 0;
+    padding: 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .site-layout-draft-library > div b {
+    font-size: 11px;
+  }
+
+  .site-layout-draft-library > div span,
+  .site-layout-draft-library > p {
+    font-size: 9px;
+  }
+
+  .site-layout-mode-toggle {
+    margin: 5px 8px 0;
+    padding: 3px;
+  }
+
+  .site-layout-mode-toggle button {
+    min-height: 36px;
+    padding-inline: 5px;
+    font-size: 10px;
+  }
+
+  .site-layout-guide {
+    margin-top: 5px;
+  }
+
+  .site-layout-guide-progress {
+    gap: 5px;
+    padding: 6px 8px 0;
+    scroll-padding-inline: 8px;
+  }
+
+  .site-layout-guide-progress button {
+    flex-basis: 80px;
+    min-height: 40px;
+    padding-inline: 5px;
+    white-space: nowrap;
+  }
+
+  .site-layout-guide-card:has(.site-layout-question-card) {
+    display: block;
+    padding: 8px;
+  }
+
+  .site-layout-guide-card:has(.site-layout-question-card) > .site-layout-guide-copy {
+    display: none;
+  }
+
+  .site-layout-question-card {
+    width: 100%;
+    max-width: 720px;
+    margin-inline: auto;
+  }
+
+  .site-layout-workspace:not(.is-mobile-expanded) .site-layout-model-space {
+    padding: 24px 8px 28px;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .site-layout-inspector-actions {
+    position: sticky;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+    z-index: 34;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 10px -12px -14px;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    border-top: 1px solid #ccd8e8;
+    background: rgba(255, 255, 255, .97);
+    box-shadow: 0 -8px 22px rgba(36, 52, 79, .1);
+    backdrop-filter: blur(12px);
+  }
+
+  .site-layout-inspector-actions button {
+    min-height: 44px;
+    font-size: 11px;
+  }
+
+  .dashboard-records .records-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .dashboard-records .records-heading > div:first-child {
+    width: 100%;
+    text-align: center;
+  }
+
+  .dashboard-records .records-heading-actions {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .dashboard-records .dashboard-activity-scope {
+    width: min(210px, 100%);
+  }
+
+  .dashboard-records .dashboard-activity-scope button {
+    min-width: 0;
+    overflow-wrap: normal;
+    white-space: nowrap;
+    word-break: keep-all;
+    writing-mode: horizontal-tb;
+  }
+}
+
+.site-layout-workspace.is-mobile-expanded .site-layout-model-space {
+  -webkit-overflow-scrolling: touch;
+}
+
+.site-layout-workspace.is-mobile-expanded .site-layout-board:not(.placing) > svg {
+  touch-action: pan-x pan-y pinch-zoom !important;
+}
+
+.site-layout-workspace.is-mobile-expanded:not(.is-guided) .site-layout-board > svg [data-item-id] {
+  touch-action: none;
+}
+
+.site-layout-workspace.is-mobile-expanded.is-guided .site-layout-board > svg [data-item-id] {
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+.site-layout-workspace.is-mobile-expanded .site-layout-board.placing > svg {
+  touch-action: none !important;
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .site-layout-workspace.is-mobile-expanded .site-layout-board-wrap {
+    width: max(100%, 1050px) !important;
+    min-width: 1050px;
+    max-width: none !important;
+  }
 }
 
 @page site-layout-a3 {

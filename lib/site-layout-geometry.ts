@@ -81,6 +81,11 @@ export type SiteLayoutItemMm = {
   structureAttachment?: StructureAttachment;
   /** Measurement datum for a pillar/beam. The referenced item is a stable item id. */
   structureMeasurement?: StructureMeasurement;
+  /** Clear perpendicular distance from an attached wall to the nearest pillar face. */
+  wallInsetMm?: number;
+  /** Survey walls used for each clear face-distance of a free-standing pillar. */
+  freeReferenceX?: "left" | "right";
+  freeReferenceY?: "top" | "bottom";
   /** Optional field-survey datum for a window measured from a wall or previous window. */
   openingMeasurement?: OpeningMeasurement;
 };
@@ -137,6 +142,21 @@ export type SiteLayoutDimensionSegmentMm = {
   end: SiteLayoutDimensionPointMm;
   distanceMm: number;
   label: string;
+};
+
+export type SiteLayoutLaidOutDimensionSegmentMm = SiteLayoutDimensionSegmentMm & {
+  /** Zero-based exterior lane. Interior position dimensions use -1. */
+  laneIndex: number;
+  /** Perpendicular distance from the outside face of the wall. */
+  laneOffsetMm: number;
+};
+
+export type SiteLayoutDimensionLayoutMm = {
+  segments: SiteLayoutLaidOutDimensionSegmentMm[];
+  /** Overall room dimensions are always placed outside every object lane. */
+  overallOffsetMm: Pick<Record<SiteLayoutWallSide, number>, "top" | "left">;
+  /** Minimum directional viewBox padding required to contain lines and text. */
+  paddingBySideMm: Record<SiteLayoutWallSide, number>;
 };
 
 export type SvgViewBoxMm = {
@@ -407,7 +427,7 @@ function wallSpanStartMm(item: Pick<SiteLayoutItemMm, "widthMm" | "offsetMm" | "
 
 function positionForWallMount(
   draft: Pick<SiteLayoutDraftMm, "roomWidthMm" | "roomHeightMm" | "roomWallThicknessMm">,
-  item: Pick<SiteLayoutItemMm, "kind" | "presetId" | "widthMm" | "heightMm" | "wall" | "offsetMm" | "offsetAnchor" | "wallAlignment">,
+  item: Pick<SiteLayoutItemMm, "kind" | "presetId" | "widthMm" | "heightMm" | "wall" | "offsetMm" | "offsetAnchor" | "wallAlignment" | "wallInsetMm">,
 ) {
   const wall = item.wall ?? "top";
   const anchor = item.offsetAnchor ?? defaultOffsetAnchor(item);
@@ -421,24 +441,29 @@ function positionForWallMount(
   const footprint = rotation === 90
     ? { widthMm: item.heightMm, heightMm: item.widthMm }
     : { widthMm: item.widthMm, heightMm: item.heightMm };
+  const wallInsetMm = item.kind === "pillar"
+    ? clamp(roundMillimeters(item.wallInsetMm ?? 0), 0, horizontal
+      ? Math.max(0, draft.roomHeightMm - footprint.heightMm)
+      : Math.max(0, draft.roomWidthMm - footprint.widthMm))
+    : 0;
 
   if (wall === "top") {
-    const yMm = crossAxisCenter ? -(thicknessMm + footprint.heightMm) / 2 : 0;
+    const yMm = crossAxisCenter ? -(thicknessMm + footprint.heightMm) / 2 : wallInsetMm;
     return { xMm: startMm, yMm, rotation, offsetMm, startMm };
   }
   if (wall === "bottom") {
     const yMm = crossAxisCenter
       ? draft.roomHeightMm + (thicknessMm - footprint.heightMm) / 2
-      : draft.roomHeightMm - footprint.heightMm;
+      : draft.roomHeightMm - footprint.heightMm - wallInsetMm;
     return { xMm: startMm, yMm, rotation, offsetMm, startMm };
   }
   if (wall === "left") {
-    const xMm = crossAxisCenter ? -(thicknessMm + footprint.widthMm) / 2 : 0;
+    const xMm = crossAxisCenter ? -(thicknessMm + footprint.widthMm) / 2 : wallInsetMm;
     return { xMm, yMm: startMm, rotation, offsetMm, startMm };
   }
   const xMm = crossAxisCenter
     ? draft.roomWidthMm + (thicknessMm - footprint.widthMm) / 2
-    : draft.roomWidthMm - footprint.widthMm;
+    : draft.roomWidthMm - footprint.widthMm - wallInsetMm;
   return { xMm, yMm: startMm, rotation, offsetMm, startMm };
 }
 
@@ -528,6 +553,22 @@ function dimensionLabel(prefix: string, distanceMm: number) {
   return `${prefix}${prefix ? " " : ""}${Math.round(Math.abs(distanceMm)).toLocaleString("ko-KR")} mm`;
 }
 
+function dimensionSubjectName(item: Pick<SiteLayoutItemMm, "kind">) {
+  if (item.kind === "pillar") return "기둥";
+  if (item.kind === "beam") return "보";
+  if (item.kind === "window") return "창호";
+  if (item.kind === "door") return "문";
+  return "객체";
+}
+
+function shortWallName(wall: SiteLayoutWallSide | undefined) {
+  if (!wall) return "벽";
+  if (wall === "top") return "상벽";
+  if (wall === "right") return "우벽";
+  if (wall === "bottom") return "하벽";
+  return "좌벽";
+}
+
 /**
  * Converts stored survey datums into explicit CAD witness points.
  * The returned distance is always derived from the rendered geometry so zoom,
@@ -579,7 +620,7 @@ export function buildSiteLayoutDimensionSegmentsMm(
         distanceMode: measurement.distanceMode,
         start: itemDimensionPoint(draft, reference, referenceGeometry, measurement.axis, referenceCoordinateMm),
         end,
-        labelPrefix: measurement.distanceMode === "center" ? "중심간" : "면간",
+        labelPrefix: `${dimensionSubjectName(item)} ${measurement.distanceMode === "center" ? "중심간" : "면간"}`,
       });
       return;
     }
@@ -600,7 +641,9 @@ export function buildSiteLayoutDimensionSegmentsMm(
       distanceMode: measurement.distanceMode,
       start: datum,
       end,
-      labelPrefix: measurement.distanceMode === "center" ? "중심" : "벽면",
+      labelPrefix: measurement.distanceMode === "center"
+        ? `${shortWallName(measurement.referenceWall)}→${dimensionSubjectName(item)} 중심`
+        : `${shortWallName(measurement.referenceWall)}→${dimensionSubjectName(item)} ${measurement.direction === 1 ? "시작면" : "끝면"}`,
     });
   }
 
@@ -618,7 +661,7 @@ export function buildSiteLayoutDimensionSegmentsMm(
         distanceMode: "clear",
         start: dimensionPointForWall(draft, item.wall, geometry.spanStartMm),
         end: dimensionPointForWall(draft, item.wall, geometry.spanEndMm),
-        labelPrefix: "개구부",
+        labelPrefix: `${dimensionSubjectName(item)} 개구부`,
       });
 
       if (item.kind === "window" && item.openingMeasurement) {
@@ -637,7 +680,9 @@ export function buildSiteLayoutDimensionSegmentsMm(
           distanceMode: item.offsetAnchor === "center" ? "center" : "clear",
           start: dimensionPointForWall(draft, item.wall, 0),
           end: dimensionPointForWall(draft, item.wall, targetCoordinateMm),
-          labelPrefix: item.offsetAnchor === "center" ? "벽→중심" : "벽→시작면",
+          labelPrefix: item.offsetAnchor === "center"
+            ? `벽 시작→${dimensionSubjectName(item)} 중심`
+            : `벽 시작→${dimensionSubjectName(item)} 시작면`,
         });
         if (item.kind === "door") {
           addSegment({
@@ -649,7 +694,7 @@ export function buildSiteLayoutDimensionSegmentsMm(
             distanceMode: "clear",
             start: dimensionPointForWall(draft, item.wall, geometry.spanEndMm),
             end: dimensionPointForWall(draft, item.wall, wallLengthMm(draft, item.wall)),
-            labelPrefix: "끝면→벽",
+            labelPrefix: "문 끝면→벽 끝",
           });
         }
       }
@@ -658,14 +703,44 @@ export function buildSiteLayoutDimensionSegmentsMm(
     if (isStructureItem(item) && item.structureMeasurement) {
       addMeasuredReference(item, geometry, item.structureMeasurement);
     } else if (item.kind === "pillar" && !item.wall) {
+      const xFromRight = item.freeReferenceX === "right";
+      const yFromBottom = item.freeReferenceY === "bottom";
       addSegment({
-        id: `${item.id}-position-x`, subjectItemId: item.id, axis: "x", side: "top", kind: "position", distanceMode: "center",
-        start: { xMm: 0, yMm: geometry.centerYmm }, end: { xMm: geometry.centerXmm, yMm: geometry.centerYmm }, labelPrefix: "좌측벽→중심",
+        id: `${item.id}-position-x`, subjectItemId: item.id, axis: "x", side: xFromRight ? "bottom" : "top", kind: "position", distanceMode: "clear",
+        start: { xMm: xFromRight ? draft.roomWidthMm : 0, yMm: geometry.centerYmm },
+        end: { xMm: xFromRight ? geometry.xMm + geometry.widthMm : geometry.xMm, yMm: geometry.centerYmm },
+        labelPrefix: xFromRight ? "우벽→기둥면" : "좌벽→기둥면",
       });
       addSegment({
-        id: `${item.id}-position-y`, subjectItemId: item.id, axis: "y", side: "left", kind: "position", distanceMode: "center",
-        start: { xMm: geometry.centerXmm, yMm: 0 }, end: { xMm: geometry.centerXmm, yMm: geometry.centerYmm }, labelPrefix: "상단벽→중심",
+        id: `${item.id}-position-y`, subjectItemId: item.id, axis: "y", side: yFromBottom ? "right" : "left", kind: "position", distanceMode: "clear",
+        start: { xMm: geometry.centerXmm, yMm: yFromBottom ? draft.roomHeightMm : 0 },
+        end: { xMm: geometry.centerXmm, yMm: yFromBottom ? geometry.yMm + geometry.heightMm : geometry.yMm },
+        labelPrefix: yFromBottom ? "하벽→기둥면" : "상벽→기둥면",
       });
+    }
+
+    if (item.kind === "pillar" && item.wall) {
+      if (item.wall === "top") {
+        addSegment({
+          id: `${item.id}-wall-inset`, subjectItemId: item.id, axis: "y", side: "left", kind: "position", distanceMode: "clear",
+          start: { xMm: geometry.centerXmm, yMm: 0 }, end: { xMm: geometry.centerXmm, yMm: geometry.yMm }, labelPrefix: "상벽→기둥면",
+        });
+      } else if (item.wall === "bottom") {
+        addSegment({
+          id: `${item.id}-wall-inset`, subjectItemId: item.id, axis: "y", side: "right", kind: "position", distanceMode: "clear",
+          start: { xMm: geometry.centerXmm, yMm: draft.roomHeightMm }, end: { xMm: geometry.centerXmm, yMm: geometry.yMm + geometry.heightMm }, labelPrefix: "하벽→기둥면",
+        });
+      } else if (item.wall === "left") {
+        addSegment({
+          id: `${item.id}-wall-inset`, subjectItemId: item.id, axis: "x", side: "top", kind: "position", distanceMode: "clear",
+          start: { xMm: 0, yMm: geometry.centerYmm }, end: { xMm: geometry.xMm, yMm: geometry.centerYmm }, labelPrefix: "좌벽→기둥면",
+        });
+      } else {
+        addSegment({
+          id: `${item.id}-wall-inset`, subjectItemId: item.id, axis: "x", side: "bottom", kind: "position", distanceMode: "clear",
+          start: { xMm: draft.roomWidthMm, yMm: geometry.centerYmm }, end: { xMm: geometry.xMm + geometry.widthMm, yMm: geometry.centerYmm }, labelPrefix: "우벽→기둥면",
+        });
+      }
     }
 
     if (item.kind === "beam" && item.wall && geometry.spanStartMm !== undefined && geometry.spanEndMm !== undefined) {
@@ -695,6 +770,122 @@ export function buildSiteLayoutDimensionSegmentsMm(
   }
 
   return segments;
+}
+
+type DimensionLaneInterval = {
+  lineStartMm: number;
+  lineEndMm: number;
+  labelStartMm: number;
+  labelEndMm: number;
+};
+
+const DIMENSION_FIRST_LANE_OFFSET_MM = 150;
+const DIMENSION_LANE_GAP_MM = 230;
+const DIMENSION_OVERALL_GAP_MM = 280;
+const DIMENSION_MIN_OVERALL_OFFSET_MM = 565;
+const DIMENSION_TEXT_PADDING_MM = 260;
+
+function dimensionLaneInterval(segment: SiteLayoutDimensionSegmentMm): DimensionLaneInterval {
+  const startMm = segment.axis === "x" ? segment.start.xMm : segment.start.yMm;
+  const endMm = segment.axis === "x" ? segment.end.xMm : segment.end.yMm;
+  const lineStartMm = Math.min(startMm, endMm);
+  const lineEndMm = Math.max(startMm, endMm);
+  const midpointMm = (lineStartMm + lineEndMm) / 2;
+  // Text is rendered at 126 SVG user units. Korean glyphs and formatted values
+  // are conservatively estimated so lane allocation remains stable in print.
+  const estimatedLabelWidthMm = Math.max(320, segment.label.length * 76);
+  return {
+    lineStartMm,
+    lineEndMm,
+    labelStartMm: midpointMm - estimatedLabelWidthMm / 2,
+    labelEndMm: midpointMm + estimatedLabelWidthMm / 2,
+  };
+}
+
+function dimensionIntervalsConflict(first: DimensionLaneInterval, second: DimensionLaneInterval) {
+  const lineOverlap = first.lineStartMm < second.lineEndMm - 1
+    && second.lineStartMm < first.lineEndMm - 1;
+  const labelGapMm = 90;
+  const labelOverlap = first.labelStartMm < second.labelEndMm + labelGapMm
+    && second.labelStartMm < first.labelEndMm + labelGapMm;
+  return lineOverlap || labelOverlap;
+}
+
+function dimensionSegmentKey(segment: SiteLayoutDimensionSegmentMm) {
+  const start = `${roundMillimeters(segment.start.xMm)},${roundMillimeters(segment.start.yMm)}`;
+  const end = `${roundMillimeters(segment.end.xMm)},${roundMillimeters(segment.end.yMm)}`;
+  const endpoints = start < end ? `${start}:${end}` : `${end}:${start}`;
+  return `${segment.axis}:${segment.side}:${segment.kind}:${endpoints}:${segment.label}`;
+}
+
+/**
+ * Packs exterior object dimensions into non-overlapping CAD lanes. The output
+ * remains entirely in millimetres, so responsive zoom changes only pixels.
+ */
+export function layoutSiteLayoutDimensionSegmentsMm(
+  segments: SiteLayoutDimensionSegmentMm[],
+): SiteLayoutDimensionLayoutMm {
+  const seen = new Set<string>();
+  const uniqueSegments = segments.filter((segment) => {
+    const key = dimensionSegmentKey(segment);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const laidOutById = new Map<string, SiteLayoutLaidOutDimensionSegmentMm>();
+  const laneCountBySide: Record<SiteLayoutWallSide, number> = { top: 0, right: 0, bottom: 0, left: 0 };
+
+  for (const side of WALL_SIDES) {
+    const lanes: DimensionLaneInterval[][] = [];
+    const exteriorSegments = uniqueSegments
+      .filter((segment) => segment.kind !== "position" && segment.side === side)
+      .sort((first, second) => {
+        const kindDifference = (first.kind === "span" ? 0 : 1) - (second.kind === "span" ? 0 : 1);
+        if (kindDifference) return kindDifference;
+        const distanceDifference = first.distanceMm - second.distanceMm;
+        return distanceDifference || first.id.localeCompare(second.id);
+      });
+
+    for (const segment of exteriorSegments) {
+      const interval = dimensionLaneInterval(segment);
+      let laneIndex = lanes.findIndex((lane) => lane.every((occupied) => !dimensionIntervalsConflict(interval, occupied)));
+      if (laneIndex < 0) {
+        laneIndex = lanes.length;
+        lanes.push([]);
+      }
+      lanes[laneIndex].push(interval);
+      laidOutById.set(segment.id, {
+        ...segment,
+        laneIndex,
+        laneOffsetMm: DIMENSION_FIRST_LANE_OFFSET_MM + laneIndex * DIMENSION_LANE_GAP_MM,
+      });
+    }
+    laneCountBySide[side] = lanes.length;
+  }
+
+  const segmentsWithLanes = uniqueSegments.map((segment) => laidOutById.get(segment.id) ?? {
+    ...segment,
+    laneIndex: -1,
+    laneOffsetMm: 0,
+  });
+  const maximumLaneOffset = (side: SiteLayoutWallSide) => laneCountBySide[side] > 0
+    ? DIMENSION_FIRST_LANE_OFFSET_MM + (laneCountBySide[side] - 1) * DIMENSION_LANE_GAP_MM
+    : 0;
+  const overallOffsetMm = {
+    top: Math.max(DIMENSION_MIN_OVERALL_OFFSET_MM, maximumLaneOffset("top") + DIMENSION_OVERALL_GAP_MM),
+    left: Math.max(DIMENSION_MIN_OVERALL_OFFSET_MM, maximumLaneOffset("left") + DIMENSION_OVERALL_GAP_MM),
+  };
+
+  return {
+    segments: segmentsWithLanes,
+    overallOffsetMm,
+    paddingBySideMm: {
+      top: overallOffsetMm.top + DIMENSION_TEXT_PADDING_MM,
+      left: overallOffsetMm.left + DIMENSION_TEXT_PADDING_MM,
+      right: maximumLaneOffset("right") > 0 ? maximumLaneOffset("right") + DIMENSION_TEXT_PADDING_MM : 0,
+      bottom: maximumLaneOffset("bottom") > 0 ? maximumLaneOffset("bottom") + DIMENSION_TEXT_PADDING_MM : 0,
+    },
+  };
 }
 
 export function computeWallGeometryMm(
@@ -727,14 +918,18 @@ export function computeOpeningCutGeometryMm(
 
 export function computeSvgViewBox(
   draft: Pick<SiteLayoutDraftMm, "roomWidthMm" | "roomHeightMm" | "roomWallThicknessMm"> & Partial<Pick<SiteLayoutDraftMm, "items">>,
-  options: { paddingMm?: number } = {},
+  options: { paddingMm?: number; paddingBySideMm?: Partial<Record<SiteLayoutWallSide, number>> } = {},
 ): SvgViewBoxMm {
   const automaticPadding = Math.max(300, Math.round(Math.min(draft.roomWidthMm, draft.roomHeightMm) * 0.04));
   const paddingMm = normalizedMm(options.paddingMm ?? automaticPadding, automaticPadding, 0, 20_000);
-  let topPaddingMm = paddingMm;
-  let rightPaddingMm = paddingMm;
-  let bottomPaddingMm = paddingMm;
-  let leftPaddingMm = paddingMm;
+  const sidePadding = (side: SiteLayoutWallSide) => Math.max(
+    paddingMm,
+    normalizedMm(options.paddingBySideMm?.[side] ?? 0, 0, 0, 20_000),
+  );
+  let topPaddingMm = sidePadding("top");
+  let rightPaddingMm = sidePadding("right");
+  let bottomPaddingMm = sidePadding("bottom");
+  let leftPaddingMm = sidePadding("left");
 
   for (const item of draft.items ?? []) {
     if (item.kind !== "door" || item.swing !== "outside" || !item.wall) continue;
@@ -851,6 +1046,11 @@ function normalizeMmItem(
     beamSpacingMm: finiteNumber(value.beamSpacingMm) === null ? undefined : normalizedMm(value.beamSpacingMm, 1000, 0, 100_000),
     structureAttachment,
     structureMeasurement,
+    wallInsetMm: value.kind === "pillar"
+      ? normalizedMm(value.wallInsetMm, 0, 0, MAX_ROOM_DIMENSION_MM)
+      : undefined,
+    freeReferenceX: value.kind === "pillar" ? (value.freeReferenceX === "right" ? "right" : "left") : undefined,
+    freeReferenceY: value.kind === "pillar" ? (value.freeReferenceY === "bottom" ? "bottom" : "top") : undefined,
     openingMeasurement,
   };
 
@@ -949,6 +1149,13 @@ function migrateLegacyItem(value: unknown, index: number, draft: SiteLayoutDraft
     beamSpacingMm: finiteNumber(value.beamSpacing) === null ? undefined : legacyMetersToMm(value.beamSpacing, 1000, 0, 100_000),
     structureAttachment,
     structureMeasurement,
+    wallInsetMm: value.kind === "pillar"
+      ? finiteNumber(value.wallInsetMm) === null
+        ? legacyMetersToMm(value.wallInset, 0, 0, MAX_ROOM_DIMENSION_MM)
+        : normalizedMm(value.wallInsetMm, 0, 0, MAX_ROOM_DIMENSION_MM)
+      : undefined,
+    freeReferenceX: value.kind === "pillar" ? (value.freeReferenceX === "right" ? "right" : "left") : undefined,
+    freeReferenceY: value.kind === "pillar" ? (value.freeReferenceY === "bottom" ? "bottom" : "top") : undefined,
     openingMeasurement,
   };
   if (wallBound && wall) {

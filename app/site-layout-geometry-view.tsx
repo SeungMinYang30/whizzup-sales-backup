@@ -2,6 +2,7 @@
 
 import {
   useId,
+  useRef,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -13,10 +14,11 @@ import {
   computeOpeningCutGeometryMm,
   computeSvgViewBox,
   computeWallGeometryMm,
+  layoutSiteLayoutDimensionSegmentsMm,
   modelPointFromClient,
   type GeometryRectMm,
   type ItemGeometryMm,
-  type SiteLayoutDimensionSegmentMm,
+  type SiteLayoutLaidOutDimensionSegmentMm,
   type SiteLayoutDraftMm,
   type SiteLayoutItemMm,
   type SiteLayoutWallSide,
@@ -34,6 +36,7 @@ export type SiteLayoutGeometryViewProps = {
   paddingMm?: number;
   selectedItemId?: string;
   interactive?: boolean;
+  interactionMode?: "drag" | "select";
   showDimensions?: boolean;
   showLabels?: boolean;
   isItemVisible?: (item: SiteLayoutItemMm) => boolean;
@@ -98,7 +101,7 @@ const paperPalette: Palette = {
   wall: "#eeeeec",
   wallLine: "#161a1d",
   hatch: "#676b70",
-  opening: "#00415a",
+  opening: "#002f43",
   openingFill: "#bfe8f2",
   structure: "#343b42",
   fixture: "#075b4e",
@@ -405,52 +408,49 @@ function measurementLabel(item: SiteLayoutItemMm, draft: SiteLayoutDraftMm) {
   }
   if (item.kind === "pillar") {
     const wallFlush = item.structureAttachment?.mode === "wall"
-      && item.structureMeasurement?.referenceType === "wall"
-      && item.structureMeasurement.distanceMm === 0;
-    return wallFlush ? [size, "벽 밀착 · 시작 0 mm"] : [size];
+      && (item.wallInsetMm ?? 0) === 0;
+    return wallFlush ? [size, "벽 밀착 · 이격 0 mm"] : [size];
   }
   return [size];
 }
 
-function ItemLabel({ draft, item, geometry, color, compact, paper }: {
+type ItemLabelPlacement = { xMm: number; yMm: number; textAnchor: "start" | "middle" | "end" };
+
+function ItemLabel({ draft, item, geometry, color, compact, paper, placement }: {
   draft: SiteLayoutDraftMm;
   item: SiteLayoutItemMm;
   geometry: ItemGeometryMm;
   color: string;
   compact: boolean;
   paper: boolean;
+  placement?: ItemLabelPlacement;
 }) {
   if (compact) return null;
   const fontSize = paper ? 132 : 145;
-  const x = geometry.centerXmm;
-  const y = item.wall === "top"
+  const x = placement?.xMm ?? geometry.centerXmm;
+  const y = placement?.yMm ?? (item.wall === "top"
     ? geometry.yMm + geometry.heightMm + 155
     : item.wall === "bottom"
       ? geometry.yMm - (paper ? 190 : 115)
-      : geometry.yMm + geometry.heightMm + 185;
+      : geometry.yMm + geometry.heightMm + 185);
   const details = paper ? measurementLabel(item, draft) : [];
   return (
-    <text x={x} y={y} fill={color} fontSize={fontSize} fontWeight={800} textAnchor="middle" pointerEvents="none" paintOrder="stroke" stroke={paper ? "#fff" : "transparent"} strokeWidth={paper ? 4 : 0} strokeLinejoin="round">
+    <text x={x} y={y} fill={color} fontSize={fontSize} fontWeight={800} textAnchor={placement?.textAnchor ?? "middle"} pointerEvents="none" paintOrder="stroke" stroke={paper ? "#fff" : "transparent"} strokeWidth={paper ? 5 : 0} strokeLinejoin="round">
       <tspan x={x}>{item.name.slice(0, 26)}</tspan>
       {details.map((line, index) => <tspan key={`${item.id}-${index}`} x={x} dy={index === 0 ? 155 : 135} fontSize={paper ? 112 : fontSize} fontWeight={650}>{line}</tspan>)}
     </text>
   );
 }
 
-function dimensionLaneOffset(segment: SiteLayoutDimensionSegmentMm) {
-  if (segment.kind === "span") return 125;
-  return 325;
-}
-
 function dimensionProjection(
   draft: SiteLayoutDraftMm,
-  segment: SiteLayoutDimensionSegmentMm,
+  segment: SiteLayoutLaidOutDimensionSegmentMm,
   point: { xMm: number; yMm: number },
 ) {
   // Room-to-centre measurements belong inside the room. Projecting them to an
   // exterior lane makes long AC/pillar datums collide with door/window chains.
   if (segment.kind === "position") return point;
-  const offset = dimensionLaneOffset(segment);
+  const offset = segment.laneOffsetMm;
   if (segment.axis === "x") {
     return { xMm: point.xMm, yMm: segment.side === "bottom" ? draft.roomHeightMm + draft.roomWallThicknessMm + offset : -draft.roomWallThicknessMm - offset };
   }
@@ -459,7 +459,7 @@ function dimensionProjection(
 
 function LinearDimension({ draft, segment, palette }: {
   draft: SiteLayoutDraftMm;
-  segment: SiteLayoutDimensionSegmentMm;
+  segment: SiteLayoutLaidOutDimensionSegmentMm;
   palette: Palette;
 }) {
   const projectedStart = dimensionProjection(draft, segment, segment.start);
@@ -470,8 +470,8 @@ function LinearDimension({ draft, segment, palette }: {
   };
   const tick = 52;
   const horizontal = segment.axis === "x";
-  const textX = horizontal ? midpoint.xMm : midpoint.xMm - (segment.side === "right" ? -82 : 82);
-  const textY = horizontal ? midpoint.yMm + (segment.side === "bottom" ? 150 : -65) : midpoint.yMm;
+  const textX = horizontal ? midpoint.xMm : midpoint.xMm + (segment.side === "right" ? 94 : -94);
+  const textY = horizontal ? midpoint.yMm + (segment.side === "bottom" ? 160 : -76) : midpoint.yMm;
   const textTransform = horizontal ? undefined : `rotate(-90 ${textX} ${textY})`;
   const startTick = horizontal
     ? `M ${projectedStart.xMm - tick} ${projectedStart.yMm + tick} L ${projectedStart.xMm + tick} ${projectedStart.yMm - tick}`
@@ -480,11 +480,13 @@ function LinearDimension({ draft, segment, palette }: {
     ? `M ${projectedEnd.xMm - tick} ${projectedEnd.yMm + tick} L ${projectedEnd.xMm + tick} ${projectedEnd.yMm - tick}`
     : `M ${projectedEnd.xMm - tick} ${projectedEnd.yMm + tick} L ${projectedEnd.xMm + tick} ${projectedEnd.yMm - tick}`;
   return (
-    <g data-dimension-id={segment.id} fill="none" stroke={palette.dimension} strokeWidth={1.5} vectorEffect="non-scaling-stroke" pointerEvents="none">
+    <g data-dimension-id={segment.id} data-dimension-kind={segment.kind} data-dimension-lane={segment.laneIndex} fill="none" stroke={palette.dimension} strokeWidth={1.7} vectorEffect="non-scaling-stroke" pointerEvents="none">
       <path d={`M ${segment.start.xMm} ${segment.start.yMm} L ${projectedStart.xMm} ${projectedStart.yMm}`} opacity={0.62} />
       <path d={`M ${segment.end.xMm} ${segment.end.yMm} L ${projectedEnd.xMm} ${projectedEnd.yMm}`} opacity={0.62} />
       <path d={`M ${projectedStart.xMm} ${projectedStart.yMm} L ${projectedEnd.xMm} ${projectedEnd.yMm}`} />
       <path d={`${startTick} ${endTick}`} />
+      <circle cx={projectedStart.xMm} cy={projectedStart.yMm} r={15} fill={palette.dimension} stroke="none" />
+      <circle cx={projectedEnd.xMm} cy={projectedEnd.yMm} r={15} fill={palette.dimension} stroke="none" />
       <text
         x={textX}
         y={textY}
@@ -497,20 +499,20 @@ function LinearDimension({ draft, segment, palette }: {
         fontSize={126}
         fontWeight={850}
         textAnchor="middle"
+        dominantBaseline="middle"
       >{segment.label}</text>
     </g>
   );
 }
 
-function ObjectDimensionLayer({ draft, items, palette }: { draft: SiteLayoutDraftMm; items: SiteLayoutItemMm[]; palette: Palette }) {
-  const segments = buildSiteLayoutDimensionSegmentsMm({ ...draft, items });
+function ObjectDimensionLayer({ draft, segments, palette }: { draft: SiteLayoutDraftMm; segments: SiteLayoutLaidOutDimensionSegmentMm[]; palette: Palette }) {
   return <g aria-label="객체 실측 치수선">{segments.map((segment) => <LinearDimension key={segment.id} draft={draft} segment={segment} palette={palette} />)}</g>;
 }
 
-function DimensionLayer({ draft, palette }: { draft: SiteLayoutDraftMm; palette: Palette }) {
+function DimensionLayer({ draft, palette, topOffsetMm, leftOffsetMm }: { draft: SiteLayoutDraftMm; palette: Palette; topOffsetMm: number; leftOffsetMm: number }) {
   const wall = draft.roomWallThicknessMm;
-  const widthY = -wall - 565;
-  const heightX = -wall - 565;
+  const widthY = -wall - topOffsetMm;
+  const heightX = -wall - leftOffsetMm;
   const strokeWidth = 1.5;
   return (
     <g fill={palette.dimension} stroke={palette.dimension} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" pointerEvents="none">
@@ -520,6 +522,101 @@ function DimensionLayer({ draft, palette }: { draft: SiteLayoutDraftMm; palette:
       <text x={heightX - 70} y={draft.roomHeightMm / 2} fill={palette.dimension} stroke="#fff" strokeWidth={12} paintOrder="stroke" fontSize={150} fontWeight={850} textAnchor="middle" transform={`rotate(-90 ${heightX - 70} ${draft.roomHeightMm / 2})`}>{formatMm(draft.roomHeightMm)} mm</text>
     </g>
   );
+}
+
+type LabelBoundsMm = { left: number; right: number; top: number; bottom: number };
+
+function labelBounds(
+  placement: ItemLabelPlacement,
+  widthMm: number,
+  fontSizeMm: number,
+  detailCount: number,
+): LabelBoundsMm {
+  const left = placement.textAnchor === "start"
+    ? placement.xMm
+    : placement.textAnchor === "end" ? placement.xMm - widthMm : placement.xMm - widthMm / 2;
+  return {
+    left,
+    right: left + widthMm,
+    top: placement.yMm - fontSizeMm,
+    bottom: placement.yMm + detailCount * 145 + 35,
+  };
+}
+
+function labelBoundsOverlap(first: LabelBoundsMm, second: LabelBoundsMm, gapMm = 55) {
+  return first.left < second.right + gapMm
+    && second.left < first.right + gapMm
+    && first.top < second.bottom + gapMm
+    && second.top < first.bottom + gapMm;
+}
+
+function dimensionTextBounds(draft: SiteLayoutDraftMm, segment: SiteLayoutLaidOutDimensionSegmentMm): LabelBoundsMm {
+  const start = dimensionProjection(draft, segment, segment.start);
+  const end = dimensionProjection(draft, segment, segment.end);
+  const midpoint = { xMm: (start.xMm + end.xMm) / 2, yMm: (start.yMm + end.yMm) / 2 };
+  const labelLengthMm = Math.max(320, segment.label.length * 76);
+  if (segment.axis === "x") {
+    const yMm = midpoint.yMm + (segment.side === "bottom" ? 160 : -76);
+    return { left: midpoint.xMm - labelLengthMm / 2, right: midpoint.xMm + labelLengthMm / 2, top: yMm - 75, bottom: yMm + 75 };
+  }
+  const xMm = midpoint.xMm + (segment.side === "right" ? 94 : -94);
+  return { left: xMm - 75, right: xMm + 75, top: midpoint.yMm - labelLengthMm / 2, bottom: midpoint.yMm + labelLengthMm / 2 };
+}
+
+function layoutItemLabels(
+  draft: SiteLayoutDraftMm,
+  items: SiteLayoutItemMm[],
+  segments: SiteLayoutLaidOutDimensionSegmentMm[],
+  paper: boolean,
+) {
+  const placements = new Map<string, ItemLabelPlacement>();
+  const occupied: LabelBoundsMm[] = segments.filter((segment) => segment.kind === "position").map((segment) => dimensionTextBounds(draft, segment));
+  const paddingBySideMm: Record<SiteLayoutWallSide, number> = { top: 0, right: 0, bottom: 0, left: 0 };
+  const sorted = [...items].sort((first, second) => {
+    const firstGeometry = computeItemGeometryMm(draft, first);
+    const secondGeometry = computeItemGeometryMm(draft, second);
+    return firstGeometry.yMm - secondGeometry.yMm || firstGeometry.xMm - secondGeometry.xMm;
+  });
+
+  for (const item of sorted) {
+    const geometry = computeItemGeometryMm(draft, item);
+    const details = paper ? measurementLabel(item, draft) : [];
+    const fontSize = paper ? 132 : 145;
+    const lines = [item.name.slice(0, 26), ...details];
+    const estimatedWidthMm = Math.max(...lines.map((line, index) => line.length * (index === 0 ? fontSize : 112) * 0.62), 280);
+    const blockStepMm = fontSize + details.length * 145 + 95;
+    const preferred: ItemLabelPlacement = item.wall === "left"
+      ? { xMm: geometry.xMm + geometry.widthMm + 175, yMm: geometry.centerYmm, textAnchor: "start" }
+      : item.wall === "right"
+        ? { xMm: geometry.xMm - 175, yMm: geometry.centerYmm, textAnchor: "end" }
+        : item.wall === "bottom"
+          ? { xMm: geometry.centerXmm, yMm: geometry.yMm - 170 - details.length * 145, textAnchor: "middle" }
+          : { xMm: geometry.centerXmm, yMm: geometry.yMm + geometry.heightMm + (item.wall === "top" ? 155 : 185), textAnchor: "middle" };
+    const direction = item.wall === "bottom" ? -1 : 1;
+    const candidateSteps = [0, 1, -1, 2, -2, 3, -3];
+    let chosen = preferred;
+    let chosenBounds = labelBounds(chosen, estimatedWidthMm, fontSize, details.length);
+    for (const step of candidateSteps) {
+      const candidate = { ...preferred, yMm: preferred.yMm + step * direction * blockStepMm };
+      const bounds = labelBounds(candidate, estimatedWidthMm, fontSize, details.length);
+      if (occupied.every((existing) => !labelBoundsOverlap(bounds, existing))) {
+        chosen = candidate;
+        chosenBounds = bounds;
+        break;
+      }
+    }
+    placements.set(item.id, chosen);
+    occupied.push(chosenBounds);
+    const topOverflowMm = Math.max(0, -chosenBounds.top);
+    const leftOverflowMm = Math.max(0, -chosenBounds.left);
+    const rightOverflowMm = Math.max(0, chosenBounds.right - draft.roomWidthMm);
+    const bottomOverflowMm = Math.max(0, chosenBounds.bottom - draft.roomHeightMm);
+    paddingBySideMm.top = Math.max(paddingBySideMm.top, topOverflowMm > 0 ? topOverflowMm + 90 : 0);
+    paddingBySideMm.left = Math.max(paddingBySideMm.left, leftOverflowMm > 0 ? leftOverflowMm + 90 : 0);
+    paddingBySideMm.right = Math.max(paddingBySideMm.right, rightOverflowMm > 0 ? rightOverflowMm + 90 : 0);
+    paddingBySideMm.bottom = Math.max(paddingBySideMm.bottom, bottomOverflowMm > 0 ? bottomOverflowMm + 90 : 0);
+  }
+  return { placements, paddingBySideMm };
 }
 
 function RoomInformation({ draft, palette, compact }: { draft: SiteLayoutDraftMm; palette: Palette; compact: boolean }) {
@@ -544,6 +641,7 @@ export function SiteLayoutGeometryView({
   paddingMm,
   selectedItemId,
   interactive = false,
+  interactionMode = "drag",
   showDimensions = true,
   showLabels = mode !== "mobile",
   isItemVisible = () => true,
@@ -555,18 +653,35 @@ export function SiteLayoutGeometryView({
   onItemSelect,
 }: SiteLayoutGeometryViewProps) {
   const id = useId().replaceAll(":", "");
+  const backgroundPointerRef = useRef<{ pointerId: number; clientX: number; clientY: number } | null>(null);
   const hatchId = `${id}-wall-hatch`;
   const wallMaskId = `${id}-wall-mask`;
   const palette = mode === "paper" ? paperPalette : modelPalette;
-  const viewBox: SvgViewBoxMm = computeSvgViewBox(draft, { paddingMm });
-  const wallGeometry = computeWallGeometryMm(draft);
+  const compact = mode === "mobile";
   const visibleItems = draft.items.filter(isItemVisible);
+  const objectDimensionSegments = showDimensions && mode === "paper"
+    ? buildSiteLayoutDimensionSegmentsMm({ ...draft, items: visibleItems })
+    : [];
+  const dimensionLayout = layoutSiteLayoutDimensionSegmentsMm(objectDimensionSegments);
+  const itemLabelLayout = showLabels && !compact
+    ? layoutItemLabels(draft, visibleItems, dimensionLayout.segments, mode === "paper")
+    : { placements: new Map<string, ItemLabelPlacement>(), paddingBySideMm: { top: 0, right: 0, bottom: 0, left: 0 } };
+  const requiredPaddingBySideMm: Record<SiteLayoutWallSide, number> = {
+    top: Math.max(dimensionLayout.paddingBySideMm.top, itemLabelLayout.paddingBySideMm.top),
+    right: Math.max(dimensionLayout.paddingBySideMm.right, itemLabelLayout.paddingBySideMm.right),
+    bottom: Math.max(dimensionLayout.paddingBySideMm.bottom, itemLabelLayout.paddingBySideMm.bottom),
+    left: Math.max(dimensionLayout.paddingBySideMm.left, itemLabelLayout.paddingBySideMm.left),
+  };
+  const viewBox: SvgViewBoxMm = computeSvgViewBox(draft, {
+    paddingMm,
+    paddingBySideMm: showDimensions || showLabels ? requiredPaddingBySideMm : undefined,
+  });
+  const wallGeometry = computeWallGeometryMm(draft);
   const openingCuts = visibleItems
     .map((item) => computeOpeningCutGeometryMm(draft, item))
     .filter((rect): rect is GeometryRectMm => rect !== null);
-  const compact = mode === "mobile";
   const symbolStrokeWidth = mode === "paper" ? 3.2 : 1.55;
-  const openingStrokeWidth = mode === "paper" ? 4.2 : 2.4;
+  const openingStrokeWidth = mode === "paper" ? 5.2 : 2.4;
 
   function modelPoint(event: { clientX: number; clientY: number; currentTarget: SVGElement }) {
     const bounds = event.currentTarget.ownerSVGElement?.getBoundingClientRect()
@@ -576,6 +691,10 @@ export function SiteLayoutGeometryView({
 
   function handleBackgroundPointerDown(event: ReactPointerEvent<SVGSVGElement>) {
     if (!interactive) return;
+    if (interactionMode === "select") {
+      backgroundPointerRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY };
+      return;
+    }
     onBackgroundPointerDown?.(modelPoint(event), event);
   }
 
@@ -602,7 +721,7 @@ export function SiteLayoutGeometryView({
         minWidth: 0,
         minHeight: 0,
         background: palette.background,
-        touchAction: interactive ? "none" : "auto",
+        touchAction: interactive ? interactionMode === "select" ? "pan-x pan-y pinch-zoom" : "none" : "auto",
         ...style,
       }}
       viewBox={viewBox.value}
@@ -616,9 +735,19 @@ export function SiteLayoutGeometryView({
         if (interactive) onModelPointerMove?.(modelPoint(event), event);
       }}
       onPointerUp={(event) => {
+        const pointerStart = backgroundPointerRef.current;
+        if (interactive && interactionMode === "select" && pointerStart?.pointerId === event.pointerId) {
+          const moved = Math.hypot(event.clientX - pointerStart.clientX, event.clientY - pointerStart.clientY);
+          // Item groups stop propagation, so every pointer recorded here started on
+          // the drawing background (including wall/room SVG children). A movement
+          // threshold keeps a guided-mode scroll or pinch from placing an object.
+          if (moved < 8) onBackgroundPointerDown?.(modelPoint(event), event);
+          backgroundPointerRef.current = null;
+        }
         if (interactive) onModelPointerUp?.(modelPoint(event), event);
       }}
       onPointerCancel={(event) => {
+        backgroundPointerRef.current = null;
         if (interactive) onModelPointerCancel?.(event);
       }}
     >
@@ -642,8 +771,8 @@ export function SiteLayoutGeometryView({
       </g>
       <rect x={0} y={0} width={draft.roomWidthMm} height={draft.roomHeightMm} fill="none" stroke={palette.wallLine} strokeWidth={1.15} vectorEffect="non-scaling-stroke" />
 
-      {showDimensions && <DimensionLayer draft={draft} palette={palette} />}
-      {showDimensions && mode === "paper" && <ObjectDimensionLayer draft={draft} items={visibleItems} palette={palette} />}
+      {showDimensions && <DimensionLayer draft={draft} palette={palette} topOffsetMm={dimensionLayout.overallOffsetMm.top} leftOffsetMm={dimensionLayout.overallOffsetMm.left} />}
+      {showDimensions && mode === "paper" && <ObjectDimensionLayer draft={draft} segments={dimensionLayout.segments} palette={palette} />}
       <RoomInformation draft={draft} palette={palette} compact={compact || mode === "paper"} />
 
       {visibleItems.map((item) => {
@@ -694,7 +823,7 @@ export function SiteLayoutGeometryView({
             ) : (
               <GenericItemSymbol item={item} geometry={geometry} color={color} wallHatchId={hatchId} strokeWidth={symbolStrokeWidth} />
             )}
-            {showLabels && <ItemLabel draft={draft} item={item} geometry={geometry} color={color} compact={compact} paper={mode === "paper"} />}
+            {showLabels && <ItemLabel draft={draft} item={item} geometry={geometry} color={color} compact={compact} paper={mode === "paper"} placement={itemLabelLayout.placements.get(item.id)} />}
           </g>
         );
       })}

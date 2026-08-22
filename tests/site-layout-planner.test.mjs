@@ -25,6 +25,7 @@ test("페이지와 A3 출력은 비차단 BETA 안내를 유지한다", () => {
   assert.match(pageSource, /className="site-layout-beta-notice" role="note"/);
   assert.match(pageSource, /현재 개발 중인 기능입니다\. 현장 실측 초안 및 CAD팀 전달용이며 최종 시공 도면으로 사용할 수 없습니다\./);
   assert.match(pageSource, /BETA · 현장 실측 참고용 · CAD 검토 후 확정/);
+  assert.match(pageSource, /BETA · 도면 단위 mm · 기관별 DB 및 Google Drive 저장/);
   assert.match(stylesSource, /\.site-layout-beta-notice/);
   assert.doesNotMatch(pageSource, /alert\s*\(/);
 });
@@ -76,13 +77,13 @@ test("문·창호·구조물·에어컨 심벌은 공통 geometry 결과로 그�
 test("PC는 직접 편집, 모바일은 현장 실측 도우미를 기본으로 분리한다", () => {
   assert.match(pageSource, /type WorkflowMode = "guided" \| "direct"/);
   assert.match(pageSource, /useState<WorkflowMode>\("direct"\)/);
-  assert.match(pageSource, /matchMedia\("\(max-width: 760px\), \(pointer: coarse\)"\)\.matches \? "guided" : "direct"/);
+  assert.match(pageSource, /matchMedia\("\(max-width: 760px\)"\)\.matches \? "guided" : "direct"/);
   assert.match(pageSource, />현장 실측 도우미<\/button>/);
   assert.match(pageSource, />도면 직접 편집<\/button>/);
   assert.match(pageSource, /모바일에서 질문을 하나씩 따라가며 빠짐없이 실측합니다\./);
   assert.match(pageSource, /workflowMode === "guided" && renderGuidedQuestion\(\)/);
   assert.match(pageSource, /workflowMode === "direct" && <div className="site-layout-commandbar"/);
-  assert.match(pageSource, /interactive=\{workflowMode === "direct"\}/);
+  assert.match(pageSource, /selectedItemId=\{selectedId\} interactive interactionMode=\{workflowMode === "direct" \? "drag" : "select"\} showDimensions showLabels/);
 });
 
 test("간편 실측은 한 질문씩 이전·다음으로 이동하는 7단계 흐름이다", () => {
@@ -156,6 +157,7 @@ test("현재 입력은 기기 복구본과 기관별 API·Drive 저장 상태를
     /parseLocalDraftLibrary\(window\.localStorage\.getItem\(DRAFT_LIBRARY_KEY\)\)/,
     /function persistLocalDrafts\(/,
     /async function saveCurrentDraft\(\)/,
+    /async function retryRemoteDrive\(/,
     /async function refreshRemoteLayouts\(\)/,
     /async function loadRemoteDraft\(/,
     /type RemoteLayoutSummary =/,
@@ -165,6 +167,7 @@ test("현재 입력은 기기 복구본과 기관별 API·Drive 저장 상태를
     /function deleteLocalDraft\(/,
     /window\.localStorage\.setItem\(DRAFT_LIBRARY_KEY/,
     /fetch\("\/api\/site-layouts"/,
+    /fetch\("\/api\/site-layouts\/files"/,
     /fetch\(`\/api\/site-layouts\?id=/,
     /method: "POST"/,
     /baseVersion: activeRemoteVersion/,
@@ -172,13 +175,21 @@ test("현재 입력은 기기 복구본과 기관별 API·Drive 저장 상태를
     /response\.status === 409/,
     /const \[activeRemoteFingerprint, setActiveRemoteFingerprint\] = useState\(""\)/,
     /setActiveRemoteFingerprint\(JSON\.stringify\(draft\)\)/,
-    /activeRemoteFingerprint === currentDraftFingerprint \? "기관 도면 저장됨" : "저장 후 수정됨"/,
+    /type RemoteSavePhase = "idle" \| "saving" \| "db-saved" \| "drive-syncing" \| "drive-ready" \| "drive-error" \| "conflict" \| "failed"/,
+    /remoteSavePhase === "saving"/,
+    /DB 저장 완료 · Drive 동기화 중/,
+    /기관·Drive 저장 완료/,
+    /DB 저장 완료 · Drive 재시도/,
+    /기관 도면 저장 실패/,
     /activeLocalDraftFingerprint === currentDraftFingerprint \? "기기 복구됨" : "복구 후 수정됨"/,
     /aria-label="기관별 기초도면 목록"/,
     /기관 도면 저장/,
     />불러오기<\/button>/,
     />삭제<\/button>/,
     /Google Drive 보관 완료/,
+    /Drive 다시 시도/,
+    /driveSyncStatus: activeDriveSyncStatus/,
+    /setRemoteSavePhase\(context\.driveSyncStatus === "ready" \? "drive-ready"/,
     /이 기기 복구본/,
     /organizationName:/,
     /businessRound:/,
@@ -212,18 +223,74 @@ test("보는 벽 부착을 기본으로 첫 보와 다음 보의 실측 기준�
   assert.match(wallMountedSource, /item\.kind === "pillar" && item\.structureAttachment\?\.mode === "wall"/);
 });
 
-test("기둥은 첫 벽 모서리 0m에서 시작하고 다음 기둥을 면간거리로 이어 붙인다", () => {
+test("기둥은 벽 부착과 실내 독립을 나누고 다음 기둥을 면간·중심간 거리로 이어 붙인다", () => {
   assertContainsAll(pageSource, [
     /function previousPillar\(/,
     /function placePillarByMeasurement\(/,
     /function updatePillarMeasurement\(/,
+    /function updatePillarWallInset\(/,
+    /function updateFreePillarDistance\(/,
     /function addFollowupPillar\(/,
-    /wallMeasurement\("top", "start", 0\)/,
+    /기둥이 벽에 붙어 있나요, 실내에 따로 있나요\?/,
+    /벽 부착 기둥/,
+    /실내 독립 기둥/,
+    /좌측 D벽/,
+    /우측 B벽/,
+    /상단 A벽/,
+    /하단 C벽/,
+    /기둥 면 직각거리\(mm\)/,
+    /기둥 폭\(mm\)/,
+    /기둥 깊이\(mm\)/,
     /이전 기둥 끝면 → 이번 기둥 시작면 거리\(m\)/,
     /끝면 → 시작면/,
+    /중심 → 중심/,
+    /\+ 다음 기둥 추가/,
     /else if \(item\.kind === "pillar"\) addFollowupPillar\(item\)/,
     /function rebasePillarToWall\(/,
   ]);
+  assert.doesNotMatch(pageSource, /preset\.kind === "pillar"[\s\S]{0,350}wall: "top", offset: 0/);
+});
+
+test("창호는 이전 창호 끝면 또는 중심을 기준으로 연쇄 등록한다", () => {
+  assertContainsAll(pageSource, [
+    /function previousWindow\(/,
+    /function addFollowupWindow\(/,
+    /referenceItemId: reference\.id/,
+    /distanceMode: "clear"/,
+    /이전 창호 기준/,
+    /창호 끝면 사이/,
+    /중심 사이/,
+    /\+ 다음 창호 추가/,
+    /items: resolveWindowReferences\(moved\)/,
+    /items: resolveWindowReferences\(finished\)/,
+  ]);
+});
+
+test("간편 실측에서도 객체를 선택·복사·삭제하고 참조 객체 삭제를 안전하게 재기준화한다", () => {
+  assertContainsAll(pageSource, [
+    /const activeStageItems = useMemo/,
+    /className="site-layout-guided-stage-items"/,
+    /className="site-layout-guided-selection-bar"/,
+    /function duplicateGuidedItem\(/,
+    /function editGuidedItem\(/,
+    /function rebaseReferencesAfterDeletion\(/,
+    /function removeItemById\(/,
+    /deletedParentId/,
+    /referenceItemId: reference\.id/,
+    /모든 객체 삭제/,
+    /function pendingStageChecks\(/,
+    /stageChecks: pendingStageChecks\(current, deleted\)/,
+    /도면이나 아래 목록에서 객체를 골라 수정·복사·삭제할 수 있습니다/,
+  ]);
+  assert.match(pageSource, /selectedItemId=\{selectedId\} interactive interactionMode=\{workflowMode === "direct" \? "drag" : "select"\} showDimensions showLabels/);
+  assert.match(pageSource, /onItemPointerDown=\{workflowMode === "direct" \? startGeometryDrag : undefined\}/);
+});
+
+test("벽 두께는 고정 기본값을 사용하고 공간 입력은 즉시 도면에 반영한다", () => {
+  assert.doesNotMatch(pageSource, />벽 두께</);
+  assert.doesNotMatch(pageSource, />이 크기로 시작</);
+  assert.match(pageSource, /roomWallThickness: 0\.15/);
+  assert.match(pageSource, /onChange=\{\(event\) => \{[\s\S]*?if \(next && next !== "\."\) commit\(next\)/);
 });
 
 test("모바일 도면 크게 보기는 CSS immersive와 전체화면·가로 보기의 안전한 폴백을 제공한다", () => {
@@ -244,7 +311,9 @@ test("모바일 도면 크게 보기는 CSS immersive와 전체화면·가로 �
     /\.site-layout-workspace\.is-mobile-expanded \.site-layout-model-space,[\s\S]*?overflow: auto;/,
     /@media \(max-width: 760px\) and \(orientation: portrait\)/,
     /@media \(max-height: 500px\) and \(orientation: landscape\)/,
+    /\.site-layout-workspace\.is-mobile-expanded\.is-guided \.site-layout-board > svg \[data-item-id\] \{[\s\S]*?touch-action: pan-x pan-y pinch-zoom;/,
   ]);
+  assert.match(pageSource, /zIndex: canvasExpanded \? 220 : 60/);
 });
 
 test("직접 편집에서는 PC 드래그와 포인터 좌표 변환을 유지한다", () => {
@@ -255,9 +324,38 @@ test("직접 편집에서는 PC 드래그와 포인터 좌표 변환을 유지�
     /handleBoardDrop/,
     /onDrop=\{handleBoardDrop\}/,
     /modelPointFromClient\(event, bounds, geometryViewBox\)/,
-    /onItemPointerDown=\{startGeometryDrag\}/,
+    /onItemPointerDown=\{workflowMode === "direct" \? startGeometryDrag : undefined\}/,
     /onModelPointerMove=/,
   ]);
+});
+
+test("큰 터치 PC는 직접 편집으로 시작하고 guided 도면은 선택 전용 터치 동작을 쓴다", () => {
+  assert.match(pageSource, /window\.matchMedia\("\(max-width: 760px\)"\)\.matches \? "guided" : "direct"/);
+  assert.doesNotMatch(pageSource, /setWorkflowMode\(window\.matchMedia\("\(max-width: 760px\), \(pointer: coarse\)"/);
+  assert.match(pageSource, /interactionMode=\{workflowMode === "direct" \? "drag" : "select"\}/);
+  assert.match(geometryViewSource, /interactionMode === "select" \? "pan-x pan-y pinch-zoom" : "none"/);
+  assert.match(geometryViewSource, /if \(moved < 8\) onBackgroundPointerDown/);
+});
+
+test("직접 편집 기둥은 벽 부착과 독립 배치, 네 기준벽 면거리를 모두 수정한다", () => {
+  assertContainsAll(pageSource, [
+    /aria-label="기둥 배치 방식"/,
+    /벽 부착 기둥/,
+    /실내 독립 기둥/,
+    /가로 기준벽/,
+    /세로 기준벽/,
+    /freeReferenceX/,
+    /freeReferenceY/,
+    /벽→기둥 면 직각거리\(mm\)/,
+    /두 기준벽→기둥 면거리/,
+  ]);
+});
+
+test("A3 자동 맞춤 출력은 오해를 부르는 고정 축척 대신 NTS와 mm 치수 우선을 알린다", () => {
+  assert.match(pageSource, /TOP · NTS · mm/);
+  assert.match(pageSource, /치수 우선 · NTS \(A3\)/);
+  assert.match(pageSource, /NTS · 치수 mm 우선/);
+  assert.doesNotMatch(pageSource, /TOP · 1:60 · mm/);
 });
 
 test("직접 편집한 보는 새 벽 기준으로 재측정되고 복제와 inspector 거리도 실제 좌표를 갱신한다", () => {
@@ -330,11 +428,11 @@ test("A3 도면은 객체별 실제 치수와 측정 기준을 진한 선으로 
     /segment\.end\.xMm/,
     /showDimensions && mode === "paper" && <ObjectDimensionLayer/,
     /const symbolStrokeWidth = mode === "paper" \? 3\.2 : 1\.55/,
-    /const openingStrokeWidth = mode === "paper" \? 4\.2 : 2\.4/,
+    /const openingStrokeWidth = mode === "paper" \? 5\.2 : 2\.4/,
     /openingFill: "#bfe8f2"/,
     /paintOrder="stroke"/,
   ]);
-  const measurementLabelSource = geometryViewSource.match(/function measurementLabel[\s\S]*?\n}\n\nfunction ItemLabel/)?.[0] ?? "";
+  const measurementLabelSource = geometryViewSource.match(/function measurementLabel[\s\S]*?\n}\n\ntype ItemLabelPlacement/)?.[0] ?? "";
   assert.ok(measurementLabelSource, "A3 객체 설명 생성 함수를 찾을 수 있어야 합니다.");
   assert.match(measurementLabelSource, /if \(item\.presetId === "aircon-ceiling"\) \{[\s\S]*?설치면 H=/);
   assert.doesNotMatch(measurementLabelSource, /840|이전 창호|이전 보|좌측 중심/);

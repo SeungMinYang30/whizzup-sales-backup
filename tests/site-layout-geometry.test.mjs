@@ -17,6 +17,7 @@ import {
   createDefaultDraft,
   deserializeDraft,
   geometryToRoomPercent,
+  layoutSiteLayoutDimensionSegmentsMm,
   migrateLegacyDraft,
   modelPointFromClient,
   modelRectToClient,
@@ -473,7 +474,7 @@ test("first pillar starts flush at zero and the next pillar uses face-to-face di
   assert.equal(second.xMm - (first.xMm + first.widthMm), 1_200);
   assert.deepEqual(segment?.start, { xMm: 450, yMm: 0 });
   assert.deepEqual(segment?.end, { xMm: 1_650, yMm: 0 });
-  assert.equal(segment?.label, "면간 1,200 mm");
+  assert.equal(segment?.label, "기둥 면간 1,200 mm");
 });
 
 test("A3 beam dimensions use the previous beam end face and next beam start face", () => {
@@ -521,7 +522,7 @@ test("A3 beam dimensions use the previous beam end face and next beam start face
     start: { xMm: 3_400, yMm: 0 },
     end: { xMm: 5_400, yMm: 0 },
     distanceMm: 2_000,
-    label: "면간 2,000 mm",
+    label: "보 면간 2,000 mm",
   });
 });
 
@@ -575,7 +576,7 @@ test("A3 window dimensions use the previous window end face and next window star
     start: { xMm: 2_300, yMm: 0 },
     end: { xMm: 2_950, yMm: 0 },
     distanceMm: 650,
-    label: "면간 650 mm",
+    label: "창호 면간 650 mm",
   });
 });
 
@@ -599,21 +600,21 @@ test("A3 door dimensions expose the opening span and both wall reference distanc
         start: { xMm: 7_000, yMm: 6_000 },
         end: { xMm: 8_800, yMm: 6_000 },
         distanceMm: 1_800,
-        label: "개구부 1,800 mm",
+        label: "문 개구부 1,800 mm",
       },
       {
         id: "door-bottom-reference",
         start: { xMm: 0, yMm: 6_000 },
         end: { xMm: 7_000, yMm: 6_000 },
         distanceMm: 7_000,
-        label: "벽→시작면 7,000 mm",
+        label: "벽 시작→문 시작면 7,000 mm",
       },
       {
         id: "door-bottom-reference-end",
         start: { xMm: 8_800, yMm: 6_000 },
         end: { xMm: 10_000, yMm: 6_000 },
         distanceMm: 1_200,
-        label: "끝면→벽 1,200 mm",
+        label: "문 끝면→벽 끝 1,200 mm",
       },
     ],
   );
@@ -858,4 +859,197 @@ test("review completion is based on real geometry validation", () => {
 
   assert.equal(nextGuideState(valid).complete, true);
   assert.equal(nextGuideState(invalid).complete, false);
+});
+
+test("free pillar A3 dimensions use the same left and top face distances entered on site", () => {
+  const draft = {
+    ...createDefaultDraft(),
+    roomWidthMm: 10_000,
+    roomHeightMm: 6_000,
+    items: [makePillar("free-pillar", {
+      xMm: 2_200,
+      yMm: 1_700,
+      structureAttachment: { mode: "free" },
+    })],
+  };
+
+  const segments = buildSiteLayoutDimensionSegmentsMm(draft)
+    .filter((segment) => segment.subjectItemId === "free-pillar");
+
+  assert.deepEqual(
+    segments.map(({ id, distanceMode, start, end, distanceMm, label }) => ({ id, distanceMode, start, end, distanceMm, label })),
+    [
+      {
+        id: "free-pillar-position-x",
+        distanceMode: "clear",
+        start: { xMm: 0, yMm: 1_925 },
+        end: { xMm: 2_200, yMm: 1_925 },
+        distanceMm: 2_200,
+        label: "좌벽→기둥면 2,200 mm",
+      },
+      {
+        id: "free-pillar-position-y",
+        distanceMode: "clear",
+        start: { xMm: 2_425, yMm: 0 },
+        end: { xMm: 2_425, yMm: 1_700 },
+        distanceMm: 1_700,
+        label: "상벽→기둥면 1,700 mm",
+      },
+    ],
+  );
+});
+
+test("free pillar keeps right and bottom survey walls and dimensions their nearest faces", () => {
+  const draft = normalizeDraft({
+    roomName: "독립 기둥 반대벽 기준",
+    roomWidth: 10,
+    roomHeight: 6,
+    roomCeilingHeight: 2.7,
+    items: [{
+      id: "reverse-free-pillar",
+      kind: "pillar",
+      presetId: "pillar",
+      name: "독립 기둥",
+      x: 76,
+      y: 75,
+      width: 0.6,
+      height: 0.45,
+      rotation: 0,
+      structureAttachment: { mode: "free" },
+      freeReferenceX: "right",
+      freeReferenceY: "bottom",
+    }],
+  });
+  const item = draft.items[0];
+  const segments = buildSiteLayoutDimensionSegmentsMm(draft)
+    .filter((segment) => segment.subjectItemId === "reverse-free-pillar");
+
+  assert.equal(item.freeReferenceX, "right");
+  assert.equal(item.freeReferenceY, "bottom");
+  assert.deepEqual(
+    segments.map(({ id, side, start, end, distanceMm, label }) => ({ id, side, start, end, distanceMm, label })),
+    [
+      {
+        id: "reverse-free-pillar-position-x",
+        side: "bottom",
+        start: { xMm: 10_000, yMm: 4_725 },
+        end: { xMm: 8_200, yMm: 4_725 },
+        distanceMm: 1_800,
+        label: "우벽→기둥면 1,800 mm",
+      },
+      {
+        id: "reverse-free-pillar-position-y",
+        side: "right",
+        start: { xMm: 7_900, yMm: 6_000 },
+        end: { xMm: 7_900, yMm: 4_950 },
+        distanceMm: 1_050,
+        label: "하벽→기둥면 1,050 mm",
+      },
+    ],
+  );
+});
+
+test("wall pillar inset is preserved in millimetres and rendered from wall face to pillar face", () => {
+  const draft = normalizeDraft({
+    roomName: "벽 이격 기둥",
+    roomWidth: 10,
+    roomHeight: 6,
+    roomCeilingHeight: 2.7,
+    items: [{
+      id: "inset-pillar",
+      kind: "pillar",
+      presetId: "pillar",
+      name: "우측 이격 기둥",
+      x: 0,
+      y: 0,
+      width: 0.45,
+      height: 0.6,
+      rotation: 90,
+      wall: "right",
+      offset: 0,
+      wallInset: 0.3,
+      structureAttachment: { mode: "wall", wall: "right" },
+      structureMeasurement: { axis: "y", referenceType: "wall", referenceWall: "top", direction: 1, distanceMode: "clear", distanceMm: 0 },
+    }],
+  });
+  const item = draft.items[0];
+  const geometry = computeItemGeometryMm(draft, item);
+  const inset = buildSiteLayoutDimensionSegmentsMm(draft)
+    .find((segment) => segment.id === "inset-pillar-wall-inset");
+
+  assert.equal(item.wallInsetMm, 300);
+  assert.deepEqual(
+    { xMm: geometry.xMm, yMm: geometry.yMm, widthMm: geometry.widthMm, heightMm: geometry.heightMm },
+    { xMm: 9_100, yMm: 0, widthMm: 600, heightMm: 450 },
+  );
+  assert.deepEqual(inset && {
+    start: inset.start,
+    end: inset.end,
+    distanceMm: inset.distanceMm,
+    label: inset.label,
+  }, {
+    start: { xMm: 10_000, yMm: 225 },
+    end: { xMm: 9_700, yMm: 225 },
+    distanceMm: 300,
+    label: "우벽→기둥면 300 mm",
+  });
+});
+
+test("dimension layout packs overlapping measurements into lanes and keeps overall dimensions outermost", () => {
+  const segment = (id, startX, endX, label, kind = "reference") => ({
+    id,
+    subjectItemId: id,
+    axis: "x",
+    side: "top",
+    kind,
+    distanceMode: "clear",
+    start: { xMm: startX, yMm: 0 },
+    end: { xMm: endX, yMm: 0 },
+    distanceMm: Math.abs(endX - startX),
+    label,
+  });
+  const duplicate = segment("duplicate-id", 0, 2_000, "문 개구부 2,000 mm", "span");
+  const layout = layoutSiteLayoutDimensionSegmentsMm([
+    segment("opening", 0, 2_000, "문 개구부 2,000 mm", "span"),
+    segment("overlap", 500, 2_500, "벽 시작→문 시작면 2,000 mm"),
+    segment("far", 6_000, 7_000, "보 길이 1,000 mm", "span"),
+    duplicate,
+    { ...duplicate, id: "duplicate-copy" },
+    {
+      id: "inside-position",
+      subjectItemId: "inside-position",
+      axis: "y",
+      side: "left",
+      kind: "position",
+      distanceMode: "clear",
+      start: { xMm: 2_000, yMm: 0 },
+      end: { xMm: 2_000, yMm: 1_500 },
+      distanceMm: 1_500,
+      label: "상벽→기둥면 1,500 mm",
+    },
+  ]);
+  const byId = new Map(layout.segments.map((item) => [item.id, item]));
+  const maximumObjectOffset = Math.max(...layout.segments.map((item) => item.laneOffsetMm));
+
+  assert.notEqual(byId.get("opening").laneIndex, byId.get("overlap").laneIndex);
+  assert.equal(byId.get("opening").laneIndex, byId.get("far").laneIndex);
+  assert.equal(byId.get("inside-position").laneIndex, -1);
+  assert.equal(byId.get("inside-position").laneOffsetMm, 0);
+  assert.equal(layout.segments.some((item) => item.id === "duplicate-copy"), false);
+  assert.ok(layout.overallOffsetMm.top > maximumObjectOffset);
+  assert.ok(layout.paddingBySideMm.top > layout.overallOffsetMm.top);
+});
+
+test("directional dimension padding expands only the required viewBox sides", () => {
+  const draft = { ...createDefaultDraft(), roomWidthMm: 10_000, roomHeightMm: 6_000, items: [] };
+  const base = computeSvgViewBox(draft, { paddingMm: 650 });
+  const expanded = computeSvgViewBox(draft, {
+    paddingMm: 650,
+    paddingBySideMm: { top: 1_240, left: 930 },
+  });
+
+  assert.equal(expanded.minY, -draft.roomWallThicknessMm - 1_240);
+  assert.equal(expanded.minX, -draft.roomWallThicknessMm - 930);
+  assert.equal(expanded.minX + expanded.width, base.minX + base.width);
+  assert.equal(expanded.minY + expanded.height, base.minY + base.height);
 });
