@@ -1678,7 +1678,7 @@ const navItems: { id: View; label: string; mark: string }[] = [
   { id: "dashboard", label: "대시보드", mark: "D" },
   { id: "followup", label: "기관·예산 관리", mark: "F" },
   { id: "complex-projects", label: "공간재구조화 사업 관리", mark: "X" },
-  { id: "site-layout", label: "현장 배치도", mark: "L" },
+  { id: "site-layout", label: "기초도면 작성", mark: "L" },
   { id: "products", label: "견적·제품·협력사 관리", mark: "P" },
   { id: "resources", label: "자료실", mark: "R" },
   { id: "map", label: "영업·수주 지도", mark: "M" },
@@ -1708,7 +1708,7 @@ const presenceViewLabels: Record<View, string> = {
   "installation-schedule": "시공·납품 일정",
   quotations: "견적서 관리",
   integration: "관리자 센터 · API·연동",
-  "site-layout": "현장 배치도",
+  "site-layout": "기초도면 작성",
 };
 
 function presenceViewLabel(value: string) {
@@ -16353,7 +16353,7 @@ export default function CrmApp({
       : view === "complex-projects"
                 ? "공간재구조화 사업 관리"
         : view === "site-layout"
-          ? "현장 배치도"
+          ? "기초도면 작성"
         : view === "resources"
           ? "자료실"
         : view === "records"

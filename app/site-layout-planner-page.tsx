@@ -2,15 +2,21 @@
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
-type LayoutItemKind = "equipment" | "table" | "door" | "window" | "pillar" | "note";
+type LayoutItemKind = "equipment" | "table" | "door" | "window" | "pillar" | "beam" | "fixture" | "note";
 type LayoutSymbol =
   | "equipment" | "screen" | "kiosk" | "vision-sensor" | "lidar-sensor" | "shooting-sensor"
   | "motion-3d" | "ifit-premium" | "ifit-slim" | "touch-table" | "action-floor" | "power-lan"
-  | "table" | "chair" | "door-single" | "door-double" | "door-sliding"
-  | "window-3" | "window-4" | "window-6" | "pillar" | "note";
+  | "table" | "chair" | "door-single" | "door-double" | "door-unequal" | "door-sliding" | "door-folding"
+  | "window-fixed" | "window-sliding-2" | "window-3" | "window-4" | "window-6" | "window-project"
+  | "pillar" | "beam" | "aircon-wall" | "aircon-ceiling" | "note";
 type LayoutView = "model" | "paper";
-type LayoutLayer = "opening" | "equipment" | "note";
-type PresetGroup = "문" | "창호" | "에어패스 시스템" | "공통 장비·가구" | "기타";
+type LayoutLayer = "opening" | "structure" | "fixture" | "equipment" | "note";
+type PresetGroup = "문" | "창호" | "기둥·보" | "현장 설비" | "에어패스 시스템" | "공통 장비·가구" | "기타";
+type WallSide = "top" | "right" | "bottom" | "left";
+type OpeningHand = "left" | "right";
+type GuideStepId = "room" | "door" | "window" | "structure" | "facility" | "review";
+type StageCheckKey = Exclude<GuideStepId, "review">;
+type StageCheckStatus = "pending" | "complete" | "none" | "review";
 
 type LayoutItem = {
   id: string;
@@ -22,6 +28,11 @@ type LayoutItem = {
   width: number;
   height: number;
   rotation: 0 | 90;
+  wall?: WallSide;
+  offset?: number;
+  openingHeight?: number;
+  sillHeight?: number;
+  handing?: OpeningHand;
 };
 
 type LayoutDraft = {
@@ -30,6 +41,8 @@ type LayoutDraft = {
   roomHeight: number;
   roomCeilingHeight?: number;
   items: LayoutItem[];
+  stageChecks?: Partial<Record<StageCheckKey, StageCheckStatus>>;
+  fieldNotes?: string;
 };
 
 type ItemPreset = {
@@ -49,13 +62,27 @@ type ItemPreset = {
 
 const STORAGE_KEY = "whizzup:site-layout-draft:v1";
 
+const guideSteps: { id: GuideStepId; label: string; title: string; description: string; groups: PresetGroup[] }[] = [
+  { id: "room", label: "공간", title: "공간 크기 입력", description: "실 이름과 가로·세로·천장 높이를 입력하면 방 외곽선이 자동으로 만들어집니다.", groups: [] },
+  { id: "door", label: "출입문", title: "출입문 형태와 치수", description: "현장과 비슷한 문을 고르고 설치 벽을 터치한 뒤 넓이·높이·열림 방향을 확인하세요.", groups: ["문"] },
+  { id: "window", label: "창호", title: "창호 형태와 분할", description: "고정창·좌우 슬라이딩창·연창 중 생김새가 비슷한 블록을 선택해 배치하세요.", groups: ["창호"] },
+  { id: "structure", label: "기둥·보", title: "기둥과 보 실측", description: "기둥 크기와 보 위치·폭을 입력하고 보와 보 사이의 현장 메모를 남기세요.", groups: ["기둥·보", "기타"] },
+  { id: "facility", label: "에어컨", title: "에어컨과 고정 시설", description: "벽걸이·천장형 에어컨의 위치와 크기를 표시합니다. 제품 장비는 아직 노출하지 않습니다.", groups: ["현장 설비"] },
+  { id: "review", label: "최종 확인", title: "CAD팀 전달 전 검수", description: "단계별 확인 상태와 누락 항목을 점검하고 A3 출력 도면을 확인하세요.", groups: [] },
+];
+
 const itemPresets: ItemPreset[] = [
   { id: "door-single", kind: "door", group: "문", label: "단문형", defaultName: "단문형 출입문", code: "A-DR01", width: 0.9, height: 0.18, guide: "힌지와 90° 개폐 반경을 함께 표시합니다." },
   { id: "door-double", kind: "door", group: "문", label: "양문형", defaultName: "양문형 출입문", code: "A-DR02", width: 1.8, height: 0.18, guide: "두 문짝의 개폐 반경과 중심선을 표시합니다." },
-  { id: "door-sliding", kind: "door", group: "문", label: "미닫이", defaultName: "미닫이문", code: "A-DR03", width: 1.8, height: 0.14, guide: "문짝 겹침과 이동 방향을 평면 심벌로 표시합니다." },
-  { id: "window-3", kind: "window", group: "창호", label: "3분할", defaultName: "3분할 창호", code: "A-W03", width: 2.1, height: 0.14 },
-  { id: "window-4", kind: "window", group: "창호", label: "4분할", defaultName: "4분할 창호", code: "A-W04", width: 2.7, height: 0.14 },
-  { id: "window-6", kind: "window", group: "창호", label: "6분할", defaultName: "6분할 창호", code: "A-W06", width: 4.1, height: 0.14 },
+  { id: "door-unequal", kind: "door", group: "문", label: "비대칭 양문", defaultName: "비대칭 양문형 출입문", code: "A-DR03", width: 1.5, height: 0.18, guide: "주문과 보조문 폭이 다른 양문형 출입문입니다." },
+  { id: "door-sliding", kind: "door", group: "문", label: "좌우 미닫이", defaultName: "좌우 미닫이문", code: "A-DR04", width: 1.8, height: 0.14, guide: "문짝 겹침과 이동 방향을 평면 심벌로 표시합니다." },
+  { id: "door-folding", kind: "door", group: "문", label: "폴딩도어", defaultName: "폴딩도어", code: "A-DR05", width: 2.4, height: 0.18, guide: "접이식 문짝 개수와 전체 개구부 폭을 확인합니다." },
+  { id: "window-fixed", kind: "window", group: "창호", label: "고정창", defaultName: "고정창", code: "A-W01", width: 1.2, height: 0.14 },
+  { id: "window-sliding-2", kind: "window", group: "창호", label: "슬라이딩 2짝", defaultName: "좌우 슬라이딩창 2짝", code: "A-W02", width: 1.8, height: 0.14 },
+  { id: "window-3", kind: "window", group: "창호", label: "슬라이딩 3짝", defaultName: "좌우 슬라이딩창 3짝", code: "A-W03", width: 2.1, height: 0.14 },
+  { id: "window-4", kind: "window", group: "창호", label: "슬라이딩 4짝", defaultName: "좌우 슬라이딩창 4짝", code: "A-W04", width: 2.7, height: 0.14 },
+  { id: "window-6", kind: "window", group: "창호", label: "6분할 연창", defaultName: "6분할 연창", code: "A-W06", width: 4.1, height: 0.14 },
+  { id: "window-project", kind: "window", group: "창호", label: "프로젝트창", defaultName: "프로젝트창", code: "A-W07", width: 1.2, height: 0.14 },
   { id: "screen", kind: "equipment", group: "에어패스 시스템", label: "스크린", defaultName: "XR 전면 스크린", code: "E-SCR", width: 4.1, height: 0.32, catalogName: "가상스포츠시스템 (터치스크린)", catalogSpecification: "에어패스 AP-EDUVR-01 / AP-EDUVR-03 구성", guide: "DWG 기준 화면 높이는 천장 높이에서 센서·여유 약 400mm를 제외해 검토합니다." },
   { id: "equipment", kind: "equipment", group: "에어패스 시스템", label: "프로젝터", defaultName: "빔프로젝터", code: "E-PJ", width: 0.55, height: 0.42, catalogName: "빔프로젝터", catalogSpecification: "Epson 또는 단테크 초단초점 모델", guide: "단테크 초단초점 참고값은 스크린 폭 × 0.42의 투사거리입니다." },
   { id: "kiosk", kind: "equipment", group: "에어패스 시스템", label: "키오스크", defaultName: "운영 키오스크", code: "E-KSK", width: 0.72, height: 0.58, catalogName: "가상스포츠시스템 (터치스크린)", catalogSpecification: "AP-EDUVR 시스템 구성 장비", guide: "DWG 시공 메모 기준 키오스크와 각 장비 배선 거리는 15m 이내를 권장합니다." },
@@ -70,12 +97,15 @@ const itemPresets: ItemPreset[] = [
   { id: "table", kind: "table", group: "공통 장비·가구", label: "모듈 책상", defaultName: "모듈형 책상", code: "F-T01", width: 1.4, height: 1.4 },
   { id: "chair", kind: "table", group: "공통 장비·가구", label: "의자", defaultName: "이동형 의자", code: "F-C01", width: 0.55, height: 0.55 },
   { id: "power-lan", kind: "equipment", group: "공통 장비·가구", label: "전원·LAN", defaultName: "전원·LAN 포인트", code: "E-IO", width: 0.28, height: 0.28, guide: "장비별 전원·HDMI·CAT6 포인트를 현장 실측 후 확정합니다." },
-  { id: "pillar", kind: "pillar", group: "기타", label: "기둥", defaultName: "콘크리트 기둥", code: "A-C01", width: 0.45, height: 0.45 },
+  { id: "pillar", kind: "pillar", group: "기둥·보", label: "사각 기둥", defaultName: "콘크리트 기둥", code: "A-C01", width: 0.45, height: 0.45 },
+  { id: "beam", kind: "beam", group: "기둥·보", label: "보", defaultName: "콘크리트 보", code: "A-B01", width: 2.4, height: 0.35, guide: "보 폭·보 하단 높이와 보 사이 간격은 현장 메모에 함께 기록하세요." },
+  { id: "aircon-wall", kind: "fixture", group: "현장 설비", label: "벽걸이 에어컨", defaultName: "벽걸이 에어컨", code: "M-AC01", width: 1.05, height: 0.32 },
+  { id: "aircon-ceiling", kind: "fixture", group: "현장 설비", label: "천장형 에어컨", defaultName: "천장형 에어컨", code: "M-AC02", width: 0.84, height: 0.84 },
   { id: "note", kind: "note", group: "기타", label: "현장 메모", defaultName: "현장 확인 사항", code: "A-N01", width: 1.8, height: 0.65 },
 ];
 
-const defaultDraft: LayoutDraft = { roomName: "스마트 체험교실", roomWidth: 13.724, roomHeight: 8.146, roomCeilingHeight: 2.551, items: [] };
-const groups: PresetGroup[] = ["문", "창호", "에어패스 시스템", "공통 장비·가구", "기타"];
+const defaultDraft: LayoutDraft = { roomName: "스마트 체험교실", roomWidth: 13.724, roomHeight: 8.146, roomCeilingHeight: 2.551, items: [], stageChecks: {}, fieldNotes: "" };
+const basicGroups: PresetGroup[] = ["문", "창호", "기둥·보", "현장 설비", "기타"];
 
 function positiveDimension(value: number, fallback: number) {
   if (!Number.isFinite(value)) return fallback;
@@ -100,20 +130,29 @@ function presetForItem(item: LayoutItem) {
 }
 function itemLayer(item: LayoutItem): LayoutLayer {
   if (item.kind === "door" || item.kind === "window") return "opening";
+  if (item.kind === "pillar" || item.kind === "beam") return "structure";
+  if (item.kind === "fixture") return "fixture";
   if (item.kind === "note") return "note";
   return "equipment";
 }
 function formatMillimeters(meters: number) { return new Intl.NumberFormat("ko-KR").format(Math.round(meters * 1000)); }
+function wallLabel(wall?: WallSide) { return ({ top: "상단 A벽", right: "우측 B벽", bottom: "하단 C벽", left: "좌측 D벽" } as const)[wall ?? "top"]; }
+function validStageCheck(value: unknown): value is StageCheckStatus { return value === "pending" || value === "complete" || value === "none" || value === "review"; }
 
 function CadSymbol({ symbol, compact = false }: { symbol: LayoutSymbol; compact?: boolean }) {
   const panels = symbol.startsWith("window-") ? Number(symbol.split("-")[1]) || 3 : 0;
   const shared = { vectorEffect: "non-scaling-stroke" as const };
   return (
     <svg className="site-layout-cad-symbol" viewBox="0 0 100 70" preserveAspectRatio="none" aria-hidden="true">
-      {symbol === "door-single" && <><path {...shared} d="M4 66H96 M8 66V10 M8 10L72 66 M8 10A56 56 0 0 1 64 66" /><circle cx="8" cy="66" r="2.5" /></>}
-      {symbol === "door-double" && <><path {...shared} d="M4 66H96 M50 66V12 M50 12L7 66 M50 12L93 66 M50 12A43 43 0 0 0 7 55 M50 12A43 43 0 0 1 93 55" /><circle cx="50" cy="66" r="2.5" /></>}
-      {symbol === "door-sliding" && <><path {...shared} d="M4 57H96 M4 66H96 M12 45H58V62H12Z M42 40H88V57H42Z M18 33H78 M72 27L80 33L72 39" /></>}
-      {panels > 0 && <><path {...shared} d="M3 26H97V45H3Z M3 31H97 M3 40H97" />{Array.from({ length: panels - 1 }, (_, index) => <path key={index} {...shared} d={`M${((index + 1) * 94) / panels + 3} 26V45`} />)}</>}
+      {symbol === "door-single" && <><path {...shared} d="M2 66H10 M74 66H98 M10 66V3 M74 66A64 64 0 0 0 10 3" /><circle cx="10" cy="66" r="2.6" /><path className="cad-jamb" {...shared} d="M10 61V70 M74 61V70" /></>}
+      {symbol === "door-double" && <><path {...shared} d="M2 66H10 M90 66H98 M10 66V26 M90 66V26 M50 66A40 40 0 0 0 10 26 M50 66A40 40 0 0 1 90 26" /><circle cx="10" cy="66" r="2.6" /><circle cx="90" cy="66" r="2.6" /><path className="cad-jamb" {...shared} d="M10 61V70 M90 61V70" /></>}
+      {symbol === "door-unequal" && <><path {...shared} d="M2 66H10 M90 66H98 M10 66V22 M90 66V38 M62 66A52 52 0 0 0 10 14 M62 66A28 28 0 0 1 90 38" /><circle cx="10" cy="66" r="2.6" /><circle cx="90" cy="66" r="2.6" /><path className="cad-jamb" {...shared} d="M10 61V70 M90 61V70" /></>}
+      {symbol === "door-sliding" && <><path {...shared} d="M2 60H10 M90 60H98 M2 67H10 M90 67H98 M10 50H56V63H10Z M44 43H90V56H44Z M18 34H82 M75 28L83 34L75 40" /><path className="cad-jamb" {...shared} d="M10 55V70 M90 55V70" /></>}
+      {symbol === "door-folding" && <><path {...shared} d="M2 66H10 M90 66H98 M10 66L24 43L38 66L52 43L66 66L80 43L90 66" /><circle cx="10" cy="66" r="2.5" /><circle cx="90" cy="66" r="2.5" /><path className="cad-jamb" {...shared} d="M10 61V70 M90 61V70" /></>}
+      {symbol === "window-fixed" && <><path {...shared} d="M2 28H10 M90 28H98 M2 43H10 M90 43H98 M10 25H90V46H10Z M10 31H90 M10 40H90 M18 28L82 43 M82 28L18 43" /><path className="cad-jamb" {...shared} d="M10 22V49 M90 22V49" /></>}
+      {symbol === "window-sliding-2" && <><path {...shared} d="M2 28H10 M90 28H98 M2 43H10 M90 43H98 M10 25H90V46H10Z M10 31H90 M10 40H90 M50 25V46 M27 20H52 M47 16L53 20L47 24 M73 51H48 M53 47L47 51L53 55" /><path className="cad-jamb" {...shared} d="M10 22V49 M90 22V49" /></>}
+      {panels > 0 && <><path {...shared} d="M2 28H10 M90 28H98 M2 43H10 M90 43H98 M10 25H90V46H10Z M10 31H90 M10 40H90" />{Array.from({ length: panels - 1 }, (_, index) => <path key={index} {...shared} d={`M${((index + 1) * 80) / panels + 10} 25V46`} />)}<path className="cad-jamb" {...shared} d="M10 22V49 M90 22V49" /></>}
+      {symbol === "window-project" && <><path {...shared} d="M2 28H10 M90 28H98 M2 43H10 M90 43H98 M10 25H90V46H10Z M10 31H90 M10 40H90 M18 44L50 16L82 44 M50 16V7 M44 13L50 7L56 13" /><path className="cad-jamb" {...shared} d="M10 22V49 M90 22V49" /></>}
       {symbol === "screen" && <><path {...shared} d="M4 15H96V50H4Z M9 20H91V45H9Z M50 50V61 M36 61H64" /><path className="cad-dash" {...shared} d="M50 12V54" /></>}
       {symbol === "equipment" && <><path {...shared} d="M20 19H77V53H20Z M30 53V61H67V53 M77 27L93 32V40L77 45" /><circle cx="85" cy="36" r="4" /></>}
       {symbol === "kiosk" && <><path {...shared} d="M27 8H73V45H27Z M33 14H67V37H33Z M42 45V58 M58 45V58 M30 58H70V64H30Z" /><circle cx="50" cy="41" r="2" /></>}
@@ -129,6 +168,9 @@ function CadSymbol({ symbol, compact = false }: { symbol: LayoutSymbol; compact?
       {symbol === "table" && <><circle cx="50" cy="35" r="21" /><path {...shared} d="M50 14V56 M29 35H71 M35 20L65 50 M65 20L35 50" />{[12, 50, 88].map((x) => <circle key={`t-${x}`} cx={x} cy="35" r="7" />)}<circle cx="50" cy="7" r="6" /><circle cx="50" cy="63" r="6" /></>}
       {symbol === "chair" && <><rect x="29" y="22" width="42" height="35" rx="5" /><path {...shared} d="M29 30H18V52H29 M71 30H82V52H71 M35 57V65 M65 57V65" /></>}
       {symbol === "pillar" && <><rect x="14" y="7" width="72" height="56" />{Array.from({ length: 9 }, (_, index) => <path key={index} {...shared} d={`M${-15 + index * 16} 63L${35 + index * 16} 7`} />)}</>}
+      {symbol === "beam" && <><rect x="4" y="24" width="92" height="24" />{Array.from({ length: 10 }, (_, index) => <path key={index} {...shared} d={`M${-8 + index * 13} 48L${18 + index * 13} 24`} />)}<path className="cad-dash" {...shared} d="M4 17H96" /></>}
+      {symbol === "aircon-wall" && <><rect x="8" y="18" width="84" height="34" rx="5" /><path {...shared} d="M15 31H85 M20 39H80 M30 47H70" /><circle cx="79" cy="25" r="2" /></>}
+      {symbol === "aircon-ceiling" && <><rect x="19" y="5" width="62" height="60" /><rect x="27" y="13" width="46" height="44" /><path {...shared} d="M27 13L73 57 M73 13L27 57 M50 13V57 M27 35H73" /><circle cx="50" cy="35" r="7" /></>}
       {symbol === "note" && <><path {...shared} d="M7 12H78L93 27V61H7Z M78 12V27H93" /><path {...shared} d="M17 30H72 M17 40H82 M17 50H62" /></>}
       {!compact && <path className="cad-center" {...shared} d="M1 35H99" />}
     </svg>
@@ -141,10 +183,11 @@ export default function SiteLayoutPlannerPage() {
   const [savedAt, setSavedAt] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [view, setView] = useState<LayoutView>("model");
+  const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [activeTool, setActiveTool] = useState("선택");
   const [command, setCommand] = useState("명령: 실 크기를 확인하고 표준 블록을 선택하세요.");
-  const [libraryQuery, setLibraryQuery] = useState("");
-  const [visibleLayers, setVisibleLayers] = useState<Record<LayoutLayer, boolean>>({ opening: true, equipment: true, note: true });
+  const [pendingPresetId, setPendingPresetId] = useState<LayoutSymbol | null>(null);
+  const [visibleLayers, setVisibleLayers] = useState<Record<LayoutLayer, boolean>>({ opening: true, structure: true, fixture: true, equipment: false, note: true });
   const boardRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ id: string; pointerId: number; startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
 
@@ -154,7 +197,29 @@ export default function SiteLayoutPlannerPage() {
         const stored = window.localStorage.getItem(STORAGE_KEY);
         const parsed: unknown = stored ? JSON.parse(stored) : null;
         if (validStoredDraft(parsed)) {
-          setDraft({ roomName: parsed.roomName.slice(0, 80) || defaultDraft.roomName, roomWidth: positiveDimension(parsed.roomWidth, defaultDraft.roomWidth), roomHeight: positiveDimension(parsed.roomHeight, defaultDraft.roomHeight), roomCeilingHeight: positiveDimension(parsed.roomCeilingHeight ?? defaultDraft.roomCeilingHeight ?? 2.7, 2.7), items: parsed.items.filter(validStoredItem).map((item) => ({ ...item, presetId: presetForItem(item).id, name: item.name.slice(0, 60), x: clampPercent(item.x), y: clampPercent(item.y), width: positiveDimension(item.width, 1), height: positiveDimension(item.height, 1) })) });
+          const storedChecks = parsed.stageChecks && typeof parsed.stageChecks === "object" ? parsed.stageChecks : {};
+          setDraft({
+            roomName: parsed.roomName.slice(0, 80) || defaultDraft.roomName,
+            roomWidth: positiveDimension(parsed.roomWidth, defaultDraft.roomWidth),
+            roomHeight: positiveDimension(parsed.roomHeight, defaultDraft.roomHeight),
+            roomCeilingHeight: positiveDimension(parsed.roomCeilingHeight ?? defaultDraft.roomCeilingHeight ?? 2.7, 2.7),
+            items: parsed.items.filter(validStoredItem).map((item) => ({
+              ...item,
+              presetId: presetForItem(item).id,
+              name: item.name.slice(0, 60),
+              x: clampPercent(item.x),
+              y: clampPercent(item.y),
+              width: positiveDimension(item.width, 1),
+              height: positiveDimension(item.height, 1),
+              openingHeight: item.openingHeight ? positiveDimension(item.openingHeight, item.kind === "door" ? 2.1 : 1.5) : undefined,
+              sillHeight: item.sillHeight === undefined ? undefined : Math.max(0, positiveDimension(item.sillHeight, 0.9)),
+              offset: item.offset === undefined ? undefined : Math.max(0, item.offset),
+              wall: item.wall,
+              handing: item.handing,
+            })),
+            stageChecks: Object.fromEntries(Object.entries(storedChecks).filter((entry): entry is [string, StageCheckStatus] => validStageCheck(entry[1]))),
+            fieldNotes: typeof parsed.fieldNotes === "string" ? parsed.fieldNotes.slice(0, 1000) : "",
+          });
         }
       } catch {
         // A malformed local draft should never block the workspace.
@@ -172,13 +237,20 @@ export default function SiteLayoutPlannerPage() {
 
   const selectedItem = useMemo(() => draft.items.find((item) => item.id === selectedId) ?? null, [draft.items, selectedId]);
   const selectedPreset = selectedItem ? presetForItem(selectedItem) : null;
+  const pendingPreset = pendingPresetId ? itemPresets.find((preset) => preset.id === pendingPresetId) ?? null : null;
+  const activeStep = guideSteps[activeStepIndex];
   const roomRatio = Math.min(1.85, Math.max(0.72, draft.roomWidth / draft.roomHeight));
   const ceilingHeight = draft.roomCeilingHeight ?? 2.7;
-  const filteredPresets = useMemo(() => {
-    const query = libraryQuery.trim().toLocaleLowerCase("ko-KR");
-    if (!query) return itemPresets;
-    return itemPresets.filter((preset) => [preset.label, preset.defaultName, preset.code, preset.catalogName, preset.catalogSpecification].some((value) => value?.toLocaleLowerCase("ko-KR").includes(query)));
-  }, [libraryQuery]);
+  const basicPresets = useMemo(() => itemPresets.filter((preset) => basicGroups.includes(preset.group)), []);
+  const visibleBasicItemCount = useMemo(() => draft.items.filter((item) => itemLayer(item) !== "equipment").length, [draft.items]);
+  const activePresets = useMemo(() => basicPresets.filter((preset) => activeStep.groups.includes(preset.group)), [activeStep.groups, basicPresets]);
+  const stageCounts = useMemo(() => ({
+    room: draft.roomWidth > 0 && draft.roomHeight > 0 ? 1 : 0,
+    door: draft.items.filter((item) => item.kind === "door").length,
+    window: draft.items.filter((item) => item.kind === "window").length,
+    structure: draft.items.filter((item) => item.kind === "pillar" || item.kind === "beam" || item.kind === "note").length,
+    facility: draft.items.filter((item) => item.kind === "fixture").length,
+  }), [draft.items, draft.roomHeight, draft.roomWidth]);
 
   function updateDraft(patch: Partial<LayoutDraft>) { setDraft((current) => ({ ...current, ...patch })); }
   function updateSelected(patch: Partial<LayoutItem>) {
@@ -187,27 +259,60 @@ export default function SiteLayoutPlannerPage() {
   }
   function generateRoom() {
     setView("model");
+    setDraft((current) => ({ ...current, stageChecks: { ...current.stageChecks, room: "complete" } }));
     setCommand(`명령: RC 벽체 t=150 · ${formatMillimeters(draft.roomWidth)} × ${formatMillimeters(draft.roomHeight)}mm 교실을 생성했습니다.`);
   }
   function makeItem(presetId: LayoutSymbol, x: number, y: number, rotation: 0 | 90 = 0, suffix = ""): LayoutItem {
     const preset = itemPresets.find((item) => item.id === presetId) ?? itemPresets[0];
-    return { id: crypto.randomUUID(), kind: preset.kind, presetId: preset.id, name: `${preset.defaultName}${suffix}`, x, y, width: preset.width, height: preset.height, rotation };
+    return {
+      id: crypto.randomUUID(), kind: preset.kind, presetId: preset.id, name: `${preset.defaultName}${suffix}`, x, y, width: preset.width, height: preset.height, rotation,
+      openingHeight: preset.kind === "door" ? 2.1 : preset.kind === "window" ? 1.5 : undefined,
+      sillHeight: preset.kind === "window" ? 0.9 : undefined,
+      handing: preset.kind === "door" ? "left" : undefined,
+    };
   }
-  function addItem(presetId: LayoutSymbol) {
+  function addItem(presetId: LayoutSymbol, targetX?: number, targetY?: number) {
     const preset = itemPresets.find((item) => item.id === presetId) ?? itemPresets[0];
     const samePresetCount = draft.items.filter((item) => presetForItem(item).id === preset.id).length;
     const isOpening = preset.kind === "door" || preset.kind === "window";
-    const item = makeItem(presetId, isOpening ? 12 + ((samePresetCount * 18) % 55) : 18 + ((draft.items.length * 9) % 42), isOpening ? 0 : 22 + ((draft.items.length * 11) % 42), 0, samePresetCount ? ` ${samePresetCount + 1}` : "");
+    const startX = targetX ?? (isOpening ? 12 + ((samePresetCount * 18) % 55) : 18 + ((draft.items.length * 9) % 42));
+    const startY = targetY ?? (isOpening ? 0 : 22 + ((draft.items.length * 11) % 42));
+    const rawItem = makeItem(presetId, startX, startY, 0, samePresetCount ? ` ${samePresetCount + 1}` : "");
+    const item = isOpening ? { ...rawItem, ...snapOpening(rawItem, startX, startY) } : { ...rawItem, x: snapGrid(startX), y: snapGrid(startY) };
     setDraft((current) => ({ ...current, items: [...current.items, item] }));
-    setSelectedId(item.id); setView("model");
-    setCommand(`명령: ${preset.label} ${preset.code} 추가됨 · ${preset.catalogName ? "제품 DB 명칭과 연결된 블록입니다." : "원하는 위치로 드래그하세요."}`);
+    setSelectedId(item.id); setPendingPresetId(null); setView("model");
+    setCommand(`명령: ${preset.label} ${preset.code} 배치 완료 · 선택한 블록은 손가락으로 다시 이동할 수 있습니다.`);
   }
-  function applyExperienceRoomTemplate() {
-    if (draft.items.length && !window.confirm("현재 배치를 지우고 에어패스 VR 스포츠실 예시를 적용할까요?")) return;
-    const items = [makeItem("screen", 32, 0), makeItem("vision-sensor", 47, 7), makeItem("equipment", 47, 24), makeItem("kiosk", 82, 76), makeItem("lidar-sensor", 20, 68), makeItem("motion-3d", 66, 56), makeItem("power-lan", 29, 4), makeItem("power-lan", 62, 4, 0, " 2"), makeItem("door-double", 74, 96), makeItem("window-6", 15, 0)];
-    setDraft((current) => ({ ...current, roomName: current.roomName || "VR 스포츠실", items }));
-    setSelectedId(items[0].id); setView("model");
-    setCommand("명령: DWG·브로셔·제품 DB 기준 VR 스포츠실 예시 배치를 적용했습니다.");
+  function setStageStatus(key: StageCheckKey, status: StageCheckStatus) {
+    setDraft((current) => ({ ...current, stageChecks: { ...current.stageChecks, [key]: status } }));
+  }
+  function goToStep(index: number) {
+    setActiveStepIndex(Math.min(guideSteps.length - 1, Math.max(0, index)));
+    setPendingPresetId(null); setSelectedId(""); setActiveTool("선택"); setView("model");
+  }
+  function goNextStep() {
+    if (activeStep.id !== "review") {
+      const key = activeStep.id as StageCheckKey;
+      const currentStatus = draft.stageChecks?.[key] ?? "pending";
+      if (currentStatus === "pending") setStageStatus(key, stageCounts[key] > 0 ? "complete" : "review");
+    }
+    goToStep(activeStepIndex + 1);
+  }
+  function choosePreset(presetId: LayoutSymbol) {
+    const preset = itemPresets.find((item) => item.id === presetId) ?? itemPresets[0];
+    const touchLayout = window.matchMedia("(max-width: 760px), (pointer: coarse)").matches;
+    if (!touchLayout) { addItem(presetId); return; }
+    setPendingPresetId(presetId); setSelectedId(""); setView("model"); setActiveTool("배치");
+    setCommand(`명령: ${preset.label} 선택됨 · 도면에서 놓을 위치를 터치하세요.`);
+    window.requestAnimationFrame(() => boardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }
+  function handleBoardPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.target !== event.currentTarget) return;
+    if (!pendingPresetId) { setSelectedId(""); return; }
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    event.preventDefault();
+    addItem(pendingPresetId, ((event.clientX - bounds.left) / bounds.width) * 100, ((event.clientY - bounds.top) / bounds.height) * 100);
   }
   function startDrag(event: ReactPointerEvent<HTMLButtonElement>, item: LayoutItem) {
     if (event.button !== 0) return;
@@ -218,12 +323,29 @@ export default function SiteLayoutPlannerPage() {
   function snapOpening(item: LayoutItem, x: number, y: number) {
     if (item.kind !== "door" && item.kind !== "window") return { x: snapGrid(x), y: snapGrid(y), rotation: item.rotation };
     const edges = [
-      { distance: y, x: snapGrid(x), y: 0, rotation: 0 as const },
-      { distance: 96 - y, x: snapGrid(x), y: 96, rotation: 0 as const },
-      { distance: x, x: 0, y: snapGrid(y), rotation: 90 as const },
-      { distance: 96 - x, x: 96, y: snapGrid(y), rotation: 90 as const },
+      { distance: y, x: snapGrid(x), y: 0, rotation: 0 as const, wall: "top" as const, offset: Math.max(0, snapGrid(x) * draft.roomWidth / 100) },
+      { distance: Math.abs(92 - y), x: snapGrid(x), y: 92, rotation: 0 as const, wall: "bottom" as const, offset: Math.max(0, snapGrid(x) * draft.roomWidth / 100) },
+      { distance: x, x: 0, y: snapGrid(y), rotation: 90 as const, wall: "left" as const, offset: Math.max(0, snapGrid(y) * draft.roomHeight / 100) },
+      { distance: Math.abs(92 - x), x: 92, y: snapGrid(y), rotation: 90 as const, wall: "right" as const, offset: Math.max(0, snapGrid(y) * draft.roomHeight / 100) },
     ];
     return edges.sort((a, b) => a.distance - b.distance)[0];
+  }
+  function placeOpeningOnWall(item: LayoutItem, wall: WallSide, rawOffset: number) {
+    const wallLength = wall === "top" || wall === "bottom" ? draft.roomWidth : draft.roomHeight;
+    const offset = Math.min(Math.max(0, wallLength - item.width), Math.max(0, Number.isFinite(rawOffset) ? rawOffset : 0));
+    const percent = snapGrid((offset / wallLength) * 100);
+    return wall === "top" ? { wall, offset, x: percent, y: 0, rotation: 0 as const }
+      : wall === "bottom" ? { wall, offset, x: percent, y: 92, rotation: 0 as const }
+        : wall === "left" ? { wall, offset, x: 0, y: percent, rotation: 90 as const }
+          : { wall, offset, x: 92, y: percent, rotation: 90 as const };
+  }
+  function updateOpeningWall(wall: WallSide) {
+    if (!selectedItem || (selectedItem.kind !== "door" && selectedItem.kind !== "window")) return;
+    updateSelected(placeOpeningOnWall(selectedItem, wall, selectedItem.offset ?? 0));
+  }
+  function updateOpeningOffset(value: number) {
+    if (!selectedItem || (selectedItem.kind !== "door" && selectedItem.kind !== "window")) return;
+    updateSelected(placeOpeningOnWall(selectedItem, selectedItem.wall ?? "top", value));
   }
   function moveDrag(event: ReactPointerEvent<HTMLDivElement>) {
     const active = dragRef.current; const board = boardRef.current;
@@ -248,17 +370,17 @@ export default function SiteLayoutPlannerPage() {
   }
   function resetDraft() {
     if (draft.items.length && !window.confirm("현재 배치 요소를 모두 지우고 새로 시작할까요?")) return;
-    setDraft(defaultDraft); setSelectedId(""); setCommand("명령: 새 배치도를 준비했습니다.");
+    setDraft(defaultDraft); setSelectedId(""); setPendingPresetId(null); setCommand("명령: 새 배치도를 준비했습니다.");
   }
   function renderItems(className: string) {
-    return draft.items.filter((item) => visibleLayers[itemLayer(item)]).map((item) => {
+    return draft.items.filter((item) => itemLayer(item) !== "equipment" && visibleLayers[itemLayer(item)]).map((item) => {
       const preset = presetForItem(item); const isOpening = item.kind === "door" || item.kind === "window";
       const symbolWidth = (item.width / draft.roomWidth) * 100;
       const footprintHeight = item.kind === "door" ? (item.width * 0.72 / draft.roomHeight) * 100 : (item.height / draft.roomHeight) * 100;
       const rotated = item.rotation === 90;
       const widthPercent = rotated ? footprintHeight : symbolWidth; const heightPercent = rotated ? symbolWidth : footprintHeight;
       return (
-        <button key={`${className}-${item.id}`} type="button" className={`${className} kind-${item.kind} symbol-${preset.id} ${selectedId === item.id ? "selected" : ""}`}
+        <button key={`${className}-${item.id}`} type="button" className={`${className} kind-${item.kind} symbol-${preset.id} hand-${item.handing ?? "left"} ${selectedId === item.id ? "selected" : ""}`}
           style={{ left: `${item.x}%`, top: `${item.y}%`, width: `${Math.min(44, Math.max(isOpening ? 5 : 3.6, widthPercent))}%`, height: `${Math.min(44, Math.max(item.kind === "window" ? 2.5 : isOpening ? 5 : 4.5, heightPercent))}%` }}
           onPointerDown={className === "site-layout-item" ? (event) => startDrag(event, item) : undefined} onClick={() => setSelectedId(item.id)} aria-label={`${item.name} ${className === "site-layout-item" ? "이동" : "선택"}`}>
           <CadSymbol symbol={preset.id} />
@@ -269,55 +391,95 @@ export default function SiteLayoutPlannerPage() {
   }
 
   return (
-    <section className="site-layout-planner" aria-label="현장 배치도 CAD 편집기">
+    <section className="site-layout-planner" aria-label="현장 실측 기초도면 작성기">
       <header className="site-layout-intro">
-        <div className="site-layout-brand"><span>W</span><div><b>현장 배치도</b><small>WHIZZUP LAYOUT STUDIO · CAD BLOCK BETA</small></div></div>
+        <div className="site-layout-brand"><span>W</span><div><b>기초도면 작성</b><small>현장 실측 → CAD팀 전달 · MOBILE FIRST BETA</small></div></div>
         <div className="site-layout-header-actions"><div className="site-layout-save-state" role="status"><b>{savedAt ? "자동 저장됨" : "배치도 준비됨"}</b><small>{savedAt || "실 크기를 입력해 주세요."}</small></div><button type="button" onClick={() => setView("paper")}>A3 출력 미리보기</button></div>
       </header>
 
-      <div className="site-layout-room-settings">
-        <label><span>실 이름</span><input value={draft.roomName} onChange={(event) => updateDraft({ roomName: event.target.value.slice(0, 80) })} placeholder="예: 스마트 체험교실" /></label>
-        <label><span>가로</span><div><input type="number" min="0.1" max="100" step="0.001" value={draft.roomWidth} onChange={(event) => updateDraft({ roomWidth: positiveDimension(Number(event.target.value), draft.roomWidth) })} /><em>m</em></div></label>
-        <label><span>세로</span><div><input type="number" min="0.1" max="100" step="0.001" value={draft.roomHeight} onChange={(event) => updateDraft({ roomHeight: positiveDimension(Number(event.target.value), draft.roomHeight) })} /><em>m</em></div></label>
-        <label><span>높이</span><div><input type="number" min="0.1" max="20" step="0.001" value={ceilingHeight} onChange={(event) => updateDraft({ roomCeilingHeight: positiveDimension(Number(event.target.value), ceilingHeight) })} /><em>m</em></div></label>
-        <button type="button" className="site-layout-generate" onClick={generateRoom}>교실 자동 생성</button>
-        <button type="button" className="site-layout-template" onClick={applyExperienceRoomTemplate}>VR 스포츠실 예시</button>
-        <button type="button" className="site-layout-reset" onClick={resetDraft}>새 도면</button>
-      </div>
+      <section className="site-layout-guide" aria-label="현장 실측 단계">
+        <nav className="site-layout-guide-progress">{guideSteps.map((step, index) => {
+          const status = step.id === "review" ? "pending" : draft.stageChecks?.[step.id] ?? (step.id === "room" && stageCounts.room ? "complete" : "pending");
+          return <button key={step.id} type="button" className={`${index === activeStepIndex ? "active" : ""} status-${status}`} onClick={() => goToStep(index)}><i>{index + 1}</i><span>{step.label}</span></button>;
+        })}</nav>
+        <div className="site-layout-guide-card">
+          <div className="site-layout-guide-copy"><small>STEP {activeStepIndex + 1} / {guideSteps.length}</small><h2>{activeStep.title}</h2><p>{activeStep.description}</p></div>
+          {activeStep.id === "room" && <div className="site-layout-room-settings">
+            <label><span>실 이름</span><input value={draft.roomName} onChange={(event) => updateDraft({ roomName: event.target.value.slice(0, 80) })} placeholder="예: 2층 스마트 체험교실" /></label>
+            <label><span>가로</span><div><input inputMode="decimal" type="number" min="0.1" max="100" step="0.001" value={draft.roomWidth} onChange={(event) => updateDraft({ roomWidth: positiveDimension(Number(event.target.value), draft.roomWidth) })} /><em>m</em></div></label>
+            <label><span>세로</span><div><input inputMode="decimal" type="number" min="0.1" max="100" step="0.001" value={draft.roomHeight} onChange={(event) => updateDraft({ roomHeight: positiveDimension(Number(event.target.value), draft.roomHeight) })} /><em>m</em></div></label>
+            <label><span>천장 높이</span><div><input inputMode="decimal" type="number" min="0.1" max="20" step="0.001" value={ceilingHeight} onChange={(event) => updateDraft({ roomCeilingHeight: positiveDimension(Number(event.target.value), ceilingHeight) })} /><em>m</em></div></label>
+            <button type="button" className="site-layout-generate" onClick={generateRoom}>공간 자동 생성</button>
+            <button type="button" className="site-layout-reset" onClick={resetDraft}>새 도면</button>
+          </div>}
+          {activeStep.id !== "room" && activeStep.id !== "review" && <div className="site-layout-stage-check">
+            <div><b>{stageCounts[activeStep.id]}개 등록</b><span>현장 확인 상태를 선택하세요.</span></div>
+            <div role="radiogroup" aria-label={`${activeStep.label} 확인 상태`}>{([
+              ["complete", "확인 완료"], ["none", "해당 없음"], ["review", "재확인 필요"],
+            ] as [StageCheckStatus, string][]).map(([status, label]) => <button key={status} type="button" role="radio" aria-checked={(draft.stageChecks?.[activeStep.id as StageCheckKey] ?? "pending") === status} onClick={() => setStageStatus(activeStep.id as StageCheckKey, status)}>{label}</button>)}</div>
+          </div>}
+          {activeStep.id === "review" && <div className="site-layout-review-grid">
+            {guideSteps.filter((step) => step.id !== "review").map((step) => {
+              const key = step.id as StageCheckKey;
+              const status = draft.stageChecks?.[key] ?? (key === "room" && stageCounts.room ? "complete" : "pending");
+              const labels: Record<StageCheckStatus, string> = { pending: "미확인", complete: "확인 완료", none: "해당 없음", review: "재확인 필요" };
+              return <button key={step.id} type="button" className={`status-${status}`} onClick={() => goToStep(guideSteps.findIndex((item) => item.id === step.id))}><span>{step.label}</span><b>{labels[status]}</b><small>{stageCounts[key]}개</small></button>;
+            })}
+            <label><span>CAD팀 전달 메모</span><textarea value={draft.fieldNotes ?? ""} onChange={(event) => updateDraft({ fieldNotes: event.target.value.slice(0, 1000) })} placeholder="보 하단 높이, 보와 보 사이, 현장 특이사항 등을 입력하세요." /></label>
+          </div>}
+        </div>
+      </section>
 
       <div className="site-layout-commandbar"><div>{["선택", "이동", "치수", "회전"].map((tool) => <button key={tool} type="button" className={activeTool === tool ? "active" : ""} onClick={() => { setActiveTool(tool); setCommand(`명령: ${tool} 도구가 활성화되었습니다.`); }}>{tool}</button>)}</div><p aria-live="polite">{command}</p></div>
 
       <div className="site-layout-workspace">
-        <aside className="site-layout-library">
-          <div><b>CAD 블록 라이브러리</b><span>DWG·브로셔·제품 DB 기준 표준 블록입니다.</span></div>
-          <label className="site-layout-library-search"><span>장비 검색</span><input type="search" value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} placeholder="아이핏, 센서, 문…" /></label>
-          {groups.map((group) => {
-            const presets = filteredPresets.filter((preset) => preset.group === group); if (!presets.length) return null;
-            return <section key={group} className="site-layout-library-section"><h3>{group}<small>{presets.length}</small></h3><div className="site-layout-library-grid">{presets.map((preset) => <button key={preset.id} type="button" className={`kind-${preset.kind} symbol-${preset.id}`} onClick={() => addItem(preset.id)}><CadSymbol symbol={preset.id} compact /><span>{preset.label}</span><small>{preset.code} · {preset.width}m</small>{preset.catalogName && <em>DB</em>}</button>)}</div></section>;
+        <aside className={`site-layout-library ${activePresets.length ? "" : "is-context-only"}`}>
+          <div><b>{activeStep.id === "room" ? "공간 입력 안내" : activeStep.id === "review" ? "최종 검수" : `${activeStep.label} 모양 선택`}</b><span>{activeStep.id === "room" ? "위에서 실측값을 입력한 뒤 다음 단계로 이동하세요." : activeStep.id === "review" ? "미확인 단계를 눌러 바로 보완할 수 있습니다." : "현장과 가장 비슷한 그림을 먼저 선택하세요."}</span></div>
+          {activePresets.length > 0 && <p className="site-layout-mobile-help">그림 선택 → 도면의 벽이나 위치 터치 → 실제 치수 입력</p>}
+          {activeStep.groups.map((group) => {
+            const presets = activePresets.filter((preset) => preset.group === group); if (!presets.length) return null;
+            return <section key={group} className="site-layout-library-section"><h3>{group}<small>{presets.length}</small></h3><div className="site-layout-library-grid">{presets.map((preset) => <button key={preset.id} type="button" className={`kind-${preset.kind} symbol-${preset.id} ${pendingPresetId === preset.id ? "pending" : ""}`} aria-pressed={pendingPresetId === preset.id} onClick={() => choosePreset(preset.id)}><CadSymbol symbol={preset.id} compact /><span>{preset.label}</span><small>{preset.code} · {preset.width}m</small></button>)}</div></section>;
           })}
-          {!filteredPresets.length && <p className="site-layout-library-empty">일치하는 CAD 블록이 없습니다.</p>}
+          {!activePresets.length && <div className="site-layout-library-empty">{activeStep.id === "review" ? "단계별 상태와 도면을 최종 확인하세요." : "공간 치수를 입력하면 도면이 자동 생성됩니다."}</div>}
         </aside>
 
         <main className={`site-layout-canvas-panel view-${view}`}>
-          <div className="site-layout-canvas-head"><div><button type="button" className={view === "model" ? "active" : ""} onClick={() => setView("model")}>모델</button><button type="button" className={view === "paper" ? "active" : ""} onClick={() => setView("paper")}>A3 출력</button></div><span>TOP · 1:60 · mm</span></div>
+          <div className="site-layout-canvas-head"><div><button type="button" className={view === "model" ? "active" : ""} onClick={() => setView("model")}>모델</button><button type="button" className={view === "paper" ? "active" : ""} onClick={() => setView("paper")}>A3 출력</button></div>{pendingPreset ? <button type="button" className="site-layout-pending-placement" onClick={() => { setPendingPresetId(null); setActiveTool("선택"); setCommand("명령: 블록 배치를 취소했습니다."); }}>{pendingPreset.label} 배치 대기 · 취소</button> : <span>TOP · 1:60 · mm</span>}</div>
           <div className="site-layout-model-space">
             <div className="site-layout-ruler top"><span>{formatMillimeters(draft.roomWidth)} mm</span></div>
-            <div className="site-layout-board-wrap" style={{ maxWidth: `${Math.round(720 * roomRatio)}px` }}><div ref={boardRef} className="site-layout-board" style={{ aspectRatio: `${draft.roomWidth} / ${draft.roomHeight}` }} onPointerMove={moveDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag} onPointerDown={(event) => { if (event.target === event.currentTarget) setSelectedId(""); }}><div className="site-layout-room-label"><b>RC 벽체 t=150</b><span>{draft.roomName} · 천장 H={formatMillimeters(ceilingHeight)}</span></div>{renderItems("site-layout-item")}<div className="site-layout-axis-label axis-x">X</div><div className="site-layout-axis-label axis-y">Y</div><div className="site-layout-crosshair" aria-hidden="true" /></div></div>
+            <div className="site-layout-board-wrap" style={{ maxWidth: `${Math.round(720 * roomRatio)}px` }}><div ref={boardRef} className={`site-layout-board ${pendingPreset ? "placing" : ""}`} style={{ aspectRatio: `${draft.roomWidth} / ${draft.roomHeight}` }} onPointerMove={moveDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag} onPointerDown={handleBoardPointerDown}><div className="site-layout-room-label"><b>RC 벽체 t=150</b><span>{draft.roomName} · 천장 H={formatMillimeters(ceilingHeight)}</span></div>{renderItems("site-layout-item")}<div className="site-layout-axis-label axis-x">X</div><div className="site-layout-axis-label axis-y">Y</div><div className="site-layout-crosshair" aria-hidden="true" /></div></div>
             <div className="site-layout-ruler side"><span>{formatMillimeters(draft.roomHeight)} mm</span></div>
-            {!draft.items.length && <div className="site-layout-empty"><b>블록을 선택해 도면을 시작하세요.</b><span>빠른 시작은 상단의 ‘VR 스포츠실 예시’를 누르세요.</span></div>}
+            {!visibleBasicItemCount && activeStep.id !== "room" && <div className="site-layout-empty"><b>{activeStep.label} 모양을 선택해 도면을 시작하세요.</b><span>모바일에서는 그림을 누른 뒤 도면의 위치를 터치하세요.</span></div>}
             <small className="site-layout-coordinates">X 8,410.000&nbsp;&nbsp;Y 4,215.000&nbsp;&nbsp;Z 0.000</small>
           </div>
-          <div className="site-layout-paper-space"><div className="site-layout-paper-sheet"><div className="site-layout-paper-plan"><div className="site-layout-paper-note">RC 벽체 t=150 / 천장 높이 {formatMillimeters(ceilingHeight)}mm / 현장 실측 기준 예상 도면</div><div className="site-layout-paper-room" style={{ aspectRatio: `${draft.roomWidth} / ${draft.roomHeight}` }}>{renderItems("site-layout-paper-item")}</div><div className="site-layout-paper-title"><b>{draft.roomName} 평면도</b><span>축척 1/60 (A3)</span></div></div><aside className="site-layout-title-block"><strong>{draft.roomName}</strong><section><b>설치 품목</b><p>{draft.items.filter((item) => itemLayer(item) === "equipment").map((item) => presetForItem(item).label).slice(0, 6).join(" · ") || "미배치"}</p></section><section><b>공사 내역</b><p>RC 벽체 · 문·창호 · 전원·LAN</p></section><section><b>NOTE.</b><p>현장 실측 후 감독관 협의<br />센서 시야와 투사거리 확인<br />배선 경로 최종 확인</p></section><dl><dt>PROJECT</dt><dd>{draft.roomName}</dd><dt>DATE</dt><dd>{new Intl.DateTimeFormat("ko-KR").format(new Date())}</dd><dt>SCALE</dt><dd>A3 1/60</dd></dl></aside></div></div>
+          <div className="site-layout-paper-space"><div className="site-layout-paper-sheet"><div className="site-layout-paper-plan"><div className="site-layout-paper-note">RC 벽체 t=150 / 천장 높이 {formatMillimeters(ceilingHeight)}mm / 현장 실측 기준 예상 도면</div><div className="site-layout-paper-room" style={{ aspectRatio: `${draft.roomWidth} / ${draft.roomHeight}` }}>{renderItems("site-layout-paper-item")}</div><div className="site-layout-paper-title"><b>{draft.roomName} 평면도</b><span>축척 1/60 (A3)</span></div></div><aside className="site-layout-title-block"><strong>{draft.roomName}</strong><section><b>도면 구성</b><p>RC 벽체 · 문 · 창호 · 기둥</p></section><section><b>기초 블록</b><p>{visibleBasicItemCount}개 배치</p></section><section><b>NOTE.</b><p>현장 실측 후 치수 확정<br />문 열림 방향 확인<br />창호 개수와 폭 확인</p></section><dl><dt>PROJECT</dt><dd>{draft.roomName}</dd><dt>DATE</dt><dd>{new Intl.DateTimeFormat("ko-KR").format(new Date())}</dd><dt>SCALE</dt><dd>A3 1/60</dd></dl></aside></div></div>
         </main>
 
         <aside className="site-layout-inspector">
           <div><b>레이어</b><span>화면 표시와 객체 속성을 제어합니다.</span></div>
-          <div className="site-layout-layer-list"><div><i className="wall" /><span>A-WALL RC 벽체</span><b>ON</b></div>{(["opening", "equipment", "note"] as LayoutLayer[]).map((layer) => { const meta = { opening: ["A-OPEN 문·창호", "opening"], equipment: ["E-EQPM 장비·가구", "equipment"], note: ["A-NOTE 주석", "note"] }[layer]; return <button key={layer} type="button" aria-pressed={visibleLayers[layer]} onClick={() => setVisibleLayers((current) => ({ ...current, [layer]: !current[layer] }))}><i className={meta[1]} /><span>{meta[0]}</span><b>{visibleLayers[layer] ? "ON" : "OFF"}</b></button>; })}</div>
+          <div className="site-layout-layer-list"><div><i className="wall" /><span>A-WALL RC 벽체</span><b>ON</b></div>{(["opening", "structure", "fixture", "note"] as LayoutLayer[]).map((layer) => { const meta: Record<LayoutLayer, [string, string]> = { opening: ["A-OPEN 문·창호", "opening"], structure: ["A-STRC 기둥·보", "structure"], fixture: ["M-FIX 고정 시설", "fixture"], equipment: ["E-EQPM 제품 장비", "equipment"], note: ["A-NOTE 주석", "note"] }; return <button key={layer} type="button" aria-pressed={visibleLayers[layer]} onClick={() => setVisibleLayers((current) => ({ ...current, [layer]: !current[layer] }))}><i className={meta[layer][1]} /><span>{meta[layer][0]}</span><b>{visibleLayers[layer] ? "ON" : "OFF"}</b></button>; })}</div>
           <div className="site-layout-object-head"><b>{selectedItem ? selectedItem.name : "선택 객체"}</b><span>{selectedPreset?.code ?? "객체를 선택하세요."}</span></div>
-          {selectedItem && selectedPreset ? <div className="site-layout-inspector-form"><div className="site-layout-inspector-preview"><CadSymbol symbol={selectedPreset.id} /><span>{selectedPreset.label}</span></div><label><span>이름</span><input value={selectedItem.name} onChange={(event) => updateSelected({ name: event.target.value.slice(0, 60) })} /></label><div className="site-layout-size-fields"><label><span>가로(m)</span><input type="number" min="0.1" max="30" step="0.1" value={selectedItem.width} onChange={(event) => updateSelected({ width: positiveDimension(Number(event.target.value), selectedItem.width) })} /></label><label><span>세로(m)</span><input type="number" min="0.1" max="30" step="0.1" value={selectedItem.height} onChange={(event) => updateSelected({ height: positiveDimension(Number(event.target.value), selectedItem.height) })} /></label></div><div className="site-layout-object-facts"><span>블록명 <b>{selectedPreset.code}</b></span><span>레이어 <b>{itemLayer(selectedItem).toUpperCase()}</b></span><span>스냅 <b>{selectedItem.kind === "door" || selectedItem.kind === "window" ? "벽 자동" : "10mm"}</b></span></div>{selectedPreset.catalogName && <div className="site-layout-catalog-match"><span>제품 DB 매칭</span><b>{selectedPreset.catalogName}</b><p>{selectedPreset.catalogSpecification}</p>{selectedPreset.catalogNumber && <small>{selectedPreset.catalogNumber}</small>}</div>}{selectedPreset.guide && <div className="site-layout-install-guide"><span>설치 검토</span><p>{selectedPreset.guide}</p></div>}<div className="site-layout-inspector-actions"><button type="button" onClick={() => updateSelected({ rotation: selectedItem.rotation === 90 ? 0 : 90 })}>90° 회전</button><button type="button" onClick={duplicateSelected}>복사</button><button type="button" className="danger" onClick={removeSelected}>삭제</button></div></div> : <div className="site-layout-inspector-empty"><b>객체를 선택하세요.</b><span>도면 또는 블록 라이브러리에서 장비를 선택하면 제품 DB 연결과 설치 기준을 확인할 수 있습니다.</span></div>}
+          {selectedItem && selectedPreset && itemLayer(selectedItem) !== "equipment" ? <div className="site-layout-inspector-form">
+            <div className="site-layout-inspector-preview"><CadSymbol symbol={selectedPreset.id} /><span>{selectedPreset.label}</span></div>
+            <label><span>이름</span><input value={selectedItem.name} onChange={(event) => updateSelected({ name: event.target.value.slice(0, 60) })} /></label>
+            <div className="site-layout-size-fields">
+              <label><span>{selectedItem.kind === "door" || selectedItem.kind === "window" ? "넓이" : "가로"}(m)</span><input inputMode="decimal" type="number" min="0.1" max="30" step="0.01" value={selectedItem.width} onChange={(event) => updateSelected({ width: positiveDimension(Number(event.target.value), selectedItem.width) })} /></label>
+              {selectedItem.kind === "door" || selectedItem.kind === "window" ? <label><span>높이(m)</span><input inputMode="decimal" type="number" min="0.1" max="10" step="0.01" value={selectedItem.openingHeight ?? (selectedItem.kind === "door" ? 2.1 : 1.5)} onChange={(event) => updateSelected({ openingHeight: positiveDimension(Number(event.target.value), selectedItem.openingHeight ?? 1.5) })} /></label> : <label><span>세로(m)</span><input inputMode="decimal" type="number" min="0.1" max="30" step="0.01" value={selectedItem.height} onChange={(event) => updateSelected({ height: positiveDimension(Number(event.target.value), selectedItem.height) })} /></label>}
+            </div>
+            {(selectedItem.kind === "door" || selectedItem.kind === "window") && <div className="site-layout-opening-fields">
+              <label><span>설치 벽</span><select value={selectedItem.wall ?? "top"} onChange={(event) => updateOpeningWall(event.target.value as WallSide)}><option value="top">상단 A벽</option><option value="right">우측 B벽</option><option value="bottom">하단 C벽</option><option value="left">좌측 D벽</option></select></label>
+              <label><span>기준 모서리 거리(m)</span><input inputMode="decimal" type="number" min="0" step="0.01" value={selectedItem.offset ?? 0} onChange={(event) => updateOpeningOffset(Number(event.target.value))} /></label>
+              {selectedItem.kind === "window" && <label><span>바닥에서 창 하단(m)</span><input inputMode="decimal" type="number" min="0" max="10" step="0.01" value={selectedItem.sillHeight ?? 0.9} onChange={(event) => updateSelected({ sillHeight: Math.max(0, Number(event.target.value) || 0) })} /></label>}
+              {selectedItem.kind === "door" && <label><span>경첩·열림 방향</span><select value={selectedItem.handing ?? "left"} onChange={(event) => updateSelected({ handing: event.target.value as OpeningHand })}><option value="left">좌경첩</option><option value="right">우경첩</option></select></label>}
+            </div>}
+            <div className="site-layout-object-facts"><span>블록명 <b>{selectedPreset.code}</b></span><span>레이어 <b>{itemLayer(selectedItem).toUpperCase()}</b></span><span>스냅 <b>{selectedItem.kind === "door" || selectedItem.kind === "window" ? `${wallLabel(selectedItem.wall)} 자동` : "10mm"}</b></span></div>
+            {selectedPreset.guide && <div className="site-layout-install-guide"><span>현장 확인</span><p>{selectedPreset.guide}</p></div>}
+            <div className="site-layout-inspector-actions"><button type="button" onClick={() => updateSelected({ rotation: selectedItem.rotation === 90 ? 0 : 90 })}>90° 회전</button><button type="button" onClick={duplicateSelected}>복사</button><button type="button" className="danger" onClick={removeSelected}>삭제</button></div>
+          </div> : <div className="site-layout-inspector-empty"><b>{activeStep.id === "room" ? "공간 크기를 먼저 입력하세요." : "배치한 블록을 선택하세요."}</b><span>선택하면 실제 치수와 설치 벽·기준 거리를 조정할 수 있습니다.</span></div>}
         </aside>
       </div>
-      <footer className="site-layout-statusbar"><div><b>SNAP</b><b>ORTHO</b><b>OSNAP</b><span>GRID 10</span></div><p>도면 단위 mm · 브라우저 자동 저장 · 제품 DB 읽기 참조</p></footer>
+      <div className="site-layout-step-actions"><button type="button" onClick={() => goToStep(activeStepIndex - 1)} disabled={activeStepIndex === 0}>이전</button><div><b>{activeStepIndex + 1}/{guideSteps.length} · {activeStep.label}</b><span>입력 내용은 이 기기에 자동 저장됩니다.</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => setView("paper")}>A3 도면 확인</button> : <button type="button" className="primary" onClick={goNextStep}>저장하고 다음</button>}</div>
+      <footer className="site-layout-statusbar"><div><b>SNAP</b><b>ORTHO</b><b>OSNAP</b><span>GRID 10</span></div><p>도면 단위 mm · 브라우저 자동 저장 · CAD팀 전달용 기초도면</p></footer>
     </section>
   );
 }
