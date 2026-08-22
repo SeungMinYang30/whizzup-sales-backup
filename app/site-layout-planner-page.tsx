@@ -586,7 +586,6 @@ export default function SiteLayoutPlannerPage() {
   const [preparedPdf, setPreparedPdf] = useState<File | null>(null);
   const [preparedPdfFingerprint, setPreparedPdfFingerprint] = useState("");
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
-  const [pdfPreviewUrl, setPdfPreviewUrl] = useState("");
   const [creatingInstitution, setCreatingInstitution] = useState(false);
   const [activeRemoteId, setActiveRemoteId] = useState<number | null>(null);
   const [activeRemoteVersion, setActiveRemoteVersion] = useState<number | null>(null);
@@ -692,17 +691,12 @@ export default function SiteLayoutPlannerPage() {
     return () => window.clearTimeout(timer);
   }, [toastMessage]);
 
-  useEffect(() => () => {
-    if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
-  }, [pdfPreviewUrl]);
-
   useEffect(() => {
-    if (!pdfMenuOpen && !pdfPreviewOpen) return;
+    if (!pdfPreviewOpen) return;
     const previousOverflow = document.body.style.overflow;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (pdfPreviewOpen) setPdfPreviewOpen(false);
-      else setPdfMenuOpen(false);
+      setPdfPreviewOpen(false);
     };
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", closeOnEscape);
@@ -710,7 +704,7 @@ export default function SiteLayoutPlannerPage() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [pdfMenuOpen, pdfPreviewOpen]);
+  }, [pdfPreviewOpen]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -869,8 +863,7 @@ export default function SiteLayoutPlannerPage() {
     if (!(svg instanceof SVGSVGElement)) throw new Error("PDF로 만들 도면을 찾지 못했습니다.");
     return await siteLayoutPdfFromSvg(svg, exportFileName());
   }
-  async function preparePdfActions() {
-    setPdfMenuOpen(true);
+  async function buildPreparedPdf() {
     setPdfPrepareError("");
     if (preparedPdf && preparedPdfFingerprint === currentDraftFingerprint) return;
     setPreparedPdf(null);
@@ -886,9 +879,16 @@ export default function SiteLayoutPlannerPage() {
       setPdfPreparing(false);
     }
   }
+  async function preparePdfActions() {
+    if (pdfMenuOpen) {
+      setPdfMenuOpen(false);
+      return;
+    }
+    setPdfMenuOpen(true);
+    await buildPreparedPdf();
+  }
   function openPreparedPdfPreview(file = preparedPdf) {
     if (!file) return;
-    setPdfPreviewUrl(URL.createObjectURL(file));
     setPdfPreviewOpen(true);
     setPdfMenuOpen(false);
   }
@@ -902,8 +902,8 @@ export default function SiteLayoutPlannerPage() {
     const share = navigator.share?.bind(navigator);
     const canShare = navigator.canShare?.({ files: [file] }) ?? false;
     if (!share || !canShare) {
-      openPreparedPdfPreview(file);
-      setToastMessage("이 브라우저는 PDF 파일 공유를 지원하지 않아 미리보기를 열었습니다.");
+      downloadPreparedPdf(file);
+      setToastMessage("이 브라우저는 파일 공유를 지원하지 않아 PDF를 저장했습니다. 카카오톡에서 파일을 첨부해 주세요.");
       return;
     }
     try {
@@ -914,12 +914,12 @@ export default function SiteLayoutPlannerPage() {
         })
         .catch((error: unknown) => {
           if (error instanceof DOMException && error.name === "AbortError") return;
-          openPreparedPdfPreview(file);
-          setToastMessage("공유 권한이 허용되지 않아 PDF 미리보기를 열었습니다. 저장 후 카카오톡에 첨부해 주세요.");
+          downloadPreparedPdf(file);
+          setToastMessage("공유 권한이 허용되지 않아 PDF를 저장했습니다. 카카오톡에서 파일을 첨부해 주세요.");
         });
     } catch {
-      openPreparedPdfPreview(file);
-      setToastMessage("공유 권한이 허용되지 않아 PDF 미리보기를 열었습니다. 저장 후 카카오톡에 첨부해 주세요.");
+      downloadPreparedPdf(file);
+      setToastMessage("공유 권한이 허용되지 않아 PDF를 저장했습니다. 카카오톡에서 파일을 첨부해 주세요.");
     }
   }
   async function downloadCurrentPdf() {
@@ -2347,7 +2347,7 @@ export default function SiteLayoutPlannerPage() {
     <section className="site-layout-planner" aria-label="현장 실측 기초도면 작성기">
       <header className="site-layout-intro">
         <div className="site-layout-brand"><span aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M5 25V7h22v18H5Z" /><path d="M9 21V11h14v10H9Zm0-5h14M14 11v10" /></svg></span><div><b>기초도면 작성</b><small>현장 실측 → CAD팀 전달</small></div></div>
-        <div className="site-layout-header-actions"><button type="button" className="site-layout-action-new" onClick={resetDraft}>새 도면</button><button type="button" className="secondary site-layout-action-library" onClick={() => { setDraftLibraryOpen(true); setDraftLibraryPage(1); }}>도면 보관함 {remoteLayouts.length}</button><button type="button" className={`primary site-layout-action-save ${remoteOperation === "saving" ? "is-saving" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "is-saved" : ""}`} disabled={remoteLoading} onClick={() => void saveCurrentDraft()}>{remoteOperation === "saving" ? "저장 중…" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "저장됨 ✓" : "기관 도면 저장"}</button>{activeRemoteId && remoteSavePhase === "drive-error" && <button type="button" className="site-layout-action-retry" disabled={remoteLoading} onClick={() => { const record = remoteLayouts.find((item) => item.id === activeRemoteId); if (record) void retryRemoteDrive(record); }}>Drive 다시 시도</button>}<button type="button" className="site-layout-action-pdf-menu" disabled={pdfPreparing} onClick={() => void preparePdfActions()}>{pdfPreparing ? "PDF 준비 중…" : "PDF"}</button></div>
+        <div className="site-layout-header-actions"><button type="button" className="site-layout-action-new" onClick={resetDraft}>새 도면</button><button type="button" className="secondary site-layout-action-library" onClick={() => { setDraftLibraryOpen(true); setDraftLibraryPage(1); }}>도면 보관함 {remoteLayouts.length}</button><button type="button" className={`primary site-layout-action-save ${remoteOperation === "saving" ? "is-saving" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "is-saved" : ""}`} disabled={remoteLoading} onClick={() => void saveCurrentDraft()}>{remoteOperation === "saving" ? "저장 중…" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "저장됨 ✓" : "기관 도면 저장"}</button>{activeRemoteId && remoteSavePhase === "drive-error" && <button type="button" className="site-layout-action-retry" disabled={remoteLoading} onClick={() => { const record = remoteLayouts.find((item) => item.id === activeRemoteId); if (record) void retryRemoteDrive(record); }}>Drive 다시 시도</button>}<div className={`site-layout-pdf-action-group ${pdfMenuOpen ? "is-open" : ""}`}><button type="button" className="site-layout-action-pdf-menu" aria-expanded={pdfMenuOpen} aria-controls="site-layout-pdf-actions" onClick={() => void preparePdfActions()}>{pdfPreparing ? "PDF 준비 중…" : pdfMenuOpen ? "PDF 닫기" : "PDF"}</button>{pdfMenuOpen && <div id="site-layout-pdf-actions" className="site-layout-pdf-inline" role="menu" aria-label="PDF 작업 선택">{pdfPreparing ? <span role="status">PDF 준비 중…</span> : pdfPrepareError ? <><span role="alert">{pdfPrepareError}</span><button type="button" onClick={() => void buildPreparedPdf()}>다시 만들기</button></> : <><button type="button" role="menuitem" onClick={() => openPreparedPdfPreview()} disabled={!preparedPdf}>미리보기</button><button type="button" role="menuitem" onClick={() => downloadPreparedPdf()} disabled={!preparedPdf}>저장</button><button type="button" role="menuitem" onClick={() => sharePreparedPdf()} disabled={!preparedPdf}>공유</button></>}</div>}</div></div>
       </header>
       {(remoteSavePhase === "failed" || remoteSavePhase === "conflict" || remoteSavePhase === "drive-error") && <div className="site-layout-local-state is-error" role="alert"><span>{saveMessage}</span><small>{remoteSaveDetail || "현재 입력은 이 기기의 복구본에 남아 있습니다."}</small></div>}
       {toastMessage && <div className="site-layout-toast" role="status" aria-live="polite">{toastMessage}</div>}
@@ -2369,14 +2369,10 @@ export default function SiteLayoutPlannerPage() {
         <div className="site-layout-draft-library-pages"><button type="button" disabled={draftLibraryPage <= 1} onClick={() => setDraftLibraryPage((page) => Math.max(1, page - 1))}>이전</button><span>{Math.min(draftLibraryPage, draftLibraryPageCount)} / {draftLibraryPageCount}</span><button type="button" disabled={draftLibraryPage >= draftLibraryPageCount} onClick={() => setDraftLibraryPage((page) => Math.min(draftLibraryPageCount, page + 1))}>다음</button></div>
         <details className="site-layout-recovery-library"><summary>이 기기 복구본 {localDrafts.length}개</summary>{localDrafts.length ? <ul>{localDrafts.map((record) => <li key={record.id}><div><b>{record.name}</b><small>{new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(record.updatedAt))}</small></div><button type="button" onClick={() => loadLocalDraft(record)}>복구</button><button type="button" className="danger" onClick={() => deleteLocalDraft(record)}>삭제</button></li>)}</ul> : <p>기기 복구본이 없습니다.</p>}</details>
       </section></div>}
-      {pdfMenuOpen && <div className="site-layout-pdf-menu-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPdfMenuOpen(false); }}><section className="site-layout-pdf-menu" role="dialog" aria-modal="true" aria-label="PDF 작업 선택">
-        <div className="site-layout-pdf-menu-head"><div><b>PDF</b><span>CAD팀 전달용 파일을 확인하거나 저장·공유합니다.</span></div><button type="button" onClick={() => setPdfMenuOpen(false)} aria-label="PDF 메뉴 닫기">닫기</button></div>
-        {pdfPreparing ? <div className="site-layout-pdf-preparing" role="status">PDF를 준비하고 있습니다…</div> : pdfPrepareError ? <div className="site-layout-pdf-error" role="alert"><span>{pdfPrepareError}</span><button type="button" onClick={() => void preparePdfActions()}>다시 만들기</button></div> : <div className="site-layout-pdf-actions"><button type="button" onClick={() => openPreparedPdfPreview()} disabled={!preparedPdf}><b>미리보기</b><span>A3 보기처럼 먼저 확인</span></button><button type="button" onClick={() => downloadPreparedPdf()} disabled={!preparedPdf}><b>저장</b><span>기기에 PDF 내려받기</span></button><button type="button" onClick={() => sharePreparedPdf()} disabled={!preparedPdf}><b>공유</b><span>카카오톡 등 앱으로 보내기</span></button></div>}
-      </section></div>}
-      {pdfPreviewOpen && pdfPreviewUrl && <div className="site-layout-pdf-preview-backdrop" role="presentation"><section className="site-layout-pdf-preview" role="dialog" aria-modal="true" aria-label="PDF 미리보기">
+      {pdfPreviewOpen && preparedPdf && <div className="site-layout-pdf-preview-backdrop" role="presentation"><section className="site-layout-pdf-preview" role="dialog" aria-modal="true" aria-label="PDF 미리보기">
         <div className="site-layout-pdf-preview-head"><div><b>PDF 미리보기</b><span>{exportFileName()}</span></div><button type="button" onClick={() => setPdfPreviewOpen(false)} aria-label="PDF 미리보기 닫기">닫기</button></div>
-        <iframe src={pdfPreviewUrl} title="CAD팀 전달용 기초도면 PDF 미리보기" />
-        <div className="site-layout-pdf-preview-actions"><button type="button" onClick={() => downloadPreparedPdf()}>저장</button><button type="button" onClick={() => sharePreparedPdf()}>공유</button><a href={pdfPreviewUrl} target="_blank" rel="noreferrer">새 탭에서 보기</a></div>
+        <div className="site-layout-pdf-preview-canvas" aria-label="CAD팀 전달용 기초도면 PDF 화면"><SiteLayoutGeometryView draft={physicalDraft} mode="paper" paddingMm={650} interactive={false} showDimensions showLabels isItemVisible={(item) => { const legacy = draft.items.find((candidate) => candidate.id === item.id); return Boolean(legacy && itemLayer(legacy) !== "equipment" && itemLayer(legacy) !== "note"); }} /></div>
+        <div className="site-layout-pdf-preview-actions"><button type="button" onClick={() => downloadPreparedPdf()}>PDF 저장</button><button type="button" onClick={() => sharePreparedPdf()}>PDF 공유</button></div>
       </section></div>}
 
       <section className="site-layout-guide" aria-label="현장 실측 단계">

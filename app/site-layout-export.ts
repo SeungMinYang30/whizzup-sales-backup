@@ -90,6 +90,12 @@ export function downloadFile(file: File) {
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = file.name;
+  anchor.rel = "noopener";
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
   anchor.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  window.setTimeout(() => {
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }, 60_000);
 }

@@ -6,6 +6,7 @@ const pageSource = fs.readFileSync(new URL("../app/site-layout-planner-page.tsx"
 const geometryViewSource = fs.readFileSync(new URL("../app/site-layout-geometry-view.tsx", import.meta.url), "utf8");
 const appSource = fs.readFileSync(new URL("../app/crm-app.tsx", import.meta.url), "utf8");
 const stylesSource = fs.readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const exportSource = fs.readFileSync(new URL("../app/site-layout-export.ts", import.meta.url), "utf8");
 
 function assertContainsAll(source, values, message) {
   for (const value of values) {
@@ -21,23 +22,31 @@ test("기초도면 작성 메뉴는 지연 로딩되고 개발 배지를 노출�
   assert.doesNotMatch(appSource, /nav-beta-badge|>BETA</);
 });
 
-test("페이지는 개발 안내를 제거하고 미리보기·저장·공유를 한 PDF 메뉴로 제공한다", () => {
+test("PDF 버튼은 인라인으로 확장되고 모바일 호환 미리보기·저장·공유를 제공한다", () => {
   assert.doesNotMatch(pageSource, /site-layout-beta-notice|BETA ·|개발 중/);
   assert.match(pageSource, /siteLayoutPdfFromSvg/);
   assert.match(pageSource, /site-layout-action-pdf-menu/);
-  assert.match(pageSource, /site-layout-pdf-menu/);
+  assert.match(pageSource, /site-layout-pdf-action-group/);
+  assert.match(pageSource, /site-layout-pdf-inline/);
+  assert.match(pageSource, /aria-expanded=\{pdfMenuOpen\}/);
   assert.match(pageSource, /site-layout-pdf-preview/);
-  assert.match(pageSource, /<b>미리보기<\/b>/);
-  assert.match(pageSource, /<b>저장<\/b>/);
-  assert.match(pageSource, /<b>공유<\/b>/);
+  assert.match(pageSource, />미리보기<\/button>/);
+  assert.match(pageSource, />저장<\/button>/);
+  assert.match(pageSource, />공유<\/button>/);
+  assert.match(pageSource, /site-layout-pdf-preview-canvas/);
+  assert.doesNotMatch(pageSource, /<iframe src=\{pdfPreviewUrl\}/);
   assert.doesNotMatch(pageSource, /className="site-layout-action-pdf"/);
   assert.doesNotMatch(pageSource, /className="site-layout-share-button site-layout-action-share"/);
   assert.match(pageSource, /navigator\.share/);
   assert.match(pageSource, /navigator\.canShare/);
-  assert.match(pageSource, /공유 권한이 허용되지 않아 PDF 미리보기를 열었습니다/);
+  assert.match(pageSource, /공유 권한이 허용되지 않아 PDF를 저장했습니다/);
   assert.match(pageSource, /error\.name === "AbortError"/);
   assert.doesNotMatch(pageSource, /setToastMessage\(error instanceof Error \? error\.message : "PDF를 공유하지 못했습니다\."\)/);
-  assert.match(stylesSource, /\.site-layout-pdf-menu button,[\s\S]*?text-align:center/);
+  assert.match(stylesSource, /\.site-layout-pdf-action-group button,[\s\S]*?text-align:center/);
+  assert.match(stylesSource, /\.site-layout-pdf-inline \{[\s\S]*?grid-template-columns:repeat\(3/);
+  assert.match(exportSource, /document\.body\.appendChild\(anchor\)/);
+  assert.match(exportSource, /anchor\.remove\(\)/);
+  assert.match(exportSource, /60_000/);
   assert.doesNotMatch(pageSource, /alert\s*\(/);
 });
 
@@ -47,7 +56,7 @@ test("모델과 A3 출력은 동일한 mm 초안과 공통 SVG 렌더러를 사�
   assert.match(pageSource, /const geometryViewBox = useMemo\(\(\) => computeSvgViewBox\(physicalDraft/);
   assert.match(pageSource, /<SiteLayoutGeometryView draft=\{physicalDraft\} mode="model"/);
   assert.match(pageSource, /<SiteLayoutGeometryView[\s\S]*?draft=\{physicalDraft\} mode="paper"/);
-  assert.equal((pageSource.match(/<SiteLayoutGeometryView/g) ?? []).length, 2);
+  assert.equal((pageSource.match(/<SiteLayoutGeometryView/g) ?? []).length, 3);
   assert.doesNotMatch(pageSource, /renderItems\("(?:model|paper)"\)/);
 });
 
