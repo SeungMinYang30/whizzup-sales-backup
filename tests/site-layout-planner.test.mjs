@@ -116,6 +116,14 @@ test("간편 실측은 한 질문씩 이전·다음으로 이동하는 7단계 �
   assert.match(pageSource, /checklistQuestions\[Math\.min\(activeQuestionIndex/);
 });
 
+test("모바일 질문 이동 버튼은 CAD 모델 위에 노출하고 기존 하단 버튼은 숨긴다", () => {
+  assert.match(pageSource, /renderQuestionNavigation\("site-layout-question-navigation-mobile"\)[\s\S]*?<div ref=\{workspaceRef\}/);
+  assert.match(pageSource, /renderQuestionNavigation\("site-layout-question-navigation-desktop"\)/);
+  assert.match(stylesSource, /\.site-layout-question-navigation-mobile \{ display: none; \}/);
+  assert.match(stylesSource, /@media \(max-width: 760px\)[\s\S]*?\.site-layout-question-navigation-mobile \{[\s\S]*?display: grid;/);
+  assert.match(stylesSource, /@media \(max-width: 760px\)[\s\S]*?\.site-layout-question-navigation-desktop \{ display: none; \}/);
+});
+
 test("간편 실측 질문은 현장 기준 벽·모서리·실측값을 순서대로 받는다", () => {
   assertContainsAll(pageSource, [
     /실내 가로 길이는 몇 m인가요\?/,

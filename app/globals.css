@@ -18750,6 +18750,7 @@ button:is(
 .site-layout-geometry-host > svg { position: absolute; inset: 0; }
 .site-layout-paper-room.site-layout-geometry-paper { width: 100%; min-height: 0; max-height: none; background: #fff; }
 .site-layout-question-navigation { grid-template-columns: 110px minmax(0, 1fr) 150px; }
+.site-layout-question-navigation-mobile { display: none; }
 
 @media (max-width: 760px) {
   .site-layout-header-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -18779,6 +18780,17 @@ button:is(
   .site-layout-workspace.is-guided .site-layout-model-space { min-height: 300px; padding: 18px 10px 30px; }
   .site-layout-workspace.is-guided .site-layout-canvas-head { min-height: 45px; }
   .site-layout-workspace.is-guided .site-layout-board-wrap { max-width: 100% !important; }
+  .site-layout-question-navigation-mobile {
+    position: sticky;
+    top: 0;
+    bottom: auto;
+    z-index: 35;
+    display: grid;
+    border-top: 0;
+    border-bottom: 1px solid #ccd8e8;
+    box-shadow: 0 8px 22px rgba(36, 52, 79, .09);
+  }
+  .site-layout-question-navigation-desktop { display: none; }
   .site-layout-question-navigation { grid-template-columns: 82px minmax(0, 1fr) 112px; }
   .site-layout-question-navigation > button { padding: 0 5px; font-size: 10px; }
   .site-layout-question-navigation > div span { display: block; font-size: 8px; }

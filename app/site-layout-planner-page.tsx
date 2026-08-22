@@ -2340,6 +2340,9 @@ export default function SiteLayoutPlannerPage() {
   const remoteDraftDirty = Boolean(activeRemoteId && activeRemoteFingerprint !== currentDraftFingerprint);
   const typedOrganization = (draft.organizationName || "").trim();
   const exactInstitution = institutionOptions.some((option) => option.organization === typedOrganization);
+  function renderQuestionNavigation(positionClass: string) {
+    return <div className={`site-layout-step-actions site-layout-question-navigation ${positionClass}`}><button type="button" onClick={questionPrevious} disabled={activeStepIndex === 0 && activeQuestionIndex === 0}>이전 질문</button><div><b>{activeStepIndex + 1}단계 · {activeStep.label}</b><span>{currentQuestionNumber}/{currentQuestionCount} 질문 · 자동 복구 중</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => void saveCurrentDraft()}>기관 도면 저장</button> : <button type="button" className="primary" onClick={questionNext}>{activeQuestionIndex === currentQuestionCount - 1 ? "단계 완료·다음" : "다음 질문"}</button>}</div>;
+  }
   return (
     <section className="site-layout-planner" aria-label="현장 실측 기초도면 작성기">
       <header className="site-layout-intro">
@@ -2425,6 +2428,8 @@ export default function SiteLayoutPlannerPage() {
           </div>}
         </div>
       </section>
+
+      {workflowMode === "guided" && renderQuestionNavigation("site-layout-question-navigation-mobile")}
 
       <div ref={workspaceRef} className={`site-layout-workspace ${canvasFocus ? "is-canvas-focus" : ""} ${canvasExpanded ? "is-mobile-expanded" : ""} ${workflowMode === "guided" ? "is-guided" : ""}`}>
         <aside className={`site-layout-library ${activePresets.length ? "" : "is-context-only"}`}>
@@ -2512,7 +2517,7 @@ export default function SiteLayoutPlannerPage() {
         </aside>
       </div>
       <div ref={exportBoardRef} className="site-layout-export-source" aria-hidden="true"><SiteLayoutGeometryView draft={physicalDraft} mode="paper" paddingMm={650} interactive={false} showDimensions showLabels isItemVisible={(item) => { const legacy = draft.items.find((candidate) => candidate.id === item.id); return Boolean(legacy && itemLayer(legacy) !== "equipment" && itemLayer(legacy) !== "note"); }} /></div>
-      {workflowMode === "guided" ? <div className="site-layout-step-actions site-layout-question-navigation"><button type="button" onClick={questionPrevious} disabled={activeStepIndex === 0 && activeQuestionIndex === 0}>이전 질문</button><div><b>{activeStepIndex + 1}단계 · {activeStep.label}</b><span>{currentQuestionNumber}/{currentQuestionCount} 질문 · 자동 복구 중</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => void saveCurrentDraft()}>기관 도면 저장</button> : <button type="button" className="primary" onClick={questionNext}>{activeQuestionIndex === currentQuestionCount - 1 ? "단계 완료·다음" : "다음 질문"}</button>}</div> : <div className="site-layout-step-actions"><button type="button" onClick={() => goToStep(activeStepIndex - 1)} disabled={activeStepIndex === 0}>이전</button><div><b>{activeStepIndex + 1}/{guideSteps.length} · {activeStep.label}</b><span>입력 내용은 이 기기에 자동 복구됩니다.</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => void downloadCurrentPdf()}>CAD팀 전달 PDF</button> : <button type="button" className="primary" onClick={goNextStep}>저장하고 다음</button>}</div>}
+      {workflowMode === "guided" ? renderQuestionNavigation("site-layout-question-navigation-desktop") : <div className="site-layout-step-actions"><button type="button" onClick={() => goToStep(activeStepIndex - 1)} disabled={activeStepIndex === 0}>이전</button><div><b>{activeStepIndex + 1}/{guideSteps.length} · {activeStep.label}</b><span>입력 내용은 이 기기에 자동 복구됩니다.</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => void downloadCurrentPdf()}>CAD팀 전달 PDF</button> : <button type="button" className="primary" onClick={goNextStep}>저장하고 다음</button>}</div>}
       <footer className="site-layout-statusbar"><div><b>SNAP</b><b>ORTHO</b><b>OSNAP</b><span>GRID 10</span></div><p>도면 단위 mm · 기관별 DB 및 Google Drive 저장 · CAD팀 전달용 기초도면</p></footer>
     </section>
   );
