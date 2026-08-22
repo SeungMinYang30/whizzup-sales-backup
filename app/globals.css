@@ -17929,8 +17929,26 @@ button:is(
   .site-layout-review-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .site-layout-review-grid > button { min-height: 72px; }
   .site-layout-review-grid > label { grid-column: 1 / -1; }
+  .site-layout-workspace {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    align-items: stretch;
+  }
+  .site-layout-library,
+  .site-layout-canvas-panel,
+  .site-layout-inspector {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
   .site-layout-library.is-context-only { display: none; }
   .site-layout-library-grid button > span { line-height: 1.22; text-align: center; }
+  .site-layout-canvas-panel { justify-items: stretch; }
+  .site-layout-canvas-head,
+  .site-layout-model-space { width: 100%; max-width: 100%; }
+  .site-layout-board-wrap { display: block; width: 100%; max-width: 100% !important; min-width: 0; }
+  .site-layout-board { width: 100%; min-width: 0; }
   .site-layout-inspector-form { grid-template-columns: 1fr; }
   .site-layout-opening-fields { grid-template-columns: 1fr 1fr; grid-column: 1 / -1; }
   .site-layout-opening-fields input,
