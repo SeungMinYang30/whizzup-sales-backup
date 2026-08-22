@@ -370,6 +370,7 @@ test("태블릿·큰 터치 장치는 단계형 실측으로 시작하고 guided
   assert.match(pageSource, /interactionMode=\{workflowMode === "direct" \? "drag" : "select"\}/);
   assert.match(geometryViewSource, /interactionMode === "select" \? "pan-x pan-y pinch-zoom" : "none"/);
   assert.match(geometryViewSource, /if \(moved < 8\) onBackgroundPointerDown/);
+  assert.match(stylesSource, /@media \(max-width: 1180px\) \{[\s\S]*?\.site-layout-guide-card \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);[\s\S]*?\.site-layout-workspace\.is-guided \{[\s\S]*?flex-direction: column;/);
 });
 
 test("직접 편집 기둥은 벽 부착과 독립 배치, 네 기준벽 면거리를 모두 수정한다", () => {

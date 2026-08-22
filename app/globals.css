@@ -19761,6 +19761,41 @@ button:is(
 }
 
 @media (max-width: 1180px) {
+  .site-layout-guide-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .site-layout-guide-progress {
+    display: flex;
+    gap: 7px;
+    padding-inline: 12px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .site-layout-guide-progress::-webkit-scrollbar {
+    display: none;
+  }
+
+  .site-layout-guide-progress button {
+    flex: 0 0 104px;
+    scroll-snap-align: start;
+  }
+
+  .site-layout-workspace.is-guided {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .site-layout-workspace.is-guided > .site-layout-canvas-panel {
+    width: 100%;
+    min-width: 0;
+  }
+
   .site-layout-workspace.is-guided .site-layout-model-space {
     height: clamp(340px, 48dvh, 560px);
     min-height: 0;
