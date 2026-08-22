@@ -19333,7 +19333,9 @@ button:is(
 .site-layout-pdf-action-group.is-open .site-layout-action-pdf-menu { border-radius:8px 8px 0 0; }
 .site-layout-pdf-inline { position:absolute; z-index:40; top:100%; right:0; display:grid; grid-template-columns:repeat(3,minmax(78px,1fr)); min-width:270px; overflow:hidden; border:1px solid #3157e8; border-radius:10px 0 10px 10px; background:#fff; box-shadow:0 14px 35px rgba(21,43,82,.22); }
 .site-layout-pdf-inline > button { min-height:44px; border:0; border-right:1px solid #d7e0ef; background:#fff; color:#3157e8; font-size:11px; font-weight:850; }
-.site-layout-pdf-inline > button:last-child { border-right:0; background:#3157e8; color:#fff; }
+.site-layout-pdf-inline > button:last-child { border-right:0; }
+.site-layout-pdf-inline > button:hover,
+.site-layout-pdf-inline > button:focus-visible { background:#edf2ff; color:#2449cf; outline:0; }
 .site-layout-pdf-inline > span { grid-column:1 / -1; min-height:44px; padding:10px; color:#566982; font-size:11px; font-weight:800; text-align:center; }
 .site-layout-pdf-preview-backdrop { position:fixed; z-index:520; inset:0; display:grid; place-items:center; padding:20px; background:rgba(9,22,40,.58); backdrop-filter:blur(3px); }
 .site-layout-pdf-preview-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
@@ -19379,7 +19381,7 @@ button:is(
   .site-layout-brand > span { width:38px; height:38px; }
   .site-layout-header-actions { grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; }
   .site-layout-header-actions > button { width:100%; min-height:44px; padding-inline:8px; }
-  .site-layout-header-actions > .site-layout-action-save,
+  .site-layout-header-actions > .site-layout-action-save { display:none; }
   .site-layout-header-actions > .site-layout-action-retry { grid-column:1 / -1; }
   .site-layout-header-actions > .site-layout-pdf-action-group { grid-column:1 / -1; }
   .site-layout-pdf-action-group.is-open .site-layout-action-pdf-menu { border-radius:9px 9px 0 0; }
@@ -19394,6 +19396,13 @@ button:is(
   .site-layout-pdf-preview-actions button,
   .site-layout-pdf-preview-actions a { width:100%; min-width:0; padding-inline:5px; }
   .site-layout-context-details[open] .site-layout-context-bar { grid-template-columns:1fr; }
+  .site-layout-context-details > summary { min-height:42px; padding:8px 10px; font-size:12px; }
+  .site-layout-context-details > summary b { font-size:12px; }
+  .site-layout-context-details > summary span { font-size:11px; }
+  .site-layout-context-bar label { font-size:11px; }
+  .site-layout-context-bar input,
+  .site-layout-context-bar textarea { font-size:14px; }
+  .site-layout-context-bar textarea { min-height:64px; }
   .site-layout-create-institution { width:100%; }
   .site-layout-toast { right:16px; bottom:76px; }
   .site-layout-draft-library-backdrop { align-items:end; justify-items:stretch; }
@@ -19403,6 +19412,8 @@ button:is(
   .site-layout-canvas-head { min-height:46px; padding:7px 10px; }
   .site-layout-canvas-head > div:first-child span { display:none; }
 }
+
+.site-layout-step-actions > button.is-saved { border-color:#168765; background:#168765; color:#fff; }
 
 /* Guided object actions: keep destructive operations deliberate and out of the mobile input flow. */
 .site-layout-guided-stage-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }

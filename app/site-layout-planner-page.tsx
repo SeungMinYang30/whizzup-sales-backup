@@ -470,6 +470,21 @@ function cloneDraft(value: LayoutDraft): LayoutDraft {
   return JSON.parse(JSON.stringify(value)) as LayoutDraft;
 }
 
+function hasMeaningfulDraftChanges(value: LayoutDraft) {
+  return Boolean(
+    value.organizationName?.trim()
+    || (value.businessRound ?? 1) !== (defaultDraft.businessRound ?? 1)
+    || value.roomName !== defaultDraft.roomName
+    || value.roomWidth !== defaultDraft.roomWidth
+    || value.roomHeight !== defaultDraft.roomHeight
+    || value.roomCeilingHeight !== defaultDraft.roomCeilingHeight
+    || value.items.length
+    || value.fieldNotes?.trim()
+    || Object.values(value.siteChecklist ?? {}).some(Boolean)
+    || Object.values(value.stageChecks ?? {}).some((status) => status && status !== "pending")
+  );
+}
+
 function FriendlyNumberInput({ value, min, max, decimals = 3, label, onCommit }: { value: number; min: number; max: number; decimals?: number; label: string; onCommit: (value: number) => void }) {
   const formattedValue = String(Number(value.toFixed(decimals)));
   const safeMax = Math.max(min, max);
@@ -625,11 +640,13 @@ export default function SiteLayoutPlannerPage() {
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
+      let recoveryDraft: LayoutDraft | null = null;
       try {
         const stored = window.localStorage.getItem(STORAGE_KEY);
         const parsed: unknown = stored ? JSON.parse(stored) : null;
         const normalized = normalizeStoredDraft(parsed);
-        if (normalized) setDraft(normalized);
+        if (normalized && hasMeaningfulDraftChanges(normalized)) recoveryDraft = normalized;
+        window.localStorage.removeItem(STORAGE_KEY);
       } catch {
         // A malformed local draft should never block the workspace.
       }
@@ -641,24 +658,28 @@ export default function SiteLayoutPlannerPage() {
         setWorkflowMode(window.matchMedia("(max-width: 760px)").matches ? "guided" : "direct");
       }
       try {
-        setLocalDrafts(parseLocalDraftLibrary(window.localStorage.getItem(DRAFT_LIBRARY_KEY)));
+        const storedDrafts = parseLocalDraftLibrary(window.localStorage.getItem(DRAFT_LIBRARY_KEY));
+        if (recoveryDraft) {
+          const fingerprint = JSON.stringify(recoveryDraft);
+          const alreadyStored = storedDrafts.some((record) => JSON.stringify(record.draft) === fingerprint);
+          const nextDrafts = alreadyStored ? storedDrafts : [{
+            id: crypto.randomUUID(),
+            name: `${recoveryDraft.roomName.trim() || "이름 없는 기초도면"} · 이전 작업 복구`,
+            updatedAt: new Date().toISOString(),
+            draft: cloneDraft(recoveryDraft),
+          }, ...storedDrafts].slice(0, 20);
+          window.localStorage.setItem(DRAFT_LIBRARY_KEY, JSON.stringify(nextDrafts));
+          setLocalDrafts(nextDrafts);
+          setSaveMessage("새 도면을 시작했습니다. 이전 작업은 도면 보관함의 ‘이 기기 복구본’에 남겨 두었습니다.");
+        } else {
+          setLocalDrafts(storedDrafts);
+        }
       } catch {
         setLocalDrafts([]);
       }
-      try {
-        const context = JSON.parse(window.localStorage.getItem(REMOTE_CONTEXT_KEY) ?? "null") as { id?: unknown; editVersion?: unknown; fingerprint?: unknown; driveSyncStatus?: unknown } | null;
-        const id = Number(context?.id);
-        const editVersion = Number(context?.editVersion);
-        if (Number.isInteger(id) && id > 0) setActiveRemoteId(id);
-        if (Number.isInteger(editVersion) && editVersion > 0) setActiveRemoteVersion(editVersion);
-        if (typeof context?.fingerprint === "string") setActiveRemoteFingerprint(context.fingerprint);
-        if (typeof context?.driveSyncStatus === "string") {
-          setActiveDriveSyncStatus(context.driveSyncStatus);
-          setRemoteSavePhase(context.driveSyncStatus === "ready" ? "drive-ready" : context.driveSyncStatus === "error" ? "drive-error" : "drive-syncing");
-        }
-      } catch {
-        // The recovery draft remains usable even when its remote context is malformed.
-      } finally { setHydrated(true); }
+      window.localStorage.removeItem(REMOTE_CONTEXT_KEY);
+      setDraft(cloneDraft(defaultDraft));
+      setHydrated(true);
     });
     return () => window.cancelAnimationFrame(frame);
   }, []);
@@ -900,10 +921,8 @@ export default function SiteLayoutPlannerPage() {
   function sharePreparedPdf(file = preparedPdf) {
     if (!file) return;
     const share = navigator.share?.bind(navigator);
-    const canShare = navigator.canShare?.({ files: [file] }) ?? false;
-    if (!share || !canShare) {
-      downloadPreparedPdf(file);
-      setToastMessage("이 브라우저는 파일 공유를 지원하지 않아 PDF를 저장했습니다. 카카오톡에서 파일을 첨부해 주세요.");
+    if (!share) {
+      setToastMessage("이 브라우저는 PDF 파일 공유를 지원하지 않습니다. PDF 저장 후 카카오톡에 첨부해 주세요.");
       return;
     }
     try {
@@ -914,12 +933,10 @@ export default function SiteLayoutPlannerPage() {
         })
         .catch((error: unknown) => {
           if (error instanceof DOMException && error.name === "AbortError") return;
-          downloadPreparedPdf(file);
-          setToastMessage("공유 권한이 허용되지 않아 PDF를 저장했습니다. 카카오톡에서 파일을 첨부해 주세요.");
+          setToastMessage("PDF 공유를 열지 못했습니다. 브라우저 권한을 확인하거나 PDF 저장 후 첨부해 주세요.");
         });
     } catch {
-      downloadPreparedPdf(file);
-      setToastMessage("공유 권한이 허용되지 않아 PDF를 저장했습니다. 카카오톡에서 파일을 첨부해 주세요.");
+      setToastMessage("PDF 공유를 열지 못했습니다. 브라우저 권한을 확인하거나 PDF 저장 후 첨부해 주세요.");
     }
   }
   async function downloadCurrentPdf() {
@@ -1244,8 +1261,8 @@ export default function SiteLayoutPlannerPage() {
       mountingHeight: preset.id === "aircon-wall" ? 2.1 : preset.id === "aircon-ceiling" ? ceilingHeight : undefined,
       beamBottomHeight: preset.kind === "beam" ? 2.2 : undefined,
       beamSpacing: preset.kind === "beam" ? 1 : undefined,
-      structureAttachment: preset.kind === "beam" ? { mode: "wall", wall: "top" } : undefined,
-      structureMeasurement: preset.kind === "beam" ? { axis: "x", referenceType: "wall", referenceWall: "left", direction: 1, distanceMode: "clear", distanceMm: 0 } : undefined,
+      structureAttachment: preset.kind === "beam" || preset.kind === "pillar" ? { mode: "wall", wall: "top" } : undefined,
+      structureMeasurement: preset.kind === "beam" || preset.kind === "pillar" ? { axis: "x", referenceType: "wall", referenceWall: "left", direction: 1, distanceMode: "clear", distanceMm: 0 } : undefined,
     };
   }
   function wallMeasurement(wall: WallSide, reference: OffsetReference, distanceMeters: number): StructureMeasurement {
@@ -2158,7 +2175,7 @@ export default function SiteLayoutPlannerPage() {
       return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>현장 조건 {currentQuestionNumber}/{currentQuestionCount}</small><b>{question.title}</b><span>{question.help}</span></div><div className="site-layout-choice-grid">{question.options.map((option) => <button key={option.value} type="button" className={currentValue === option.value ? "active" : ""} onClick={() => updateChecklist(question.key, option.value as never)}>{option.label}</button>)}</div>{activeQuestionIndex === checklistQuestions.length - 1 && <label className="site-layout-question-notes"><span>마지막으로 CAD팀 전달 메모를 적어 주세요.</span><textarea value={draft.fieldNotes ?? ""} onChange={(event) => updateDraft({ fieldNotes: event.target.value.slice(0, 1000) })} placeholder="보 사이 거리, 에어컨 간섭, 반입 동선 등 특이사항" /></label>}</div>;
     }
     if (activeStep.id === "review") {
-      return <div className="site-layout-question-card site-layout-question-review"><div className="site-layout-question-heading"><small>최종 검수</small><b>{hasReviewProblems ? "확인하지 않은 항목을 점검해 주세요." : "CAD팀 전달용 초안이 준비되었습니다."}</b><span>기관 도면으로 저장하면 승인된 사용자가 함께 보고 Google Drive 버전으로 보관됩니다.</span></div>{geometryIssues.length > 0 && <ul>{geometryIssues.map((issue, index) => <li key={`${issue.code}-${issue.itemId ?? index}`} className={issue.severity}>{issue.message}</li>)}</ul>}{incompleteStageLabels.length > 0 && <ul><li className="error">단계 확인 필요: {incompleteStageLabels.join(", ")}</li></ul>}{unansweredChecklistCount > 0 && <ul><li className="error">현장 조건 {unansweredChecklistCount}개가 아직 미확인입니다.</li></ul>}{!hasReviewProblems && !geometryIssues.length && <p>물리 치수와 객체 위치 검사를 통과했습니다. 현장 조건 확인도 완료했습니다.</p>}<button type="button" className="site-layout-question-confirm" onClick={() => void saveCurrentDraft()}>기관 도면 저장</button></div>;
+      return <div className="site-layout-question-card site-layout-question-review"><div className="site-layout-question-heading"><small>최종 검수</small><b>{hasReviewProblems ? "확인하지 않은 항목을 점검해 주세요." : "CAD팀 전달용 초안이 준비되었습니다."}</b><span>아래 저장 버튼을 누르면 승인된 사용자가 함께 보고 Google Drive 버전으로 보관됩니다.</span></div>{geometryIssues.length > 0 && <ul>{geometryIssues.map((issue, index) => <li key={`${issue.code}-${issue.itemId ?? index}`} className={issue.severity}>{issue.message}</li>)}</ul>}{incompleteStageLabels.length > 0 && <ul><li className="error">단계 확인 필요: {incompleteStageLabels.join(", ")}</li></ul>}{unansweredChecklistCount > 0 && <ul><li className="error">현장 조건 {unansweredChecklistCount}개가 아직 미확인입니다.</li></ul>}{!hasReviewProblems && !geometryIssues.length && <p>물리 치수와 객체 위치 검사를 통과했습니다. 현장 조건 확인도 완료했습니다.</p>}</div>;
     }
 
     const item = selectedStageItem;
@@ -2341,7 +2358,7 @@ export default function SiteLayoutPlannerPage() {
   const typedOrganization = (draft.organizationName || "").trim();
   const exactInstitution = institutionOptions.some((option) => option.organization === typedOrganization);
   function renderQuestionNavigation(positionClass: string) {
-    return <div className={`site-layout-step-actions site-layout-question-navigation ${positionClass}`}><button type="button" onClick={questionPrevious} disabled={activeStepIndex === 0 && activeQuestionIndex === 0}>이전 질문</button><div><b>{activeStepIndex + 1}단계 · {activeStep.label}</b><span>{currentQuestionNumber}/{currentQuestionCount} 질문 · 자동 복구 중</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => void saveCurrentDraft()}>기관 도면 저장</button> : <button type="button" className="primary" onClick={questionNext}>{activeQuestionIndex === currentQuestionCount - 1 ? "단계 완료·다음" : "다음 질문"}</button>}</div>;
+    return <div className={`site-layout-step-actions site-layout-question-navigation ${positionClass}`}><button type="button" onClick={questionPrevious} disabled={activeStepIndex === 0 && activeQuestionIndex === 0}>이전 질문</button><div><b>{activeStepIndex + 1}단계 · {activeStep.label}</b><span>{currentQuestionNumber}/{currentQuestionCount} 질문 · 자동 복구 중</span></div>{activeStep.id === "review" ? <button type="button" className={`primary ${remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "is-saved" : ""}`} disabled={remoteLoading} onClick={() => void saveCurrentDraft()}>{remoteOperation === "saving" ? "저장 중…" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "저장됨 ✓" : "기관 도면 저장"}</button> : <button type="button" className="primary" onClick={questionNext}>{activeQuestionIndex === currentQuestionCount - 1 ? "단계 완료·다음" : "다음 질문"}</button>}</div>;
   }
   return (
     <section className="site-layout-planner" aria-label="현장 실측 기초도면 작성기">
@@ -2351,7 +2368,7 @@ export default function SiteLayoutPlannerPage() {
       </header>
       {(remoteSavePhase === "failed" || remoteSavePhase === "conflict" || remoteSavePhase === "drive-error") && <div className="site-layout-local-state is-error" role="alert"><span>{saveMessage}</span><small>{remoteSaveDetail || "현재 입력은 이 기기의 복구본에 남아 있습니다."}</small></div>}
       {toastMessage && <div className="site-layout-toast" role="status" aria-live="polite">{toastMessage}</div>}
-      <details className="site-layout-context-details" open>
+      <details className="site-layout-context-details">
         <summary><b>기관·사업 정보</b><span>{draft.organizationName || "기관 미지정"} · {draft.businessRound ?? 1}차 · {draft.roomName}</span></summary>
         <div className="site-layout-context-bar">
           <label><span>기관명</span><input list="site-layout-institutions" value={draft.organizationName ?? ""} onChange={(event) => updateDraft({ organizationName: event.target.value.slice(0, 100) })} onBlur={(event) => { const match = institutionOptions.find((option) => option.organization === event.target.value.trim()); if (match) updateDraft({ organizationName: match.organization, businessRound: match.businessRound }); }} placeholder="기관명을 검색하거나 입력" /></label>

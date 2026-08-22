@@ -38,10 +38,10 @@ test("PDF 버튼은 인라인으로 확장되고 모바일 호환 미리보기·
   assert.doesNotMatch(pageSource, /className="site-layout-action-pdf"/);
   assert.doesNotMatch(pageSource, /className="site-layout-share-button site-layout-action-share"/);
   assert.match(pageSource, /navigator\.share/);
-  assert.match(pageSource, /navigator\.canShare/);
-  assert.match(pageSource, /공유 권한이 허용되지 않아 PDF를 저장했습니다/);
+  assert.doesNotMatch(pageSource, /navigator\.canShare/);
+  assert.match(pageSource, /PDF 저장 후 카카오톡에 첨부해 주세요/);
   assert.match(pageSource, /error\.name === "AbortError"/);
-  assert.doesNotMatch(pageSource, /setToastMessage\(error instanceof Error \? error\.message : "PDF를 공유하지 못했습니다\."\)/);
+  assert.match(pageSource, /PDF 공유를 열지 못했습니다\. 브라우저 권한을 확인하거나 PDF 저장 후 첨부해 주세요/);
   assert.match(stylesSource, /\.site-layout-pdf-action-group button,[\s\S]*?text-align:center/);
   assert.match(stylesSource, /\.site-layout-pdf-inline \{[\s\S]*?grid-template-columns:repeat\(3/);
   assert.match(exportSource, /document\.body\.appendChild\(anchor\)/);
@@ -208,7 +208,7 @@ test("보는 벽 부착을 기본으로 첫 보와 다음 보의 실측 기준�
   assertContainsAll(pageSource, [
     /type StructureAttachment = \{ mode: "wall"; wall: WallSide \}/,
     /type StructureMeasurement =/,
-    /structureAttachment: preset\.kind === "beam" \? \{ mode: "wall", wall: "top" \}/,
+    /structureAttachment: preset\.kind === "beam" \|\| preset\.kind === "pillar" \? \{ mode: "wall", wall: "top" \}/,
     /referenceType: "item"/,
     /distanceMode: "clear"/,
     /distanceMm:/,
@@ -251,7 +251,8 @@ test("기둥은 벽 부착과 실내 독립을 나누고 다음 기둥을 면간
     /else if \(item\.kind === "pillar"\) addFollowupPillar\(item\)/,
     /function rebasePillarToWall\(/,
   ]);
-  assert.doesNotMatch(pageSource, /preset\.kind === "pillar"[\s\S]{0,350}wall: "top", offset: 0/);
+  assert.match(pageSource, /preset\.kind === "beam" \|\| preset\.kind === "pillar" \? \{ mode: "wall", wall: "top" \}/);
+  assert.match(pageSource, /preset\.kind === "beam" \|\| preset\.kind === "pillar" \? \{ axis: "x", referenceType: "wall"/);
 });
 
 test("창호는 이전 창틀 끝 또는 중심을 기준으로 연쇄 등록한다", () => {
@@ -414,7 +415,8 @@ test("간편 실측의 모바일 UI는 패널 대신 큰 터치 입력과 한 �
 });
 
 test("모바일 진입부는 중복 브랜드와 설명을 숨기고 기관 정보를 접어서 질문을 빨리 보여준다", () => {
-  assert.match(pageSource, /<details className="site-layout-context-details" open>/);
+  assert.match(pageSource, /<details className="site-layout-context-details">/);
+  assert.doesNotMatch(pageSource, /<details className="site-layout-context-details" open>/);
   assert.match(pageSource, /<summary><b>기관·사업 정보<\/b>/);
   assertContainsAll(stylesSource, [
     /@media \(max-width: 760px\)[\s\S]*?\.site-layout-brand \{ display: none; \}/,
@@ -422,6 +424,39 @@ test("모바일 진입부는 중복 브랜드와 설명을 숨기고 기관 정�
     /\.site-layout-context-details:not\(\[open\]\) > \.site-layout-context-bar \{ display: none; \}/,
     /\.site-layout-guide-copy small,[\s\S]*?\.site-layout-guide-copy p \{ display: none; \}/,
   ]);
+});
+
+test("새 진입은 빈 도면으로 시작하고 직전 작업은 복구본으로만 보존한다", () => {
+  assertContainsAll(pageSource, [
+    /function hasMeaningfulDraftChanges\(/,
+    /if \(normalized && hasMeaningfulDraftChanges\(normalized\)\) recoveryDraft = normalized/,
+    /window\.localStorage\.removeItem\(STORAGE_KEY\)/,
+    /이전 작업 복구/,
+    /setDraft\(cloneDraft\(defaultDraft\)\)/,
+    /window\.localStorage\.removeItem\(REMOTE_CONTEXT_KEY\)/,
+  ]);
+  const hydrationSource = pageSource.match(/useEffect\(\(\) => \{\n    const frame[\s\S]*?\n  \}, \[\]\);/)?.[0] ?? "";
+  assert.ok(hydrationSource, "초기 진입 복구 로직을 찾을 수 있어야 합니다.");
+  assert.doesNotMatch(hydrationSource, /setDraft\(normalized\)/);
+});
+
+test("최종 단계 저장은 중복 버튼 없이 sticky 버튼 상태로 피드백한다", () => {
+  const reviewSource = pageSource.match(/if \(activeStep\.id === "review"\)[\s\S]*?return <div className="site-layout-question-card site-layout-question-review"[\s\S]*?;\n    }/)?.[0] ?? "";
+  assert.ok(reviewSource, "최종 검수 카드를 찾을 수 있어야 합니다.");
+  assert.doesNotMatch(reviewSource, /site-layout-question-confirm/);
+  assert.match(pageSource, /remoteOperation === "saving" \? "저장 중…"/);
+  assert.match(pageSource, /remoteSavePhase === "drive-ready" && !remoteDraftDirty \? "저장됨 ✓"/);
+  assert.match(stylesSource, /\.site-layout-step-actions > button\.is-saved/);
+});
+
+test("PDF 공유는 공유 실패를 다운로드로 바꾸지 않고 세 작업을 같은 강조로 표시한다", () => {
+  const shareSource = pageSource.match(/function sharePreparedPdf\([\s\S]*?\n  }\n  async function downloadCurrentPdf/)?.[0] ?? "";
+  assert.ok(shareSource, "PDF 공유 함수를 찾을 수 있어야 합니다.");
+  assert.match(shareSource, /navigator\.share\?\.bind\(navigator\)/);
+  assert.doesNotMatch(shareSource, /navigator\.canShare/);
+  assert.doesNotMatch(shareSource, /downloadPreparedPdf\(/);
+  assert.match(shareSource, /PDF 저장 후 카카오톡에 첨부해 주세요/);
+  assert.doesNotMatch(stylesSource, /\.site-layout-pdf-inline > button:last-child \{[^}]*background:#3157e8/);
 });
 
 test("CAD팀 PDF는 객체별 실제 치수와 측정 기준을 진한 선으로 표기한다", () => {
