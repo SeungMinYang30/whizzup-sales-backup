@@ -80,7 +80,7 @@ export class SiteLayoutInputError extends Error {
 export class SiteLayoutConflictError extends SiteLayoutInputError {
   constructor(public readonly layout: SiteLayout) {
     super(
-      "다른 사용자가 이 기초도면을 먼저 수정했습니다. 최신 내용을 확인한 뒤 다시 저장해 주세요.",
+      "저장된 기초도면이 현재 화면보다 최신입니다. 최신본을 확인한 뒤 다시 저장해 주세요.",
       409,
       "EDIT_CONFLICT",
     );

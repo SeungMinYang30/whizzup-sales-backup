@@ -763,10 +763,10 @@ export default function SiteLayoutPlannerPage() {
       }
       try {
         const storedMode = window.localStorage.getItem(WORKFLOW_MODE_KEY);
-        const mobileFieldDevice = window.matchMedia("(max-width: 760px)").matches;
-        setWorkflowMode(mobileFieldDevice && storedMode === "direct" ? "direct" : window.matchMedia("(max-width: 760px)").matches ? "guided" : "direct");
+        const fieldDevice = window.matchMedia("(max-width: 1180px), (pointer: coarse)").matches;
+        setWorkflowMode(fieldDevice ? "guided" : storedMode === "guided" || storedMode === "direct" ? storedMode : "direct");
       } catch {
-        setWorkflowMode(window.matchMedia("(max-width: 760px)").matches ? "guided" : "direct");
+        setWorkflowMode(window.matchMedia("(max-width: 1180px), (pointer: coarse)").matches ? "guided" : "direct");
       }
       try {
         const storedDrafts = parseLocalDraftLibrary(window.localStorage.getItem(DRAFT_LIBRARY_KEY));
@@ -995,9 +995,9 @@ export default function SiteLayoutPlannerPage() {
     if (!(svg instanceof SVGSVGElement)) throw new Error("PDF로 만들 도면을 찾지 못했습니다.");
     return await siteLayoutPdfFromSvg(svg, exportFileName());
   }
-  async function buildPreparedPdf() {
+  async function buildPreparedPdf(): Promise<File | null> {
     setPdfPrepareError("");
-    if (preparedPdf && preparedPdfFingerprint === currentDraftFingerprint) return;
+    if (preparedPdf && preparedPdfFingerprint === currentDraftFingerprint) return preparedPdf;
     setPreparedPdf(null);
     setPreparedPdfFingerprint("");
     setPdfPreparing(true);
@@ -1005,22 +1005,23 @@ export default function SiteLayoutPlannerPage() {
       const file = await createCurrentPdf();
       setPreparedPdf(file);
       setPreparedPdfFingerprint(currentDraftFingerprint);
+      return file;
     } catch (error) {
       setPdfPrepareError(error instanceof Error ? error.message : "PDF를 만들지 못했습니다.");
+      return null;
     } finally {
       setPdfPreparing(false);
     }
   }
-  async function preparePdfActions() {
+  function preparePdfActions() {
     if (pdfMenuOpen) {
       setPdfMenuOpen(false);
       return;
     }
     setPdfMenuOpen(true);
-    await buildPreparedPdf();
+    if (!preparedPdf || preparedPdfFingerprint !== currentDraftFingerprint) void buildPreparedPdf();
   }
-  function openPreparedPdfPreview(file = preparedPdf) {
-    if (!file) return;
+  function openPreparedPdfPreview() {
     setPdfPreviewOpen(true);
     setPdfMenuOpen(false);
   }
@@ -1029,24 +1030,20 @@ export default function SiteLayoutPlannerPage() {
     downloadFile(file);
     setToastMessage("CAD팀 전달용 PDF를 저장했습니다.");
   }
-  function sharePreparedPdf(file = preparedPdf) {
+  async function sharePreparedPdf(file = preparedPdf) {
     if (!file) return;
     const share = navigator.share?.bind(navigator);
-    if (!share) {
-      setToastMessage("이 브라우저는 PDF 파일 공유를 지원하지 않습니다. PDF 저장 후 카카오톡에 첨부해 주세요.");
+    const shareData = { title: `${draft.organizationName || "기관"} 기초도면`, text: "CAD팀 전달용 기초도면입니다.", files: [file] };
+    if (!share || (typeof navigator.canShare === "function" && !navigator.canShare(shareData))) {
+      setToastMessage("이 브라우저는 PDF 파일 공유를 지원하지 않습니다. PDF 저장 후 카카오톡에 첨부해 주세요. 메시지·드라이브 앱에서도 저장한 파일을 선택할 수 있습니다.");
       return;
     }
     try {
-      void share({ title: `${draft.organizationName || "기관"} 기초도면`, text: "CAD팀 전달용 기초도면입니다.", files: [file] })
-        .then(() => {
-          setPdfMenuOpen(false);
-          setToastMessage("공유할 앱으로 PDF를 전달했습니다.");
-        })
-        .catch((error: unknown) => {
-          if (error instanceof DOMException && error.name === "AbortError") return;
-          setToastMessage("PDF 공유를 열지 못했습니다. 브라우저 권한을 확인하거나 PDF 저장 후 첨부해 주세요.");
-        });
-    } catch {
+      await share(shareData);
+      setPdfMenuOpen(false);
+      setToastMessage("공유할 앱으로 PDF를 전달했습니다.");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
       setToastMessage("PDF 공유를 열지 못했습니다. 브라우저 권한을 확인하거나 PDF 저장 후 첨부해 주세요.");
     }
   }
@@ -1127,8 +1124,8 @@ export default function SiteLayoutPlannerPage() {
         const latest = normalizeRemoteLayout((payload as { layout?: unknown } | null)?.layout);
         if (latest) setRemoteLayouts((current) => [latest, ...current.filter((item) => item.id !== latest.id)]);
         setRemoteSavePhase("conflict");
-        setRemoteSaveDetail("다른 사용자의 최신본을 먼저 불러온 뒤 다시 저장해 주세요.");
-        setSaveMessage("다른 사용자가 먼저 수정했습니다. 내 입력은 이 기기에 보존했습니다. 기관 도면 목록에서 최신본을 불러온 뒤 다시 저장해 주세요.");
+        setRemoteSaveDetail("저장된 최신본을 먼저 불러온 뒤 현재 수정 내용을 다시 반영해 주세요.");
+        setSaveMessage("이 도면의 저장본이 현재 화면보다 최신입니다. 현재 입력은 이 기기에 보존했습니다. 도면 보관함에서 최신본을 불러온 뒤 다시 저장해 주세요.");
         return;
       }
       if (!response.ok) throw new Error((payload as { error?: string } | null)?.error || "기관 도면 저장에 실패했습니다.");
@@ -2475,7 +2472,7 @@ export default function SiteLayoutPlannerPage() {
     <section className="site-layout-planner" aria-label="현장 실측 기초도면 작성기">
       <header className="site-layout-intro">
         <div className="site-layout-brand"><span aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M5 25V7h22v18H5Z" /><path d="M9 21V11h14v10H9Zm0-5h14M14 11v10" /></svg></span><div><b>기초도면 작성</b><small>현장 실측 → CAD팀 전달</small></div></div>
-        <div className="site-layout-header-actions"><button type="button" className="site-layout-action-new" onClick={resetDraft}>새 도면</button><button type="button" className="secondary site-layout-action-library" onClick={() => { setDraftLibraryOpen(true); setDraftLibraryPage(1); }}>도면 보관함 {remoteLayouts.length}</button><button type="button" className={`primary site-layout-action-save ${remoteOperation === "saving" ? "is-saving" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "is-saved" : ""}`} disabled={remoteLoading} onClick={() => void saveCurrentDraft()}>{remoteOperation === "saving" ? "저장 중…" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "저장됨 ✓" : "기관 도면 저장"}</button>{activeRemoteId && remoteSavePhase === "drive-error" && <button type="button" className="site-layout-action-retry" disabled={remoteLoading} onClick={() => { const record = remoteLayouts.find((item) => item.id === activeRemoteId); if (record) void retryRemoteDrive(record); }}>Drive 다시 시도</button>}<div className={`site-layout-pdf-action-group ${pdfMenuOpen ? "is-open" : ""}`}><button type="button" className="site-layout-action-pdf-menu" aria-expanded={pdfMenuOpen} aria-controls="site-layout-pdf-actions" onClick={() => void preparePdfActions()}>{pdfPreparing ? "PDF 준비 중…" : pdfMenuOpen ? "PDF 닫기" : "PDF"}</button>{pdfMenuOpen && <div id="site-layout-pdf-actions" className="site-layout-pdf-inline" role="menu" aria-label="PDF 작업 선택">{pdfPreparing ? <span role="status">PDF 준비 중…</span> : pdfPrepareError ? <><span role="alert">{pdfPrepareError}</span><button type="button" onClick={() => void buildPreparedPdf()}>다시 만들기</button></> : <><button type="button" role="menuitem" onClick={() => openPreparedPdfPreview()} disabled={!preparedPdf}>미리보기</button><button type="button" role="menuitem" onClick={() => downloadPreparedPdf()} disabled={!preparedPdf}>저장</button><button type="button" role="menuitem" onClick={() => sharePreparedPdf()} disabled={!preparedPdf}>공유</button></>}</div>}</div></div>
+        <div className="site-layout-header-actions"><button type="button" className="site-layout-action-new" onClick={resetDraft}>새 도면</button><button type="button" className="secondary site-layout-action-library" onClick={() => { setDraftLibraryOpen(true); setDraftLibraryPage(1); }}>도면 보관함 {remoteLayouts.length}</button><button type="button" className={`primary site-layout-action-save ${remoteOperation === "saving" ? "is-saving" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "is-saved" : ""}`} disabled={remoteLoading} onClick={() => void saveCurrentDraft()}>{remoteOperation === "saving" ? "저장 중…" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "저장됨 ✓" : "기관 도면 저장"}</button>{activeRemoteId && remoteSavePhase === "drive-error" && <button type="button" className="site-layout-action-retry" disabled={remoteLoading} onClick={() => { const record = remoteLayouts.find((item) => item.id === activeRemoteId); if (record) void retryRemoteDrive(record); }}>Drive 다시 시도</button>}<div className={`site-layout-pdf-action-group ${pdfMenuOpen ? "is-open" : ""}`}><button type="button" className="site-layout-action-pdf-menu" aria-expanded={pdfMenuOpen} aria-controls="site-layout-pdf-actions" onClick={preparePdfActions}>{pdfMenuOpen ? "PDF 닫기" : "PDF"}</button>{pdfMenuOpen && <div id="site-layout-pdf-actions" className="site-layout-pdf-inline" role="menu" aria-label="PDF 작업 선택"><button type="button" role="menuitem" onClick={openPreparedPdfPreview}>미리보기</button><button type="button" role="menuitem" onClick={() => downloadPreparedPdf()} disabled={!preparedPdf || pdfPreparing}>저장</button><button type="button" role="menuitem" onClick={() => void sharePreparedPdf()} disabled={!preparedPdf || pdfPreparing}>공유</button>{pdfPreparing && <span role="status">PDF 파일 준비 중…</span>}{pdfPrepareError && <><span role="alert">{pdfPrepareError}</span><button type="button" onClick={() => void buildPreparedPdf()}>다시 만들기</button></>}</div>}</div></div>
       </header>
       {(remoteSavePhase === "failed" || remoteSavePhase === "conflict" || remoteSavePhase === "drive-error") && <div className="site-layout-local-state is-error" role="alert"><span>{saveMessage}</span><small>{remoteSaveDetail || "현재 입력은 이 기기의 복구본에 남아 있습니다."}</small></div>}
       {toastMessage && <div className="site-layout-toast" role="status" aria-live="polite">{toastMessage}</div>}
@@ -2497,10 +2494,10 @@ export default function SiteLayoutPlannerPage() {
         <div className="site-layout-draft-library-pages"><button type="button" disabled={draftLibraryPage <= 1} onClick={() => setDraftLibraryPage((page) => Math.max(1, page - 1))}>이전</button><span>{Math.min(draftLibraryPage, draftLibraryPageCount)} / {draftLibraryPageCount}</span><button type="button" disabled={draftLibraryPage >= draftLibraryPageCount} onClick={() => setDraftLibraryPage((page) => Math.min(draftLibraryPageCount, page + 1))}>다음</button></div>
         <details className="site-layout-recovery-library"><summary>이 기기 복구본 {localDrafts.length}개</summary>{localDrafts.length ? <ul>{localDrafts.map((record) => <li key={record.id}><div><b>{record.name}</b><small>{new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(record.updatedAt))}</small></div><button type="button" onClick={() => loadLocalDraft(record)}>복구</button><button type="button" className="danger" onClick={() => deleteLocalDraft(record)}>삭제</button></li>)}</ul> : <p>기기 복구본이 없습니다.</p>}</details>
       </section></div>}
-      {pdfPreviewOpen && preparedPdf && <div className="site-layout-pdf-preview-backdrop" role="presentation"><section className="site-layout-pdf-preview" role="dialog" aria-modal="true" aria-label="PDF 미리보기">
+      {pdfPreviewOpen && <div className="site-layout-pdf-preview-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPdfPreviewOpen(false); }}><section className="site-layout-pdf-preview" role="dialog" aria-modal="true" aria-label="PDF 미리보기">
         <div className="site-layout-pdf-preview-head"><div><b>PDF 미리보기</b><span>{exportFileName()}</span></div><button type="button" onClick={() => setPdfPreviewOpen(false)} aria-label="PDF 미리보기 닫기">닫기</button></div>
         <div className="site-layout-pdf-preview-canvas" aria-label="CAD팀 전달용 기초도면 PDF 화면"><SiteLayoutA3Sheet draft={draft} physicalDraft={physicalDraft} /></div>
-        <div className="site-layout-pdf-preview-actions"><button type="button" onClick={() => downloadPreparedPdf()}>PDF 저장</button><button type="button" onClick={() => sharePreparedPdf()}>PDF 공유</button></div>
+        <div className="site-layout-pdf-preview-actions"><button type="button" onClick={() => downloadPreparedPdf()} disabled={!preparedPdf || pdfPreparing}>PDF 저장</button><button type="button" onClick={() => void sharePreparedPdf()} disabled={!preparedPdf || pdfPreparing}>PDF 공유</button></div>
       </section></div>}
 
       <section className="site-layout-guide" aria-label="현장 실측 단계">
@@ -2568,7 +2565,7 @@ export default function SiteLayoutPlannerPage() {
         </aside>
 
         <main className="site-layout-canvas-panel view-model">
-          <div className="site-layout-canvas-head"><div><b>CAD 모델</b><span>전체 도면 자동 맞춤</span></div><div className="site-layout-canvas-meta">{pendingPreset ? <button type="button" className="site-layout-pending-placement" onClick={() => { setPendingPresetId(null); setActiveTool("선택"); setCommand("명령: 블록 배치를 취소했습니다."); }}>{pendingPreset.label} 배치 대기 · 취소</button> : <span>클릭 선택 · 끌어서 이동 · 단위 mm</span>}</div></div>
+          <div className="site-layout-canvas-head"><div><b>도면</b><span>한 화면 자동 맞춤</span></div><div className="site-layout-canvas-meta">{pendingPreset ? <button type="button" className="site-layout-pending-placement" onClick={() => { setPendingPresetId(null); setActiveTool("선택"); setCommand("명령: 블록 배치를 취소했습니다."); }}>{pendingPreset.label} 배치 대기 · 취소</button> : <span>클릭 선택 · 끌어서 이동 · 단위 mm</span>}</div></div>
           {orientationHint && <div className="site-layout-orientation-hint" role="status">휴대폰을 가로로 돌리면 도면을 더 넓게 볼 수 있습니다. 세로 화면에서도 계속 사용할 수 있습니다.</div>}
           <div className="site-layout-model-space">
             <div className="site-layout-board-wrap" style={{ ...physicalRoomStyle, maxWidth: `${Math.round(920 * roomRatio)}px` }}><div ref={boardRef} className={`site-layout-board site-layout-geometry-host ${pendingPreset ? "placing" : ""}`} style={physicalRoomStyle} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDrop={handleBoardDrop}><SiteLayoutGeometryView draft={physicalDraft} mode="model" paddingMm={650} selectedItemId={selectedId} interactive interactionMode={workflowMode === "direct" ? "drag" : "select"} showDimensions showLabels isItemVisible={(item) => { const legacy = draft.items.find((candidate) => candidate.id === item.id); return Boolean(legacy && itemLayer(legacy) !== "equipment" && visibleLayers[itemLayer(legacy)]); }} onBackgroundPointerDown={(point) => { if (pendingPresetId) addItem(pendingPresetId, (point.xMm / physicalDraft.roomWidthMm) * 100, (point.yMm / physicalDraft.roomHeightMm) * 100); else setSelectedId(""); }} onItemSelect={(item) => setSelectedId(item.id)} onItemPointerDown={workflowMode === "direct" ? startGeometryDrag : undefined} onModelPointerMove={(point, event) => moveGeometryDrag(point, event.pointerId)} onModelPointerUp={(_, event) => finishGeometryDrag(event.pointerId)} onModelPointerCancel={(event) => finishGeometryDrag(event.pointerId)} /></div></div>

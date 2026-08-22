@@ -38,7 +38,7 @@ test("PDF 버튼은 인라인으로 확장되고 모바일 호환 미리보기·
   assert.doesNotMatch(pageSource, /className="site-layout-action-pdf"/);
   assert.doesNotMatch(pageSource, /className="site-layout-share-button site-layout-action-share"/);
   assert.match(pageSource, /navigator\.share/);
-  assert.doesNotMatch(pageSource, /navigator\.canShare/);
+  assert.match(pageSource, /navigator\.canShare/);
   assert.match(pageSource, /PDF 저장 후 카카오톡에 첨부해 주세요/);
   assert.match(pageSource, /error\.name === "AbortError"/);
   assert.match(pageSource, /PDF 공유를 열지 못했습니다\. 브라우저 권한을 확인하거나 PDF 저장 후 첨부해 주세요/);
@@ -119,10 +119,11 @@ test("문·창호·구조물·에어컨 심벌은 공통 geometry 결과로 그�
   assert.match(geometryViewSource, /width=\{width\} height=\{height\}/);
 });
 
-test("PC는 직접 편집, 모바일은 단계형 실측을 자동 적용한다", () => {
+test("PC는 직접 편집, 모바일·태블릿은 단계형 실측을 자동 적용한다", () => {
   assert.match(pageSource, /type WorkflowMode = "guided" \| "direct"/);
   assert.match(pageSource, /useState<WorkflowMode>\("direct"\)/);
-  assert.match(pageSource, /matchMedia\("\(max-width: 760px\)"\)\.matches \? "guided" : "direct"/);
+  assert.match(pageSource, /matchMedia\("\(max-width: 1180px\), \(pointer: coarse\)"\)\.matches/);
+  assert.match(pageSource, /fieldDevice \? "guided" : storedMode === "guided"/);
   assert.doesNotMatch(pageSource, />현장 실측 도우미<\/button>/);
   assert.doesNotMatch(pageSource, /site-layout-mode-toggle/);
   assert.match(pageSource, /workflowMode === "guided" && renderGuidedQuestion\(\)/);
@@ -363,9 +364,9 @@ test("직접 편집에서는 PC 드래그와 포인터 좌표 변환을 유지�
   ]);
 });
 
-test("큰 터치 PC는 직접 편집으로 시작하고 guided 도면은 선택 전용 터치 동작을 쓴다", () => {
-  assert.match(pageSource, /window\.matchMedia\("\(max-width: 760px\)"\)\.matches \? "guided" : "direct"/);
-  assert.doesNotMatch(pageSource, /setWorkflowMode\(window\.matchMedia\("\(max-width: 760px\), \(pointer: coarse\)"/);
+test("태블릿·큰 터치 장치는 단계형 실측으로 시작하고 guided 도면은 선택 전용 터치 동작을 쓴다", () => {
+  assert.match(pageSource, /window\.matchMedia\("\(max-width: 1180px\), \(pointer: coarse\)"\)\.matches/);
+  assert.match(pageSource, /fieldDevice \? "guided" : storedMode === "guided" \|\| storedMode === "direct"/);
   assert.match(pageSource, /interactionMode=\{workflowMode === "direct" \? "drag" : "select"\}/);
   assert.match(geometryViewSource, /interactionMode === "select" \? "pan-x pan-y pinch-zoom" : "none"/);
   assert.match(geometryViewSource, /if \(moved < 8\) onBackgroundPointerDown/);
@@ -385,8 +386,8 @@ test("직접 편집 기둥은 벽 부착과 독립 배치, 네 기준벽 면거�
   ]);
 });
 
-test("CAD 모델은 전체 도면 자동 맞춤과 mm 단위를 명확히 알린다", () => {
-  assert.match(pageSource, /전체 도면 자동 맞춤/);
+test("도면은 한 화면 자동 맞춤과 mm 단위를 명확히 알린다", () => {
+  assert.match(pageSource, /한 화면 자동 맞춤/);
   assert.match(pageSource, /클릭 선택 · 끌어서 이동 · 단위 mm/);
   assert.doesNotMatch(pageSource, /도면 크게|zoom|paperZoom/);
 });
@@ -475,10 +476,10 @@ test("최종 단계 저장은 중복 버튼 없이 sticky 버튼 상태로 피�
 });
 
 test("PDF 공유는 공유 실패를 다운로드로 바꾸지 않고 세 작업을 같은 강조로 표시한다", () => {
-  const shareSource = pageSource.match(/function sharePreparedPdf\([\s\S]*?\n  }\n  async function downloadCurrentPdf/)?.[0] ?? "";
+  const shareSource = pageSource.match(/async function sharePreparedPdf\([\s\S]*?\n  }\n  async function downloadCurrentPdf/)?.[0] ?? "";
   assert.ok(shareSource, "PDF 공유 함수를 찾을 수 있어야 합니다.");
   assert.match(shareSource, /navigator\.share\?\.bind\(navigator\)/);
-  assert.doesNotMatch(shareSource, /navigator\.canShare/);
+  assert.match(shareSource, /navigator\.canShare/);
   assert.doesNotMatch(shareSource, /downloadPreparedPdf\(/);
   assert.match(shareSource, /PDF 저장 후 카카오톡에 첨부해 주세요/);
   assert.doesNotMatch(stylesSource, /\.site-layout-pdf-inline > button:last-child \{[^}]*background:#3157e8/);
