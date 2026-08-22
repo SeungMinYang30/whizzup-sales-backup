@@ -33,6 +33,7 @@ export type SiteLayoutGeometryViewProps = {
   mode?: SiteLayoutGeometryViewMode;
   className?: string;
   style?: CSSProperties;
+  viewport?: { x: number; y: number; width: number; height: number };
   paddingMm?: number;
   selectedItemId?: string;
   interactive?: boolean;
@@ -662,6 +663,7 @@ export function SiteLayoutGeometryView({
   mode = "model",
   className,
   style,
+  viewport,
   paddingMm,
   selectedItemId,
   interactive = false,
@@ -739,10 +741,14 @@ export function SiteLayoutGeometryView({
   return (
     <svg
       className={className}
+      x={viewport?.x}
+      y={viewport?.y}
+      width={viewport?.width}
+      height={viewport?.height}
       style={{
         display: "block",
-        width: "100%",
-        height: "100%",
+        width: viewport ? undefined : "100%",
+        height: viewport ? undefined : "100%",
         minWidth: 0,
         minHeight: 0,
         background: palette.background,

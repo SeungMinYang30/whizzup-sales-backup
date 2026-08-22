@@ -55,9 +55,34 @@ test("모델과 A3 출력은 동일한 mm 초안과 공통 SVG 렌더러를 사�
   assert.match(pageSource, /const physicalDraft = useMemo\(\(\) => normalizeDraft\(draft\)/);
   assert.match(pageSource, /const geometryViewBox = useMemo\(\(\) => computeSvgViewBox\(physicalDraft/);
   assert.match(pageSource, /<SiteLayoutGeometryView draft=\{physicalDraft\} mode="model"/);
-  assert.match(pageSource, /<SiteLayoutGeometryView[\s\S]*?draft=\{physicalDraft\} mode="paper"/);
-  assert.equal((pageSource.match(/<SiteLayoutGeometryView/g) ?? []).length, 3);
+  assert.match(pageSource, /function SiteLayoutA3Sheet/);
+  assert.match(pageSource, /<SiteLayoutGeometryView[\s\S]*?draft=\{physicalDraft\}[\s\S]*?mode="paper"[\s\S]*?viewport=/);
+  assert.equal((pageSource.match(/<SiteLayoutA3Sheet draft=\{draft\} physicalDraft=\{physicalDraft\}/g) ?? []).length, 2);
+  assert.equal((pageSource.match(/<SiteLayoutGeometryView/g) ?? []).length, 2);
   assert.doesNotMatch(pageSource, /renderItems\("(?:model|paper)"\)/);
+});
+
+test("PDF는 기존 A3 도곽과 기관·현장 정보를 포함한 한 장의 완성 시트를 사용한다", () => {
+  assertContainsAll(pageSource, [
+    /className="site-layout-a3-sheet"/,
+    /viewBox="0 0 4200 2970"/,
+    />기초 평면도</,
+    /내부 실측/,
+    />기관·사업</,
+    />도면 구성</,
+    />현장 통신</,
+    />전기·시공</,
+    />CAD팀 전달 메모</,
+    />PROJECT</,
+    />ROOM</,
+    />DATE</,
+    />SCALE</,
+    /NTS · 치수 mm 우선/,
+    /CAD팀 전달용 · 현장 실측 후 확정/,
+  ]);
+  assert.match(pageSource, /site-layout-pdf-preview-canvas[\s\S]*?<SiteLayoutA3Sheet draft=\{draft\} physicalDraft=\{physicalDraft\}/);
+  assert.match(pageSource, /site-layout-export-source[\s\S]*?<SiteLayoutA3Sheet draft=\{draft\} physicalDraft=\{physicalDraft\}/);
+  assert.doesNotMatch(pageSource, /BETA · 현장 실측 참고용/);
 });
 
 test("공통 SVG는 실제 mm 좌표, 동일 viewBox, 개구부 마스크를 사용한다", () => {

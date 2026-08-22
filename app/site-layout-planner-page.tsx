@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent, type PointerEvent as ReactPointerEvent } from "react";
 import SiteLayoutGeometryView from "./site-layout-geometry-view";
 import { downloadFile, fileAsDataUrl, siteLayoutPdfFromSvg } from "./site-layout-export";
-import { computeSvgViewBox, modelPointFromClient, normalizeDraft, validateDraft, type SiteLayoutItemMm } from "../lib/site-layout-geometry";
+import { computeSvgViewBox, modelPointFromClient, normalizeDraft, validateDraft, type SiteLayoutDraftMm, type SiteLayoutItemMm } from "../lib/site-layout-geometry";
 
 type LayoutItemKind = "equipment" | "table" | "door" | "window" | "pillar" | "beam" | "fixture" | "note";
 type LayoutSymbol =
@@ -312,6 +312,117 @@ function normalizeChecklist(value: unknown): SiteChecklist {
 function surveyChoiceLabel(value: SurveyChoice) { return ({ "": "미확인", yes: "있음", no: "없음", review: "재확인" } as const)[value]; }
 function internetModeLabel(value: InternetMode) { return ({ "": "미확인", wired: "유선", wireless: "무선", both: "유선·무선", none: "사용 불가" } as const)[value]; }
 function networkTypeLabel(value: NetworkType) { return ({ "": "미확인", education: "교육망", private: "사설망", both: "교육망·사설망", unknown: "현장 확인" } as const)[value]; }
+
+function sheetTextLines(value: string, maxCharacters: number, maxLines: number) {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  if (!normalized) return ["미입력"];
+  const characters = Array.from(normalized);
+  const lines: string[] = [];
+  while (characters.length > 0 && lines.length < maxLines) {
+    const chunk = characters.splice(0, maxCharacters).join("");
+    lines.push(chunk);
+  }
+  if (characters.length > 0 && lines.length > 0) lines[lines.length - 1] = `${lines[lines.length - 1].slice(0, -1)}…`;
+  return lines;
+}
+
+function SheetTextLines({ lines, x, y, lineHeight = 48, fontSize = 38, fontWeight = 600, fill = "#172033" }: {
+  lines: string[];
+  x: number;
+  y: number;
+  lineHeight?: number;
+  fontSize?: number;
+  fontWeight?: number;
+  fill?: string;
+}) {
+  return <text x={x} y={y} fill={fill} fontSize={fontSize} fontWeight={fontWeight} fontFamily="Arial, 'Noto Sans KR', sans-serif">
+    {lines.map((line, index) => <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 0 : lineHeight}>{line}</tspan>)}
+  </text>;
+}
+
+function SiteLayoutA3Sheet({ draft, physicalDraft }: { draft: LayoutDraft; physicalDraft: SiteLayoutDraftMm }) {
+  const checklist = normalizeChecklist(draft.siteChecklist);
+  const organizationName = draft.organizationName?.trim() || "기관 미지정";
+  const businessRound = Math.max(1, Math.round(draft.businessRound || 1));
+  const roomName = draft.roomName.trim() || "기초도면";
+  const today = new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const communicationLines = [
+    `인터넷 ${surveyChoiceLabel(checklist.internetAvailable)} · ${internetModeLabel(checklist.internetMode)}`,
+    `사용 망 ${networkTypeLabel(checklist.networkType)}`,
+  ];
+  const constructionLines = [
+    `전원 ${surveyChoiceLabel(checklist.powerOutlet)} · 암막커튼 ${surveyChoiceLabel(checklist.blackoutCurtain)}`,
+    `바닥공사 ${surveyChoiceLabel(checklist.floorWork)} · E/V ${surveyChoiceLabel(checklist.elevator)}`,
+    `천장 조명 철거 ${surveyChoiceLabel(checklist.ceilingLightRemoval)}`,
+  ];
+  const titleBlockX = 3290;
+  const titleBlockWidth = 820;
+  const titlePadding = 52;
+  const titleTextX = titleBlockX + titlePadding;
+  const sectionLine = (y: number) => <line x1={titleBlockX} y1={y} x2={titleBlockX + titleBlockWidth} y2={y} stroke="#172033" strokeWidth={5} />;
+  return <svg
+    className="site-layout-a3-sheet"
+    viewBox="0 0 4200 2970"
+    preserveAspectRatio="xMidYMid meet"
+    role="img"
+    aria-label={`${roomName} CAD팀 전달용 기초도면 PDF`}
+  >
+    <rect width="4200" height="2970" fill="#fff" />
+    <rect x="45" y="45" width="4110" height="2880" fill="none" stroke="#172033" strokeWidth="8" />
+    <line x1={titleBlockX} y1="45" x2={titleBlockX} y2="2925" stroke="#172033" strokeWidth="8" />
+
+    <text x="145" y="155" fill="#172033" fontSize="52" fontWeight="850" fontFamily="Arial, 'Noto Sans KR', sans-serif">기초 평면도</text>
+    <text x="3140" y="155" fill="#172033" fontSize="35" fontWeight="700" textAnchor="end" fontFamily="Arial, 'Noto Sans KR', sans-serif">
+      내부 실측 {new Intl.NumberFormat("ko-KR").format(physicalDraft.roomWidthMm)} × {new Intl.NumberFormat("ko-KR").format(physicalDraft.roomHeightMm)} mm · 천장 H={new Intl.NumberFormat("ko-KR").format(physicalDraft.roomCeilingHeightMm)} mm
+    </text>
+    <line x1="145" y1="210" x2="3140" y2="210" stroke="#65758d" strokeWidth="3" />
+
+    <SiteLayoutGeometryView
+      draft={physicalDraft}
+      mode="paper"
+      viewport={{ x: 120, y: 275, width: 3070, height: 2260 }}
+      paddingMm={650}
+      interactive={false}
+      showDimensions
+      showLabels
+      isItemVisible={(item) => item.kind !== "equipment" && item.kind !== "note"}
+    />
+
+    <text x="145" y="2760" fill="#172033" fontSize="70" fontWeight="850" fontFamily="Arial, 'Noto Sans KR', sans-serif">{roomName} 평면도</text>
+    <line x1="145" y1="2790" x2="3140" y2="2790" stroke="#172033" strokeWidth="5" />
+    <text x="3140" y="2870" fill="#40516a" fontSize="34" fontWeight="700" textAnchor="end" fontFamily="Arial, 'Noto Sans KR', sans-serif">현장 실측 기준 · NTS · 치수 mm 우선</text>
+
+    <text x={titleBlockX + titleBlockWidth / 2} y="185" fill="#172033" fontSize="72" fontWeight="900" textAnchor="middle" fontFamily="Arial, 'Noto Sans KR', sans-serif">{roomName}</text>
+    {sectionLine(270)}
+    <text x={titleTextX} y="340" fill="#172033" fontSize="42" fontWeight="850" fontFamily="Arial, 'Noto Sans KR', sans-serif">기관·사업</text>
+    <SheetTextLines lines={sheetTextLines(`${organizationName} · ${businessRound}차 사업`, 22, 2)} x={titleTextX} y={405} fontSize={35} lineHeight={45} />
+    {sectionLine(510)}
+    <text x={titleTextX} y="580" fill="#172033" fontSize="42" fontWeight="850" fontFamily="Arial, 'Noto Sans KR', sans-serif">도면 구성</text>
+    <SheetTextLines lines={["표현용 RC 벽체 · 문 · 창호", "기둥 · 보 · 에어컨"]} x={titleTextX} y={645} fontSize={34} lineHeight={46} />
+    {sectionLine(755)}
+    <text x={titleTextX} y="825" fill="#172033" fontSize="42" fontWeight="850" fontFamily="Arial, 'Noto Sans KR', sans-serif">현장 통신</text>
+    <SheetTextLines lines={communicationLines} x={titleTextX} y={890} fontSize={34} lineHeight={48} />
+    {sectionLine(1000)}
+    <text x={titleTextX} y="1070" fill="#172033" fontSize="42" fontWeight="850" fontFamily="Arial, 'Noto Sans KR', sans-serif">전기·시공</text>
+    <SheetTextLines lines={constructionLines} x={titleTextX} y={1135} fontSize={32} lineHeight={48} />
+    {sectionLine(1295)}
+    <text x={titleTextX} y="1365" fill="#172033" fontSize="42" fontWeight="850" fontFamily="Arial, 'Noto Sans KR', sans-serif">CAD팀 전달 메모</text>
+    <SheetTextLines lines={sheetTextLines(draft.fieldNotes || "", 24, 8)} x={titleTextX} y={1435} fontSize={32} lineHeight={47} />
+    {sectionLine(1905)}
+
+    <line x1={titleBlockX + 220} y1="1905" x2={titleBlockX + 220} y2="2295" stroke="#172033" strokeWidth="3" />
+    {[2002, 2099, 2196, 2295].map((y) => <line key={y} x1={titleBlockX} y1={y} x2={titleBlockX + titleBlockWidth} y2={y} stroke="#172033" strokeWidth="3" />)}
+    <text x={titleBlockX + 28} y="1970" fill="#172033" fontSize="31" fontWeight="700">PROJECT</text>
+    <SheetTextLines lines={sheetTextLines(organizationName, 21, 1)} x={titleBlockX + 248} y={1970} fontSize={31} />
+    <text x={titleBlockX + 28} y="2067" fill="#172033" fontSize="31" fontWeight="700">ROOM</text>
+    <SheetTextLines lines={sheetTextLines(roomName, 21, 1)} x={titleBlockX + 248} y={2067} fontSize={31} />
+    <text x={titleBlockX + 28} y="2164" fill="#172033" fontSize="31" fontWeight="700">DATE</text>
+    <text x={titleBlockX + 248} y="2164" fill="#172033" fontSize="31" fontWeight="600">{today}</text>
+    <text x={titleBlockX + 28} y="2261" fill="#172033" fontSize="31" fontWeight="700">SCALE</text>
+    <text x={titleBlockX + 248} y="2261" fill="#172033" fontSize="31" fontWeight="600">NTS · 단위 mm</text>
+    <text x={titleBlockX + titleBlockWidth / 2} y="2790" fill="#51627a" fontSize="32" fontWeight="750" textAnchor="middle" fontFamily="Arial, 'Noto Sans KR', sans-serif">CAD팀 전달용 · 현장 실측 후 확정</text>
+  </svg>;
+}
 
 function normalizeStoredDraft(value: unknown): LayoutDraft | null {
   if (!validStoredDraft(value)) return null;
@@ -2388,7 +2499,7 @@ export default function SiteLayoutPlannerPage() {
       </section></div>}
       {pdfPreviewOpen && preparedPdf && <div className="site-layout-pdf-preview-backdrop" role="presentation"><section className="site-layout-pdf-preview" role="dialog" aria-modal="true" aria-label="PDF 미리보기">
         <div className="site-layout-pdf-preview-head"><div><b>PDF 미리보기</b><span>{exportFileName()}</span></div><button type="button" onClick={() => setPdfPreviewOpen(false)} aria-label="PDF 미리보기 닫기">닫기</button></div>
-        <div className="site-layout-pdf-preview-canvas" aria-label="CAD팀 전달용 기초도면 PDF 화면"><SiteLayoutGeometryView draft={physicalDraft} mode="paper" paddingMm={650} interactive={false} showDimensions showLabels isItemVisible={(item) => { const legacy = draft.items.find((candidate) => candidate.id === item.id); return Boolean(legacy && itemLayer(legacy) !== "equipment" && itemLayer(legacy) !== "note"); }} /></div>
+        <div className="site-layout-pdf-preview-canvas" aria-label="CAD팀 전달용 기초도면 PDF 화면"><SiteLayoutA3Sheet draft={draft} physicalDraft={physicalDraft} /></div>
         <div className="site-layout-pdf-preview-actions"><button type="button" onClick={() => downloadPreparedPdf()}>PDF 저장</button><button type="button" onClick={() => sharePreparedPdf()}>PDF 공유</button></div>
       </section></div>}
 
@@ -2529,7 +2640,7 @@ export default function SiteLayoutPlannerPage() {
           </div> : <div className="site-layout-inspector-empty"><b>{activeStep.id === "room" ? "공간 크기를 먼저 입력하세요." : "배치한 블록을 선택하세요."}</b><span>선택하면 실제 치수와 설치 벽·기준 거리를 조정할 수 있습니다.</span></div>}
         </aside>
       </div>
-      <div ref={exportBoardRef} className="site-layout-export-source" aria-hidden="true"><SiteLayoutGeometryView draft={physicalDraft} mode="paper" paddingMm={650} interactive={false} showDimensions showLabels isItemVisible={(item) => { const legacy = draft.items.find((candidate) => candidate.id === item.id); return Boolean(legacy && itemLayer(legacy) !== "equipment" && itemLayer(legacy) !== "note"); }} /></div>
+      <div ref={exportBoardRef} className="site-layout-export-source" aria-hidden="true"><SiteLayoutA3Sheet draft={draft} physicalDraft={physicalDraft} /></div>
       {workflowMode === "guided" ? renderQuestionNavigation("site-layout-question-navigation-desktop") : <div className="site-layout-step-actions"><button type="button" onClick={() => goToStep(activeStepIndex - 1)} disabled={activeStepIndex === 0}>이전</button><div><b>{activeStepIndex + 1}/{guideSteps.length} · {activeStep.label}</b><span>입력 내용은 이 기기에 자동 복구됩니다.</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => void downloadCurrentPdf()}>CAD팀 전달 PDF</button> : <button type="button" className="primary" onClick={goNextStep}>저장하고 다음</button>}</div>}
       <footer className="site-layout-statusbar"><div><b>SNAP</b><b>ORTHO</b><b>OSNAP</b><span>GRID 10</span></div><p>도면 단위 mm · 기관별 DB 및 Google Drive 저장 · CAD팀 전달용 기초도면</p></footer>
     </section>
