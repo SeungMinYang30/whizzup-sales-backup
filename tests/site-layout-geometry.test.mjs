@@ -84,6 +84,37 @@ test("wall thickness remains exactly 150 mm in every wall geometry", () => {
   assert.deepEqual(walls.left, { xMm: -150, yMm: -150, widthMm: 150, heightMm: 8_446 });
 });
 
+test("user and legacy wall-thickness values normalize to the fixed 150 mm drawing convention", () => {
+  const normalized = normalizeDraft({ ...createDefaultDraft(), roomWallThicknessMm: 900 });
+  const migrated = migrateLegacyDraft({ roomName: "기존 도면", roomWidth: 10, roomHeight: 7, roomWallThickness: 0.9, items: [] });
+
+  assert.equal(normalized.roomWallThicknessMm, 150);
+  assert.equal(migrated.roomWallThicknessMm, 150);
+});
+
+test("window-to-window measurement metadata survives normalization and storage", () => {
+  const source = {
+    ...createDefaultDraft(),
+    items: [makeItem({
+      id: "window-followup",
+      kind: "window",
+      presetId: "window-sliding-2",
+      name: "두 번째 창호",
+      widthMm: 1_800,
+      heightMm: 140,
+      openingHeightMm: 1_500,
+      sillHeightMm: 900,
+      openingMeasurement: { axis: "x", referenceType: "item", referenceItemId: "window-first", direction: 1, distanceMode: "clear", distanceMm: 650 },
+    })],
+  };
+
+  const restored = deserializeDraft(serializeDraft(source));
+  assert.equal(restored.draft.items[0].openingMeasurement.referenceType, "item");
+  assert.equal(restored.draft.items[0].openingMeasurement.referenceItemId, "window-first");
+  assert.equal(restored.draft.items[0].openingMeasurement.distanceMode, "clear");
+  assert.equal(restored.draft.items[0].openingMeasurement.distanceMm, 650);
+});
+
 test("doors and windows keep their physical span when mounted on horizontal or vertical walls", () => {
   const draft = createDefaultDraft();
   const topDoor = placeItemOnWall(draft, makeItem(), "top", 2_000);
@@ -551,7 +582,7 @@ test("v3 serialization preserves stable previous-beam ids and millimetre distanc
 });
 
 test("mobile survey follows one stable step at a time with bounded previous and next navigation", () => {
-  assert.deepEqual(GUIDE_STEPS, ["room", "door", "window", "structure", "facility", "checklist", "review"]);
+  assert.deepEqual(GUIDE_STEPS, ["room", "door", "structure", "window", "facility", "checklist", "review"]);
   assert.equal(advanceSurveyStep("room", -1), "room");
   assert.equal(advanceSurveyStep("room", 1), "door");
   assert.equal(advanceSurveyStep("facility", 1), "checklist");
@@ -560,10 +591,10 @@ test("mobile survey follows one stable step at a time with bounded previous and 
   const draft = { ...createDefaultDraft(), activeGuideStep: "window" };
   assert.deepEqual(nextGuideState(draft), {
     stepId: "window",
-    index: 2,
+    index: 3,
     total: 7,
-    previousStepId: "door",
-    nextStepId: "structure",
+    previousStepId: "structure",
+    nextStepId: "facility",
     complete: false,
   });
 });

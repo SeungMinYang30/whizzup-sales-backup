@@ -25,6 +25,9 @@ export type SiteLayout = {
   id: number;
   draftUuid: string;
   title: string;
+  organizationName: string;
+  businessRound: number;
+  roomName: string;
   draft: SiteLayoutDraft;
   schemaVersion: number;
   editVersion: number;
@@ -97,6 +100,9 @@ const schemaStatements = [
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     draft_uuid TEXT NOT NULL UNIQUE,
     title TEXT NOT NULL,
+    organization_name TEXT NOT NULL DEFAULT '',
+    business_round INTEGER NOT NULL DEFAULT 1,
+    room_name TEXT NOT NULL DEFAULT '',
     schema_version INTEGER NOT NULL DEFAULT 3,
     draft_json TEXT NOT NULL DEFAULT '{}',
     edit_version INTEGER NOT NULL DEFAULT 1,
@@ -150,12 +156,24 @@ const schemaStatements = [
 ];
 
 let readyPromise: Promise<ReturnType<typeof getD1>> | null = null;
+const siteLayoutColumnMigrations = [
+  "ALTER TABLE site_layouts ADD COLUMN organization_name TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE site_layouts ADD COLUMN business_round INTEGER NOT NULL DEFAULT 1",
+  "ALTER TABLE site_layouts ADD COLUMN room_name TEXT NOT NULL DEFAULT ''",
+];
 
 export function ensureSiteLayoutsReady() {
   if (!readyPromise) {
     readyPromise = (async () => {
       const d1 = await ensureCollaborationReady();
       await d1.batch(schemaStatements.map((statement) => d1.prepare(statement)));
+      for (const statement of siteLayoutColumnMigrations) {
+        try {
+          await d1.prepare(statement).run();
+        } catch (error) {
+          if (!/duplicate column|already exists/i.test(String(error))) throw error;
+        }
+      }
       return d1;
     })().catch((error) => {
       readyPromise = null;
@@ -227,11 +245,6 @@ async function sha256Hex(value: string) {
     .join("");
 }
 
-function timestampYear(value: unknown) {
-  const match = String(value ?? "").match(/^(20\d{2})/);
-  return match?.[1] ?? String(new Date().getFullYear());
-}
-
 function revisionFileStem(revisionNumber: number) {
   return `R${String(revisionNumber).padStart(4, "0")}`;
 }
@@ -244,6 +257,9 @@ function siteLayoutFromRow(row: Record<string, unknown>): SiteLayout {
     id,
     draftUuid: cleanText(row.draft_uuid, 100),
     title: cleanText(row.title, 200),
+    organizationName: cleanText(row.organization_name, 160) || "기관 미지정",
+    businessRound: positiveInteger(row.business_round) || 1,
+    roomName: cleanText(row.room_name, 100) || cleanText(row.title, 200) || "실 미지정",
     draft: parseDraft(row.draft_json),
     schemaVersion: positiveInteger(row.schema_version) || SITE_LAYOUT_SCHEMA_VERSION,
     editVersion: positiveInteger(row.edit_version) || 1,
@@ -272,6 +288,9 @@ function siteLayoutSummaryFromRow(
     id,
     draftUuid: cleanText(row.draft_uuid, 100),
     title: cleanText(row.title, 200),
+    organizationName: cleanText(row.organization_name, 160) || "기관 미지정",
+    businessRound: positiveInteger(row.business_round) || 1,
+    roomName: cleanText(row.room_name, 100) || cleanText(row.title, 200) || "실 미지정",
     schemaVersion: positiveInteger(row.schema_version) || SITE_LAYOUT_SCHEMA_VERSION,
     editVersion: positiveInteger(row.edit_version) || 1,
     currentRevisionId: positiveInteger(row.current_revision_id),
@@ -292,6 +311,9 @@ const SITE_LAYOUT_SUMMARY_COLUMNS = [
   "id",
   "draft_uuid",
   "title",
+  "organization_name",
+  "business_round",
+  "room_name",
   "schema_version",
   "edit_version",
   "current_revision_id",
@@ -343,9 +365,9 @@ export async function listSiteLayouts(input: { query?: unknown } = {}) {
   const rows = query
     ? await d1
         .prepare(`SELECT ${SITE_LAYOUT_SUMMARY_COLUMNS} FROM site_layouts
-          WHERE deleted_at='' AND LOWER(title) LIKE LOWER(?)
+          WHERE deleted_at='' AND (LOWER(title) LIKE LOWER(?) OR LOWER(organization_name) LIKE LOWER(?) OR LOWER(room_name) LIKE LOWER(?))
           ORDER BY updated_at DESC, id DESC LIMIT 200`)
-        .bind(`%${query}%`)
+        .bind(`%${query}%`, `%${query}%`, `%${query}%`)
         .all<Record<string, unknown>>()
     : await d1
         .prepare(`SELECT ${SITE_LAYOUT_SUMMARY_COLUMNS} FROM site_layouts
@@ -371,6 +393,9 @@ export async function saveSiteLayout(
 ) {
   const title = cleanText(payload.title, 200);
   if (!title) throw new SiteLayoutInputError("기초도면 제목을 입력해 주세요.");
+  const organizationName = cleanText(payload.organizationName, 160) || "기관 미지정";
+  const businessRound = positiveInteger(payload.businessRound) || 1;
+  const roomName = cleanText(payload.roomName, 100) || title;
   const { draft, json } = draftFromInput(payload.draft);
   const schemaVersion = draftSchemaVersion(draft, payload.schemaVersion);
   const contentHash = await sha256Hex(json);
@@ -385,14 +410,17 @@ export async function saveSiteLayout(
       const draftUuid = crypto.randomUUID();
       const inserted = await transaction
         .prepare(`INSERT INTO site_layouts (
-          draft_uuid, title, schema_version, draft_json, edit_version,
+          draft_uuid, title, organization_name, business_round, room_name, schema_version, draft_json, edit_version,
           drive_sync_status, drive_sync_token,
           created_by, created_by_name, updated_by, updated_by_name
-        ) VALUES (?, ?, ?, ?, 1, 'queued', ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'queued', ?, ?, ?, ?, ?)
         RETURNING *`)
         .bind(
           draftUuid,
           title,
+          organizationName,
+          businessRound,
+          roomName,
           schemaVersion,
           json,
           syncToken,
@@ -455,7 +483,7 @@ export async function saveSiteLayout(
     const nextVersion = baseVersion + 1;
     const updated = await transaction
       .prepare(`UPDATE site_layouts SET
-        title=?, schema_version=?, draft_json=?, edit_version=?,
+        title=?, organization_name=?, business_round=?, room_name=?, schema_version=?, draft_json=?, edit_version=?,
         drive_sync_status='queued', drive_sync_error='', drive_sync_token=?,
         drive_folder_id='', drive_json_file_id='', drive_json_name='',
         drive_pdf_file_id='', drive_pdf_name='',
@@ -464,6 +492,9 @@ export async function saveSiteLayout(
         RETURNING *`)
       .bind(
         title,
+        organizationName,
+        businessRound,
+        roomName,
         schemaVersion,
         json,
         nextVersion,
@@ -613,8 +644,9 @@ export async function syncSiteLayoutDriveFiles(input: {
       `${title} (${id})`,
       `제목 없는 기초도면 (${id})`,
     );
-    const year = timestampYear(row.created_at);
-    const folderSegments = [SITE_LAYOUT_DRIVE_ROOT, year, uniqueTitleFolder];
+    const organizationFolder = safeDriveFolderName(row.organization_name, "기관 미지정");
+    const businessRoundFolder = `${positiveInteger(row.business_round) || 1}차 사업`;
+    const folderSegments = [SITE_LAYOUT_DRIVE_ROOT, organizationFolder, businessRoundFolder, uniqueTitleFolder];
     const stem = revisionFileStem(revisionNumber);
     const jsonName = `${stem}_기초도면.json`;
     const pdfName = `${stem}_A3_현장실측초안.pdf`;

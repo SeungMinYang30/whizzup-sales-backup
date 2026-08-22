@@ -70,7 +70,11 @@ test("site layout Drive path and retryable file endpoints are present", async ()
 
   assert.match(store, /SITE_LAYOUT_DRIVE_ROOT = "기초도면 전체"/);
   assert.match(store, /`\$\{title\} \(\$\{id\}\)`/);
-  assert.match(store, /\[SITE_LAYOUT_DRIVE_ROOT, year, uniqueTitleFolder\]/);
+  assert.match(store, /\[SITE_LAYOUT_DRIVE_ROOT, organizationFolder, businessRoundFolder, uniqueTitleFolder\]/);
+  assert.match(store, /organization_name/);
+  assert.match(store, /business_round/);
+  assert.match(store, /room_name/);
+  assert.match(store, /ALTER TABLE site_layouts ADD COLUMN organization_name/);
   assert.match(store, /R\$\{String\(revisionNumber\)\.padStart\(4, "0"\)\}/);
   assert.match(filesRoute, /retrySiteLayoutDriveSync/);
   assert.match(filesRoute, /siteLayoutDriveFile/);

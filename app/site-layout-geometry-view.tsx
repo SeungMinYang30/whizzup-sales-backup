@@ -170,6 +170,7 @@ function DoorLeaf({
   closedMm,
   inwardMm,
   color,
+  strokeWidth,
 }: {
   draft: Pick<SiteLayoutDraftMm, "roomWidthMm" | "roomHeightMm">;
   wall: SiteLayoutWallSide;
@@ -177,6 +178,7 @@ function DoorLeaf({
   closedMm: number;
   inwardMm: number;
   color: string;
+  strokeWidth: number;
 }) {
   const radius = Math.abs(closedMm - hingeMm);
   const hinge = pointForWall(draft, wall, hingeMm, 0);
@@ -186,7 +188,7 @@ function DoorLeaf({
   const openedVector = { x: opened.x - hinge.x, y: opened.y - hinge.y };
   const cross = closedVector.x * openedVector.y - closedVector.y * openedVector.x;
   return (
-    <g fill="none" stroke={color} strokeWidth={1.6} vectorEffect="non-scaling-stroke">
+    <g fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke">
       <path d={linePath(hinge, opened)} />
       <path d={`M ${closed.x} ${closed.y} A ${radius} ${radius} 0 0 ${cross > 0 ? 1 : 0} ${opened.x} ${opened.y}`} strokeDasharray="55 34" />
       <circle cx={hinge.x} cy={hinge.y} r={32} fill={color} stroke="none" />
@@ -194,11 +196,12 @@ function DoorLeaf({
   );
 }
 
-function DoorSymbol({ draft, item, geometry, color }: {
+function DoorSymbol({ draft, item, geometry, color, strokeWidth }: {
   draft: SiteLayoutDraftMm;
   item: SiteLayoutItemMm;
   geometry: ItemGeometryMm;
   color: string;
+  strokeWidth: number;
 }) {
   if (!item.wall || geometry.spanStartMm === undefined || geometry.spanEndMm === undefined) return null;
   const start = geometry.spanStartMm;
@@ -214,7 +217,7 @@ function DoorSymbol({ draft, item, geometry, color }: {
     const arrowStart = pointForWall(draft, item.wall, start + span * 0.25, 130 * inward);
     const arrowEnd = pointForWall(draft, item.wall, start + span * 0.75, 130 * inward);
     return (
-      <g fill="none" stroke={color} strokeWidth={1.6} vectorEffect="non-scaling-stroke">
+      <g fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke">
         <path d={trackA} />
         <path d={trackB} />
         <path d={linePath(arrowStart, arrowEnd)} />
@@ -229,7 +232,7 @@ function DoorSymbol({ draft, item, geometry, color }: {
       return pointForWall(draft, item.wall as SiteLayoutWallSide, along, index % 2 === 0 ? 0 : 170 * inward);
     });
     return (
-      <g fill="none" stroke={color} strokeWidth={1.6} vectorEffect="non-scaling-stroke">
+      <g fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke">
         <path d={threshold} />
         <polyline points={points.map((point) => `${point.x},${point.y}`).join(" ")} />
       </g>
@@ -241,9 +244,9 @@ function DoorSymbol({ draft, item, geometry, color }: {
     const split = presetId === "door-unequal" ? start + span * 0.65 : start + span / 2;
     return (
       <g>
-        <path d={threshold} fill="none" stroke={color} strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
-        <DoorLeaf draft={draft} wall={item.wall} hingeMm={start} closedMm={split} inwardMm={(split - start) * inward} color={color} />
-        <DoorLeaf draft={draft} wall={item.wall} hingeMm={end} closedMm={split} inwardMm={(end - split) * inward} color={color} />
+        <path d={threshold} fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+        <DoorLeaf draft={draft} wall={item.wall} hingeMm={start} closedMm={split} inwardMm={(split - start) * inward} color={color} strokeWidth={strokeWidth} />
+        <DoorLeaf draft={draft} wall={item.wall} hingeMm={end} closedMm={split} inwardMm={(end - split) * inward} color={color} strokeWidth={strokeWidth} />
       </g>
     );
   }
@@ -252,8 +255,8 @@ function DoorSymbol({ draft, item, geometry, color }: {
   const closed = item.handing === "right" ? start : end;
   return (
     <g>
-      <path d={threshold} fill="none" stroke={color} strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
-      <DoorLeaf draft={draft} wall={item.wall} hingeMm={hinge} closedMm={closed} inwardMm={span * inward} color={color} />
+      <path d={threshold} fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+      <DoorLeaf draft={draft} wall={item.wall} hingeMm={hinge} closedMm={closed} inwardMm={span * inward} color={color} strokeWidth={strokeWidth} />
     </g>
   );
 }
@@ -266,11 +269,12 @@ function windowPartitionCount(presetId?: string) {
   return 1;
 }
 
-function WindowSymbol({ draft, item, geometry, color }: {
+function WindowSymbol({ draft, item, geometry, color, strokeWidth }: {
   draft: SiteLayoutDraftMm;
   item: SiteLayoutItemMm;
   geometry: ItemGeometryMm;
   color: string;
+  strokeWidth: number;
 }) {
   if (!item.wall || geometry.spanStartMm === undefined || geometry.spanEndMm === undefined) return null;
   const start = geometry.spanStartMm;
@@ -283,7 +287,7 @@ function WindowSymbol({ draft, item, geometry, color }: {
     return wallStrokePath(draft, item.wall as SiteLayoutWallSide, along, along, outerOffset);
   });
   return (
-    <g fill="none" stroke={color} strokeWidth={1.45} vectorEffect="non-scaling-stroke">
+    <g fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke">
       <path d={wallStrokePath(draft, item.wall, start, end, outerOffset)} />
       <path d={wallStrokePath(draft, item.wall, start, end, innerOffset)} />
       {mullions.map((_, index) => {
@@ -299,16 +303,17 @@ function WindowSymbol({ draft, item, geometry, color }: {
   );
 }
 
-function GenericItemSymbol({ item, geometry, color, wallHatchId }: {
+function GenericItemSymbol({ item, geometry, color, wallHatchId, strokeWidth }: {
   item: SiteLayoutItemMm;
   geometry: ItemGeometryMm;
   color: string;
   wallHatchId: string;
+  strokeWidth: number;
 }) {
   const { xMm: x, yMm: y, widthMm: width, heightMm: height } = geometry;
   const centerX = x + width / 2;
   const centerY = y + height / 2;
-  const common = { stroke: color, strokeWidth: 1.45, vectorEffect: "non-scaling-stroke" as const };
+  const common = { stroke: color, strokeWidth, vectorEffect: "non-scaling-stroke" as const };
 
   if (item.kind === "pillar") {
     if (item.presetId === "pillar-round") {
@@ -362,23 +367,51 @@ function itemColor(item: SiteLayoutItemMm, palette: Palette) {
   return palette.equipment;
 }
 
-function ItemLabel({ item, geometry, color, compact }: {
+function measurementLabel(item: SiteLayoutItemMm) {
+  const size = item.kind === "door" || item.kind === "window"
+    ? `개구부 ${formatMm(item.widthMm)}×${formatMm(item.openingHeightMm ?? item.heightMm)} mm`
+    : `${formatMm(item.widthMm)}×${formatMm(item.heightMm)} mm`;
+  if (item.kind === "window") {
+    const measurement = item.openingMeasurement;
+    const reference = measurement?.referenceType === "item" ? "이전 창호" : "벽 모서리";
+    const distance = measurement ? `${formatMm(measurement.distanceMm)} mm` : `${formatMm(item.offsetMm ?? 0)} mm`;
+    return [size, `하단 ${formatMm(item.sillHeightMm ?? 0)} · ${reference} ${distance}`];
+  }
+  if (item.kind === "door") return [size, `벽 기준 ${formatMm(item.offsetMm ?? 0)} mm`];
+  if (item.kind === "beam") {
+    const measurement = item.structureMeasurement;
+    return [size, `보 하단 ${formatMm(item.beamBottomHeightMm ?? 0)} · ${measurement?.referenceType === "item" ? "이전 보" : "벽"} ${formatMm(measurement?.distanceMm ?? item.offsetMm ?? 0)} mm`];
+  }
+  if (item.kind === "pillar") return [size, `좌측 ${formatMm(item.xMm)} · 상단 ${formatMm(item.yMm)} mm`];
+  if (item.presetId === "aircon-ceiling") return [size, `좌측 중심 ${formatMm(geometryCenter(item, "x"))} · 상단 중심 ${formatMm(geometryCenter(item, "y"))} mm`];
+  if (item.presetId === "aircon-wall") return [size, `벽 기준 ${formatMm(item.offsetMm ?? 0)} · 설치높이 ${formatMm(item.mountingHeightMm ?? 0)} mm`];
+  return [size];
+}
+
+function geometryCenter(item: SiteLayoutItemMm, axis: "x" | "y") {
+  return axis === "x" ? item.xMm + item.widthMm / 2 : item.yMm + item.heightMm / 2;
+}
+
+function ItemLabel({ item, geometry, color, compact, paper }: {
   item: SiteLayoutItemMm;
   geometry: ItemGeometryMm;
   color: string;
   compact: boolean;
+  paper: boolean;
 }) {
   if (compact) return null;
-  const fontSize = 145;
+  const fontSize = paper ? 132 : 145;
   const x = geometry.centerXmm;
   const y = item.wall === "top"
-    ? 260
+    ? geometry.yMm + geometry.heightMm + 155
     : item.wall === "bottom"
-      ? geometry.yMm - 115
+      ? geometry.yMm - (paper ? 190 : 115)
       : geometry.yMm + geometry.heightMm + 185;
+  const details = paper ? measurementLabel(item) : [];
   return (
-    <text x={x} y={y} fill={color} fontSize={fontSize} fontWeight={750} textAnchor="middle" pointerEvents="none">
-      {item.name.slice(0, 26)}
+    <text x={x} y={y} fill={color} fontSize={fontSize} fontWeight={800} textAnchor="middle" pointerEvents="none" paintOrder="stroke" stroke={paper ? "#fff" : "transparent"} strokeWidth={paper ? 4 : 0} strokeLinejoin="round">
+      <tspan x={x}>{item.name.slice(0, 26)}</tspan>
+      {details.map((line, index) => <tspan key={`${item.id}-${index}`} x={x} dy={index === 0 ? 155 : 135} fontSize={paper ? 112 : fontSize} fontWeight={650}>{line}</tspan>)}
     </text>
   );
 }
@@ -406,8 +439,8 @@ function RoomInformation({ draft, palette, compact }: { draft: SiteLayoutDraftMm
   return (
     <g pointerEvents="none">
       <rect x={x} y={y} width={width} height={260} rx={45} fill={palette.background} fillOpacity={0.94} stroke={palette.wallLine} strokeWidth={1} vectorEffect="non-scaling-stroke" />
-      <text x={x + 120} y={y + 108} fill={palette.label} fontFamily="Consolas, monospace" fontSize={145} fontWeight={800}>RC 벽체 t={formatMm(draft.roomWallThicknessMm)}</text>
-      <text x={x + 120} y={y + 210} fill={palette.label} fontSize={125}>{draft.roomName} · 천장 H={formatMm(draft.roomCeilingHeightMm)}</text>
+      <text x={x + 120} y={y + 108} fill={palette.label} fontFamily="Consolas, monospace" fontSize={145} fontWeight={800}>실내 실측 기준</text>
+      <text x={x + 120} y={y + 210} fill={palette.label} fontSize={125}>{draft.roomName} · 천장 H={formatMm(draft.roomCeilingHeightMm)} mm</text>
     </g>
   );
 }
@@ -441,6 +474,7 @@ export function SiteLayoutGeometryView({
     .map((item) => computeOpeningCutGeometryMm(draft, item))
     .filter((rect): rect is GeometryRectMm => rect !== null);
   const compact = mode === "mobile";
+  const symbolStrokeWidth = mode === "paper" ? 2.35 : 1.55;
 
   function modelPoint(event: { clientX: number; clientY: number; currentTarget: SVGElement }) {
     const bounds = event.currentTarget.ownerSVGElement?.getBoundingClientRect()
@@ -561,13 +595,13 @@ export function SiteLayoutGeometryView({
               />
             )}
             {item.kind === "door" ? (
-              <DoorSymbol draft={draft} item={item} geometry={geometry} color={color} />
+              <DoorSymbol draft={draft} item={item} geometry={geometry} color={color} strokeWidth={symbolStrokeWidth} />
             ) : item.kind === "window" ? (
-              <WindowSymbol draft={draft} item={item} geometry={geometry} color={color} />
+              <WindowSymbol draft={draft} item={item} geometry={geometry} color={color} strokeWidth={symbolStrokeWidth} />
             ) : (
-              <GenericItemSymbol item={item} geometry={geometry} color={color} wallHatchId={hatchId} />
+              <GenericItemSymbol item={item} geometry={geometry} color={color} wallHatchId={hatchId} strokeWidth={symbolStrokeWidth} />
             )}
-            {showLabels && <ItemLabel item={item} geometry={geometry} color={color} compact={compact} />}
+            {showLabels && <ItemLabel item={item} geometry={geometry} color={color} compact={compact} paper={mode === "paper"} />}
           </g>
         );
       })}

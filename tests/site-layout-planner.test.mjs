@@ -73,12 +73,13 @@ test("문·창호·구조물·에어컨 심벌은 공통 geometry 결과로 그�
   assert.match(geometryViewSource, /width=\{width\} height=\{height\}/);
 });
 
-test("기본 작성 방식은 간편 실측이며 직접 편집은 명시적으로 분리된다", () => {
+test("PC는 직접 편집, 모바일은 현장 실측 도우미를 기본으로 분리한다", () => {
   assert.match(pageSource, /type WorkflowMode = "guided" \| "direct"/);
-  assert.match(pageSource, /useState<WorkflowMode>\("guided"\)/);
-  assert.match(pageSource, />간편 실측<\/button>/);
-  assert.match(pageSource, />도면 직접 수정<\/button>/);
-  assert.match(pageSource, /질문을 하나씩 확인합니다\./);
+  assert.match(pageSource, /useState<WorkflowMode>\("direct"\)/);
+  assert.match(pageSource, /matchMedia\("\(max-width: 760px\), \(pointer: coarse\)"\)\.matches \? "guided" : "direct"/);
+  assert.match(pageSource, />현장 실측 도우미<\/button>/);
+  assert.match(pageSource, />도면 직접 편집<\/button>/);
+  assert.match(pageSource, /모바일에서 질문을 하나씩 따라가며 빠짐없이 실측합니다\./);
   assert.match(pageSource, /workflowMode === "guided" && renderGuidedQuestion\(\)/);
   assert.match(pageSource, /workflowMode === "direct" && <div className="site-layout-commandbar"/);
   assert.match(pageSource, /interactive=\{workflowMode === "direct"\}/);
@@ -98,7 +99,7 @@ test("간편 실측은 한 질문씩 이전·다음으로 이동하는 7단계 �
     /function questionNext\(\)/,
     /function questionPrevious\(\)/,
     />이전 질문<\/button>/,
-    /activeQuestionIndex === currentQuestionCount - 1 \? "다음 단계" : "다음 질문"/,
+    /activeQuestionIndex === currentQuestionCount - 1 \? "단계 완료·다음" : "다음 질문"/,
   ]);
   assert.match(pageSource, /roomQuestions\[activeQuestionIndex\]/);
   assert.match(pageSource, /checklistQuestions\[Math\.min\(activeQuestionIndex/);
@@ -112,13 +113,16 @@ test("간편 실측 질문은 현장 기준 벽·모서리·실측값을 순서�
     /어느 모서리에서 거리를 쟀나요\?/,
     /두 벽에서 중심까지 거리를 입력해 주세요\./,
     /현장에서 잰 실제 크기를 입력해 주세요\./,
-    /좌측 D벽 → 중심\(m\)/,
-    /상단 A벽 → 중심\(m\)/,
+    /좌측 D벽 → \{item\.kind === "pillar" \? "기둥 면" : "중심"\}/,
+    /상단 A벽 → \{item\.kind === "pillar" \? "기둥 면" : "중심"\}/,
     /개구부 폭/,
     /개구부 높이/,
     /바닥 → 창 하단 높이/,
     /바닥 → 보 하단/,
     /다음 보까지 거리/,
+    /이전 창호 기준/,
+    /창호 끝면 사이/,
+    /중심 사이/,
   ]);
 });
 
@@ -128,7 +132,6 @@ test("현장 통신·전기·공사 조건과 CAD 메모를 마지막 설문과 
     /연결 방식/,
     /사용 망/,
     /사용 가능한 전원/,
-    /전용 회로/,
     /암막커튼/,
     /바닥공사/,
     /엘리베이터/,
@@ -139,11 +142,12 @@ test("현장 통신·전기·공사 조건과 CAD 메모를 마지막 설문과 
     /전기·시공/,
     /CAD팀 전달 메모/,
   ]);
+  assert.doesNotMatch(pageSource, /title: "전용 전기 회로가 필요한가요\?"/);
   assert.match(pageSource, /geometryIssues\.some\(\(issue\) => issue\.severity === "error"\)/);
   assert.match(pageSource, /물리 치수와 객체 위치 검사를 통과했습니다\./);
 });
 
-test("현재 입력은 기기 복구본을 유지하면서 공용 API와 Drive 저장 상태를 사용한다", () => {
+test("현재 입력은 기기 복구본과 기관별 API·Drive 저장 상태를 함께 사용한다", () => {
   assert.match(pageSource, /const STORAGE_KEY = "whizzup:site-layout-draft:v1"/);
   assert.match(pageSource, /const DRAFT_LIBRARY_KEY = "whizzup:site-layout-local-drafts:v1"/);
   assert.match(pageSource, /const REMOTE_CONTEXT_KEY = "whizzup:site-layout-remote-context:v1"/);
@@ -168,14 +172,17 @@ test("현재 입력은 기기 복구본을 유지하면서 공용 API와 Drive �
     /response\.status === 409/,
     /const \[activeRemoteFingerprint, setActiveRemoteFingerprint\] = useState\(""\)/,
     /setActiveRemoteFingerprint\(JSON\.stringify\(draft\)\)/,
-    /activeRemoteFingerprint === currentDraftFingerprint \? "공용 저장됨" : "저장 후 수정됨"/,
+    /activeRemoteFingerprint === currentDraftFingerprint \? "기관 도면 저장됨" : "저장 후 수정됨"/,
     /activeLocalDraftFingerprint === currentDraftFingerprint \? "기기 복구됨" : "복구 후 수정됨"/,
-    /aria-label="공용 기초도면 목록"/,
-    />공용 저장<\/button>/,
+    /aria-label="기관별 기초도면 목록"/,
+    /기관 도면 저장/,
     />불러오기<\/button>/,
     />삭제<\/button>/,
     /Google Drive 보관 완료/,
     /이 기기 복구본/,
+    /organizationName:/,
+    /businessRound:/,
+    /roomName:/,
   ]);
   const summaryNormalizer = pageSource.match(/function normalizeRemoteSummary[\s\S]*?\n}\n\nfunction normalizeRemoteLayout/)?.[0] ?? "";
   assert.ok(summaryNormalizer, "metadata-only 목록 normalizer가 있어야 합니다.");
@@ -197,7 +204,7 @@ test("보는 벽 부착을 기본으로 첫 보와 다음 보의 실측 기준�
     /이전 보 기준/,
     /면에서 면까지/,
     /중심에서 중심까지/,
-    /"보 하나 더"/,
+    /"\+ 다음 보 추가"/,
   ]);
   assert.match(pageSource, /isWallMounted\(item: LayoutItem\)[^{]*\{ return[^}]*item\.kind === "beam"/);
 });
@@ -281,4 +288,29 @@ test("간편 실측의 모바일 UI는 패널 대신 큰 터치 입력과 한 �
   assert.match(stylesSource, /@media \(max-width: 760px\)[\s\S]*?\.site-layout-choice-grid button,[\s\S]*?min-height: 52px/);
   assert.match(stylesSource, /@media \(max-width: 760px\)[\s\S]*?\.site-layout-guided-measurements \{ grid-template-columns: 1fr; \}/);
   assert.match(stylesSource, /@media \(max-width: 760px\)[\s\S]*?\.site-layout-workspace\.is-guided \.site-layout-board-wrap \{ max-width: 100% !important; \}/);
+});
+
+test("모바일 진입부는 중복 브랜드와 설명을 숨기고 기관 정보를 접어서 질문을 빨리 보여준다", () => {
+  assert.match(pageSource, /<details className="site-layout-context-details">/);
+  assert.match(pageSource, /<summary><b>기관·사업 정보<\/b>/);
+  assertContainsAll(stylesSource, [
+    /@media \(max-width: 760px\)[\s\S]*?\.site-layout-brand \{ display: none; \}/,
+    /@media \(max-width: 760px\)[\s\S]*?\.site-layout-local-state \{ display: none; \}/,
+    /\.site-layout-context-details:not\(\[open\]\) > \.site-layout-context-bar \{ display: none; \}/,
+    /\.site-layout-guide-copy small,[\s\S]*?\.site-layout-guide-copy p \{ display: none; \}/,
+  ]);
+});
+
+test("A3 도면은 객체별 실제 치수와 측정 기준을 진한 선으로 표기한다", () => {
+  assertContainsAll(geometryViewSource, [
+    /function measurementLabel\(/,
+    /개구부 \$\{formatMm\(item\.widthMm\)\}/,
+    /이전 창호/,
+    /이전 보/,
+    /좌측 중심/,
+    /const symbolStrokeWidth = mode === "paper" \? 2\.35 : 1\.55/,
+    /paintOrder="stroke"/,
+  ]);
+  assert.match(pageSource, /천장조명 철거/);
+  assert.doesNotMatch(pageSource, /전용 회로 \{surveyChoiceLabel/);
 });

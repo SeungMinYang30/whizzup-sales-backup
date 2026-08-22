@@ -14,8 +14,8 @@ export const LEGACY_STORAGE_KEY = "whizzup:site-layout-draft:v1";
 export const GUIDE_STEPS = [
   "room",
   "door",
-  "window",
   "structure",
+  "window",
   "facility",
   "checklist",
   "review",
@@ -51,6 +51,7 @@ export type StructureMeasurement = {
   distanceMode: StructureDistanceMode;
   distanceMm: number;
 };
+export type OpeningMeasurement = StructureMeasurement;
 
 export type SiteLayoutItemMm = {
   id: string;
@@ -80,6 +81,8 @@ export type SiteLayoutItemMm = {
   structureAttachment?: StructureAttachment;
   /** Measurement datum for a pillar/beam. The referenced item is a stable item id. */
   structureMeasurement?: StructureMeasurement;
+  /** Optional field-survey datum for a window measured from a wall or previous window. */
+  openingMeasurement?: OpeningMeasurement;
 };
 
 export type SiteLayoutDraftMm = {
@@ -295,6 +298,28 @@ function normalizeStructureMeasurement(
     direction: value.direction === -1 ? -1 : referenceWall === "right" || referenceWall === "bottom" ? -1 : 1,
     distanceMode: value.distanceMode === "center" ? "center" : "clear",
     distanceMm,
+  };
+}
+
+function normalizeOpeningMeasurement(value: unknown, legacyMeters: boolean): OpeningMeasurement | undefined {
+  if (!isRecord(value)) return undefined;
+  const referenceItemId = sanitizeText(value.referenceItemId, "", 120) || undefined;
+  const referenceWall = isWallSide(value.referenceWall) ? value.referenceWall : undefined;
+  const rawDistanceMm = finiteNumber(value.distanceMm);
+  const rawDistanceMeters = finiteNumber(value.distance);
+  return {
+    axis: value.axis === "y" ? "y" : "x",
+    referenceType: value.referenceType === "item" || (!value.referenceType && referenceItemId) ? "item" : "wall",
+    referenceWall,
+    referenceItemId,
+    direction: value.direction === -1 ? -1 : 1,
+    distanceMode: value.distanceMode === "center" ? "center" : "clear",
+    distanceMm: normalizedMm(
+      rawDistanceMm ?? (legacyMeters && rawDistanceMeters !== null ? rawDistanceMeters * 1000 : 0),
+      0,
+      0,
+      MAX_ROOM_DIMENSION_MM,
+    ),
   };
 }
 
@@ -571,6 +596,7 @@ function normalizeMmItem(
   const legacyWall = isWallSide(value.wall) ? value.wall : undefined;
   const structureAttachment = normalizeStructureAttachment(value.structureAttachment, value.kind, legacyWall, defaultBeamToWall);
   const structureMeasurement = normalizeStructureMeasurement(value.structureMeasurement, structureAttachment, false);
+  const openingMeasurement = value.kind === "window" ? normalizeOpeningMeasurement(value.openingMeasurement, false) : undefined;
   const wall = structureAttachment?.mode === "wall" ? structureAttachment.wall : isStructureItem({ kind: value.kind }) ? undefined : legacyWall;
   const item: SiteLayoutItemMm = {
     id: sanitizeText(value.id, `item-${index + 1}`, 120) || `item-${index + 1}`,
@@ -595,6 +621,7 @@ function normalizeMmItem(
     beamSpacingMm: finiteNumber(value.beamSpacingMm) === null ? undefined : normalizedMm(value.beamSpacingMm, 1000, 0, 100_000),
     structureAttachment,
     structureMeasurement,
+    openingMeasurement,
   };
 
   if (item.wall) return placeItemOnWall(draft, item, item.wall, item.offsetMm ?? 0);
@@ -614,7 +641,7 @@ function normalizeMmDraft(value: Record<string, unknown>, sourceVersion: 2 | 3):
     roomWidthMm: normalizedMm(value.roomWidthMm, fallback.roomWidthMm, 100, MAX_ROOM_DIMENSION_MM),
     roomHeightMm: normalizedMm(value.roomHeightMm, fallback.roomHeightMm, 100, MAX_ROOM_DIMENSION_MM),
     roomCeilingHeightMm: normalizedMm(value.roomCeilingHeightMm, fallback.roomCeilingHeightMm, 300, 20_000),
-    roomWallThicknessMm: normalizedMm(value.roomWallThicknessMm, fallback.roomWallThicknessMm, 10, 2_000),
+    roomWallThicknessMm: DEFAULT_WALL_THICKNESS_MM,
     items: [],
     stageChecks: sanitizeStringRecord(value.stageChecks),
     siteChecklist: sanitizeStringRecord(value.siteChecklist),
@@ -659,6 +686,7 @@ function migrateLegacyItem(value: unknown, index: number, draft: SiteLayoutDraft
   const legacyWall = isWallSide(value.wall) ? value.wall : undefined;
   const structureAttachment = normalizeStructureAttachment(value.structureAttachment, value.kind, legacyWall, false);
   const structureMeasurement = normalizeStructureMeasurement(value.structureMeasurement, structureAttachment, true);
+  const openingMeasurement = value.kind === "window" ? normalizeOpeningMeasurement(value.openingMeasurement, true) : undefined;
   const structureWall = structureAttachment?.mode === "wall" ? structureAttachment.wall : undefined;
   const wall = structureWall ?? legacyWall;
   const wallBound = Boolean(wall) && (
@@ -691,6 +719,7 @@ function migrateLegacyItem(value: unknown, index: number, draft: SiteLayoutDraft
     beamSpacingMm: finiteNumber(value.beamSpacing) === null ? undefined : legacyMetersToMm(value.beamSpacing, 1000, 0, 100_000),
     structureAttachment,
     structureMeasurement,
+    openingMeasurement,
   };
   if (wallBound && wall) {
     item.offsetMm = legacyWallOffsetMm(value, draft, wall, anchor, widthMm);
@@ -716,7 +745,7 @@ export function migrateLegacyDraft(value: unknown): SiteLayoutDraftMm | null {
     roomWidthMm: legacyMetersToMm(roomWidth, fallback.roomWidthMm, 100, MAX_ROOM_DIMENSION_MM),
     roomHeightMm: legacyMetersToMm(roomHeight, fallback.roomHeightMm, 100, MAX_ROOM_DIMENSION_MM),
     roomCeilingHeightMm: legacyMetersToMm(value.roomCeilingHeight, fallback.roomCeilingHeightMm, 300, 20_000),
-    roomWallThicknessMm: legacyMetersToMm(value.roomWallThickness, fallback.roomWallThicknessMm, 10, 2_000),
+    roomWallThicknessMm: DEFAULT_WALL_THICKNESS_MM,
     items: [],
     stageChecks: sanitizeStringRecord(value.stageChecks),
     siteChecklist: sanitizeStringRecord(value.siteChecklist),
