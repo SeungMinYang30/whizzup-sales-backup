@@ -6,8 +6,9 @@
  * must never be written back into a draft.
  */
 
-export const DRAFT_SCHEMA_VERSION = 2 as const;
-export const STORAGE_KEY = "whizzup:site-layout-draft:v2";
+export const DRAFT_SCHEMA_VERSION = 3 as const;
+export const STORAGE_KEY = "whizzup:site-layout-draft:v3";
+export const PREVIOUS_STORAGE_KEY = "whizzup:site-layout-draft:v2";
 export const LEGACY_STORAGE_KEY = "whizzup:site-layout-draft:v1";
 
 export const GUIDE_STEPS = [
@@ -34,6 +35,22 @@ export type SiteLayoutItemKind =
   | "note";
 export type WallOffsetAnchor = "start" | "center";
 export type WallAlignment = "centerline" | "inside";
+export type StructureDistanceMode = "clear" | "center";
+export type StructureMeasurementAxis = "x" | "y";
+export type StructureAttachment =
+  | { mode: "wall"; wall: SiteLayoutWallSide }
+  | { mode: "free" };
+export type StructureMeasurement = {
+  axis: StructureMeasurementAxis;
+  referenceType: "wall" | "item";
+  referenceWall?: SiteLayoutWallSide;
+  referenceItemId?: string;
+  /** +1 is left-to-right/top-to-bottom, -1 is the reverse direction. */
+  direction: 1 | -1;
+  /** clear = face-to-face, center = centre-line-to-centre-line. */
+  distanceMode: StructureDistanceMode;
+  distanceMm: number;
+};
 
 export type SiteLayoutItemMm = {
   id: string;
@@ -59,6 +76,10 @@ export type SiteLayoutItemMm = {
   mountingHeightMm?: number;
   beamBottomHeightMm?: number;
   beamSpacingMm?: number;
+  /** Physical mounting is independent from the datum used to measure location. */
+  structureAttachment?: StructureAttachment;
+  /** Measurement datum for a pillar/beam. The referenced item is a stable item id. */
+  structureMeasurement?: StructureMeasurement;
 };
 
 export type SiteLayoutDraftMm = {
@@ -114,7 +135,14 @@ export type DraftValidationIssue = {
     | "wall-offset"
     | "opening-height"
     | "opening-overlap"
-    | "ceiling-aircon-square";
+    | "ceiling-aircon-square"
+    | "structure-reference-missing"
+    | "structure-reference-kind"
+    | "structure-reference-axis"
+    | "structure-reference-wall"
+    | "structure-reference-direction"
+    | "structure-reference-cycle"
+    | "structure-distance-outside-room";
   severity: "warning" | "error";
   message: string;
   itemId?: string;
@@ -123,7 +151,12 @@ export type DraftValidationIssue = {
 
 export type NormalizedDraftResult = {
   draft: SiteLayoutDraftMm;
-  source: "v2" | "legacy-v1" | "default";
+  source: "v3" | "v2" | "legacy-v1" | "default";
+  issues: DraftValidationIssue[];
+};
+
+export type StructurePlacementResult = {
+  items: SiteLayoutItemMm[];
   issues: DraftValidationIssue[];
 };
 
@@ -202,6 +235,67 @@ function isItemKind(value: unknown): value is SiteLayoutItemKind {
 
 function isGuideStep(value: unknown): value is SiteLayoutGuideStep {
   return typeof value === "string" && GUIDE_STEPS.includes(value as SiteLayoutGuideStep);
+}
+
+function isStructureItem(item: Pick<SiteLayoutItemMm, "kind">) {
+  return item.kind === "pillar" || item.kind === "beam";
+}
+
+function measurementAxisForWall(wall: SiteLayoutWallSide): StructureMeasurementAxis {
+  return wall === "left" || wall === "right" ? "x" : "y";
+}
+
+function wallSpanAxis(wall: SiteLayoutWallSide): StructureMeasurementAxis {
+  return wall === "top" || wall === "bottom" ? "x" : "y";
+}
+
+function normalizeStructureAttachment(
+  value: unknown,
+  kind: SiteLayoutItemKind,
+  legacyWall: SiteLayoutWallSide | undefined,
+  defaultBeamToWall: boolean,
+): StructureAttachment | undefined {
+  if (kind !== "pillar" && kind !== "beam") return undefined;
+  if (isRecord(value) && value.mode === "free") return { mode: "free" };
+  if (isRecord(value) && value.mode === "wall") {
+    return { mode: "wall", wall: isWallSide(value.wall) ? value.wall : legacyWall ?? "top" };
+  }
+  if (legacyWall) return { mode: "wall", wall: legacyWall };
+  if (kind === "beam" && defaultBeamToWall) return { mode: "wall", wall: "top" };
+  return { mode: "free" };
+}
+
+function normalizeStructureMeasurement(
+  value: unknown,
+  attachment: StructureAttachment | undefined,
+  legacyMeters: boolean,
+): StructureMeasurement | undefined {
+  if (!isRecord(value)) return undefined;
+  const referenceItemId = sanitizeText(value.referenceItemId, "", 120) || undefined;
+  const referenceWall = isWallSide(value.referenceWall) ? value.referenceWall : undefined;
+  const referenceType = value.referenceType === "item" || (!value.referenceType && referenceItemId) ? "item" : "wall";
+  const fallbackAxis = referenceWall
+    ? measurementAxisForWall(referenceWall)
+    : attachment?.mode === "wall"
+      ? wallSpanAxis(attachment.wall)
+      : "x";
+  const rawDistanceMm = finiteNumber(value.distanceMm);
+  const rawDistanceMeters = finiteNumber(value.distance);
+  const distanceMm = normalizedMm(
+    rawDistanceMm ?? (legacyMeters && rawDistanceMeters !== null ? rawDistanceMeters * 1000 : 0),
+    0,
+    0,
+    MAX_ROOM_DIMENSION_MM,
+  );
+  return {
+    axis: value.axis === "y" ? "y" : value.axis === "x" ? "x" : fallbackAxis,
+    referenceType,
+    referenceWall,
+    referenceItemId,
+    direction: value.direction === -1 ? -1 : referenceWall === "right" || referenceWall === "bottom" ? -1 : 1,
+    distanceMode: value.distanceMode === "center" ? "center" : "clear",
+    distanceMm,
+  };
 }
 
 function isOpening(item: Pick<SiteLayoutItemMm, "kind">) {
@@ -447,13 +541,22 @@ export function geometryToRoomPercent(
   };
 }
 
-function normalizeV2Item(value: unknown, index: number, draft: SiteLayoutDraftMm): SiteLayoutItemMm | null {
+function normalizeMmItem(
+  value: unknown,
+  index: number,
+  draft: SiteLayoutDraftMm,
+  defaultBeamToWall: boolean,
+): SiteLayoutItemMm | null {
   if (!isRecord(value) || !isItemKind(value.kind)) return null;
   const presetId = typeof value.presetId === "string" ? value.presetId.slice(0, 80) : undefined;
   const widthMm = normalizedMm(value.widthMm, presetId === "aircon-ceiling" ? 840 : 900, 1, MAX_ITEM_DIMENSION_MM);
   const rawHeightMm = normalizedMm(value.heightMm, presetId === "aircon-ceiling" ? 840 : 180, 1, MAX_ITEM_DIMENSION_MM);
   const heightMm = presetId === "aircon-ceiling" ? widthMm : rawHeightMm;
   const rotation: SiteLayoutRotation = value.rotation === 90 ? 90 : 0;
+  const legacyWall = isWallSide(value.wall) ? value.wall : undefined;
+  const structureAttachment = normalizeStructureAttachment(value.structureAttachment, value.kind, legacyWall, defaultBeamToWall);
+  const structureMeasurement = normalizeStructureMeasurement(value.structureMeasurement, structureAttachment, false);
+  const wall = structureAttachment?.mode === "wall" ? structureAttachment.wall : isStructureItem({ kind: value.kind }) ? undefined : legacyWall;
   const item: SiteLayoutItemMm = {
     id: sanitizeText(value.id, `item-${index + 1}`, 120) || `item-${index + 1}`,
     kind: value.kind,
@@ -464,7 +567,7 @@ function normalizeV2Item(value: unknown, index: number, draft: SiteLayoutDraftMm
     widthMm,
     heightMm,
     rotation,
-    wall: isWallSide(value.wall) ? value.wall : undefined,
+    wall,
     offsetMm: finiteNumber(value.offsetMm) === null ? undefined : roundMillimeters(finiteNumber(value.offsetMm) ?? 0),
     offsetAnchor: value.offsetAnchor === "center" ? "center" : value.offsetAnchor === "start" ? "start" : undefined,
     wallAlignment: value.wallAlignment === "centerline" ? "centerline" : value.wallAlignment === "inside" ? "inside" : undefined,
@@ -475,6 +578,8 @@ function normalizeV2Item(value: unknown, index: number, draft: SiteLayoutDraftMm
     mountingHeightMm: finiteNumber(value.mountingHeightMm) === null ? undefined : normalizedMm(value.mountingHeightMm, 2100, 0, 20_000),
     beamBottomHeightMm: finiteNumber(value.beamBottomHeightMm) === null ? undefined : normalizedMm(value.beamBottomHeightMm, 2200, 0, 20_000),
     beamSpacingMm: finiteNumber(value.beamSpacingMm) === null ? undefined : normalizedMm(value.beamSpacingMm, 1000, 0, 100_000),
+    structureAttachment,
+    structureMeasurement,
   };
 
   if (item.wall) return placeItemOnWall(draft, item, item.wall, item.offsetMm ?? 0);
@@ -486,7 +591,7 @@ function normalizeV2Item(value: unknown, index: number, draft: SiteLayoutDraftMm
   };
 }
 
-function normalizeV2Draft(value: Record<string, unknown>): SiteLayoutDraftMm {
+function normalizeMmDraft(value: Record<string, unknown>, sourceVersion: 2 | 3): SiteLayoutDraftMm {
   const fallback = createDefaultDraft();
   const draft: SiteLayoutDraftMm = {
     schemaVersion: DRAFT_SCHEMA_VERSION,
@@ -503,8 +608,11 @@ function normalizeV2Draft(value: Record<string, unknown>): SiteLayoutDraftMm {
     savedAt: typeof value.savedAt === "string" ? value.savedAt.slice(0, 40) : undefined,
   };
   draft.items = Array.isArray(value.items)
-    ? value.items.map((item, index) => normalizeV2Item(item, index, draft)).filter((item): item is SiteLayoutItemMm => item !== null)
+    ? value.items
+      .map((item, index) => normalizeMmItem(item, index, draft, sourceVersion === 3))
+      .filter((item): item is SiteLayoutItemMm => item !== null)
     : [];
+  draft.items = resolveStructurePlacements(draft).items;
   return draft;
 }
 
@@ -533,8 +641,17 @@ function migrateLegacyItem(value: unknown, index: number, draft: SiteLayoutDraft
   const legacyHeightMm = legacyMetersToMm(value.height, presetId === "aircon-ceiling" ? 840 : 180, 1);
   const heightMm = presetId === "aircon-ceiling" ? widthMm : legacyHeightMm;
   const rotation: SiteLayoutRotation = value.rotation === 90 ? 90 : 0;
-  const wall = isWallSide(value.wall) ? value.wall : undefined;
-  const wallBound = Boolean(wall) && (value.kind === "door" || value.kind === "window" || value.kind === "pillar" || presetId === "aircon-wall");
+  const legacyWall = isWallSide(value.wall) ? value.wall : undefined;
+  const structureAttachment = normalizeStructureAttachment(value.structureAttachment, value.kind, legacyWall, false);
+  const structureMeasurement = normalizeStructureMeasurement(value.structureMeasurement, structureAttachment, true);
+  const structureWall = structureAttachment?.mode === "wall" ? structureAttachment.wall : undefined;
+  const wall = structureWall ?? legacyWall;
+  const wallBound = Boolean(wall) && (
+    value.kind === "door"
+    || value.kind === "window"
+    || structureAttachment?.mode === "wall"
+    || presetId === "aircon-wall"
+  );
   const anchor = presetId === "aircon-wall" ? "center" : "start";
   const item: SiteLayoutItemMm = {
     id: sanitizeText(value.id, `migrated-${index + 1}`, 120) || `migrated-${index + 1}`,
@@ -557,6 +674,8 @@ function migrateLegacyItem(value: unknown, index: number, draft: SiteLayoutDraft
     mountingHeightMm: finiteNumber(value.mountingHeight) === null ? undefined : legacyMetersToMm(value.mountingHeight, 2100, 0, 20_000),
     beamBottomHeightMm: finiteNumber(value.beamBottomHeight) === null ? undefined : legacyMetersToMm(value.beamBottomHeight, 2200, 0, 20_000),
     beamSpacingMm: finiteNumber(value.beamSpacing) === null ? undefined : legacyMetersToMm(value.beamSpacing, 1000, 0, 100_000),
+    structureAttachment,
+    structureMeasurement,
   };
   if (wallBound && wall) {
     item.offsetMm = legacyWallOffsetMm(value, draft, wall, anchor, widthMm);
@@ -593,11 +712,267 @@ export function migrateLegacyDraft(value: unknown): SiteLayoutDraftMm | null {
   draft.items = value.items
     .map((item, index) => migrateLegacyItem(item, index, draft))
     .filter((item): item is SiteLayoutItemMm => item !== null);
+  draft.items = resolveStructurePlacements(draft).items;
   return draft;
 }
 
-export function validateDraft(draft: SiteLayoutDraftMm): DraftValidationIssue[] {
+function structureAxis(item: SiteLayoutItemMm): StructureMeasurementAxis {
+  if (item.structureAttachment?.mode === "wall") return wallSpanAxis(item.structureAttachment.wall);
+  return item.rotation === 90 ? "y" : "x";
+}
+
+function structurePlacementBaseline(
+  draft: Pick<SiteLayoutDraftMm, "roomWidthMm" | "roomHeightMm" | "roomWallThicknessMm">,
+  item: SiteLayoutItemMm,
+) {
+  if (item.structureAttachment?.mode === "wall") {
+    return placeItemOnWall(draft, item, item.structureAttachment.wall, item.offsetMm ?? 0, {
+      anchor: item.offsetAnchor ?? "start",
+      alignment: "inside",
+    });
+  }
+  if (item.structureAttachment?.mode === "free") return { ...item, wall: undefined };
+  return item.wall ? placeItemOnWall(draft, item, item.wall, item.offsetMm ?? 0) : item;
+}
+
+function itemAxisSpanMm(
+  draft: Pick<SiteLayoutDraftMm, "roomWidthMm" | "roomHeightMm" | "roomWallThicknessMm">,
+  item: SiteLayoutItemMm,
+  axis: StructureMeasurementAxis,
+) {
+  const geometry = computeItemGeometryMm(draft, item);
+  return axis === "x" ? geometry.widthMm : geometry.heightMm;
+}
+
+function itemAxisCenterMm(
+  draft: Pick<SiteLayoutDraftMm, "roomWidthMm" | "roomHeightMm" | "roomWallThicknessMm">,
+  item: SiteLayoutItemMm,
+  axis: StructureMeasurementAxis,
+) {
+  const geometry = computeItemGeometryMm(draft, item);
+  return axis === "x" ? geometry.centerXmm : geometry.centerYmm;
+}
+
+function placeStructureCenterMm(
+  draft: Pick<SiteLayoutDraftMm, "roomWidthMm" | "roomHeightMm" | "roomWallThicknessMm">,
+  item: SiteLayoutItemMm,
+  axis: StructureMeasurementAxis,
+  centerMm: number,
+  crossAxisCenterMm?: number,
+) {
+  if (item.structureAttachment?.mode === "wall") {
+    return placeItemOnWall(draft, item, item.structureAttachment.wall, centerMm, { anchor: "center", alignment: "inside" });
+  }
+  const footprint = rotatedFootprintMm(item);
+  const next = { ...item, wall: undefined };
+  if (axis === "x") {
+    next.xMm = roundMillimeters(centerMm - footprint.widthMm / 2);
+    if (crossAxisCenterMm !== undefined) next.yMm = roundMillimeters(crossAxisCenterMm - footprint.heightMm / 2);
+  } else {
+    next.yMm = roundMillimeters(centerMm - footprint.heightMm / 2);
+    if (crossAxisCenterMm !== undefined) next.xMm = roundMillimeters(crossAxisCenterMm - footprint.widthMm / 2);
+  }
+  return next;
+}
+
+/**
+ * Resolves wall/previous-item measurement data into physical x/y coordinates.
+ * This function is deterministic and side-effect free; the input draft is never mutated.
+ */
+export function resolveStructurePlacements(draft: SiteLayoutDraftMm): StructurePlacementResult {
+  const itemById = new Map(draft.items.map((item) => [item.id, item]));
+  const resolved = new Map<string, SiteLayoutItemMm>();
+  const states = new Map<string, "visiting" | "done">();
+  const invalidIds = new Set<string>();
   const issues: DraftValidationIssue[] = [];
+  const issueKeys = new Set<string>();
+  const stack: string[] = [];
+
+  function addIssue(issue: DraftValidationIssue) {
+    const key = `${issue.code}:${issue.itemId ?? ""}:${issue.path ?? ""}`;
+    if (issueKeys.has(key)) return;
+    issueKeys.add(key);
+    issues.push(issue);
+  }
+
+  function markCycle(itemId: string) {
+    const cycleStart = Math.max(0, stack.indexOf(itemId));
+    const cycleIds = stack.slice(cycleStart);
+    if (!cycleIds.includes(itemId)) cycleIds.push(itemId);
+    for (const cycleId of cycleIds) {
+      invalidIds.add(cycleId);
+      addIssue({
+        code: "structure-reference-cycle",
+        severity: "error",
+        message: `${itemById.get(cycleId)?.name ?? "구조물"}의 보 참조가 순환합니다. 기준 보를 다시 선택해 주세요.`,
+        itemId: cycleId,
+      });
+    }
+  }
+
+  function resolveItem(item: SiteLayoutItemMm): SiteLayoutItemMm {
+    const alreadyResolved = resolved.get(item.id);
+    if (alreadyResolved) return alreadyResolved;
+    if (states.get(item.id) === "visiting") {
+      markCycle(item.id);
+      return structurePlacementBaseline(draft, item);
+    }
+
+    states.set(item.id, "visiting");
+    stack.push(item.id);
+    let placed = structurePlacementBaseline(draft, item);
+    const measurement = item.structureMeasurement;
+
+    if (isStructureItem(item) && measurement) {
+      const attachmentAxis = structureAxis(placed);
+      if (item.kind === "beam" && measurement.axis !== attachmentAxis) {
+        invalidIds.add(item.id);
+        addIssue({
+          code: "structure-reference-axis",
+          severity: "error",
+          message: `${item.name}의 측정 방향이 보 진행축과 다릅니다.`,
+          itemId: item.id,
+        });
+      } else if (measurement.referenceType === "wall") {
+        const referenceWall = measurement.referenceWall;
+        if (!referenceWall) {
+          invalidIds.add(item.id);
+          addIssue({
+            code: "structure-reference-missing",
+            severity: "error",
+            message: `${item.name}의 기준 벽을 선택해 주세요.`,
+            itemId: item.id,
+          });
+        } else if (measurementAxisForWall(referenceWall) !== measurement.axis) {
+          invalidIds.add(item.id);
+          addIssue({
+            code: "structure-reference-axis",
+            severity: "error",
+            message: `${item.name}의 기준 벽과 측정축이 서로 맞지 않습니다.`,
+            itemId: item.id,
+          });
+        } else {
+          const expectedDirection = referenceWall === "right" || referenceWall === "bottom" ? -1 : 1;
+          if (measurement.direction !== expectedDirection) {
+            invalidIds.add(item.id);
+            addIssue({
+              code: "structure-reference-direction",
+              severity: "error",
+              message: `${item.name}의 측정 방향이 실 안쪽을 향하도록 확인해 주세요.`,
+              itemId: item.id,
+            });
+          } else {
+            const roomSpanMm = measurement.axis === "x" ? draft.roomWidthMm : draft.roomHeightMm;
+            const targetSpanMm = itemAxisSpanMm(draft, placed, measurement.axis);
+            const datumMm = expectedDirection === 1 ? 0 : roomSpanMm;
+            const centerMm = datumMm + expectedDirection * (
+              measurement.distanceMm + (measurement.distanceMode === "clear" ? targetSpanMm / 2 : 0)
+            );
+            if (centerMm - targetSpanMm / 2 < 0 || centerMm + targetSpanMm / 2 > roomSpanMm) {
+              invalidIds.add(item.id);
+              addIssue({
+                code: "structure-distance-outside-room",
+                severity: "error",
+                message: `${item.name}의 기준거리가 공간 범위를 벗어납니다.`,
+                itemId: item.id,
+              });
+            } else {
+              placed = placeStructureCenterMm(draft, placed, measurement.axis, centerMm);
+            }
+          }
+        }
+      } else {
+        const referenceId = measurement.referenceItemId;
+        const reference = referenceId ? itemById.get(referenceId) : undefined;
+        if (!reference) {
+          invalidIds.add(item.id);
+          addIssue({
+            code: "structure-reference-missing",
+            severity: "error",
+            message: `${item.name}의 이전 보를 찾을 수 없습니다. 기준 보를 다시 선택해 주세요.`,
+            itemId: item.id,
+          });
+        } else if (reference.kind !== item.kind || !isStructureItem(reference)) {
+          invalidIds.add(item.id);
+          addIssue({
+            code: "structure-reference-kind",
+            severity: "error",
+            message: `${item.name}의 기준은 같은 종류의 기둥·보여야 합니다.`,
+            itemId: item.id,
+          });
+        } else {
+          const resolvedReference = resolveItem(reference);
+          if (invalidIds.has(reference.id)) {
+            invalidIds.add(item.id);
+          } else {
+            const referenceAxis = structureAxis(resolvedReference);
+            if (referenceAxis !== measurement.axis) {
+              invalidIds.add(item.id);
+              addIssue({
+                code: "structure-reference-axis",
+                severity: "error",
+                message: `${item.name}과 기준 보의 진행축이 서로 다릅니다.`,
+                itemId: item.id,
+              });
+            } else if (
+              (placed.structureAttachment?.mode === "wall" || resolvedReference.structureAttachment?.mode === "wall")
+              && (
+                placed.structureAttachment?.mode !== "wall"
+                || resolvedReference.structureAttachment?.mode !== "wall"
+                || placed.structureAttachment.wall !== resolvedReference.structureAttachment.wall
+              )
+            ) {
+              invalidIds.add(item.id);
+              addIssue({
+                code: "structure-reference-wall",
+                severity: "error",
+                message: `${item.name}과 기준 보가 같은 벽에 설치되어 있는지 확인해 주세요.`,
+                itemId: item.id,
+              });
+            } else {
+              const targetSpanMm = itemAxisSpanMm(draft, placed, measurement.axis);
+              const referenceSpanMm = itemAxisSpanMm(draft, resolvedReference, measurement.axis);
+              const referenceCenterMm = itemAxisCenterMm(draft, resolvedReference, measurement.axis);
+              const targetCenterMm = referenceCenterMm + measurement.direction * (
+                measurement.distanceMm
+                + (measurement.distanceMode === "clear" ? (referenceSpanMm + targetSpanMm) / 2 : 0)
+              );
+              const roomSpanMm = measurement.axis === "x" ? draft.roomWidthMm : draft.roomHeightMm;
+              if (targetCenterMm - targetSpanMm / 2 < 0 || targetCenterMm + targetSpanMm / 2 > roomSpanMm) {
+                invalidIds.add(item.id);
+                addIssue({
+                  code: "structure-distance-outside-room",
+                  severity: "error",
+                  message: `${item.name}의 보 사이 거리가 공간 범위를 벗어납니다.`,
+                  itemId: item.id,
+                });
+              } else {
+                const referenceGeometry = computeItemGeometryMm(draft, resolvedReference);
+                const crossAxisCenterMm = measurement.axis === "x" ? referenceGeometry.centerYmm : referenceGeometry.centerXmm;
+                placed = placeStructureCenterMm(draft, placed, measurement.axis, targetCenterMm, crossAxisCenterMm);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    stack.pop();
+    states.set(item.id, "done");
+    resolved.set(item.id, placed);
+    return placed;
+  }
+
+  return {
+    items: draft.items.map((item) => resolveItem(item)),
+    issues,
+  };
+}
+
+export function validateDraft(draft: SiteLayoutDraftMm): DraftValidationIssue[] {
+  const placement = resolveStructurePlacements(draft);
+  const issues: DraftValidationIssue[] = [...placement.issues];
+  const geometryDraft = { ...draft, items: placement.items };
   if (!(draft.roomWidthMm > 0) || !(draft.roomHeightMm > 0)) {
     issues.push({ code: "room-dimension", severity: "error", message: "공간 가로·세로 치수는 0보다 커야 합니다.", path: "room" });
   }
@@ -608,7 +983,7 @@ export function validateDraft(draft: SiteLayoutDraftMm): DraftValidationIssue[] 
     issues.push({ code: "ceiling-height", severity: "error", message: "천장 높이를 확인해 주세요.", path: "roomCeilingHeightMm" });
   }
 
-  for (const item of draft.items) {
+  for (const item of placement.items) {
     if (!(item.widthMm > 0) || !(item.heightMm > 0)) {
       issues.push({ code: "item-dimension", severity: "error", message: `${item.name}의 치수를 확인해 주세요.`, itemId: item.id });
       continue;
@@ -616,11 +991,11 @@ export function validateDraft(draft: SiteLayoutDraftMm): DraftValidationIssue[] 
     if (item.presetId === "aircon-ceiling" && item.widthMm !== item.heightMm) {
       issues.push({ code: "ceiling-aircon-square", severity: "error", message: `${item.name}은 정사각형 규격이어야 합니다.`, itemId: item.id });
     }
-    const geometry = computeItemGeometryMm(draft, item);
+    const geometry = computeItemGeometryMm(geometryDraft, item);
     if (item.wall) {
       const start = geometry.spanStartMm ?? 0;
       const end = geometry.spanEndMm ?? start;
-      const length = wallLengthMm(draft, item.wall);
+      const length = wallLengthMm(geometryDraft, item.wall);
       if (start < 0 || end > length) {
         issues.push({ code: "wall-offset", severity: "error", message: `${item.name}이 벽 길이를 벗어났습니다.`, itemId: item.id });
       }
@@ -641,14 +1016,14 @@ export function validateDraft(draft: SiteLayoutDraftMm): DraftValidationIssue[] 
     }
   }
 
-  const wallOpenings = draft.items.filter((item) => item.wall && isOpening(item));
+  const wallOpenings = placement.items.filter((item) => item.wall && isOpening(item));
   for (let outerIndex = 0; outerIndex < wallOpenings.length; outerIndex += 1) {
     const outer = wallOpenings[outerIndex];
-    const outerGeometry = computeItemGeometryMm(draft, outer);
+    const outerGeometry = computeItemGeometryMm(geometryDraft, outer);
     for (let innerIndex = outerIndex + 1; innerIndex < wallOpenings.length; innerIndex += 1) {
       const inner = wallOpenings[innerIndex];
       if (outer.wall !== inner.wall) continue;
-      const innerGeometry = computeItemGeometryMm(draft, inner);
+      const innerGeometry = computeItemGeometryMm(geometryDraft, inner);
       if ((outerGeometry.spanStartMm ?? 0) < (innerGeometry.spanEndMm ?? 0)
         && (innerGeometry.spanStartMm ?? 0) < (outerGeometry.spanEndMm ?? 0)) {
         issues.push({
@@ -665,8 +1040,9 @@ export function validateDraft(draft: SiteLayoutDraftMm): DraftValidationIssue[] 
 
 export function normalizeDraftWithIssues(value: unknown): NormalizedDraftResult {
   if (isRecord(value) && (value.schemaVersion === DRAFT_SCHEMA_VERSION || "roomWidthMm" in value)) {
-    const draft = normalizeV2Draft(value);
-    return { draft, source: "v2", issues: validateDraft(draft) };
+    const sourceVersion = value.schemaVersion === DRAFT_SCHEMA_VERSION ? 3 : 2;
+    const draft = normalizeMmDraft(value, sourceVersion);
+    return { draft, source: sourceVersion === 3 ? "v3" : "v2", issues: validateDraft(draft) };
   }
   const migrated = migrateLegacyDraft(value);
   if (migrated) return { draft: migrated, source: "legacy-v1", issues: validateDraft(migrated) };

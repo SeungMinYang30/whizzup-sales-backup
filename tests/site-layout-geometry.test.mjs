@@ -5,6 +5,7 @@ import {
   DRAFT_SCHEMA_VERSION,
   GUIDE_STEPS,
   LEGACY_STORAGE_KEY,
+  PREVIOUS_STORAGE_KEY,
   STORAGE_KEY,
   advanceSurveyStep,
   clampWallOffsetMm,
@@ -20,7 +21,9 @@ import {
   modelRectToClient,
   nextGuideState,
   normalizeDraft,
+  normalizeDraftWithIssues,
   placeItemOnWall,
+  resolveStructurePlacements,
   serializeDraft,
 } from "../lib/site-layout-geometry.ts";
 
@@ -42,6 +45,22 @@ function makeItem(overrides = {}) {
   };
 }
 
+function makeBeam(id, overrides = {}) {
+  return makeItem({
+    id,
+    kind: "beam",
+    presetId: "beam",
+    name: `콘크리트 보 ${id}`,
+    widthMm: 2_400,
+    heightMm: 350,
+    openingHeightMm: undefined,
+    handing: undefined,
+    swing: undefined,
+    beamBottomHeightMm: 2_200,
+    ...overrides,
+  });
+}
+
 test("draft model stores physical dimensions as integer millimetres", () => {
   const draft = createDefaultDraft();
 
@@ -51,7 +70,8 @@ test("draft model stores physical dimensions as integer millimetres", () => {
   assert.equal(draft.roomCeilingHeightMm, 2_551);
   assert.equal(draft.roomWallThicknessMm, 150);
   assert.equal(Number.isInteger(draft.roomWidthMm), true);
-  assert.equal(STORAGE_KEY, "whizzup:site-layout-draft:v2");
+  assert.equal(STORAGE_KEY, "whizzup:site-layout-draft:v3");
+  assert.equal(PREVIOUS_STORAGE_KEY, "whizzup:site-layout-draft:v2");
   assert.equal(LEGACY_STORAGE_KEY, "whizzup:site-layout-draft:v1");
 });
 
@@ -174,7 +194,7 @@ test("wall offsets clamp by physical wall length and anchor semantics", () => {
   assert.equal(clampWallOffsetMm(draft, item, "top", 99_999, "center"), 13_274);
 });
 
-test("v2 local draft serializes and restores without losing survey fields", () => {
+test("v3 local draft serializes and restores without losing survey fields", () => {
   const source = {
     ...createDefaultDraft(),
     roomName: "현장 실측실",
@@ -191,7 +211,7 @@ test("v2 local draft serializes and restores without losing survey fields", () =
   const raw = serializeDraft(source);
   const restored = deserializeDraft(raw);
 
-  assert.equal(restored.source, "v2");
+  assert.equal(restored.source, "v3");
   assert.deepEqual(restored.issues, []);
   assert.deepEqual(restored.draft, normalizeDraft(source));
   assert.equal(restored.draft.activeGuideStep, "facility");
@@ -222,6 +242,16 @@ test("legacy v1 browser draft migrates metres and percentages to exact millimetr
     items: [
       { id: "legacy-door", kind: "door", presetId: "door-single", name: "기존 문", x: 20, y: 0, width: 0.9, height: 0.18, rotation: 0, wall: "top", offset: 1.234, openingHeight: 2.1, sillHeight: 0 },
       { id: "legacy-ac", kind: "fixture", presetId: "aircon-ceiling", name: "기존 천장형", x: 50, y: 50, width: 0.84, height: 0.62, rotation: 0 },
+      {
+        id: "legacy-beam-1", kind: "beam", presetId: "beam", name: "기존 보 1", x: 0, y: 0, width: 2.4, height: 0.35, rotation: 0,
+        structureAttachment: { mode: "wall", wall: "top" },
+        structureMeasurement: { axis: "x", referenceType: "wall", referenceWall: "left", direction: 1, distanceMode: "clear", distance: 1 },
+      },
+      {
+        id: "legacy-beam-2", kind: "beam", presetId: "beam", name: "기존 보 2", x: 0, y: 0, width: 2.4, height: 0.35, rotation: 0,
+        structureAttachment: { mode: "wall", wall: "top" },
+        structureMeasurement: { axis: "x", referenceType: "item", referenceItemId: "legacy-beam-1", direction: 1, distanceMode: "clear", distance: 2 },
+      },
     ],
   };
 
@@ -237,6 +267,10 @@ test("legacy v1 browser draft migrates metres and percentages to exact millimetr
   assert.equal(migrated.items[0].sillHeightMm, 0);
   assert.equal(migrated.items[1].widthMm, 840);
   assert.equal(migrated.items[1].heightMm, 840);
+  assert.equal(migrated.items[2].structureMeasurement.distanceMm, 1_000);
+  assert.equal(migrated.items[2].xMm, 1_000);
+  assert.equal(migrated.items[3].structureMeasurement.referenceItemId, "legacy-beam-1");
+  assert.equal(migrated.items[3].xMm, 5_400);
   assert.deepEqual(migrated.stageChecks, { room: "complete" });
   assert.deepEqual(migrated.siteChecklist, { internetAvailable: "yes" });
   assert.equal(migrated.fieldNotes, "기존 메모");
@@ -254,6 +288,240 @@ test("normalization keeps a ceiling cassette square and preserves a zero sill he
   assert.equal(normalized.items[0].sillHeightMm, 0);
   assert.equal(normalized.items[1].widthMm, 840);
   assert.equal(normalized.items[1].heightMm, 840);
+});
+
+test("v3 beams default to wall attachment while v2 free beams keep their legacy coordinates", () => {
+  const base = createDefaultDraft();
+  const v3 = normalizeDraft({
+    ...base,
+    items: [makeBeam("new-beam", { xMm: 4_000, yMm: 2_000 })],
+  });
+  const v2 = normalizeDraftWithIssues({
+    ...base,
+    schemaVersion: 2,
+    items: [makeBeam("old-beam", { xMm: 4_000, yMm: 2_000 })],
+  });
+
+  assert.deepEqual(v3.items[0].structureAttachment, { mode: "wall", wall: "top" });
+  assert.equal(v3.items[0].wall, "top");
+  assert.equal(v3.items[0].yMm, 0);
+  assert.equal(v2.source, "v2");
+  assert.deepEqual(v2.draft.items[0].structureAttachment, { mode: "free" });
+  assert.equal(v2.draft.items[0].wall, undefined);
+  assert.equal(v2.draft.items[0].xMm, 4_000);
+  assert.equal(v2.draft.items[0].yMm, 2_000);
+});
+
+test("wall and previous-beam clear distances resolve to exact physical millimetres", () => {
+  const draft = {
+    ...createDefaultDraft(),
+    roomWidthMm: 10_000,
+    roomHeightMm: 6_000,
+    items: [
+      makeBeam("beam-1", {
+        structureAttachment: { mode: "wall", wall: "top" },
+        structureMeasurement: {
+          axis: "x",
+          referenceType: "wall",
+          referenceWall: "left",
+          direction: 1,
+          distanceMode: "clear",
+          distanceMm: 1_000,
+        },
+      }),
+      makeBeam("beam-2", {
+        structureAttachment: { mode: "wall", wall: "top" },
+        structureMeasurement: {
+          axis: "x",
+          referenceType: "item",
+          referenceItemId: "beam-1",
+          direction: 1,
+          distanceMode: "clear",
+          distanceMm: 2_000,
+        },
+      }),
+    ],
+  };
+
+  const placement = resolveStructurePlacements(draft);
+  const first = computeItemGeometryMm(draft, placement.items[0]);
+  const second = computeItemGeometryMm(draft, placement.items[1]);
+
+  assert.deepEqual(placement.issues, []);
+  assert.deepEqual(
+    { xMm: first.xMm, yMm: first.yMm, widthMm: first.widthMm, heightMm: first.heightMm },
+    { xMm: 1_000, yMm: 0, widthMm: 2_400, heightMm: 350 },
+  );
+  assert.equal(second.xMm, 5_400);
+  assert.equal(second.yMm, 0);
+  assert.equal(second.xMm - (first.xMm + first.widthMm), 2_000);
+});
+
+test("center distances and reverse wall references preserve their distinct semantics", () => {
+  const draft = {
+    ...createDefaultDraft(),
+    roomWidthMm: 10_000,
+    roomHeightMm: 6_000,
+    items: [
+      makeBeam("beam-center-1", {
+        structureAttachment: { mode: "wall", wall: "bottom" },
+        structureMeasurement: {
+          axis: "x",
+          referenceType: "wall",
+          referenceWall: "right",
+          direction: -1,
+          distanceMode: "clear",
+          distanceMm: 500,
+        },
+      }),
+      makeBeam("beam-center-2", {
+        structureAttachment: { mode: "wall", wall: "bottom" },
+        structureMeasurement: {
+          axis: "x",
+          referenceType: "item",
+          referenceItemId: "beam-center-1",
+          direction: -1,
+          distanceMode: "center",
+          distanceMm: 3_000,
+        },
+      }),
+    ],
+  };
+
+  const placement = resolveStructurePlacements(draft);
+  const first = computeItemGeometryMm(draft, placement.items[0]);
+  const second = computeItemGeometryMm(draft, placement.items[1]);
+
+  assert.deepEqual(placement.issues, []);
+  assert.equal(first.xMm, 7_100);
+  assert.equal(first.yMm, 5_650);
+  assert.equal(first.centerXmm - second.centerXmm, 3_000);
+});
+
+test("vertical wall beams resolve along y and wall-mounted pillars remain flush to the boundary", () => {
+  const draft = {
+    ...createDefaultDraft(),
+    roomWidthMm: 10_000,
+    roomHeightMm: 6_000,
+    items: [
+      makeBeam("vertical-beam", {
+        structureAttachment: { mode: "wall", wall: "left" },
+        structureMeasurement: {
+          axis: "y",
+          referenceType: "wall",
+          referenceWall: "top",
+          direction: 1,
+          distanceMode: "clear",
+          distanceMm: 700,
+        },
+      }),
+      makeItem({
+        id: "pillar-right",
+        kind: "pillar",
+        presetId: "pillar",
+        name: "벽 부착 기둥",
+        widthMm: 450,
+        heightMm: 450,
+        openingHeightMm: undefined,
+        handing: undefined,
+        swing: undefined,
+        structureAttachment: { mode: "wall", wall: "right" },
+        structureMeasurement: {
+          axis: "y",
+          referenceType: "wall",
+          referenceWall: "top",
+          direction: 1,
+          distanceMode: "clear",
+          distanceMm: 0,
+        },
+      }),
+    ],
+  };
+
+  const placement = resolveStructurePlacements(draft);
+  const beam = computeItemGeometryMm(draft, placement.items[0]);
+  const pillar = computeItemGeometryMm(draft, placement.items[1]);
+
+  assert.deepEqual(placement.issues, []);
+  assert.deepEqual(
+    { xMm: beam.xMm, yMm: beam.yMm, widthMm: beam.widthMm, heightMm: beam.heightMm, rotation: beam.rotation },
+    { xMm: 0, yMm: 700, widthMm: 350, heightMm: 2_400, rotation: 90 },
+  );
+  assert.equal(pillar.xMm + pillar.widthMm, draft.roomWidthMm);
+  assert.equal(pillar.yMm, 0);
+});
+
+test("structure references report deleted ids, wrong axes, wrong walls, and cycles", () => {
+  const base = createDefaultDraft();
+  const missing = makeBeam("missing", {
+    structureAttachment: { mode: "wall", wall: "top" },
+    structureMeasurement: { axis: "x", referenceType: "item", referenceItemId: "deleted", direction: 1, distanceMode: "clear", distanceMm: 500 },
+  });
+  const wrongAxis = makeBeam("wrong-axis", {
+    structureAttachment: { mode: "wall", wall: "top" },
+    structureMeasurement: { axis: "y", referenceType: "wall", referenceWall: "top", direction: 1, distanceMode: "clear", distanceMm: 500 },
+  });
+  const topReference = makeBeam("top-reference", {
+    structureAttachment: { mode: "wall", wall: "top" },
+    structureMeasurement: { axis: "x", referenceType: "wall", referenceWall: "left", direction: 1, distanceMode: "clear", distanceMm: 500 },
+  });
+  const wrongWall = makeBeam("wrong-wall", {
+    structureAttachment: { mode: "wall", wall: "bottom" },
+    structureMeasurement: { axis: "x", referenceType: "item", referenceItemId: "top-reference", direction: 1, distanceMode: "clear", distanceMm: 500 },
+  });
+  const cycleA = makeBeam("cycle-a", {
+    structureAttachment: { mode: "wall", wall: "top" },
+    structureMeasurement: { axis: "x", referenceType: "item", referenceItemId: "cycle-b", direction: 1, distanceMode: "clear", distanceMm: 500 },
+  });
+  const cycleB = makeBeam("cycle-b", {
+    structureAttachment: { mode: "wall", wall: "top" },
+    structureMeasurement: { axis: "x", referenceType: "item", referenceItemId: "cycle-a", direction: 1, distanceMode: "clear", distanceMm: 500 },
+  });
+  const issues = resolveStructurePlacements({
+    ...base,
+    items: [missing, wrongAxis, topReference, wrongWall, cycleA, cycleB],
+  }).issues;
+
+  assert.ok(issues.some((issue) => issue.code === "structure-reference-missing" && issue.itemId === "missing"));
+  assert.ok(issues.some((issue) => issue.code === "structure-reference-axis" && issue.itemId === "wrong-axis"));
+  assert.ok(issues.some((issue) => issue.code === "structure-reference-wall" && issue.itemId === "wrong-wall"));
+  assert.ok(issues.some((issue) => issue.code === "structure-reference-cycle" && issue.itemId === "cycle-a"));
+  assert.ok(issues.some((issue) => issue.code === "structure-reference-cycle" && issue.itemId === "cycle-b"));
+});
+
+test("v3 serialization preserves stable previous-beam ids and millimetre distance modes", () => {
+  const draft = {
+    ...createDefaultDraft(),
+    items: [
+      makeBeam("serialized-beam", {
+        structureAttachment: { mode: "wall", wall: "top" },
+        structureMeasurement: {
+          axis: "x",
+          referenceType: "item",
+          referenceItemId: "stable-previous-id",
+          direction: -1,
+          distanceMode: "center",
+          distanceMm: 2_750,
+        },
+      }),
+    ],
+  };
+  const raw = serializeDraft(draft);
+  const restored = deserializeDraft(raw);
+
+  assert.equal(restored.source, "v3");
+  assert.equal(restored.draft.schemaVersion, 3);
+  assert.deepEqual(restored.draft.items[0].structureAttachment, { mode: "wall", wall: "top" });
+  assert.deepEqual(restored.draft.items[0].structureMeasurement, {
+    axis: "x",
+    referenceType: "item",
+    referenceWall: undefined,
+    referenceItemId: "stable-previous-id",
+    direction: -1,
+    distanceMode: "center",
+    distanceMm: 2_750,
+  });
+  assert.ok(restored.issues.some((issue) => issue.code === "structure-reference-missing"));
 });
 
 test("mobile survey follows one stable step at a time with bounded previous and next navigation", () => {

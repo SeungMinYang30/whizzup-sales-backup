@@ -18,6 +18,17 @@ type WallSide = "top" | "right" | "bottom" | "left";
 type OpeningHand = "left" | "right";
 type OpeningSwing = "inside" | "outside";
 type OffsetReference = "start" | "end";
+type BeamDistanceMode = "clear" | "center";
+type StructureAttachment = { mode: "wall"; wall: WallSide } | { mode: "free" };
+type StructureMeasurement = {
+  axis: "x" | "y";
+  referenceType: "wall" | "item";
+  referenceWall?: WallSide;
+  referenceItemId?: string;
+  direction: 1 | -1;
+  distanceMode: BeamDistanceMode;
+  distanceMm: number;
+};
 type SurveyChoice = "" | "yes" | "no" | "review";
 type InternetMode = "" | "wired" | "wireless" | "both" | "none";
 type NetworkType = "" | "education" | "private" | "both" | "unknown";
@@ -58,6 +69,8 @@ type LayoutItem = {
   mountingHeight?: number;
   beamBottomHeight?: number;
   beamSpacing?: number;
+  structureAttachment?: StructureAttachment;
+  structureMeasurement?: StructureMeasurement;
   offsetReference?: OffsetReference;
 };
 
@@ -90,6 +103,7 @@ type ItemPreset = {
 
 const STORAGE_KEY = "whizzup:site-layout-draft:v1";
 const DRAFT_LIBRARY_KEY = "whizzup:site-layout-local-drafts:v1";
+const REMOTE_CONTEXT_KEY = "whizzup:site-layout-remote-context:v1";
 
 type StoredLocalDraft = {
   id: string;
@@ -97,6 +111,18 @@ type StoredLocalDraft = {
   updatedAt: string;
   draft: LayoutDraft;
 };
+
+type RemoteLayoutSummary = {
+  id: number;
+  title: string;
+  editVersion: number;
+  driveSyncStatus: "queued" | "uploading" | "ready" | "error" | string;
+  driveSyncError?: string;
+  updatedByName?: string;
+  updatedAt: string;
+};
+
+type RemoteLayoutRecord = RemoteLayoutSummary & { draft: LayoutDraft };
 
 const defaultSiteChecklist: SiteChecklist = {
   internetAvailable: "", internetMode: "", networkType: "", powerOutlet: "", dedicatedCircuit: "",
@@ -106,8 +132,8 @@ const defaultSiteChecklist: SiteChecklist = {
 const guideSteps: { id: GuideStepId; label: string; title: string; description: string; groups: PresetGroup[] }[] = [
   { id: "room", label: "공간", title: "공간 크기 입력", description: "실 이름과 가로·세로·천장 높이를 입력하면 방 외곽선이 자동으로 만들어집니다.", groups: [] },
   { id: "door", label: "출입문", title: "출입문 형태와 치수", description: "현장과 비슷한 문을 고르고 설치 벽을 터치한 뒤 넓이·높이·열림 방향을 확인하세요.", groups: ["문"] },
+  { id: "structure", label: "기둥·보", title: "기둥과 보 실측", description: "보는 벽 부착을 기본으로 첫 보는 모서리에서, 다음 보는 앞 보에서 잰 거리를 기록하세요.", groups: ["기둥·보"] },
   { id: "window", label: "창호", title: "창호 형태와 분할", description: "고정창·좌우 슬라이딩창·연창 중 생김새가 비슷한 블록을 선택해 배치하세요.", groups: ["창호"] },
-  { id: "structure", label: "기둥·보", title: "기둥과 보 실측", description: "기둥은 두 기준벽에서 중심거리로, 보는 길이·폭·하단 높이와 보 사이 간격으로 기록하세요.", groups: ["기둥·보"] },
   { id: "facility", label: "에어컨", title: "에어컨과 고정 시설", description: "벽걸이는 설치 벽과 모서리 기준거리, 천장형은 두 벽에서 중심거리와 설치 높이를 기록합니다.", groups: ["현장 설비"] },
   { id: "checklist", label: "현장조건", title: "인터넷·전기·공사 조건", description: "CAD팀과 시공팀이 다시 확인하지 않도록 현장 조건을 단계별로 체크하세요.", groups: [] },
   { id: "review", label: "최종 확인", title: "CAD팀 전달 전 검수", description: "단계별 확인 상태와 누락 항목을 점검하고 A3 출력 도면을 확인하세요.", groups: [] },
@@ -287,6 +313,20 @@ function normalizeStoredDraft(value: unknown): LayoutDraft | null {
         mountingHeight: item.mountingHeight === undefined ? undefined : Math.max(0, positiveDimension(item.mountingHeight, 2.1)),
         beamBottomHeight: item.beamBottomHeight === undefined ? undefined : Math.max(0, positiveDimension(item.beamBottomHeight, 2.2)),
         beamSpacing: item.beamSpacing === undefined ? undefined : Math.max(0, positiveDimension(item.beamSpacing, 1)),
+        structureAttachment: item.structureAttachment?.mode === "wall" && ["top", "right", "bottom", "left"].includes(item.structureAttachment.wall)
+          ? { mode: "wall", wall: item.structureAttachment.wall }
+          : item.structureAttachment?.mode === "free" ? { mode: "free" } : undefined,
+        structureMeasurement: item.structureMeasurement && (item.structureMeasurement.axis === "x" || item.structureMeasurement.axis === "y")
+          ? {
+            axis: item.structureMeasurement.axis,
+            referenceType: item.structureMeasurement.referenceType === "item" ? "item" : "wall",
+            referenceWall: item.structureMeasurement.referenceWall,
+            referenceItemId: typeof item.structureMeasurement.referenceItemId === "string" ? item.structureMeasurement.referenceItemId : undefined,
+            direction: item.structureMeasurement.direction === -1 ? -1 : 1,
+            distanceMode: item.structureMeasurement.distanceMode === "center" ? "center" : "clear",
+            distanceMm: Math.max(0, Number(item.structureMeasurement.distanceMm) || 0),
+          }
+          : undefined,
         offsetReference: item.offsetReference === "end" ? "end" : "start",
       };
       if (normalizedItem.kind !== "pillar") return normalizedItem;
@@ -324,6 +364,53 @@ function parseLocalDraftLibrary(raw: string | null): StoredLocalDraft[] {
   } catch {
     return [];
   }
+}
+
+function editorDraftFromRemote(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as { editorDraft?: unknown };
+  return normalizeStoredDraft(candidate.editorDraft ?? value);
+}
+
+function normalizeRemoteSummary(value: unknown): RemoteLayoutSummary | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  const id = Number(candidate.id);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const updatedAt = typeof candidate.updatedAt === "string" && Number.isFinite(Date.parse(candidate.updatedAt))
+    ? candidate.updatedAt
+    : new Date(0).toISOString();
+  return {
+    id,
+    title: typeof candidate.title === "string" && candidate.title.trim() ? candidate.title.slice(0, 80) : "이름 없는 기초도면",
+    editVersion: Math.max(1, Number(candidate.editVersion) || 1),
+    driveSyncStatus: typeof candidate.driveSyncStatus === "string" ? candidate.driveSyncStatus : "queued",
+    driveSyncError: typeof candidate.driveSyncError === "string" ? candidate.driveSyncError : undefined,
+    updatedByName: typeof candidate.updatedByName === "string" ? candidate.updatedByName : undefined,
+    updatedAt,
+  };
+}
+
+function normalizeRemoteLayout(value: unknown): RemoteLayoutRecord | null {
+  const summary = normalizeRemoteSummary(value);
+  if (!summary || !value || typeof value !== "object") return null;
+  const draft = editorDraftFromRemote((value as Record<string, unknown>).draft);
+  return draft ? { ...summary, draft } : null;
+}
+
+function remoteLayoutsFromPayload(value: unknown) {
+  if (!value || typeof value !== "object") return [];
+  const candidate = value as { layouts?: unknown };
+  if (!Array.isArray(candidate.layouts)) return [];
+  return candidate.layouts.flatMap((item) => {
+    const normalized = normalizeRemoteSummary(item);
+    return normalized ? [normalized] : [];
+  });
+}
+
+function remoteLayoutFromPayload(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  return normalizeRemoteLayout((value as { layout?: unknown }).layout);
 }
 
 function cloneDraft(value: LayoutDraft): LayoutDraft {
@@ -427,14 +514,22 @@ export default function SiteLayoutPlannerPage() {
   const [draft, setDraft] = useState<LayoutDraft>(defaultDraft);
   const [selectedId, setSelectedId] = useState("");
   const [savedAt, setSavedAt] = useState("");
-  const [saveMessage, setSaveMessage] = useState("이 브라우저에 자동 저장됩니다.");
+  const [saveMessage, setSaveMessage] = useState("입력 내용은 이 기기에 자동 복구되며 공용 저장을 누르면 Google Drive에 보관됩니다.");
   const [localDrafts, setLocalDrafts] = useState<StoredLocalDraft[]>([]);
   const [activeLocalDraftId, setActiveLocalDraftId] = useState("");
   const [activeLocalDraftFingerprint, setActiveLocalDraftFingerprint] = useState("");
   const [draftLibraryOpen, setDraftLibraryOpen] = useState(false);
+  const [remoteLayouts, setRemoteLayouts] = useState<RemoteLayoutSummary[]>([]);
+  const [remoteLoading, setRemoteLoading] = useState(false);
+  const [activeRemoteId, setActiveRemoteId] = useState<number | null>(null);
+  const [activeRemoteVersion, setActiveRemoteVersion] = useState<number | null>(null);
+  const [activeRemoteFingerprint, setActiveRemoteFingerprint] = useState("");
+  const [activeDriveSyncStatus, setActiveDriveSyncStatus] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [view, setView] = useState<LayoutView>("model");
   const [canvasFocus, setCanvasFocus] = useState(false);
+  const [canvasExpanded, setCanvasExpanded] = useState(false);
+  const [orientationHint, setOrientationHint] = useState(false);
   const [workflowMode, setWorkflowMode] = useState<WorkflowMode>("guided");
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
@@ -443,7 +538,14 @@ export default function SiteLayoutPlannerPage() {
   const [pendingPresetId, setPendingPresetId] = useState<LayoutSymbol | null>(null);
   const [visibleLayers, setVisibleLayers] = useState<Record<LayoutLayer, boolean>>({ opening: true, structure: true, fixture: true, equipment: false, note: false });
   const boardRef = useRef<HTMLDivElement | null>(null);
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ id: string; pointerId: number; startModelX: number; startModelY: number; startX: number; startY: number } | null>(null);
+  const expandedRef = useRef(false);
+  const expandedScrollYRef = useRef(0);
+  const expandedHistoryTokenRef = useRef("");
+  const suppressExpandedPopRef = useRef(false);
+  const closingExpandedRef = useRef(false);
+  const fullscreenEnteredRef = useRef(false);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -459,6 +561,16 @@ export default function SiteLayoutPlannerPage() {
         setLocalDrafts(parseLocalDraftLibrary(window.localStorage.getItem(DRAFT_LIBRARY_KEY)));
       } catch {
         setLocalDrafts([]);
+      }
+      try {
+        const context = JSON.parse(window.localStorage.getItem(REMOTE_CONTEXT_KEY) ?? "null") as { id?: unknown; editVersion?: unknown; fingerprint?: unknown } | null;
+        const id = Number(context?.id);
+        const editVersion = Number(context?.editVersion);
+        if (Number.isInteger(id) && id > 0) setActiveRemoteId(id);
+        if (Number.isInteger(editVersion) && editVersion > 0) setActiveRemoteVersion(editVersion);
+        if (typeof context?.fingerprint === "string") setActiveRemoteFingerprint(context.fingerprint);
+      } catch {
+        // The recovery draft remains usable even when its remote context is malformed.
       } finally { setHydrated(true); }
     });
     return () => window.cancelAnimationFrame(frame);
@@ -469,14 +581,52 @@ export default function SiteLayoutPlannerPage() {
     const timer = window.setTimeout(() => {
       try {
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
-        setSaveMessage("기관과 연결되지 않은 내 기기 자동 복구본입니다.");
+        if (activeRemoteId && activeRemoteVersion) {
+          window.localStorage.setItem(REMOTE_CONTEXT_KEY, JSON.stringify({ id: activeRemoteId, editVersion: activeRemoteVersion, fingerprint: activeRemoteFingerprint }));
+        }
+        if (!activeRemoteId) setSaveMessage("아직 공용 저장 전입니다. 현재 입력은 이 기기에 복구용으로 보관됩니다.");
         setSavedAt(new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date()));
       } catch {
         setSaveMessage("자동 저장에 실패했습니다. 브라우저 저장 공간을 확인해 주세요.");
       }
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [draft, hydrated]);
+  }, [activeRemoteFingerprint, activeRemoteId, activeRemoteVersion, draft, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    void refreshRemoteLayouts();
+  }, [hydrated]);
+
+  useEffect(() => {
+    expandedRef.current = canvasExpanded;
+    if (!canvasExpanded) return;
+    const previousOverflow = document.body.style.overflow;
+    const updateOrientationHint = () => setOrientationHint(window.matchMedia("(orientation: portrait)").matches);
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") void leaveCanvasExpanded(); };
+    const closeWhenFullscreenEnds = () => {
+      if (fullscreenEnteredRef.current && !document.fullscreenElement && !closingExpandedRef.current) void leaveCanvasExpanded();
+    };
+    const closeOnHistoryBack = () => {
+      if (suppressExpandedPopRef.current) { suppressExpandedPopRef.current = false; return; }
+      if (expandedRef.current) void leaveCanvasExpanded({ historyAlreadyPopped: true });
+    };
+    document.body.style.overflow = "hidden";
+    updateOrientationHint();
+    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("resize", updateOrientationHint);
+    window.addEventListener("popstate", closeOnHistoryBack);
+    document.addEventListener("fullscreenchange", closeWhenFullscreenEnds);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", updateOrientationHint);
+      window.removeEventListener("popstate", closeOnHistoryBack);
+      document.removeEventListener("fullscreenchange", closeWhenFullscreenEnds);
+      const orientation = (screen as Screen & { orientation?: ScreenOrientation & { unlock?: () => void } }).orientation;
+      try { orientation?.unlock?.(); } catch { /* Older Safari can expose a partial orientation API. */ }
+    };
+  }, [canvasExpanded]);
 
   const selectedItem = useMemo(() => draft.items.find((item) => item.id === selectedId) ?? null, [draft.items, selectedId]);
   const selectedPreset = selectedItem ? presetForItem(selectedItem) : null;
@@ -535,15 +685,125 @@ export default function SiteLayoutPlannerPage() {
       return false;
     }
   }
-  function saveCurrentDraft() {
+  function persistNamedRecovery() {
     const id = activeLocalDraftId || crypto.randomUUID();
     const record: StoredLocalDraft = { id, name: draft.roomName.trim() || "이름 없는 기초도면", updatedAt: new Date().toISOString(), draft: cloneDraft(draft) };
     const next = [record, ...localDrafts.filter((item) => item.id !== id)];
-    if (!persistLocalDrafts(next)) return;
+    if (!persistLocalDrafts(next)) return null;
     setActiveLocalDraftId(id);
     setActiveLocalDraftFingerprint(JSON.stringify(draft));
-    setSaveMessage(`“${record.name}” 초안을 이 기기에 저장했습니다.`);
     setSavedAt(new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date()));
+    return record;
+  }
+  async function refreshRemoteLayouts() {
+    setRemoteLoading(true);
+    try {
+      const response = await fetch("/api/site-layouts", { method: "GET", cache: "no-store" });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error((payload as { error?: string } | null)?.error || "공용 기초도면 목록을 불러오지 못했습니다.");
+      setRemoteLayouts(remoteLayoutsFromPayload(payload));
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? `${error.message} 이 기기 복구본은 계속 유지됩니다.` : "공용 목록을 불러오지 못했습니다. 이 기기 복구본은 계속 유지됩니다.");
+    } finally {
+      setRemoteLoading(false);
+    }
+  }
+  async function saveCurrentDraft() {
+    const recovery = persistNamedRecovery();
+    if (!recovery) return;
+    setRemoteLoading(true);
+    setSaveMessage("공용 저장소와 Google Drive에 저장하고 있습니다…");
+    try {
+      const response = await fetch("/api/site-layouts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(activeRemoteId ? { id: activeRemoteId } : {}),
+          title: recovery.name,
+          draft: { schemaVersion: 3, editorDraft: recovery.draft, geometryDraft: physicalDraft },
+          ...(activeRemoteId && activeRemoteVersion ? { baseVersion: activeRemoteVersion } : {}),
+        }),
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (response.status === 409) {
+        const latest = normalizeRemoteLayout((payload as { layout?: unknown } | null)?.layout);
+        if (latest) setRemoteLayouts((current) => [latest, ...current.filter((item) => item.id !== latest.id)]);
+        setSaveMessage("다른 사용자가 먼저 수정했습니다. 내 입력은 이 기기에 보존했습니다. 공용 목록에서 최신본을 불러온 뒤 다시 저장해 주세요.");
+        return;
+      }
+      if (!response.ok) throw new Error((payload as { error?: string } | null)?.error || "공용 저장에 실패했습니다.");
+      const saved = remoteLayoutFromPayload(payload);
+      if (!saved) throw new Error("저장 결과 형식을 확인하지 못했습니다.");
+      setActiveRemoteId(saved.id);
+      setActiveRemoteVersion(saved.editVersion);
+      setActiveRemoteFingerprint(JSON.stringify(draft));
+      setActiveDriveSyncStatus(saved.driveSyncStatus);
+      setActiveLocalDraftFingerprint(JSON.stringify(draft));
+      setRemoteLayouts((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+      window.localStorage.setItem(REMOTE_CONTEXT_KEY, JSON.stringify({ id: saved.id, editVersion: saved.editVersion, fingerprint: JSON.stringify(draft) }));
+      setSaveMessage(saved.driveSyncStatus === "ready"
+        ? `“${saved.title}” 공용 저장과 Google Drive 보관이 완료되었습니다.`
+        : saved.driveSyncStatus === "error"
+          ? `공용 저장은 완료됐지만 Google Drive 동기화는 재시도가 필요합니다.${saved.driveSyncError ? ` ${saved.driveSyncError}` : ""}`
+          : `“${saved.title}” 공용 저장 완료 · Google Drive 동기화 중입니다.`);
+    } catch (error) {
+      setSaveMessage(`${error instanceof Error ? error.message : "공용 저장에 실패했습니다."} 내 입력은 이 기기 복구본에 안전하게 남아 있습니다.`);
+    } finally {
+      setRemoteLoading(false);
+    }
+  }
+  async function loadRemoteDraft(record: RemoteLayoutSummary) {
+    setRemoteLoading(true);
+    try {
+      const response = await fetch(`/api/site-layouts?id=${encodeURIComponent(String(record.id))}`, { method: "GET", cache: "no-store" });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error((payload as { error?: string } | null)?.error || "공용 도면을 불러오지 못했습니다.");
+      const latest = remoteLayoutFromPayload(payload);
+      if (!latest) throw new Error("공용 도면 형식을 확인하지 못했습니다.");
+      setDraft(cloneDraft(latest.draft));
+      setActiveRemoteId(latest.id);
+      setActiveRemoteVersion(latest.editVersion);
+      setActiveRemoteFingerprint(JSON.stringify(latest.draft));
+      setActiveDriveSyncStatus(latest.driveSyncStatus);
+      setActiveLocalDraftId("");
+      setActiveLocalDraftFingerprint(JSON.stringify(latest.draft));
+      setSelectedId("");
+      setPendingPresetId(null);
+      setActiveStepIndex(0);
+      setActiveQuestionIndex(0);
+      setView("model");
+      setCanvasFocus(false);
+      setDraftLibraryOpen(false);
+      window.localStorage.setItem(REMOTE_CONTEXT_KEY, JSON.stringify({ id: latest.id, editVersion: latest.editVersion, fingerprint: JSON.stringify(latest.draft) }));
+      setRemoteLayouts((current) => [latest, ...current.filter((item) => item.id !== latest.id)]);
+      setSaveMessage(`“${latest.title}” 공용 최신본을 불러왔습니다.`);
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "공용 도면을 불러오지 못했습니다.");
+    } finally {
+      setRemoteLoading(false);
+    }
+  }
+  async function deleteRemoteDraft(record: RemoteLayoutSummary) {
+    if (!window.confirm(`“${record.title}” 공용 도면을 삭제할까요?`)) return;
+    setRemoteLoading(true);
+    try {
+      const response = await fetch(`/api/site-layouts?id=${encodeURIComponent(String(record.id))}&baseVersion=${encodeURIComponent(String(record.editVersion))}`, { method: "DELETE" });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error((payload as { error?: string } | null)?.error || "공용 도면을 삭제하지 못했습니다.");
+      setRemoteLayouts((current) => current.filter((item) => item.id !== record.id));
+      if (activeRemoteId === record.id) {
+        setActiveRemoteId(null);
+        setActiveRemoteVersion(null);
+        setActiveRemoteFingerprint("");
+        setActiveDriveSyncStatus("");
+        window.localStorage.removeItem(REMOTE_CONTEXT_KEY);
+      }
+      setSaveMessage(`“${record.title}” 공용 도면을 삭제했습니다.`);
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "공용 도면을 삭제하지 못했습니다.");
+    } finally {
+      setRemoteLoading(false);
+    }
   }
   function loadLocalDraft(record: StoredLocalDraft) {
     setDraft(cloneDraft(record.draft));
@@ -554,7 +814,12 @@ export default function SiteLayoutPlannerPage() {
     setActiveStepIndex(0);
     setActiveQuestionIndex(0);
     setView("model");
-    setSaveMessage(`“${record.name}” 초안을 불러왔습니다.`);
+    setActiveRemoteId(null);
+    setActiveRemoteVersion(null);
+    setActiveRemoteFingerprint("");
+    setActiveDriveSyncStatus("");
+    window.localStorage.removeItem(REMOTE_CONTEXT_KEY);
+    setSaveMessage(`“${record.name}” 기기 복구본을 새 공용 도면으로 불러왔습니다.`);
     setDraftLibraryOpen(false);
   }
   function deleteLocalDraft(record: StoredLocalDraft) {
@@ -606,6 +871,11 @@ export default function SiteLayoutPlannerPage() {
   }
   function updateDisplayedWallDistance(value: number) {
     if (!selectedStageItem || !isWallMounted(selectedStageItem)) return;
+    if (selectedStageItem.kind === "beam") {
+      const wall = selectedStageItem.wall ?? "top";
+      updateBeamMeasurement(selectedStageItem, wallMeasurement(wall, selectedStageItem.offsetReference ?? "start", value));
+      return;
+    }
     const start = selectedStageItem.offsetReference === "end"
       ? Math.max(0, wallLength(selectedStageItem) - selectedStageItem.width - value)
       : Math.max(0, value);
@@ -632,20 +902,96 @@ export default function SiteLayoutPlannerPage() {
       mountingHeight: preset.id === "aircon-wall" ? 2.1 : preset.id === "aircon-ceiling" ? ceilingHeight : undefined,
       beamBottomHeight: preset.kind === "beam" ? 2.2 : undefined,
       beamSpacing: preset.kind === "beam" ? 1 : undefined,
+      structureAttachment: preset.kind === "beam" ? { mode: "wall", wall: "top" } : undefined,
+      structureMeasurement: preset.kind === "beam" ? { axis: "x", referenceType: "wall", referenceWall: "left", direction: 1, distanceMode: "clear", distanceMm: 0 } : undefined,
     };
+  }
+  function wallMeasurement(wall: WallSide, reference: OffsetReference, distanceMeters: number): StructureMeasurement {
+    const horizontal = wall === "top" || wall === "bottom";
+    return {
+      axis: horizontal ? "x" : "y",
+      referenceType: "wall",
+      referenceWall: horizontal ? (reference === "start" ? "left" : "right") : (reference === "start" ? "top" : "bottom"),
+      direction: reference === "start" ? 1 : -1,
+      distanceMode: "clear",
+      distanceMm: Math.round(Math.max(0, distanceMeters) * 1000),
+    };
+  }
+  function previousBeam(item: LayoutItem, wall = item.wall ?? "top") {
+    const explicitId = item.structureMeasurement?.referenceType === "item" ? item.structureMeasurement.referenceItemId : undefined;
+    const explicit = explicitId ? draft.items.find((candidate) => candidate.id === explicitId && candidate.kind === "beam") : null;
+    if (explicit && (explicit.wall ?? "top") === wall) return explicit;
+    const itemIndex = draft.items.findIndex((candidate) => candidate.id === item.id);
+    return draft.items.slice(0, itemIndex < 0 ? draft.items.length : itemIndex).reverse().find((candidate) => candidate.kind === "beam" && (candidate.wall ?? "top") === wall) ?? null;
+  }
+  function placeBeamByMeasurement(item: LayoutItem, measurement: StructureMeasurement, reference: LayoutItem | null) {
+    const wall = item.structureAttachment?.mode === "wall" ? item.structureAttachment.wall : item.wall ?? "top";
+    const length = wall === "top" || wall === "bottom" ? draft.roomWidth : draft.roomHeight;
+    const distance = Math.max(0, measurement.distanceMm / 1000);
+    let start = 0;
+    if (measurement.referenceType === "item" && reference) {
+      const referenceStart = reference.offset ?? 0;
+      const referenceCenter = referenceStart + reference.width / 2;
+      start = measurement.direction === 1
+        ? measurement.distanceMode === "center" ? referenceCenter + distance - item.width / 2 : referenceStart + reference.width + distance
+        : measurement.distanceMode === "center" ? referenceCenter - distance - item.width / 2 : referenceStart - distance - item.width;
+    } else if (measurement.direction === -1) {
+      start = measurement.distanceMode === "center" ? length - distance - item.width / 2 : length - distance - item.width;
+    } else {
+      start = measurement.distanceMode === "center" ? distance - item.width / 2 : distance;
+    }
+    return placeWallMountedItem(item, wall, start);
+  }
+  function updateBeamMeasurement(item: LayoutItem, measurement: StructureMeasurement) {
+    const reference = measurement.referenceType === "item"
+      ? draft.items.find((candidate) => candidate.id === measurement.referenceItemId && candidate.kind === "beam") ?? null
+      : null;
+    const wall = item.structureAttachment?.mode === "wall" ? item.structureAttachment.wall : item.wall ?? "top";
+    updateSelectedById(item.id, {
+      structureAttachment: { mode: "wall", wall },
+      structureMeasurement: measurement,
+      beamSpacing: measurement.distanceMm / 1000,
+      ...placeBeamByMeasurement(item, measurement, reference),
+    });
+  }
+  function selectGuidedWall(item: LayoutItem, wall: WallSide) {
+    setSelectedId(item.id);
+    if (item.kind !== "beam") {
+      updateSelectedById(item.id, placeWallMountedItem(item, wall, item.offset ?? (item.presetId === "aircon-wall" ? item.width / 2 : 0)));
+      return;
+    }
+    const reference = previousBeam(item, wall);
+    const measurement: StructureMeasurement = reference
+      ? { axis: wall === "top" || wall === "bottom" ? "x" : "y", referenceType: "item", referenceItemId: reference.id, direction: 1, distanceMode: item.structureMeasurement?.distanceMode ?? "clear", distanceMm: item.structureMeasurement?.distanceMm ?? 1000 }
+      : wallMeasurement(wall, item.offsetReference ?? "start", 0);
+    const next = { ...item, wall, structureAttachment: { mode: "wall" as const, wall }, structureMeasurement: measurement };
+    updateSelectedById(item.id, { ...next, ...placeBeamByMeasurement(next, measurement, reference) });
   }
   function addItem(presetId: LayoutSymbol, targetX?: number, targetY?: number) {
     const preset = itemPresets.find((item) => item.id === presetId) ?? itemPresets[0];
     const samePresetCount = draft.items.filter((item) => presetForItem(item).id === preset.id).length;
-    const isWallBound = preset.kind === "door" || preset.kind === "window" || preset.id === "aircon-wall";
+    const isWallBound = preset.kind === "door" || preset.kind === "window" || preset.kind === "beam" || preset.id === "aircon-wall";
     const wallBoundCount = draft.items.filter(isWallMounted).length;
     const startX = targetX ?? (isWallBound ? 8 + ((wallBoundCount * 16) % 76) : 18 + ((draft.items.length * 9) % 42));
     const startY = targetY ?? (isWallBound ? 0 : 22 + ((draft.items.length * 11) % 42));
-    const rawItem = makeItem(presetId, startX, startY, 0, samePresetCount ? ` ${samePresetCount + 1}` : "");
+    let rawItem = makeItem(presetId, startX, startY, 0, samePresetCount ? ` ${samePresetCount + 1}` : "");
+    if (preset.kind === "beam") {
+      const reference = [...draft.items].reverse().find((candidate) => candidate.kind === "beam" && (candidate.wall ?? "top") === "top") ?? null;
+      const measurement: StructureMeasurement = reference
+        ? { axis: "x", referenceType: "item", referenceItemId: reference.id, direction: 1, distanceMode: "clear", distanceMm: 1000 }
+        : wallMeasurement("top", "start", 0);
+      rawItem = { ...rawItem, wall: "top", offsetReference: "start", structureAttachment: { mode: "wall", wall: "top" }, structureMeasurement: measurement };
+      const item = { ...rawItem, ...placeBeamByMeasurement(rawItem, measurement, reference) };
+      setDraft((current) => ({ ...current, items: [...current.items, item] }));
+      setSelectedId(item.id); setPendingPresetId(null); setView("model");
+      setCommand(`명령: ${preset.label} ${preset.code} 배치 완료 · 벽과 기준거리를 입력해 위치를 확정하세요.`);
+      return item;
+    }
     const item = { ...rawItem, ...snapPlacement(rawItem, startX, startY) };
     setDraft((current) => ({ ...current, items: [...current.items, item] }));
     setSelectedId(item.id); setPendingPresetId(null); setView("model");
     setCommand(`명령: ${preset.label} ${preset.code} 배치 완료 · 선택한 블록은 손가락으로 다시 이동할 수 있습니다.`);
+    return item;
   }
   function setStageStatus(key: StageCheckKey, status: StageCheckStatus) {
     setDraft((current) => ({ ...current, stageChecks: { ...current.stageChecks, [key]: status } }));
@@ -679,6 +1025,30 @@ export default function SiteLayoutPlannerPage() {
     addItem(presetId);
     setActiveQuestionIndex(1);
   }
+  function addFollowupBeam(reference: LayoutItem) {
+    const samePresetCount = draft.items.filter((item) => item.kind === "beam").length;
+    const wall = reference.wall ?? "top";
+    const measurement: StructureMeasurement = {
+      axis: wall === "top" || wall === "bottom" ? "x" : "y",
+      referenceType: "item",
+      referenceItemId: reference.id,
+      direction: 1,
+      distanceMode: "clear",
+      distanceMm: 1000,
+    };
+    const raw = {
+      ...makeItem("beam", 0, 0, wall === "left" || wall === "right" ? 90 : 0, samePresetCount ? ` ${samePresetCount + 1}` : ""),
+      wall,
+      offsetReference: "start" as const,
+      structureAttachment: { mode: "wall" as const, wall },
+      structureMeasurement: measurement,
+    };
+    const item = { ...raw, ...placeBeamByMeasurement(raw, measurement, reference) };
+    setDraft((current) => ({ ...current, items: [...current.items, item] }));
+    setSelectedId(item.id);
+    setActiveQuestionIndex(2);
+    setSaveMessage(`${reference.name} 다음 위치의 보를 추가했습니다. 면 사이 또는 중심 사이 거리를 입력해 주세요.`);
+  }
   function skipGuidedStage() {
     if (activeStep.id === "room" || activeStep.id === "checklist" || activeStep.id === "review") return;
     setStageStatus(activeStep.id, "none");
@@ -707,7 +1077,7 @@ export default function SiteLayoutPlannerPage() {
     dragRef.current = { id: item.id, pointerId: event.pointerId, startModelX: point.xMm, startModelY: point.yMm, startX: legacyItem.x, startY: legacyItem.y };
     setSelectedId(item.id); setActiveTool("이동");
   }
-  function isWallMounted(item: LayoutItem) { return item.kind === "door" || item.kind === "window" || item.presetId === "aircon-wall"; }
+  function isWallMounted(item: LayoutItem) { return item.kind === "door" || item.kind === "window" || item.kind === "beam" || item.presetId === "aircon-wall"; }
   function placeWallMountedItem(item: LayoutItem, wall: WallSide, rawOffset: number) {
     const wallLength = wall === "top" || wall === "bottom" ? draft.roomWidth : draft.roomHeight;
     const requested = Math.max(0, Number.isFinite(rawOffset) ? rawOffset : 0);
@@ -736,6 +1106,17 @@ export default function SiteLayoutPlannerPage() {
   function placeOpeningOnWall(item: LayoutItem, wall: WallSide, rawOffset: number) {
     return placeWallMountedItem(item, wall, rawOffset);
   }
+  function rebaseBeamToWall(item: LayoutItem, placement: ReturnType<typeof placeWallMountedItem>) {
+    if (item.kind !== "beam") return placement;
+    const measurement = wallMeasurement(placement.wall, "start", placement.offset);
+    return {
+      ...placement,
+      offsetReference: "start" as const,
+      structureAttachment: { mode: "wall" as const, wall: placement.wall },
+      structureMeasurement: measurement,
+      beamSpacing: measurement.distanceMm / 1000,
+    };
+  }
   function snapOpening(item: LayoutItem, x: number, y: number) {
     if (!isWallMounted(item)) return { x: snapGrid(x), y: snapGrid(y), rotation: item.rotation };
     const edges = [
@@ -754,6 +1135,15 @@ export default function SiteLayoutPlannerPage() {
   }
   function updateWallMountedWall(wall: WallSide) {
     if (!selectedItem || !isWallMounted(selectedItem)) return;
+    if (selectedItem.kind === "beam") {
+      const reference = previousBeam(selectedItem, wall);
+      const measurement: StructureMeasurement = reference
+        ? { axis: wall === "top" || wall === "bottom" ? "x" : "y", referenceType: "item", referenceItemId: reference.id, direction: 1, distanceMode: selectedItem.structureMeasurement?.distanceMode ?? "clear", distanceMm: selectedItem.structureMeasurement?.distanceMm ?? 1000 }
+        : wallMeasurement(wall, selectedItem.offsetReference ?? "start", 0);
+      const next = { ...selectedItem, wall, structureAttachment: { mode: "wall" as const, wall }, structureMeasurement: measurement };
+      updateSelected({ ...next, ...placeBeamByMeasurement(next, measurement, reference) });
+      return;
+    }
     const placement = selectedItem.kind === "door" || selectedItem.kind === "window" ? placeOpeningOnWall : placeWallMountedItem;
     updateSelected(placement(selectedItem, wall, selectedItem.offset ?? (selectedItem.presetId === "aircon-wall" ? selectedItem.width / 2 : 0)));
   }
@@ -785,6 +1175,13 @@ export default function SiteLayoutPlannerPage() {
     const value = positiveDimension(rawValue, selectedItem[axis]);
     if (selectedItem.presetId === "aircon-ceiling") {
       updateSelected({ width: value, height: value });
+      return;
+    }
+    if (selectedItem.kind === "beam") {
+      const next = { ...selectedItem, [axis]: value };
+      const measurement = next.structureMeasurement ?? wallMeasurement(next.wall ?? "top", next.offsetReference ?? "start", displayedWallDistance(next));
+      const reference = measurement.referenceType === "item" ? previousBeam(next, next.wall ?? "top") : null;
+      updateSelected({ [axis]: value, ...placeBeamByMeasurement(next, measurement, reference) });
       return;
     }
     if (axis === "width" && isWallMounted(selectedItem)) {
@@ -826,19 +1223,56 @@ export default function SiteLayoutPlannerPage() {
     if (!active || active.pointerId !== pointerId) return;
     const nextX = active.startX + ((point.xMm - active.startModelX) / physicalDraft.roomWidthMm) * 100;
     const nextY = active.startY + ((point.yMm - active.startModelY) / physicalDraft.roomHeightMm) * 100;
-    setDraft((current) => ({ ...current, items: current.items.map((item) => item.id === active.id ? { ...item, ...snapPlacement(item, nextX, nextY) } : item) }));
+    setDraft((current) => ({ ...current, items: current.items.map((item) => {
+      if (item.id !== active.id) return item;
+      const placement = snapPlacement(item, nextX, nextY);
+      return { ...item, ...(item.kind === "beam" ? rebaseBeamToWall(item, placement as ReturnType<typeof placeWallMountedItem>) : placement) };
+    }) }));
   }
   function finishGeometryDrag(pointerId: number) {
-    if (dragRef.current?.pointerId !== pointerId) return;
+    const active = dragRef.current;
+    if (!active || active.pointerId !== pointerId) return;
+    setDraft((current) => ({ ...current, items: current.items.map((item) => {
+      if (item.id !== active.id || item.kind !== "beam") return item;
+      const placement = placeWallMountedItem(item, item.wall ?? "top", item.offset ?? 0);
+      return { ...item, ...rebaseBeamToWall(item, placement) };
+    }) }));
     dragRef.current = null; setActiveTool("선택"); setCommand("명령: 객체 이동 완료 · 고정 시설은 기준거리 입력으로 정밀 보정할 수 있습니다.");
   }
   function duplicateSelected() {
     if (!selectedItem) return;
     const baseCopy = { ...selectedItem, id: crypto.randomUUID(), name: `${selectedItem.name} 복사` };
-    const placement = isWallMounted(selectedItem)
-      ? placeWallMountedItem(baseCopy, selectedItem.wall ?? "top", (selectedItem.offset ?? 0) + selectedItem.width + 0.2)
-      : snapPlacement(baseCopy, clampPercent(selectedItem.x + 4), clampPercent(selectedItem.y + 4));
-    const copy = { ...baseCopy, ...placement };
+    let copy: LayoutItem;
+    if (selectedItem.kind === "beam") {
+      const wall = selectedItem.wall ?? "top";
+      const length = wall === "top" || wall === "bottom" ? draft.roomWidth : draft.roomHeight;
+      const gap = 0.2;
+      const afterFits = (selectedItem.offset ?? 0) + selectedItem.width + gap + baseCopy.width <= length;
+      const beforeFits = (selectedItem.offset ?? 0) - gap - baseCopy.width >= 0;
+      if (afterFits || beforeFits) {
+        const measurement: StructureMeasurement = {
+          axis: wall === "top" || wall === "bottom" ? "x" : "y",
+          referenceType: "item",
+          referenceItemId: selectedItem.id,
+          direction: afterFits ? 1 : -1,
+          distanceMode: "clear",
+          distanceMm: Math.round(gap * 1000),
+        };
+        const measuredCopy = { ...baseCopy, wall, structureAttachment: { mode: "wall" as const, wall }, structureMeasurement: measurement, beamSpacing: gap };
+        copy = { ...measuredCopy, ...placeBeamByMeasurement(measuredCopy, measurement, selectedItem) };
+      } else {
+        const oppositeWall: WallSide = wall === "top" ? "bottom" : wall === "bottom" ? "top" : wall === "left" ? "right" : "left";
+        const offset = Math.min(Math.max(0, selectedItem.offset ?? 0), Math.max(0, length - baseCopy.width));
+        const measurement = wallMeasurement(oppositeWall, "start", offset);
+        const measuredCopy = { ...baseCopy, wall: oppositeWall, structureAttachment: { mode: "wall" as const, wall: oppositeWall }, structureMeasurement: measurement, beamSpacing: offset };
+        copy = { ...measuredCopy, ...placeBeamByMeasurement(measuredCopy, measurement, null) };
+      }
+    } else {
+      const placement = isWallMounted(selectedItem)
+        ? placeWallMountedItem(baseCopy, selectedItem.wall ?? "top", (selectedItem.offset ?? 0) + selectedItem.width + 0.2)
+        : snapPlacement(baseCopy, clampPercent(selectedItem.x + 4), clampPercent(selectedItem.y + 4));
+      copy = { ...baseCopy, ...placement };
+    }
     setDraft((current) => ({ ...current, items: [...current.items, copy] })); setSelectedId(copy.id);
   }
   function removeSelected() {
@@ -848,12 +1282,21 @@ export default function SiteLayoutPlannerPage() {
   function updateStageItemDimension(item: LayoutItem, axis: "width" | "height", rawValue: number) {
     const value = positiveDimension(rawValue, item[axis]);
     const sized = item.presetId === "aircon-ceiling" ? { ...item, width: value, height: value } : { ...item, [axis]: value };
-    const placement = isWallMounted(sized)
+    const beamMeasurement = sized.kind === "beam" ? sized.structureMeasurement ?? wallMeasurement(sized.wall ?? "top", sized.offsetReference ?? "start", displayedWallDistance(sized)) : null;
+    const placement = sized.kind === "beam" && beamMeasurement
+      ? placeBeamByMeasurement(sized, beamMeasurement, beamMeasurement.referenceType === "item" ? previousBeam(sized, sized.wall ?? "top") : null)
+      : isWallMounted(sized)
       ? placeWallMountedItem(sized, sized.wall ?? "top", sized.offset ?? (sized.presetId === "aircon-wall" ? sized.width / 2 : 0))
       : sized.kind === "pillar" && sized.wall
         ? placePillarOnWall(sized, sized.wall, sized.x, sized.y, draft.roomWidth, draft.roomHeight)
         : {};
     updateSelectedById(item.id, { ...sized, ...placement });
+  }
+  function updateBeamDistanceFromInspector(item: LayoutItem, rawValue: number) {
+    const value = Math.max(0, Number.isFinite(rawValue) ? rawValue : 0);
+    const measurement = item.structureMeasurement
+      ?? wallMeasurement(item.wall ?? "top", item.offsetReference ?? "start", displayedWallDistance(item));
+    updateBeamMeasurement(item, { ...measurement, distanceMm: Math.round(value * 1000) });
   }
   function renderGuidedQuestion() {
     if (activeStep.id === "room") {
@@ -872,7 +1315,7 @@ export default function SiteLayoutPlannerPage() {
       return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>현장 조건 {currentQuestionNumber}/{currentQuestionCount}</small><b>{question.title}</b><span>{question.help}</span></div><div className="site-layout-choice-grid">{question.options.map((option) => <button key={option.value} type="button" className={currentValue === option.value ? "active" : ""} onClick={() => updateChecklist(question.key, option.value as never)}>{option.label}</button>)}</div>{activeQuestionIndex === checklistQuestions.length - 1 && <label className="site-layout-question-notes"><span>마지막으로 CAD팀 전달 메모를 적어 주세요.</span><textarea value={draft.fieldNotes ?? ""} onChange={(event) => updateDraft({ fieldNotes: event.target.value.slice(0, 1000) })} placeholder="보 사이 거리, 에어컨 간섭, 반입 동선 등 특이사항" /></label>}</div>;
     }
     if (activeStep.id === "review") {
-      return <div className="site-layout-question-card site-layout-question-review"><div className="site-layout-question-heading"><small>최종 검수</small><b>{hasReviewProblems ? "확인하지 않은 항목을 점검해 주세요." : "CAD팀 전달용 초안이 준비되었습니다."}</b><span>기관과 아직 연결되지 않은 이 기기 전용 초안입니다.</span></div>{geometryIssues.length > 0 && <ul>{geometryIssues.map((issue, index) => <li key={`${issue.code}-${issue.itemId ?? index}`} className={issue.severity}>{issue.message}</li>)}</ul>}{incompleteStageLabels.length > 0 && <ul><li className="error">단계 확인 필요: {incompleteStageLabels.join(", ")}</li></ul>}{unansweredChecklistCount > 0 && <ul><li className="error">현장 조건 {unansweredChecklistCount}개가 아직 미확인입니다.</li></ul>}{!hasReviewProblems && !geometryIssues.length && <p>물리 치수와 객체 위치 검사를 통과했습니다. 현장 조건 확인도 완료했습니다.</p>}<button type="button" className="site-layout-question-confirm" onClick={saveCurrentDraft}>현재 초안 저장</button></div>;
+      return <div className="site-layout-question-card site-layout-question-review"><div className="site-layout-question-heading"><small>최종 검수</small><b>{hasReviewProblems ? "확인하지 않은 항목을 점검해 주세요." : "CAD팀 전달용 초안이 준비되었습니다."}</b><span>공용 저장하면 승인된 사용자가 함께 보고 Google Drive 버전으로 보관됩니다.</span></div>{geometryIssues.length > 0 && <ul>{geometryIssues.map((issue, index) => <li key={`${issue.code}-${issue.itemId ?? index}`} className={issue.severity}>{issue.message}</li>)}</ul>}{incompleteStageLabels.length > 0 && <ul><li className="error">단계 확인 필요: {incompleteStageLabels.join(", ")}</li></ul>}{unansweredChecklistCount > 0 && <ul><li className="error">현장 조건 {unansweredChecklistCount}개가 아직 미확인입니다.</li></ul>}{!hasReviewProblems && !geometryIssues.length && <p>물리 치수와 객체 위치 검사를 통과했습니다. 현장 조건 확인도 완료했습니다.</p>}<button type="button" className="site-layout-question-confirm" onClick={() => void saveCurrentDraft()}>공용 저장</button></div>;
     }
 
     const item = selectedStageItem;
@@ -882,17 +1325,86 @@ export default function SiteLayoutPlannerPage() {
     const preset = presetForItem(item);
     const mounted = isWallMounted(item);
     const references = wallReferenceLabels(item.wall ?? "top");
+    const beamReference = item.kind === "beam" ? previousBeam(item) : null;
+    const beamMeasurement = item.kind === "beam"
+      ? item.structureMeasurement ?? wallMeasurement(item.wall ?? "top", item.offsetReference ?? "start", displayedWallDistance(item))
+      : null;
     if (activeQuestionIndex === 1) {
-      return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 2/{currentQuestionCount}</small><b>{mounted ? "어느 벽에 설치되어 있나요?" : "배치 기준을 확인해 주세요."}</b><span>{mounted ? "현장에서 바라본 도면 기준으로 벽을 선택하세요." : "실내 객체는 좌측벽과 상단벽에서 중심까지의 거리로 기록합니다."}</span></div>{mounted ? <div className="site-layout-wall-picker">{(["top", "right", "bottom", "left"] as WallSide[]).map((wall) => <button key={wall} type="button" className={(item.wall ?? "top") === wall ? "active" : ""} onClick={() => { setSelectedId(item.id); updateSelectedById(item.id, placeWallMountedItem(item, wall, item.offset ?? (item.presetId === "aircon-wall" ? item.width / 2 : 0))); }}>{wallLabel(wall)}</button>)}</div> : <div className="site-layout-reference-diagram"><b>좌측 D벽 → 중심</b><b>상단 A벽 → 중심</b></div>}</div>;
+      return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 2/{currentQuestionCount}</small><b>{mounted ? item.kind === "beam" ? "보가 붙어 있는 벽을 골라 주세요." : "어느 벽에 설치되어 있나요?" : "배치 기준을 확인해 주세요."}</b><span>{mounted ? "현장에서 바라본 도면 기준으로 큰 벽 버튼을 누르세요." : "실내 객체는 좌측벽과 상단벽에서 중심까지의 거리로 기록합니다."}</span></div>{mounted ? <div className="site-layout-wall-picker">{(["top", "right", "bottom", "left"] as WallSide[]).map((wall) => <button key={wall} type="button" className={(item.wall ?? "top") === wall ? "active" : ""} onClick={() => selectGuidedWall(item, wall)}>{wallLabel(wall)}</button>)}</div> : <div className="site-layout-reference-diagram"><b>좌측 D벽 → 중심</b><b>상단 A벽 → 중심</b></div>}</div>;
     }
     if (activeQuestionIndex === 2) {
+      if (item.kind === "beam" && beamMeasurement) {
+        const usingPrevious = beamMeasurement.referenceType === "item" && Boolean(beamReference);
+        return <div className="site-layout-question-card site-layout-beam-question"><div className="site-layout-question-heading"><small>기둥·보 3/{currentQuestionCount}</small><b>{beamReference ? "이번 보는 어디에서부터 쟀나요?" : "첫 보는 어느 모서리에서부터 쟀나요?"}</b><span>보가 여러 개면 앞 보에서 이번 보까지 잰 값을 그대로 입력할 수 있습니다.</span></div>{beamReference && <div className="site-layout-choice-grid two"><button type="button" className={!usingPrevious ? "active" : ""} onClick={() => updateBeamMeasurement(item, wallMeasurement(item.wall ?? "top", item.offsetReference ?? "start", displayedWallDistance(item)))}>벽 모서리 기준</button><button type="button" className={usingPrevious ? "active" : ""} onClick={() => updateBeamMeasurement(item, { axis: (item.wall === "left" || item.wall === "right") ? "y" : "x", referenceType: "item", referenceItemId: beamReference.id, direction: 1, distanceMode: beamMeasurement.distanceMode, distanceMm: beamMeasurement.distanceMm || 1000 })}>이전 보 기준</button></div>}{usingPrevious && beamReference ? <><div className="site-layout-beam-reference"><span>기준 보</span><b>{beamReference.name}</b></div><div className="site-layout-choice-grid two"><button type="button" className={beamMeasurement.distanceMode === "clear" ? "active" : ""} onClick={() => updateBeamMeasurement(item, { ...beamMeasurement, distanceMode: "clear" })}>면에서 면까지</button><button type="button" className={beamMeasurement.distanceMode === "center" ? "active" : ""} onClick={() => updateBeamMeasurement(item, { ...beamMeasurement, distanceMode: "center" })}>중심에서 중심까지</button></div><label><span>{beamMeasurement.distanceMode === "clear" ? "이전 보 면 → 이번 보 면 거리(m)" : "이전 보 중심 → 이번 보 중심 거리(m)"}</span><FriendlyNumberInput label="이전 보에서 다음 보까지 거리(m)" value={beamMeasurement.distanceMm / 1000} min={0} max={30} onCommit={(value) => updateBeamMeasurement(item, { ...beamMeasurement, distanceMm: Math.round(value * 1000) })} /></label></> : <><div className="site-layout-choice-grid two">{(["start", "end"] as OffsetReference[]).map((reference) => <button key={reference} type="button" className={(item.offsetReference ?? "start") === reference ? "active" : ""} onClick={() => { const measurement = wallMeasurement(item.wall ?? "top", reference, displayedWallDistance(item)); const next = { ...item, offsetReference: reference, structureMeasurement: measurement }; updateSelectedById(item.id, { offsetReference: reference, structureMeasurement: measurement, ...placeBeamByMeasurement(next, measurement, null) }); }}>{references[reference]}</button>)}</div><label><span>{(item.offsetReference ?? "start") === "start" ? references.start : references.end} → 보 시작면 거리(m)</span><FriendlyNumberInput label="벽 모서리에서 첫 보까지 거리(m)" value={displayedWallDistance(item)} min={0} max={wallLength(item)} onCommit={updateDisplayedWallDistance} /></label></>}</div>;
+      }
       return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 3/{currentQuestionCount}</small><b>{mounted ? "어느 모서리에서 거리를 쟀나요?" : "두 벽에서 중심까지 거리를 입력해 주세요."}</b><span>손에 든 줄자 기준 그대로 고르면 자동으로 도면 좌표로 환산됩니다.</span></div>{mounted ? <><div className="site-layout-choice-grid two">{(["start", "end"] as OffsetReference[]).map((reference) => <button key={reference} type="button" className={(item.offsetReference ?? "start") === reference ? "active" : ""} onClick={() => updateSelectedById(item.id, { offsetReference: reference })}>{references[reference]}</button>)}</div><label><span>{(item.offsetReference ?? "start") === "start" ? references.start : references.end} → {item.presetId === "aircon-wall" ? "에어컨 끝" : "개구부 시작"} 거리(m)</span><FriendlyNumberInput label="벽 기준거리(m)" value={displayedWallDistance(item)} min={0} max={wallLength(item)} onCommit={updateDisplayedWallDistance} /></label></> : <div className="site-layout-guided-measurements"><label><span>좌측 D벽 → 중심(m)</span><FriendlyNumberInput label="좌측벽 중심거리(m)" value={centerDistance(item, "x")} min={0} max={draft.roomWidth} onCommit={(value) => { setSelectedId(item.id); const size = footprint(item); updateSelectedById(item.id, { x: snapGrid(((value - size.width / 2) / draft.roomWidth) * 100) }); }} /></label><label><span>상단 A벽 → 중심(m)</span><FriendlyNumberInput label="상단벽 중심거리(m)" value={centerDistance(item, "y")} min={0} max={draft.roomHeight} onCommit={(value) => { setSelectedId(item.id); const size = footprint(item); updateSelectedById(item.id, { y: snapGrid(((value - size.height / 2) / draft.roomHeight) * 100) }); }} /></label></div>}</div>;
     }
     if (activeQuestionIndex === 3) {
       const wallMax = (item.wall === "left" || item.wall === "right") ? draft.roomHeight : draft.roomWidth;
-      return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 4/{currentQuestionCount}</small><b>현장에서 잰 실제 크기를 입력해 주세요.</b><span>도면 확대·축소와 관계없이 실제 치수는 그대로 유지됩니다.</span></div><div className="site-layout-guided-measurements"><label><span>{item.kind === "door" || item.kind === "window" ? "개구부 폭" : item.presetId === "aircon-ceiling" ? "정사각형 한 변" : "가로"}(m)</span><FriendlyNumberInput label="객체 가로(m)" value={item.width} min={0.1} max={mounted ? wallMax : 100} onCommit={(value) => updateStageItemDimension(item, "width", value)} /></label>{item.kind === "door" || item.kind === "window" ? <label><span>개구부 높이(m)</span><FriendlyNumberInput label="개구부 높이(m)" value={item.openingHeight ?? (item.kind === "door" ? 2.1 : 1.5)} min={0.3} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { openingHeight: Math.min(value, ceilingHeight - (item.kind === "window" ? item.sillHeight ?? 0.9 : 0)) })} /></label> : item.presetId !== "aircon-ceiling" && <label><span>세로(m)</span><FriendlyNumberInput label="객체 세로(m)" value={item.height} min={0.1} max={100} onCommit={(value) => updateStageItemDimension(item, "height", value)} /></label>}</div></div>;
+      const widthLabel = item.kind === "door" || item.kind === "window" ? "개구부 폭" : item.kind === "beam" ? "벽과 나란한 보 길이" : item.presetId === "aircon-ceiling" ? "정사각형 한 변" : "가로";
+      return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 4/{currentQuestionCount}</small><b>현장에서 잰 실제 크기를 입력해 주세요.</b><span>도면 확대·축소와 관계없이 실제 mm 치수는 그대로 유지됩니다.</span></div><div className="site-layout-guided-measurements"><label><span>{widthLabel}(m)</span><FriendlyNumberInput label="객체 가로(m)" value={item.width} min={0.1} max={mounted ? wallMax : 100} onCommit={(value) => updateStageItemDimension(item, "width", value)} /></label>{item.kind === "door" || item.kind === "window" ? <label><span>개구부 높이(m)</span><FriendlyNumberInput label="개구부 높이(m)" value={item.openingHeight ?? (item.kind === "door" ? 2.1 : 1.5)} min={0.3} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { openingHeight: Math.min(value, ceilingHeight - (item.kind === "window" ? item.sillHeight ?? 0.9 : 0)) })} /></label> : item.presetId !== "aircon-ceiling" && <label><span>{item.kind === "beam" ? "벽에서 실내 방향 보 폭" : "세로"}(m)</span><FriendlyNumberInput label="객체 세로(m)" value={item.height} min={0.1} max={100} onCommit={(value) => updateStageItemDimension(item, "height", value)} /></label>}</div></div>;
     }
-    return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 5/{currentQuestionCount}</small><b>{preset.label} 세부 조건을 확인해 주세요.</b><span>하나 더 있으면 이 단계를 마친 뒤 같은 형태를 다시 추가할 수 있습니다.</span></div>{item.kind === "door" && <div className="site-layout-guided-measurements"><label><span>경첩 방향</span><select value={item.handing ?? "left"} onChange={(event) => updateSelectedById(item.id, { handing: event.target.value as OpeningHand })}><option value="left">좌경첩</option><option value="right">우경첩</option></select></label><label><span>열림 방향</span><select value={item.swing ?? "inside"} onChange={(event) => updateSelectedById(item.id, { swing: event.target.value as OpeningSwing })}><option value="inside">실 안쪽</option><option value="outside">실 바깥쪽</option></select></label></div>}{item.kind === "window" && <label><span>바닥 → 창 하단 높이(m)</span><FriendlyNumberInput label="창 하단 높이(m)" value={item.sillHeight ?? 0.9} min={0} max={ceilingHeight - (item.openingHeight ?? 1.5)} onCommit={(value) => updateSelectedById(item.id, { sillHeight: value })} /></label>}{item.kind === "beam" && <div className="site-layout-guided-measurements"><label><span>바닥 → 보 하단(m)</span><FriendlyNumberInput label="보 하단 높이(m)" value={item.beamBottomHeight ?? 2.2} min={0} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { beamBottomHeight: value })} /></label><label><span>다음 보까지 거리(m)</span><FriendlyNumberInput label="보 사이 거리(m)" value={item.beamSpacing ?? 1} min={0} max={30} onCommit={(value) => updateSelectedById(item.id, { beamSpacing: value })} /></label></div>}{item.kind === "fixture" && <label><span>바닥 → 설치면 높이(m)</span><FriendlyNumberInput label="에어컨 설치 높이(m)" value={item.mountingHeight ?? (item.presetId === "aircon-ceiling" ? ceilingHeight : 2.1)} min={0} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { mountingHeight: value })} /></label>}<div className="site-layout-question-actions"><button type="button" onClick={() => { setSelectedId(""); setActiveQuestionIndex(0); }}>같은 단계 하나 더</button><button type="button" className="primary" onClick={() => setStageStatus(activeStep.id as StageCheckKey, "complete")}>확인 완료</button></div></div>;
+    return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 5/{currentQuestionCount}</small><b>{preset.label} 세부 조건을 확인해 주세요.</b><span>{item.kind === "beam" ? "보가 더 있으면 같은 벽을 따라 바로 이어서 실측할 수 있습니다." : "하나 더 있으면 이 단계를 마친 뒤 같은 형태를 다시 추가할 수 있습니다."}</span></div>{item.kind === "door" && <div className="site-layout-guided-measurements"><label><span>경첩 방향</span><select value={item.handing ?? "left"} onChange={(event) => updateSelectedById(item.id, { handing: event.target.value as OpeningHand })}><option value="left">좌경첩</option><option value="right">우경첩</option></select></label><label><span>열림 방향</span><select value={item.swing ?? "inside"} onChange={(event) => updateSelectedById(item.id, { swing: event.target.value as OpeningSwing })}><option value="inside">실 안쪽</option><option value="outside">실 바깥쪽</option></select></label></div>}{item.kind === "window" && <label><span>바닥 → 창 하단 높이(m)</span><FriendlyNumberInput label="창 하단 높이(m)" value={item.sillHeight ?? 0.9} min={0} max={ceilingHeight - (item.openingHeight ?? 1.5)} onCommit={(value) => updateSelectedById(item.id, { sillHeight: value })} /></label>}{item.kind === "beam" && <div className="site-layout-guided-measurements"><label><span>바닥 → 보 하단(m)</span><FriendlyNumberInput label="보 하단 높이(m)" value={item.beamBottomHeight ?? 2.2} min={0} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { beamBottomHeight: value })} /></label><div className="site-layout-beam-summary"><span>배치 기준</span><b>{beamMeasurement?.referenceType === "item" ? `${beamMeasurement.distanceMode === "center" ? "중심 간" : "면 간"} ${Number(((beamMeasurement.distanceMm || 0) / 1000).toFixed(3))}m` : `${references[item.offsetReference ?? "start"]} 기준`}</b></div></div>}{item.kind === "fixture" && <label><span>바닥 → 설치면 높이(m)</span><FriendlyNumberInput label="에어컨 설치 높이(m)" value={item.mountingHeight ?? (item.presetId === "aircon-ceiling" ? ceilingHeight : 2.1)} min={0} max={ceilingHeight} onCommit={(value) => updateSelectedById(item.id, { mountingHeight: value })} /></label>}<div className="site-layout-question-actions"><button type="button" onClick={() => { if (item.kind === "beam") addFollowupBeam(item); else { setSelectedId(""); setActiveQuestionIndex(0); } }}>{item.kind === "beam" ? "보 하나 더" : "같은 단계 하나 더"}</button><button type="button" className="primary" onClick={() => setStageStatus(activeStep.id as StageCheckKey, "complete")}>확인 완료</button></div></div>;
+  }
+  async function leaveCanvasExpanded({ historyAlreadyPopped = false }: { historyAlreadyPopped?: boolean } = {}) {
+    if (closingExpandedRef.current) return;
+    closingExpandedRef.current = true;
+    const historyToken = expandedHistoryTokenRef.current;
+    const shouldPopHistory = !historyAlreadyPopped && historyToken && history.state?.siteLayoutExpanded === historyToken;
+    setCanvasExpanded(false);
+    setCanvasFocus(false);
+    setOrientationHint(false);
+    expandedRef.current = false;
+    expandedHistoryTokenRef.current = "";
+    const orientation = (screen as Screen & { orientation?: ScreenOrientation & { unlock?: () => void } }).orientation;
+    try { orientation?.unlock?.(); } catch { /* Restoring scroll and panels must continue without orientation support. */ }
+    if (document.fullscreenElement === workspaceRef.current && document.exitFullscreen) {
+      try { await document.exitFullscreen(); } catch { /* CSS immersive mode can still close normally. */ }
+    }
+    fullscreenEnteredRef.current = false;
+    if (shouldPopHistory) {
+      suppressExpandedPopRef.current = true;
+      history.back();
+      window.setTimeout(() => { suppressExpandedPopRef.current = false; }, 500);
+    }
+    window.requestAnimationFrame(() => window.scrollTo({ top: expandedScrollYRef.current, behavior: "auto" }));
+    window.setTimeout(() => { closingExpandedRef.current = false; }, 0);
+  }
+  async function toggleCanvasExpanded() {
+    if (canvasExpanded) {
+      await leaveCanvasExpanded();
+      return;
+    }
+    const isMobile = window.matchMedia("(max-width: 1000px), (pointer: coarse)").matches;
+    if (canvasFocus && !canvasExpanded) {
+      setCanvasFocus(false);
+      return;
+    }
+    if (!isMobile) {
+      setCanvasFocus((current) => !current);
+      return;
+    }
+    closingExpandedRef.current = false;
+    expandedScrollYRef.current = window.scrollY;
+    setCanvasFocus(true);
+    setCanvasExpanded(true);
+    expandedRef.current = true;
+    const historyToken = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    expandedHistoryTokenRef.current = historyToken;
+    const currentState = history.state && typeof history.state === "object" ? history.state : {};
+    history.pushState({ ...currentState, siteLayoutExpanded: historyToken }, "");
+    try {
+      await workspaceRef.current?.requestFullscreen?.();
+      fullscreenEnteredRef.current = document.fullscreenElement === workspaceRef.current;
+    } catch {
+      fullscreenEnteredRef.current = false;
+    }
+    try {
+      const orientation = (screen as Screen & { orientation?: ScreenOrientation & { lock?: (mode: "landscape") => Promise<void> } }).orientation;
+      await orientation?.lock?.("landscape");
+    } catch {
+      setOrientationHint(window.matchMedia("(orientation: portrait)").matches);
+    }
   }
   function resetDraft() {
     const changed = draft.items.length
@@ -905,7 +1417,7 @@ export default function SiteLayoutPlannerPage() {
       || draft.roomCeilingHeight !== defaultDraft.roomCeilingHeight
       || draft.roomWallThickness !== defaultDraft.roomWallThickness;
     if (changed && !window.confirm("현재 입력 내용을 지우고 새 초안을 시작할까요? 저장하지 않은 내용은 복구할 수 없습니다.")) return;
-    setDraft(cloneDraft(defaultDraft)); setSelectedId(""); setPendingPresetId(null); setActiveLocalDraftId(""); setActiveLocalDraftFingerprint(""); setActiveStepIndex(0); setActiveQuestionIndex(0); setView("model"); setCanvasFocus(false); setCommand("명령: 새 기초도면을 준비했습니다.");
+    setDraft(cloneDraft(defaultDraft)); setSelectedId(""); setPendingPresetId(null); setActiveLocalDraftId(""); setActiveLocalDraftFingerprint(""); setActiveRemoteId(null); setActiveRemoteVersion(null); setActiveRemoteFingerprint(""); setActiveDriveSyncStatus(""); window.localStorage.removeItem(REMOTE_CONTEXT_KEY); setActiveStepIndex(0); setActiveQuestionIndex(0); setView("model"); setCanvasFocus(false); setCommand("명령: 새 기초도면을 준비했습니다.");
   }
   function printA3Draft() {
     setView("paper");
@@ -918,17 +1430,32 @@ export default function SiteLayoutPlannerPage() {
       window.setTimeout(cleanup, 2_000);
     });
   }
+  const saveStateTitle = remoteLoading
+    ? "공용 저장소 확인 중"
+    : activeRemoteId
+      ? activeRemoteFingerprint === currentDraftFingerprint ? "공용 저장됨" : "저장 후 수정됨"
+      : activeLocalDraftId
+        ? activeLocalDraftFingerprint === currentDraftFingerprint ? "기기 복구됨" : "복구 후 수정됨"
+        : savedAt ? "기기 자동 복구" : "도면 준비됨";
+  const saveStateDetail = activeRemoteId
+    ? activeRemoteFingerprint !== currentDraftFingerprint
+      ? "공용 저장 이후 수정 · 기기 복구 중"
+      : activeDriveSyncStatus === "ready"
+        ? "Google Drive 보관 완료"
+        : activeDriveSyncStatus === "error" ? "Drive 재시도 필요" : "공용 도면 편집 중"
+    : savedAt || "새 공용 도면";
   return (
     <section className="site-layout-planner" aria-label="현장 실측 기초도면 작성기">
       <header className="site-layout-intro">
         <div className="site-layout-brand"><span>W</span><div><b>기초도면 작성</b><small>현장 실측 → CAD팀 전달 · MOBILE FIRST BETA</small></div></div>
-        <div className="site-layout-header-actions"><div className="site-layout-save-state" role="status"><b>{activeLocalDraftId ? activeLocalDraftFingerprint === currentDraftFingerprint ? "내 초안 저장됨" : "저장 후 수정됨" : savedAt ? "자동 복구됨" : "도면 준비됨"}</b><small>{savedAt || "기관 미연동 · 이 기기에만 저장"}</small></div><button type="button" onClick={resetDraft}>새 초안</button><button type="button" className="secondary" onClick={() => setDraftLibraryOpen((current) => !current)}>내 초안 {localDrafts.length}</button><button type="button" className="primary" onClick={saveCurrentDraft}>초안 저장</button><button type="button" onClick={view === "paper" ? printA3Draft : () => { setView("paper"); setCanvasFocus(true); }}>{view === "paper" ? "A3 인쇄" : "A3 미리보기"}</button></div>
+        <div className="site-layout-header-actions"><div className="site-layout-save-state" role="status"><b>{saveStateTitle}</b><small>{saveStateDetail}</small></div><button type="button" onClick={resetDraft}>새 도면</button><button type="button" className="secondary" onClick={() => setDraftLibraryOpen((current) => !current)}>공용 도면 {remoteLayouts.length}</button><button type="button" className="primary" disabled={remoteLoading} onClick={() => void saveCurrentDraft()}>{remoteLoading ? "저장 중…" : "공용 저장"}</button><button type="button" onClick={view === "paper" ? printA3Draft : () => { setView("paper"); setCanvasFocus(true); }}>{view === "paper" ? "A3 인쇄" : "A3 미리보기"}</button></div>
       </header>
       <div className="site-layout-beta-notice" role="note"><b>BETA · 개발 중</b><span>현재 개발 중인 기능입니다. 현장 실측 초안 및 CAD팀 전달용이며 최종 시공 도면으로 사용할 수 없습니다.</span></div>
-      <div className="site-layout-local-state" role="status"><span>{saveMessage}</span><small>기관·견적 DB와 연결되지 않습니다.</small></div>
-      {draftLibraryOpen && <section className="site-layout-draft-library" aria-label="이 기기에 저장한 초안">
-        <div><b>내 기기 초안</b><span>최대 20개 · 기관 미연동</span></div>
-        {localDrafts.length ? <ul>{localDrafts.map((record) => <li key={record.id}><div><b>{record.name}</b><small>{new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(record.updatedAt))}</small></div><button type="button" onClick={() => loadLocalDraft(record)}>불러오기</button><button type="button" className="danger" onClick={() => deleteLocalDraft(record)}>삭제</button></li>)}</ul> : <p>저장한 초안이 없습니다. 현재 도면에서 ‘초안 저장’을 눌러 주세요.</p>}
+      <div className="site-layout-local-state" role="status"><span>{saveMessage}</span><small>공용 DB 목록 · Google Drive JSON 원본 · 기기 자동 복구</small></div>
+      {draftLibraryOpen && <section className="site-layout-draft-library" aria-label="공용 기초도면 목록">
+        <div><div><b>공용 기초도면</b><span>승인된 사용자가 함께 봅니다.</span></div><button type="button" disabled={remoteLoading} onClick={() => void refreshRemoteLayouts()}>새로고침</button></div>
+        {remoteLayouts.length ? <ul>{remoteLayouts.map((record) => <li key={record.id}><div><b>{record.title}</b><small>v{record.editVersion} · {record.updatedByName || "사용자"} · {new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(record.updatedAt))}</small><em className={`drive-${record.driveSyncStatus}`}>{record.driveSyncStatus === "ready" ? "Drive 완료" : record.driveSyncStatus === "error" ? "Drive 재시도" : "Drive 동기화 중"}</em></div><button type="button" disabled={remoteLoading} onClick={() => void loadRemoteDraft(record)}>불러오기</button><button type="button" className="danger" disabled={remoteLoading} onClick={() => void deleteRemoteDraft(record)}>삭제</button></li>)}</ul> : <p>{remoteLoading ? "공용 도면을 불러오는 중입니다…" : "아직 공용 저장한 기초도면이 없습니다."}</p>}
+        <details className="site-layout-recovery-library"><summary>이 기기 복구본 {localDrafts.length}개</summary>{localDrafts.length ? <ul>{localDrafts.map((record) => <li key={record.id}><div><b>{record.name}</b><small>{new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(record.updatedAt))}</small></div><button type="button" onClick={() => loadLocalDraft(record)}>복구</button><button type="button" className="danger" onClick={() => deleteLocalDraft(record)}>삭제</button></li>)}</ul> : <p>기기 복구본이 없습니다.</p>}</details>
       </section>}
       <div className="site-layout-mode-toggle" role="group" aria-label="작성 방식"><button type="button" className={workflowMode === "guided" ? "active" : ""} onClick={() => { setWorkflowMode("guided"); setView("model"); setCanvasFocus(false); }}>간편 실측</button><button type="button" className={workflowMode === "direct" ? "active" : ""} onClick={() => { setWorkflowMode("direct"); setView("model"); setCanvasFocus(false); }}>도면 직접 수정</button><span>{workflowMode === "guided" ? "질문을 하나씩 확인합니다." : "블록을 끌어 놓고 세부 수치를 직접 조정합니다."}</span></div>
 
@@ -980,7 +1507,7 @@ export default function SiteLayoutPlannerPage() {
 
       {workflowMode === "direct" && <div className="site-layout-commandbar"><div>{["선택", "이동"].map((tool) => <button key={tool} type="button" className={activeTool === tool ? "active" : ""} onClick={() => { setActiveTool(tool); setCommand(`명령: ${tool} 도구가 활성화되었습니다.`); }}>{tool}</button>)}</div><p aria-live="polite">{command}</p></div>}
 
-      <div className={`site-layout-workspace ${canvasFocus ? "is-canvas-focus" : ""} ${workflowMode === "guided" ? "is-guided" : ""}`}>
+      <div ref={workspaceRef} className={`site-layout-workspace ${canvasFocus ? "is-canvas-focus" : ""} ${canvasExpanded ? "is-mobile-expanded" : ""} ${workflowMode === "guided" ? "is-guided" : ""}`}>
         <aside className={`site-layout-library ${activePresets.length ? "" : "is-context-only"}`}>
           <div><b>{activeStep.id === "room" ? "공간 입력 안내" : activeStep.id === "review" ? "최종 검수" : `${activeStep.label} 모양 선택`}</b><span>{activeStep.id === "room" ? "위에서 실측값을 입력한 뒤 다음 단계로 이동하세요." : activeStep.id === "review" ? "미확인 단계를 눌러 바로 보완할 수 있습니다." : "현장과 가장 비슷한 그림을 먼저 선택하세요."}</span></div>
           {activePresets.length > 0 && <p className="site-layout-mobile-help">그림 선택 → 도면의 벽이나 위치 터치 → 실제 치수 입력</p>}
@@ -992,7 +1519,8 @@ export default function SiteLayoutPlannerPage() {
         </aside>
 
         <main className={`site-layout-canvas-panel view-${view}`}>
-          <div className="site-layout-canvas-head"><div><button type="button" className={view === "model" ? "active" : ""} onClick={() => setView("model")}>모델</button><button type="button" className={view === "paper" ? "active" : ""} onClick={() => { setView("paper"); setCanvasFocus(true); }}>A3 출력</button></div><div className="site-layout-canvas-meta">{pendingPreset ? <button type="button" className="site-layout-pending-placement" onClick={() => { setPendingPresetId(null); setActiveTool("선택"); setCommand("명령: 블록 배치를 취소했습니다."); }}>{pendingPreset.label} 배치 대기 · 취소</button> : <span>TOP · 1:60 · mm</span>}{view === "paper" && <button type="button" className="site-layout-paper-print" onClick={printA3Draft}>A3 인쇄</button>}<button type="button" className="site-layout-focus-toggle" aria-pressed={canvasFocus} onClick={() => setCanvasFocus((current) => !current)}>{canvasFocus ? "패널 보기" : "도면 크게"}</button></div></div>
+          <div className="site-layout-canvas-head"><div><button type="button" className={view === "model" ? "active" : ""} onClick={() => setView("model")}>모델</button><button type="button" className={view === "paper" ? "active" : ""} onClick={() => { setView("paper"); setCanvasFocus(true); }}>A3 출력</button></div><div className="site-layout-canvas-meta">{pendingPreset ? <button type="button" className="site-layout-pending-placement" onClick={() => { setPendingPresetId(null); setActiveTool("선택"); setCommand("명령: 블록 배치를 취소했습니다."); }}>{pendingPreset.label} 배치 대기 · 취소</button> : <span>TOP · 1:60 · mm</span>}{view === "paper" && <button type="button" className="site-layout-paper-print" onClick={printA3Draft}>A3 인쇄</button>}<button type="button" className="site-layout-focus-toggle" aria-pressed={canvasFocus || canvasExpanded} onClick={() => void toggleCanvasExpanded()}>{canvasExpanded ? "크게 보기 닫기" : canvasFocus ? "패널 보기" : "도면 크게"}</button></div></div>
+          {orientationHint && <div className="site-layout-orientation-hint" role="status">휴대폰을 가로로 돌리면 도면을 더 넓게 볼 수 있습니다. 세로 화면에서도 계속 사용할 수 있습니다.</div>}
           <div className="site-layout-model-space">
             <div className="site-layout-board-wrap" style={{ ...physicalRoomStyle, maxWidth: `${Math.round(920 * roomRatio)}px` }}><div ref={boardRef} className={`site-layout-board site-layout-geometry-host ${pendingPreset ? "placing" : ""}`} style={physicalRoomStyle} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDrop={handleBoardDrop}><SiteLayoutGeometryView draft={physicalDraft} mode="model" paddingMm={650} selectedItemId={selectedId} interactive={workflowMode === "direct"} showDimensions showLabels={workflowMode === "direct"} isItemVisible={(item) => { const legacy = draft.items.find((candidate) => candidate.id === item.id); return Boolean(legacy && itemLayer(legacy) !== "equipment" && visibleLayers[itemLayer(legacy)]); }} onBackgroundPointerDown={(point) => { if (pendingPresetId) addItem(pendingPresetId, (point.xMm / physicalDraft.roomWidthMm) * 100, (point.yMm / physicalDraft.roomHeightMm) * 100); else setSelectedId(""); }} onItemSelect={(item) => setSelectedId(item.id)} onItemPointerDown={startGeometryDrag} onModelPointerMove={(point, event) => moveGeometryDrag(point, event.pointerId)} onModelPointerUp={(_, event) => finishGeometryDrag(event.pointerId)} onModelPointerCancel={(event) => finishGeometryDrag(event.pointerId)} /></div></div>
             {!visibleBasicItemCount && activeStep.id !== "room" && <div className="site-layout-empty"><b>{activeStep.label} 모양을 선택해 도면을 시작하세요.</b><span>모바일에서는 그림을 누른 뒤 도면의 위치를 터치하세요.</span></div>}
@@ -1043,7 +1571,7 @@ export default function SiteLayoutPlannerPage() {
             {selectedItem.presetId === "aircon-ceiling" && <div className="site-layout-structure-fields"><label><span>바닥→설치면 높이(m)</span><FriendlyNumberInput label="바닥에서 설치면 높이(m)" value={selectedItem.mountingHeight ?? ceilingHeight} min={0} max={20} onCommit={(value) => updateSelected({ mountingHeight: value })} /></label></div>}
             {selectedItem.kind === "beam" && <div className="site-layout-structure-fields">
               <label><span>바닥→보 하단(m)</span><FriendlyNumberInput label="바닥에서 보 하단(m)" value={selectedItem.beamBottomHeight ?? 2.2} min={0} max={20} onCommit={(value) => updateSelected({ beamBottomHeight: value })} /></label>
-              <label><span>다음 보까지 유효거리(m)</span><FriendlyNumberInput label="다음 보까지 유효거리(m)" value={selectedItem.beamSpacing ?? 1} min={0} max={30} onCommit={(value) => updateSelected({ beamSpacing: value })} /></label>
+              <label><span>{selectedItem.structureMeasurement?.referenceType === "item" ? "기준 보에서 거리(m)" : "기준 모서리→보 시작면 거리(m)"}</span><FriendlyNumberInput label="보 기준거리(m)" value={selectedItem.structureMeasurement ? selectedItem.structureMeasurement.distanceMm / 1000 : displayedWallDistance(selectedItem)} min={0} max={30} onCommit={(value) => updateBeamDistanceFromInspector(selectedItem, value)} /></label>
             </div>}
             <div className="site-layout-object-facts"><span>블록명 <b>{selectedPreset.code}</b></span><span>레이어 <b>{itemLayer(selectedItem).toUpperCase()}</b></span><span>스냅 <b>{isWallMounted(selectedItem) ? `${wallLabel(selectedItem.wall)} 기준거리` : "두 벽 중심거리"}</b></span></div>
             {selectedPreset.guide && <div className="site-layout-install-guide"><span>현장 확인</span><p>{selectedPreset.guide}</p></div>}
@@ -1051,8 +1579,8 @@ export default function SiteLayoutPlannerPage() {
           </div> : <div className="site-layout-inspector-empty"><b>{activeStep.id === "room" ? "공간 크기를 먼저 입력하세요." : "배치한 블록을 선택하세요."}</b><span>선택하면 실제 치수와 설치 벽·기준 거리를 조정할 수 있습니다.</span></div>}
         </aside>
       </div>
-      {workflowMode === "guided" ? <div className="site-layout-step-actions site-layout-question-navigation"><button type="button" onClick={questionPrevious} disabled={activeStepIndex === 0 && activeQuestionIndex === 0}>이전 질문</button><div><b>{activeStepIndex + 1}단계 · {activeStep.label}</b><span>{currentQuestionNumber}/{currentQuestionCount} 질문 · 자동 복구 중</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => { saveCurrentDraft(); setView("paper"); setCanvasFocus(true); }}>저장·A3 확인</button> : <button type="button" className="primary" onClick={questionNext}>{activeQuestionIndex === currentQuestionCount - 1 ? "다음 단계" : "다음 질문"}</button>}</div> : <div className="site-layout-step-actions"><button type="button" onClick={() => goToStep(activeStepIndex - 1)} disabled={activeStepIndex === 0}>이전</button><div><b>{activeStepIndex + 1}/{guideSteps.length} · {activeStep.label}</b><span>입력 내용은 이 기기에 자동 저장됩니다.</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => { setView("paper"); setCanvasFocus(true); }}>A3 도면 확인</button> : <button type="button" className="primary" onClick={goNextStep}>저장하고 다음</button>}</div>}
-      <footer className="site-layout-statusbar"><div><b>SNAP</b><b>ORTHO</b><b>OSNAP</b><span>GRID 10</span></div><p>도면 단위 mm · 브라우저 자동 저장 · CAD팀 전달용 기초도면</p></footer>
+      {workflowMode === "guided" ? <div className="site-layout-step-actions site-layout-question-navigation"><button type="button" onClick={questionPrevious} disabled={activeStepIndex === 0 && activeQuestionIndex === 0}>이전 질문</button><div><b>{activeStepIndex + 1}단계 · {activeStep.label}</b><span>{currentQuestionNumber}/{currentQuestionCount} 질문 · 자동 복구 중</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => { void saveCurrentDraft(); setView("paper"); setCanvasFocus(true); }}>저장·A3 확인</button> : <button type="button" className="primary" onClick={questionNext}>{activeQuestionIndex === currentQuestionCount - 1 ? "다음 단계" : "다음 질문"}</button>}</div> : <div className="site-layout-step-actions"><button type="button" onClick={() => goToStep(activeStepIndex - 1)} disabled={activeStepIndex === 0}>이전</button><div><b>{activeStepIndex + 1}/{guideSteps.length} · {activeStep.label}</b><span>입력 내용은 이 기기에 자동 복구됩니다.</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => { setView("paper"); setCanvasFocus(true); }}>A3 도면 확인</button> : <button type="button" className="primary" onClick={goNextStep}>저장하고 다음</button>}</div>}
+      <footer className="site-layout-statusbar"><div><b>SNAP</b><b>ORTHO</b><b>OSNAP</b><span>GRID 10</span></div><p>도면 단위 mm · 공용 DB 및 Google Drive 저장 · CAD팀 전달용 기초도면</p></footer>
     </section>
   );
 }

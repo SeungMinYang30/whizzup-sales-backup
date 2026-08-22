@@ -1505,6 +1505,80 @@ export const authoredQuotations = sqliteTable(
   ],
 );
 
+export const siteLayouts = sqliteTable(
+  "site_layouts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    draftUuid: text("draft_uuid").notNull().unique(),
+    title: text("title").notNull(),
+    schemaVersion: integer("schema_version").notNull().default(3),
+    draftJson: text("draft_json").notNull().default("{}"),
+    editVersion: integer("edit_version").notNull().default(1),
+    currentRevisionId: integer("current_revision_id").notNull().default(0),
+    status: text("status").notNull().default("active"),
+    driveFolderId: text("drive_folder_id").notNull().default(""),
+    driveJsonFileId: text("drive_json_file_id").notNull().default(""),
+    driveJsonName: text("drive_json_name").notNull().default(""),
+    drivePdfFileId: text("drive_pdf_file_id").notNull().default(""),
+    drivePdfName: text("drive_pdf_name").notNull().default(""),
+    driveSyncStatus: text("drive_sync_status").notNull().default("queued"),
+    driveSyncError: text("drive_sync_error").notNull().default(""),
+    driveSyncToken: text("drive_sync_token").notNull().default(""),
+    deletedAt: text("deleted_at").notNull().default(""),
+    deletedBy: integer("deleted_by").notNull().default(0),
+    deletedByName: text("deleted_by_name").notNull().default(""),
+    createdBy: integer("created_by").notNull(),
+    createdByName: text("created_by_name").notNull().default(""),
+    updatedBy: integer("updated_by").notNull(),
+    updatedByName: text("updated_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("site_layouts_updated_idx").on(
+      table.deletedAt,
+      table.updatedAt,
+      table.id,
+    ),
+  ],
+);
+
+export const siteLayoutRevisions = sqliteTable(
+  "site_layout_revisions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    siteLayoutId: integer("site_layout_id").notNull(),
+    revisionNumber: integer("revision_number").notNull(),
+    parentRevisionId: integer("parent_revision_id").notNull().default(0),
+    schemaVersion: integer("schema_version").notNull().default(3),
+    draftJson: text("draft_json").notNull().default("{}"),
+    contentHash: text("content_hash").notNull().default(""),
+    changeSummary: text("change_summary").notNull().default(""),
+    driveFolderId: text("drive_folder_id").notNull().default(""),
+    driveJsonFileId: text("drive_json_file_id").notNull().default(""),
+    driveJsonName: text("drive_json_name").notNull().default(""),
+    drivePdfFileId: text("drive_pdf_file_id").notNull().default(""),
+    drivePdfName: text("drive_pdf_name").notNull().default(""),
+    driveSyncStatus: text("drive_sync_status").notNull().default("queued"),
+    driveSyncError: text("drive_sync_error").notNull().default(""),
+    driveSyncToken: text("drive_sync_token").notNull().default(""),
+    createdBy: integer("created_by").notNull(),
+    createdByName: text("created_by_name").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("site_layout_revisions_number_idx").on(
+      table.siteLayoutId,
+      table.revisionNumber,
+    ),
+    index("site_layout_revisions_created_idx").on(
+      table.siteLayoutId,
+      table.createdAt,
+      table.id,
+    ),
+  ],
+);
+
 export const inventoryProducts = sqliteTable(
   "inventory_products",
   {

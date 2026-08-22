@@ -143,26 +143,84 @@ test("현장 통신·전기·공사 조건과 CAD 메모를 마지막 설문과 
   assert.match(pageSource, /물리 치수와 객체 위치 검사를 통과했습니다\./);
 });
 
-test("현재 초안과 이름 있는 초안 목록은 이 기기 localStorage에만 저장·복원한다", () => {
+test("현재 입력은 기기 복구본을 유지하면서 공용 API와 Drive 저장 상태를 사용한다", () => {
   assert.match(pageSource, /const STORAGE_KEY = "whizzup:site-layout-draft:v1"/);
   assert.match(pageSource, /const DRAFT_LIBRARY_KEY = "whizzup:site-layout-local-drafts:v1"/);
+  assert.match(pageSource, /const REMOTE_CONTEXT_KEY = "whizzup:site-layout-remote-context:v1"/);
   assertContainsAll(pageSource, [
     /normalizeStoredDraft\(parsed\)/,
     /parseLocalDraftLibrary\(window\.localStorage\.getItem\(DRAFT_LIBRARY_KEY\)\)/,
     /function persistLocalDrafts\(/,
-    /function saveCurrentDraft\(\)/,
+    /async function saveCurrentDraft\(\)/,
+    /async function refreshRemoteLayouts\(\)/,
+    /async function loadRemoteDraft\(/,
+    /type RemoteLayoutSummary =/,
+    /function normalizeRemoteSummary\(/,
+    /const normalized = normalizeRemoteSummary\(item\)/,
     /function loadLocalDraft\(/,
     /function deleteLocalDraft\(/,
     /window\.localStorage\.setItem\(DRAFT_LIBRARY_KEY/,
-    /aria-label="이 기기에 저장한 초안"/,
-    />초안 저장<\/button>/,
+    /fetch\("\/api\/site-layouts"/,
+    /fetch\(`\/api\/site-layouts\?id=/,
+    /method: "POST"/,
+    /baseVersion: activeRemoteVersion/,
+    /draft: \{ schemaVersion: 3, editorDraft: recovery\.draft, geometryDraft: physicalDraft \}/,
+    /response\.status === 409/,
+    /const \[activeRemoteFingerprint, setActiveRemoteFingerprint\] = useState\(""\)/,
+    /setActiveRemoteFingerprint\(JSON\.stringify\(draft\)\)/,
+    /activeRemoteFingerprint === currentDraftFingerprint \? "공용 저장됨" : "저장 후 수정됨"/,
+    /activeLocalDraftFingerprint === currentDraftFingerprint \? "기기 복구됨" : "복구 후 수정됨"/,
+    /aria-label="공용 기초도면 목록"/,
+    />공용 저장<\/button>/,
     />불러오기<\/button>/,
     />삭제<\/button>/,
-    /기관 미연동 · 이 기기에만 저장/,
+    /Google Drive 보관 완료/,
+    /이 기기 복구본/,
   ]);
-  assert.doesNotMatch(pageSource, /fetch\s*\(/);
-  assert.doesNotMatch(pageSource, /\/api\//);
+  const summaryNormalizer = pageSource.match(/function normalizeRemoteSummary[\s\S]*?\n}\n\nfunction normalizeRemoteLayout/)?.[0] ?? "";
+  assert.ok(summaryNormalizer, "metadata-only 목록 normalizer가 있어야 합니다.");
+  assert.doesNotMatch(summaryNormalizer, /editorDraftFromRemote|!draft/, "목록 항목은 draft 없이도 유지되어야 합니다.");
   assert.doesNotMatch(pageSource, /organizationId|campaignId|quotationId/);
+});
+
+test("보는 벽 부착을 기본으로 첫 보와 다음 보의 실측 기준을 좌표에 반영한다", () => {
+  assertContainsAll(pageSource, [
+    /type StructureAttachment = \{ mode: "wall"; wall: WallSide \}/,
+    /type StructureMeasurement =/,
+    /structureAttachment: preset\.kind === "beam" \? \{ mode: "wall", wall: "top" \}/,
+    /referenceType: "item"/,
+    /distanceMode: "clear"/,
+    /distanceMm:/,
+    /function placeBeamByMeasurement\(/,
+    /function addFollowupBeam\(/,
+    /첫 보는 어느 모서리에서부터 쟀나요\?/,
+    /이전 보 기준/,
+    /면에서 면까지/,
+    /중심에서 중심까지/,
+    /"보 하나 더"/,
+  ]);
+  assert.match(pageSource, /isWallMounted\(item: LayoutItem\)[^{]*\{ return[^}]*item\.kind === "beam"/);
+});
+
+test("모바일 도면 크게 보기는 CSS immersive와 전체화면·가로 보기의 안전한 폴백을 제공한다", () => {
+  assertContainsAll(pageSource, [
+    /const \[canvasExpanded, setCanvasExpanded\] = useState\(false\)/,
+    /async function toggleCanvasExpanded\(\)/,
+    /requestFullscreen/,
+    /orientation\?\.lock\?\.\("landscape"\)/,
+    /orientation\?\.unlock\?\.\(\)/,
+    /orientation\?: ScreenOrientation/,
+    /window\.addEventListener\("popstate"/,
+    /document\.addEventListener\("fullscreenchange"/,
+    /event\.key === "Escape"/,
+    /휴대폰을 가로로 돌리면 도면을 더 넓게 볼 수 있습니다/,
+  ]);
+  assertContainsAll(stylesSource, [
+    /\.site-layout-workspace\.is-mobile-expanded \{[\s\S]*?position: fixed;[\s\S]*?height: 100dvh;/,
+    /\.site-layout-workspace\.is-mobile-expanded \.site-layout-model-space,[\s\S]*?overflow: auto;/,
+    /@media \(max-width: 760px\) and \(orientation: portrait\)/,
+    /@media \(max-height: 500px\) and \(orientation: landscape\)/,
+  ]);
 });
 
 test("직접 편집에서는 PC 드래그와 포인터 좌표 변환을 유지한다", () => {
@@ -176,6 +234,26 @@ test("직접 편집에서는 PC 드래그와 포인터 좌표 변환을 유지�
     /onItemPointerDown=\{startGeometryDrag\}/,
     /onModelPointerMove=/,
   ]);
+});
+
+test("직접 편집한 보는 새 벽 기준으로 재측정되고 복제와 inspector 거리도 실제 좌표를 갱신한다", () => {
+  assertContainsAll(pageSource, [
+    /function rebaseBeamToWall\(/,
+    /const measurement = wallMeasurement\(placement\.wall, "start", placement\.offset\)/,
+    /item\.kind === "beam" \? rebaseBeamToWall/,
+    /function finishGeometryDrag\(/,
+    /structureAttachment: \{ mode: "wall" as const, wall: placement\.wall \}/,
+    /referenceItemId: selectedItem\.id/,
+    /distanceMode: "clear"/,
+    /distanceMm: Math\.round\(gap \* 1000\)/,
+    /const oppositeWall: WallSide/,
+    /function updateBeamDistanceFromInspector\(/,
+    /updateBeamMeasurement\(item, \{ \.\.\.measurement, distanceMm: Math\.round\(value \* 1000\) \}\)/,
+    /기준 모서리→보 시작면 거리\(m\)/,
+    /value=\{selectedItem\.structureMeasurement \? selectedItem\.structureMeasurement\.distanceMm \/ 1000 : displayedWallDistance\(selectedItem\)\}/,
+    /onCommit=\{\(value\) => updateBeamDistanceFromInspector\(selectedItem, value\)\}/,
+  ]);
+  assert.doesNotMatch(pageSource, /updateSelectedById\(item\.id, \{ beamSpacing: value \}\)/);
 });
 
 test("제품 블록은 보존하되 기초도면 입력과 출력에서 숨긴다", () => {

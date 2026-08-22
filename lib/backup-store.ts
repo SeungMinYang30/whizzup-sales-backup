@@ -29,11 +29,13 @@ import { ensureComplexProjectsReady } from "./complex-projects";
 import { ensureResourceLibraryReady } from "./resource-library";
 import { ensureYouTubeResourceLibraryReady } from "./youtube-resource-library";
 import { ensureProductComparisonDocumentsReady } from "./product-comparison-documents";
+import { ensureSiteLayoutsReady } from "./site-layout-drafts";
 
 export const BACKUP_FORMAT = "whizzup-full-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const BACKUP_SCHEMA_VERSION = "2026-08-14-safe-drive-backup";
+export const BACKUP_SCHEMA_VERSION = "2026-08-22-site-layout-shared-storage";
 const LEGACY_BACKUP_SCHEMA_VERSIONS = new Set([
+  "2026-08-14-safe-drive-backup",
   "2026-08-14-drive-complete-business",
   "2026-08-11-youtube-resource-links",
   "2026-08-09-product-resource-import",
@@ -134,6 +136,10 @@ const DURABLE_AUTH_HISTORY_BACKUP_TABLES = new Set([
   "member_rejections",
   "member_account_archives",
 ]);
+const SITE_LAYOUT_BACKUP_TABLES = new Set([
+  "site_layouts",
+  "site_layout_revisions",
+]);
 
 export const EXCLUDED_DATABASE_TABLES = new Set([
   "api_credentials",
@@ -175,6 +181,7 @@ function legacyBackupMayOmitTable(
         ORGANIZATION_SCHEDULE_BACKUP_TABLES.has(tableName) ||
         COMPLEX_PROJECT_BACKUP_TABLES.has(tableName) ||
         DRIVE_LIBRARY_BACKUP_TABLES.has(tableName) ||
+        SITE_LAYOUT_BACKUP_TABLES.has(tableName) ||
         DURABLE_AUTH_HISTORY_BACKUP_TABLES.has(tableName)))
   );
 }
@@ -892,6 +899,62 @@ export const BACKUP_TABLES = [
     orderBy: "id",
   },
   {
+    name: "site_layouts",
+    columns: [
+      "id",
+      "draft_uuid",
+      "title",
+      "schema_version",
+      "draft_json",
+      "edit_version",
+      "current_revision_id",
+      "status",
+      "drive_folder_id",
+      "drive_json_file_id",
+      "drive_json_name",
+      "drive_pdf_file_id",
+      "drive_pdf_name",
+      "drive_sync_status",
+      "drive_sync_error",
+      "drive_sync_token",
+      "deleted_at",
+      "deleted_by",
+      "deleted_by_name",
+      "created_by",
+      "created_by_name",
+      "updated_by",
+      "updated_by_name",
+      "created_at",
+      "updated_at",
+    ],
+    orderBy: "id",
+  },
+  {
+    name: "site_layout_revisions",
+    columns: [
+      "id",
+      "site_layout_id",
+      "revision_number",
+      "parent_revision_id",
+      "schema_version",
+      "draft_json",
+      "content_hash",
+      "change_summary",
+      "drive_folder_id",
+      "drive_json_file_id",
+      "drive_json_name",
+      "drive_pdf_file_id",
+      "drive_pdf_name",
+      "drive_sync_status",
+      "drive_sync_error",
+      "drive_sync_token",
+      "created_by",
+      "created_by_name",
+      "created_at",
+    ],
+    orderBy: "id",
+  },
+  {
     name: "organization_schedules",
     columns: [
       "id",
@@ -1348,6 +1411,7 @@ async function ensureBackupReady() {
   await ensureResourceLibraryReady();
   await ensureYouTubeResourceLibraryReady();
   await ensureProductComparisonDocumentsReady();
+  await ensureSiteLayoutsReady();
   const d1 = getD1();
   await ensureInstitutionDecisionsReady(d1);
   await d1.prepare(`CREATE TABLE IF NOT EXISTS holdem_weekly_scores (
@@ -1866,6 +1930,26 @@ function validateRows(
     "작성 견적서 번호",
   );
   assertUnique(
+    data.site_layouts,
+    (row) => String(asInteger(row.id, "site_layouts.id")),
+    "기초도면 ID",
+  );
+  assertUnique(
+    data.site_layouts,
+    (row) => requiredText(row.draft_uuid, "site_layouts.draft_uuid"),
+    "기초도면 공유 식별자",
+  );
+  assertUnique(
+    data.site_layout_revisions,
+    (row) => String(asInteger(row.id, "site_layout_revisions.id")),
+    "기초도면 버전 ID",
+  );
+  assertUnique(
+    data.site_layout_revisions,
+    (row) => `${asInteger(row.site_layout_id, "site_layout_revisions.site_layout_id")}|${asInteger(row.revision_number, "site_layout_revisions.revision_number")}`,
+    "기초도면별 버전 번호",
+  );
+  assertUnique(
     data.manager_alert_acknowledgements,
     (row) =>
       String(asInteger(row.id, "manager_alert_acknowledgements.id")),
@@ -2259,6 +2343,12 @@ function validateRows(
     "id",
     "inventory_products",
   );
+  const siteLayoutIds = rowSet(data.site_layouts, "id", "site_layouts");
+  const siteLayoutRevisionIds = rowSet(
+    data.site_layout_revisions,
+    "id",
+    "site_layout_revisions",
+  );
   const budgetGroupIds = rowSet(
     data.budget_name_groups,
     "id",
@@ -2589,6 +2679,39 @@ function validateRows(
       memberIds,
       "authored_quotations.updated_by",
     );
+  });
+  data.site_layouts.forEach((row) => {
+    assertReference(row.created_by, memberIds, "site_layouts.created_by");
+    assertReference(row.updated_by, memberIds, "site_layouts.updated_by");
+    if (asInteger(row.deleted_by, "site_layouts.deleted_by") > 0) {
+      assertReference(row.deleted_by, memberIds, "site_layouts.deleted_by");
+    }
+    if (asInteger(row.current_revision_id, "site_layouts.current_revision_id") > 0) {
+      assertReference(
+        row.current_revision_id,
+        siteLayoutRevisionIds,
+        "site_layouts.current_revision_id",
+      );
+    }
+  });
+  data.site_layout_revisions.forEach((row) => {
+    assertReference(
+      row.site_layout_id,
+      siteLayoutIds,
+      "site_layout_revisions.site_layout_id",
+    );
+    assertReference(
+      row.created_by,
+      memberIds,
+      "site_layout_revisions.created_by",
+    );
+    if (asInteger(row.parent_revision_id, "site_layout_revisions.parent_revision_id") > 0) {
+      assertReference(
+        row.parent_revision_id,
+        siteLayoutRevisionIds,
+        "site_layout_revisions.parent_revision_id",
+      );
+    }
   });
   data.deletion_batches.forEach((row) => {
     assertReference(
@@ -3414,6 +3537,7 @@ type RestorePresence = {
   restoresAwardVendorDocuments: boolean;
   restoresQuotationDocuments: boolean;
   restoresAuthoredQuotations: boolean;
+  restoresSiteLayouts: boolean;
   restoresOrganizationSchoolLinks: boolean;
   restoresDeletionBatches: boolean;
   restoresHoldemScores: boolean;
@@ -3439,6 +3563,9 @@ function restorePresenceFromInput(input: unknown): RestorePresence {
     ),
     restoresQuotationDocuments: Array.isArray(rawData?.quotation_documents),
     restoresAuthoredQuotations: Array.isArray(rawData?.authored_quotations),
+    restoresSiteLayouts: [...SITE_LAYOUT_BACKUP_TABLES].every((tableName) =>
+      Array.isArray(rawData?.[tableName]),
+    ),
     restoresOrganizationSchoolLinks: Array.isArray(
       rawData?.organization_school_links,
     ),
@@ -3478,6 +3605,7 @@ async function replaceDatabaseFromBackup(
     restoresAwardVendorDocuments: true,
     restoresQuotationDocuments: true,
     restoresAuthoredQuotations: true,
+    restoresSiteLayouts: true,
     restoresOrganizationSchoolLinks: true,
     restoresDeletionBatches: true,
     restoresHoldemScores: true,
@@ -3497,6 +3625,7 @@ async function replaceDatabaseFromBackup(
     restoresAwardVendorDocuments,
     restoresQuotationDocuments,
     restoresAuthoredQuotations,
+    restoresSiteLayouts,
     restoresOrganizationSchoolLinks,
     restoresDeletionBatches,
     restoresHoldemScores,
@@ -3550,6 +3679,12 @@ async function replaceDatabaseFromBackup(
       : []),
     ...(restoresAuthoredQuotations
       ? [d1.prepare("DELETE FROM authored_quotations")]
+      : []),
+    ...(restoresSiteLayouts
+      ? [
+          d1.prepare("DELETE FROM site_layout_revisions"),
+          d1.prepare("DELETE FROM site_layouts"),
+        ]
       : []),
     ...(restoresOrganizationSchoolLinks
       ? [d1.prepare("DELETE FROM organization_school_links")]
@@ -3646,6 +3781,8 @@ async function replaceDatabaseFromBackup(
     "organization_locations",
     "quotation_documents",
     "authored_quotations",
+    "site_layouts",
+    "site_layout_revisions",
     "sales_campaigns",
     "joint_projects",
     "joint_project_members",
@@ -3716,6 +3853,9 @@ async function replaceDatabaseFromBackup(
       return;
     }
     if (tableName === "authored_quotations" && !restoresAuthoredQuotations) {
+      return;
+    }
+    if (SITE_LAYOUT_BACKUP_TABLES.has(tableName) && !restoresSiteLayouts) {
       return;
     }
     if (
@@ -3803,6 +3943,8 @@ async function replaceDatabaseFromBackup(
     "award_vendors",
     "award_vendor_documents",
     "quotation_documents",
+    "site_layouts",
+    "site_layout_revisions",
     "activity_assignment_history",
     "activity_change_items",
     "manager_alert_acknowledgements",
@@ -3864,6 +4006,9 @@ export async function restoreFullBackup(
   );
   const restoresAuthoredQuotations = Array.isArray(
     rawData?.authored_quotations,
+  );
+  const restoresSiteLayouts = [...SITE_LAYOUT_BACKUP_TABLES].every(
+    (tableName) => Array.isArray(rawData?.[tableName]),
   );
   const restoresOrganizationSchoolLinks = Array.isArray(
     rawData?.organization_school_links,
@@ -3942,6 +4087,12 @@ export async function restoreFullBackup(
       : []),
     ...(restoresAuthoredQuotations
       ? [d1.prepare("DELETE FROM authored_quotations")]
+      : []),
+    ...(restoresSiteLayouts
+      ? [
+          d1.prepare("DELETE FROM site_layout_revisions"),
+          d1.prepare("DELETE FROM site_layouts"),
+        ]
       : []),
     ...(restoresOrganizationSchoolLinks
       ? [d1.prepare("DELETE FROM organization_school_links")]
@@ -4036,6 +4187,8 @@ export async function restoreFullBackup(
     "organization_locations",
     "quotation_documents",
     "authored_quotations",
+    "site_layouts",
+    "site_layout_revisions",
     "sales_campaigns",
     "equipment_projects",
     "complex_project_budget_links",
@@ -4103,6 +4256,9 @@ export async function restoreFullBackup(
       return;
     }
     if (tableName === "authored_quotations" && !restoresAuthoredQuotations) {
+      return;
+    }
+    if (SITE_LAYOUT_BACKUP_TABLES.has(tableName) && !restoresSiteLayouts) {
       return;
     }
     if (
