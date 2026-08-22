@@ -13,10 +13,14 @@ test("dashboard activity scope keeps both mobile labels present", () => {
   assert.match(crm, />\s*전체 활동\s*<\/button>/);
 });
 
-test("dashboard activity scope uses two equal mobile columns", () => {
+test("dashboard activity scope uses two equal centered mobile columns", () => {
   assert.match(
     styles,
-    /\.dashboard-records \.dashboard-activity-scope\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[^}]*width:\s*min\(176px,\s*100%\);[^}]*\}/s,
+    /\.dashboard-records \.records-heading-actions\s*\{[^}]*width:\s*100%;[^}]*justify-content:\s*center;[^}]*\}/s,
+  );
+  assert.match(
+    styles,
+    /\.dashboard-records \.dashboard-activity-scope\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[^}]*width:\s*176px;[^}]*max-width:\s*100%;[^}]*margin-inline:\s*auto;[^}]*\}/s,
   );
 });
 
