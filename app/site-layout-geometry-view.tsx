@@ -647,13 +647,12 @@ function layoutItemLabels(
 function RoomInformation({ draft, palette, compact }: { draft: SiteLayoutDraftMm; palette: Palette; compact: boolean }) {
   if (compact) return null;
   const x = 0;
-  const y = -draft.roomWallThicknessMm - 520;
-  const width = Math.min(3_550, draft.roomWidthMm * 0.42);
+  const y = -draft.roomWallThicknessMm - 430;
+  const width = Math.min(5_400, draft.roomWidthMm * 0.58);
   return (
     <g pointerEvents="none">
-      <rect x={x} y={y} width={width} height={260} rx={45} fill={palette.background} fillOpacity={0.94} stroke={palette.wallLine} strokeWidth={1} vectorEffect="non-scaling-stroke" />
-      <text x={x + 120} y={y + 108} fill={palette.label} fontFamily="Consolas, monospace" fontSize={145} fontWeight={800}>실내 실측 기준</text>
-      <text x={x + 120} y={y + 210} fill={palette.label} fontSize={125}>{draft.roomName} · 천장 H={formatMm(draft.roomCeilingHeightMm)} mm</text>
+      <rect x={x} y={y} width={width} height={230} rx={45} fill={palette.background} fillOpacity={0.94} stroke={palette.wallLine} strokeWidth={1} vectorEffect="non-scaling-stroke" />
+      <text x={x + 120} y={y + 150} fill={palette.label} fontSize={130} fontWeight={750}>내부 실측 · {draft.roomName} · 천장 H={formatMm(draft.roomCeilingHeightMm)} mm</text>
     </g>
   );
 }

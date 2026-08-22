@@ -1678,7 +1678,7 @@ const navItems: { id: View; label: string; mark: string }[] = [
   { id: "dashboard", label: "대시보드", mark: "D" },
   { id: "followup", label: "기관·예산 관리", mark: "F" },
   { id: "complex-projects", label: "공간재구조화 사업 관리", mark: "X" },
-  { id: "site-layout", label: "기초도면 작성", mark: "L" },
+  { id: "site-layout", label: "기초도면 작성", mark: "▱" },
   { id: "products", label: "견적·제품·협력사 관리", mark: "P" },
   { id: "resources", label: "자료실", mark: "R" },
   { id: "map", label: "영업·수주 지도", mark: "M" },
@@ -16674,7 +16674,6 @@ export default function CrmApp({
               >
                 <span className="nav-mark">{item.mark}</span>
                 <span className="nav-label">{item.label}</span>
-                {item.id === "site-layout" && <small className="nav-beta-badge">BETA</small>}
               </button>
               {menuOrderEditing && (
                 <button

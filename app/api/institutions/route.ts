@@ -13,6 +13,41 @@ import {
   ensureTrashReady,
 } from "../../../lib/trash-store";
 
+export const dynamic = "force-dynamic";
+
+function cleanInstitutionName(value: unknown) {
+  return String(value ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
+}
+
+function cleanRegion(value: unknown) {
+  return String(value ?? "").trim().replace(/\s+/g, " ").slice(0, 80);
+}
+
+export async function POST(request: Request) {
+  try {
+    const member = await requireApprovedMember();
+    const payload = await request.json().catch(() => ({})) as { organization?: unknown; region?: unknown };
+    const organization = cleanInstitutionName(payload.organization);
+    const region = cleanRegion(payload.region);
+    if (organization.length < 2) {
+      return Response.json({ error: "기관명을 두 글자 이상 입력해 주세요." }, { status: 400 });
+    }
+    const d1 = await ensureRecordsReady();
+    const now = new Date().toISOString();
+    await d1.prepare(`
+      INSERT INTO institution_registry (
+        organization, region, created_by, created_by_name, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(organization) DO UPDATE SET
+        region = CASE WHEN TRIM(excluded.region) <> '' THEN excluded.region ELSE institution_registry.region END,
+        updated_at = excluded.updated_at
+    `).bind(organization, region, member.id, member.displayName, now, now).run();
+    return Response.json({ institution: { organization, region } }, { status: 201 });
+  } catch (error) {
+    return accessErrorResponse(error);
+  }
+}
+
 export async function GET() {
   try {
     await requireApprovedMember();

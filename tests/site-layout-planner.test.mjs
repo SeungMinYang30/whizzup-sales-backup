@@ -13,20 +13,19 @@ function assertContainsAll(source, values, message) {
   }
 }
 
-test("기초도면 작성 메뉴는 지연 로딩되고 BETA 상태를 함께 알린다", () => {
+test("기초도면 작성 메뉴는 지연 로딩되고 개발 배지를 노출하지 않는다", () => {
   assert.match(appSource, /lazy\(\(\) => import\("\.\/site-layout-planner-page"\)\)/);
   assert.match(appSource, /id: "site-layout", label: "기초도면 작성"/);
   assert.match(appSource, /view === "site-layout" && \(/);
   assert.match(appSource, /<SiteLayoutPlannerPage \/>/);
-  assert.match(appSource, /item\.id === "site-layout" && <small className="nav-beta-badge">BETA<\/small>/);
+  assert.doesNotMatch(appSource, /nav-beta-badge|>BETA</);
 });
 
-test("페이지와 A3 출력은 비차단 BETA 안내를 유지한다", () => {
-  assert.match(pageSource, /className="site-layout-beta-notice" role="note"/);
-  assert.match(pageSource, /현재 개발 중인 기능입니다\. 현장 실측 초안 및 CAD팀 전달용이며 최종 시공 도면으로 사용할 수 없습니다\./);
-  assert.match(pageSource, /BETA · 현장 실측 참고용 · CAD 검토 후 확정/);
-  assert.match(pageSource, /BETA · 도면 단위 mm · 기관별 DB 및 Google Drive 저장/);
-  assert.match(stylesSource, /\.site-layout-beta-notice/);
+test("페이지는 개발 안내를 제거하고 CAD팀 전달 PDF를 제공한다", () => {
+  assert.doesNotMatch(pageSource, /site-layout-beta-notice|BETA ·|개발 중/);
+  assert.match(pageSource, /siteLayoutPdfFromSvg/);
+  assert.match(pageSource, /PDF 저장/);
+  assert.match(pageSource, /navigator\.share/);
   assert.doesNotMatch(pageSource, /alert\s*\(/);
 });
 
@@ -74,15 +73,14 @@ test("문·창호·구조물·에어컨 심벌은 공통 geometry 결과로 그�
   assert.match(geometryViewSource, /width=\{width\} height=\{height\}/);
 });
 
-test("PC는 직접 편집, 모바일은 현장 실측 도우미를 기본으로 분리한다", () => {
+test("PC는 직접 편집, 모바일은 단계형 실측을 자동 적용한다", () => {
   assert.match(pageSource, /type WorkflowMode = "guided" \| "direct"/);
   assert.match(pageSource, /useState<WorkflowMode>\("direct"\)/);
   assert.match(pageSource, /matchMedia\("\(max-width: 760px\)"\)\.matches \? "guided" : "direct"/);
-  assert.match(pageSource, />현장 실측 도우미<\/button>/);
-  assert.match(pageSource, />도면 직접 편집<\/button>/);
-  assert.match(pageSource, /모바일에서 질문을 하나씩 따라가며 빠짐없이 실측합니다\./);
+  assert.doesNotMatch(pageSource, />현장 실측 도우미<\/button>/);
+  assert.doesNotMatch(pageSource, /site-layout-mode-toggle/);
   assert.match(pageSource, /workflowMode === "guided" && renderGuidedQuestion\(\)/);
-  assert.match(pageSource, /workflowMode === "direct" && <div className="site-layout-commandbar"/);
+  assert.match(pageSource, /className="site-layout-canvas-head"/);
   assert.match(pageSource, /selectedItemId=\{selectedId\} interactive interactionMode=\{workflowMode === "direct" \? "drag" : "select"\} showDimensions showLabels/);
 });
 
@@ -129,7 +127,7 @@ test("간편 실측 질문은 현장 기준 벽·모서리·실측값을 순서�
   ]);
 });
 
-test("현장 통신·전기·공사 조건과 CAD 메모를 마지막 설문과 A3에 반영한다", () => {
+test("현장 통신·전기·공사 조건과 CAD 메모를 마지막 설문과 PDF에 반영한다", () => {
   assertContainsAll(pageSource, [
     /인터넷 사용/,
     /연결 방식/,
@@ -139,64 +137,38 @@ test("현장 통신·전기·공사 조건과 CAD 메모를 마지막 설문과 
     /바닥공사/,
     /엘리베이터/,
     /천장 조명 철거/,
-    /에어컨 간섭/,
     /마지막으로 CAD팀 전달 메모를 적어 주세요\./,
-    /현장 통신/,
+    /인터넷·망/,
     /전기·시공/,
-    /CAD팀 전달 메모/,
+    /현장 메모·CAD팀 전달사항/,
   ]);
+  assert.doesNotMatch(pageSource, /key: "airconConflict"/);
   assert.doesNotMatch(pageSource, /title: "전용 전기 회로가 필요한가요\?"/);
   assert.match(pageSource, /geometryIssues\.some\(\(issue\) => issue\.severity === "error"\)/);
   assert.match(pageSource, /물리 치수와 객체 위치 검사를 통과했습니다\./);
 });
 
-test("현재 입력은 기기 복구본과 기관별 API·Drive 저장 상태를 함께 사용한다", () => {
+test("현재 입력은 기기 복구본과 기관별 API·Drive 저장 및 보관함을 함께 사용한다", () => {
   assert.match(pageSource, /const STORAGE_KEY = "whizzup:site-layout-draft:v1"/);
   assert.match(pageSource, /const DRAFT_LIBRARY_KEY = "whizzup:site-layout-local-drafts:v1"/);
   assert.match(pageSource, /const REMOTE_CONTEXT_KEY = "whizzup:site-layout-remote-context:v1"/);
   assertContainsAll(pageSource, [
     /normalizeStoredDraft\(parsed\)/,
     /parseLocalDraftLibrary\(window\.localStorage\.getItem\(DRAFT_LIBRARY_KEY\)\)/,
-    /function persistLocalDrafts\(/,
     /async function saveCurrentDraft\(\)/,
     /async function retryRemoteDrive\(/,
     /async function refreshRemoteLayouts\(\)/,
     /async function loadRemoteDraft\(/,
-    /type RemoteLayoutSummary =/,
-    /function normalizeRemoteSummary\(/,
-    /const normalized = normalizeRemoteSummary\(item\)/,
-    /function loadLocalDraft\(/,
-    /function deleteLocalDraft\(/,
-    /window\.localStorage\.setItem\(DRAFT_LIBRARY_KEY/,
     /fetch\("\/api\/site-layouts"/,
     /fetch\("\/api\/site-layouts\/files"/,
-    /fetch\(`\/api\/site-layouts\?id=/,
-    /method: "POST"/,
     /baseVersion: activeRemoteVersion/,
-    /draft: \{ schemaVersion: 3, editorDraft: recovery\.draft, geometryDraft: physicalDraft \}/,
     /response\.status === 409/,
-    /const \[activeRemoteFingerprint, setActiveRemoteFingerprint\] = useState\(""\)/,
-    /setActiveRemoteFingerprint\(JSON\.stringify\(draft\)\)/,
-    /type RemoteSavePhase = "idle" \| "saving" \| "db-saved" \| "drive-syncing" \| "drive-ready" \| "drive-error" \| "conflict" \| "failed"/,
-    /remoteSavePhase === "saving"/,
-    /DB 저장 완료 · Drive 동기화 중/,
-    /기관·Drive 저장 완료/,
-    /DB 저장 완료 · Drive 재시도/,
-    /기관 도면 저장 실패/,
-    /activeLocalDraftFingerprint === currentDraftFingerprint \? "기기 복구됨" : "복구 후 수정됨"/,
-    /aria-label="기관별 기초도면 목록"/,
-    /기관 도면 저장/,
-    />불러오기<\/button>/,
-    />삭제<\/button>/,
-    /Google Drive 보관 완료/,
+    /aria-label="도면 보관함"/,
+    /placeholder="기관명·실 이름·사업 차수 검색"/,
+    /draftLibraryPageSize = 20/,
     /Drive 다시 시도/,
-    /driveSyncStatus: activeDriveSyncStatus/,
-    /setRemoteSavePhase\(context\.driveSyncStatus === "ready" \? "drive-ready"/,
-    /이 기기 복구본/,
-    /organizationName:/,
-    /businessRound:/,
-    /roomName:/,
   ]);
+  assert.match(pageSource, /a3PdfBase64: await fileAsDataUrl\(pdf\)/);
   const summaryNormalizer = pageSource.match(/function normalizeRemoteSummary[\s\S]*?\n}\n\nfunction normalizeRemoteLayout/)?.[0] ?? "";
   assert.ok(summaryNormalizer, "metadata-only 목록 normalizer가 있어야 합니다.");
   assert.doesNotMatch(summaryNormalizer, /editorDraftFromRemote|!draft/, "목록 항목은 draft 없이도 유지되어야 합니다.");
@@ -356,11 +328,10 @@ test("직접 편집 기둥은 벽 부착과 독립 배치, 네 기준벽 면거�
   ]);
 });
 
-test("A3 자동 맞춤 출력은 오해를 부르는 고정 축척 대신 NTS와 mm 치수 우선을 알린다", () => {
-  assert.match(pageSource, /TOP · NTS · mm/);
-  assert.match(pageSource, /치수 우선 · NTS \(A3\)/);
-  assert.match(pageSource, /NTS · 치수 mm 우선/);
-  assert.doesNotMatch(pageSource, /TOP · 1:60 · mm/);
+test("CAD 모델은 전체 도면 자동 맞춤과 mm 단위를 명확히 알린다", () => {
+  assert.match(pageSource, /전체 도면 자동 맞춤/);
+  assert.match(pageSource, /클릭 선택 · 끌어서 이동 · 단위 mm/);
+  assert.doesNotMatch(pageSource, /도면 크게|zoom|paperZoom/);
 });
 
 test("직접 편집한 보는 새 벽 기준으로 재측정되고 복제와 inspector 거리도 실제 좌표를 갱신한다", () => {
@@ -412,7 +383,7 @@ test("간편 실측의 모바일 UI는 패널 대신 큰 터치 입력과 한 �
 });
 
 test("모바일 진입부는 중복 브랜드와 설명을 숨기고 기관 정보를 접어서 질문을 빨리 보여준다", () => {
-  assert.match(pageSource, /<details className="site-layout-context-details">/);
+  assert.match(pageSource, /<details className="site-layout-context-details" open>/);
   assert.match(pageSource, /<summary><b>기관·사업 정보<\/b>/);
   assertContainsAll(stylesSource, [
     /@media \(max-width: 760px\)[\s\S]*?\.site-layout-brand \{ display: none; \}/,
@@ -422,7 +393,7 @@ test("모바일 진입부는 중복 브랜드와 설명을 숨기고 기관 정�
   ]);
 });
 
-test("A3 도면은 객체별 실제 치수와 측정 기준을 진한 선으로 표기한다", () => {
+test("CAD팀 PDF는 객체별 실제 치수와 측정 기준을 진한 선으로 표기한다", () => {
   assertContainsAll(geometryViewSource, [
     /function measurementLabel\(/,
     /buildSiteLayoutDimensionSegmentsMm/,
@@ -446,7 +417,7 @@ test("A3 도면은 객체별 실제 치수와 측정 기준을 진한 선으로 
   assert.match(measurementLabelSource, /if \(item\.presetId === "aircon-ceiling"\) \{[\s\S]*?설치면 H=/);
   assert.doesNotMatch(measurementLabelSource, /840|이전 창호|이전 보|좌측 중심/);
   assert.match(geometryViewSource, /if \(segment\.kind === "position"\) return point/);
-  assert.match(pageSource, /천장조명 철거/);
+  assert.match(pageSource, /천장 조명 철거/);
   assert.doesNotMatch(pageSource, /전용 회로 \{surveyChoiceLabel/);
 });
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent, type PointerEvent as ReactPointerEvent } from "react";
 import SiteLayoutGeometryView from "./site-layout-geometry-view";
+import { downloadFile, fileAsDataUrl, siteLayoutPdfFromSvg } from "./site-layout-export";
 import { computeSvgViewBox, modelPointFromClient, normalizeDraft, validateDraft, type SiteLayoutItemMm } from "../lib/site-layout-geometry";
 
 type LayoutItemKind = "equipment" | "table" | "door" | "window" | "pillar" | "beam" | "fixture" | "note";
@@ -133,6 +134,7 @@ type RemoteLayoutSummary = {
   driveSyncError?: string;
   updatedByName?: string;
   updatedAt: string;
+  pdfUrl?: string;
 };
 
 type RemoteLayoutRecord = RemoteLayoutSummary & { draft: LayoutDraft };
@@ -150,7 +152,7 @@ const guideSteps: { id: GuideStepId; label: string; title: string; description: 
   { id: "window", label: "창호", title: "창호 형태와 분할", description: "고정창·좌우 슬라이딩창·연창 중 생김새가 비슷한 블록을 선택해 배치하세요.", groups: ["창호"] },
   { id: "facility", label: "에어컨", title: "에어컨과 고정 시설", description: "벽걸이는 설치 벽과 모서리 기준거리, 천장형은 두 벽에서 중심거리와 설치 높이를 기록합니다.", groups: ["현장 설비"] },
   { id: "checklist", label: "현장조건", title: "인터넷·전기·공사 조건", description: "CAD팀과 시공팀이 다시 확인하지 않도록 현장 조건을 단계별로 체크하세요.", groups: [] },
-  { id: "review", label: "최종 확인", title: "CAD팀 전달 전 검수", description: "단계별 확인 상태와 누락 항목을 점검하고 A3 출력 도면을 확인하세요.", groups: [] },
+  { id: "review", label: "최종 확인", title: "CAD팀 전달 전 검수", description: "단계별 확인 상태와 누락 항목을 점검하고 CAD팀 전달용 PDF를 확인하세요.", groups: [] },
 ];
 
 const checklistQuestions: { key: keyof SiteChecklist; title: string; help: string; options: { value: string; label: string }[] }[] = [
@@ -162,7 +164,6 @@ const checklistQuestions: { key: keyof SiteChecklist; title: string; help: strin
   { key: "floorWork", title: "바닥 공사가 필요한가요?", help: "바닥 단차와 마감 상태를 기준으로 선택하세요.", options: [{ value: "yes", label: "필요" }, { value: "no", label: "불필요" }, { value: "review", label: "재확인" }] },
   { key: "elevator", title: "장비 반입용 엘리베이터가 있나요?", help: "승강기 크기와 적재 가능 여부는 메모에 남겨 주세요.", options: [{ value: "yes", label: "있음" }, { value: "no", label: "없음" }, { value: "review", label: "재확인" }] },
   { key: "ceilingLightRemoval", title: "천장 조명 철거 또는 이동이 필요한가요?", help: "스크린·프로젝터·에어컨 간섭을 확인하세요.", options: [{ value: "yes", label: "필요" }, { value: "no", label: "불필요" }, { value: "review", label: "재확인" }] },
-  { key: "airconConflict", title: "에어컨과 설치 장비가 간섭하나요?", help: "간섭이 없거나 아직 판단할 수 없는 경우도 기록됩니다.", options: [{ value: "yes", label: "간섭 있음" }, { value: "no", label: "간섭 없음" }, { value: "review", label: "재확인" }] },
 ];
 
 const stepQuestionCounts: Record<GuideStepId, number> = {
@@ -186,7 +187,7 @@ const itemPresets: ItemPreset[] = [
   { id: "window-3", kind: "window", group: "창호", label: "슬라이딩 3짝", defaultName: "좌우 슬라이딩창 3짝", code: "A-W03", width: 2.1, height: 0.14 },
   { id: "window-4", kind: "window", group: "창호", label: "슬라이딩 4짝", defaultName: "좌우 슬라이딩창 4짝", code: "A-W04", width: 2.7, height: 0.14 },
   { id: "window-6", kind: "window", group: "창호", label: "6분할 연창", defaultName: "6분할 연창", code: "A-W06", width: 4.2, height: 0.14, guide: "KS F 1515의 100mm 모듈을 참고한 예시값입니다. 실제 창틀 끝에서 끝까지 잰 치수를 우선합니다." },
-  { id: "window-project", kind: "window", group: "창호", label: "프로젝트창", defaultName: "프로젝트창", code: "A-W07", width: 1.2, height: 0.14 },
+  { id: "window-project", kind: "window", group: "창호", label: "상부 힌지 외여닫이창", defaultName: "상부 힌지 외여닫이창", code: "A-W07", width: 1.2, height: 0.14 },
   { id: "screen", kind: "equipment", group: "에어패스 시스템", label: "스크린", defaultName: "XR 전면 스크린", code: "E-SCR", width: 4.1, height: 0.32, catalogName: "가상스포츠시스템 (터치스크린)", catalogSpecification: "에어패스 AP-EDUVR-01 / AP-EDUVR-03 구성", guide: "DWG 기준 화면 높이는 천장 높이에서 센서·여유 약 400mm를 제외해 검토합니다." },
   { id: "equipment", kind: "equipment", group: "에어패스 시스템", label: "프로젝터", defaultName: "빔프로젝터", code: "E-PJ", width: 0.55, height: 0.42, catalogName: "빔프로젝터", catalogSpecification: "Epson 또는 단테크 초단초점 모델", guide: "단테크 초단초점 참고값은 스크린 폭 × 0.42의 투사거리입니다." },
   { id: "kiosk", kind: "equipment", group: "에어패스 시스템", label: "키오스크", defaultName: "운영 키오스크", code: "E-KSK", width: 0.72, height: 0.58, catalogName: "가상스포츠시스템 (터치스크린)", catalogSpecification: "AP-EDUVR 시스템 구성 장비", guide: "DWG 시공 메모 기준 키오스크와 각 장비 배선 거리는 15m 이내를 권장합니다." },
@@ -439,6 +440,7 @@ function normalizeRemoteSummary(value: unknown): RemoteLayoutSummary | null {
     driveSyncError: typeof candidate.driveSyncError === "string" ? candidate.driveSyncError : undefined,
     updatedByName: typeof candidate.updatedByName === "string" ? candidate.updatedByName : undefined,
     updatedAt,
+    pdfUrl: typeof candidate.pdfUrl === "string" ? candidate.pdfUrl : undefined,
   };
 }
 
@@ -570,10 +572,15 @@ export default function SiteLayoutPlannerPage() {
   const [activeLocalDraftId, setActiveLocalDraftId] = useState("");
   const [activeLocalDraftFingerprint, setActiveLocalDraftFingerprint] = useState("");
   const [draftLibraryOpen, setDraftLibraryOpen] = useState(false);
+  const [draftLibraryQuery, setDraftLibraryQuery] = useState("");
+  const [draftLibraryPage, setDraftLibraryPage] = useState(1);
   const [remoteLayouts, setRemoteLayouts] = useState<RemoteLayoutSummary[]>([]);
   const [remoteOperation, setRemoteOperation] = useState<RemoteOperation>("idle");
   const [remoteSavePhase, setRemoteSavePhase] = useState<RemoteSavePhase>("idle");
   const [remoteSaveDetail, setRemoteSaveDetail] = useState("");
+  const [toastMessage, setToastMessage] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [creatingInstitution, setCreatingInstitution] = useState(false);
   const [activeRemoteId, setActiveRemoteId] = useState<number | null>(null);
   const [activeRemoteVersion, setActiveRemoteVersion] = useState<number | null>(null);
   const [activeRemoteFingerprint, setActiveRemoteFingerprint] = useState("");
@@ -592,7 +599,6 @@ export default function SiteLayoutPlannerPage() {
   const institutionOptions = institutionSearchResult.query === institutionQuery
     ? institutionSearchResult.options
     : [];
-  const [paperZoom, setPaperZoom] = useState<"fit" | 100 | 125>("fit");
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
   const [activeTool, setActiveTool] = useState("선택");
@@ -600,6 +606,7 @@ export default function SiteLayoutPlannerPage() {
   const [pendingPresetId, setPendingPresetId] = useState<LayoutSymbol | null>(null);
   const [visibleLayers, setVisibleLayers] = useState<Record<LayoutLayer, boolean>>({ opening: true, structure: true, fixture: true, equipment: false, note: false });
   const boardRef = useRef<HTMLDivElement | null>(null);
+  const exportBoardRef = useRef<HTMLDivElement | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ id: string; pointerId: number; startModelX: number; startModelY: number; startX: number; startY: number } | null>(null);
   const expandedRef = useRef(false);
@@ -671,6 +678,12 @@ export default function SiteLayoutPlannerPage() {
     if (!hydrated) return;
     void refreshRemoteLayouts();
   }, [hydrated]);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = window.setTimeout(() => setToastMessage(""), 3200);
+    return () => window.clearTimeout(timer);
+  }, [toastMessage]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -764,6 +777,15 @@ export default function SiteLayoutPlannerPage() {
     () => draft.items.filter((item) => activeStep.groups.includes(presetForItem(item).group)),
     [activeStep.groups, draft.items],
   );
+  const filteredRemoteLayouts = useMemo(() => {
+    const query = draftLibraryQuery.trim().toLocaleLowerCase("ko-KR");
+    return query
+      ? remoteLayouts.filter((record) => `${record.organizationName} ${record.roomName} ${record.businessRound}`.toLocaleLowerCase("ko-KR").includes(query))
+      : remoteLayouts;
+  }, [draftLibraryQuery, remoteLayouts]);
+  const draftLibraryPageSize = 20;
+  const draftLibraryPageCount = Math.max(1, Math.ceil(filteredRemoteLayouts.length / draftLibraryPageSize));
+  const pagedRemoteLayouts = filteredRemoteLayouts.slice((Math.min(draftLibraryPage, draftLibraryPageCount) - 1) * draftLibraryPageSize, Math.min(draftLibraryPage, draftLibraryPageCount) * draftLibraryPageSize);
 
   function updateDraft(patch: Partial<LayoutDraft>) {
     setDraft((current) => ({
@@ -773,12 +795,6 @@ export default function SiteLayoutPlannerPage() {
         ? { stageChecks: { ...current.stageChecks, room: "pending" as const } }
         : {}),
     }));
-  }
-  function selectWorkflowMode(mode: WorkflowMode) {
-    setWorkflowMode(mode);
-    setView("model");
-    setCanvasFocus(false);
-    try { window.localStorage.setItem(WORKFLOW_MODE_KEY, mode); } catch { /* local preference is optional */ }
   }
   function updateSelected(patch: Partial<LayoutItem>) {
     if (!selectedId) return;
@@ -815,6 +831,61 @@ export default function SiteLayoutPlannerPage() {
     setSavedAt(new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date()));
     return record;
   }
+  function exportFileName() {
+    const base = `${draft.organizationName || "기관미지정"}_${draft.businessRound || 1}차_${draft.roomName || "기초도면"}`
+      .replace(/[\\/:*?"<>|]/g, "_")
+      .replace(/\s+/g, "_");
+    return `${base}_CAD팀전달용.pdf`;
+  }
+  async function createCurrentPdf() {
+    const svg = exportBoardRef.current?.querySelector("svg") ?? boardRef.current?.querySelector("svg");
+    if (!(svg instanceof SVGSVGElement)) throw new Error("PDF로 만들 도면을 찾지 못했습니다.");
+    return await siteLayoutPdfFromSvg(svg, exportFileName());
+  }
+  async function downloadCurrentPdf() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const file = await createCurrentPdf();
+      downloadFile(file);
+      setToastMessage("CAD팀 전달용 PDF를 저장했습니다.");
+    } catch (error) {
+      setToastMessage(error instanceof Error ? error.message : "PDF를 만들지 못했습니다.");
+    } finally { setExporting(false); }
+  }
+  async function shareCurrentPdf() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const file = await createCurrentPdf();
+      const share = navigator.share?.bind(navigator);
+      const canShare = navigator.canShare?.({ files: [file] }) ?? false;
+      if (share && canShare) {
+        await share({ title: `${draft.organizationName || "기관"} 기초도면`, text: "CAD팀 전달용 기초도면입니다.", files: [file] });
+        setToastMessage("공유할 앱으로 PDF를 전달했습니다.");
+      } else {
+        downloadFile(file);
+        setToastMessage("이 기기에서는 파일 공유를 지원하지 않아 PDF로 저장했습니다.");
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setToastMessage(error instanceof Error ? error.message : "PDF를 공유하지 못했습니다.");
+    } finally { setExporting(false); }
+  }
+  async function createInstitutionFromDraft() {
+    const organization = (draft.organizationName || "").trim();
+    if (organization.length < 2 || creatingInstitution) return;
+    setCreatingInstitution(true);
+    try {
+      const response = await fetch("/api/institutions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ organization }) });
+      const payload = await response.json().catch(() => ({})) as { error?: string; institution?: { organization?: string } };
+      if (!response.ok) throw new Error(payload.error || "새 기관을 추가하지 못했습니다.");
+      setInstitutionSearchResult({ query: organization, options: [{ organization, businessRound: draft.businessRound || 1, region: "" }] });
+      setToastMessage(`“${organization}” 기관을 추가하고 현재 도면에 연결했습니다.`);
+    } catch (error) {
+      setToastMessage(error instanceof Error ? error.message : "새 기관을 추가하지 못했습니다.");
+    } finally { setCreatingInstitution(false); }
+  }
   async function refreshRemoteLayouts() {
     setRemoteOperation("listing");
     try {
@@ -847,6 +918,7 @@ export default function SiteLayoutPlannerPage() {
     setRemoteSaveDetail("기관 DB에 도면을 저장하고 있습니다.");
     setSaveMessage("기관 도면 저장소와 Google Drive에 저장하고 있습니다…");
     try {
+      const pdf = await createCurrentPdf();
       const response = await fetch("/api/site-layouts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -857,6 +929,7 @@ export default function SiteLayoutPlannerPage() {
           businessRound: draft.businessRound,
           roomName: draft.roomName,
           draft: { schemaVersion: 3, editorDraft: recovery.draft, geometryDraft: physicalDraft },
+          a3PdfBase64: await fileAsDataUrl(pdf),
           ...(activeRemoteId && activeRemoteVersion ? { baseVersion: activeRemoteVersion } : {}),
         }),
       });
@@ -895,10 +968,12 @@ export default function SiteLayoutPlannerPage() {
         : saved.driveSyncStatus === "error"
           ? `기관 도면 저장은 완료됐지만 Google Drive 동기화는 재시도가 필요합니다.${saved.driveSyncError ? ` ${saved.driveSyncError}` : ""}`
           : `“${saved.title}” 기관 도면 저장 완료 · Google Drive 동기화 중입니다.`);
+      setToastMessage(saved.driveSyncStatus === "ready" ? "기관 도면과 PDF를 저장했습니다." : "기관 도면을 저장했습니다. Drive 동기화 상태를 확인해 주세요.");
     } catch (error) {
       setRemoteSavePhase("failed");
       setRemoteSaveDetail(error instanceof Error ? error.message : "기관 도면 저장 요청에 실패했습니다.");
       setSaveMessage(`${error instanceof Error ? error.message : "기관 도면 저장에 실패했습니다."} 내 입력은 이 기기 복구본에 안전하게 남아 있습니다.`);
+      setToastMessage(error instanceof Error ? error.message : "기관 도면 저장에 실패했습니다.");
     } finally {
       setRemoteOperation("idle");
     }
@@ -2201,72 +2276,35 @@ export default function SiteLayoutPlannerPage() {
     if (changed && !window.confirm("현재 입력 내용을 지우고 새 초안을 시작할까요? 저장하지 않은 내용은 복구할 수 없습니다.")) return;
     setDraft(cloneDraft(defaultDraft)); setSelectedId(""); setPendingPresetId(null); setActiveLocalDraftId(""); setActiveLocalDraftFingerprint(""); setActiveRemoteId(null); setActiveRemoteVersion(null); setActiveRemoteFingerprint(""); setActiveDriveSyncStatus(""); setRemoteSavePhase("idle"); setRemoteSaveDetail(""); window.localStorage.removeItem(REMOTE_CONTEXT_KEY); setActiveStepIndex(0); setActiveQuestionIndex(0); setView("model"); setCanvasFocus(false); setCommand("명령: 새 기초도면을 준비했습니다.");
   }
-  function printA3Draft() {
-    setView("paper");
-    setCanvasFocus(true);
-    window.requestAnimationFrame(() => {
-      const cleanup = () => document.body.classList.remove("site-layout-printing");
-      document.body.classList.add("site-layout-printing");
-      window.addEventListener("afterprint", cleanup, { once: true });
-      window.print();
-      window.setTimeout(cleanup, 2_000);
-    });
-  }
   const remoteDraftDirty = Boolean(activeRemoteId && activeRemoteFingerprint !== currentDraftFingerprint);
-  const saveStateTitle = remoteOperation === "saving" || remoteSavePhase === "saving"
-    ? "기관 도면 저장 중"
-    : remoteSavePhase === "conflict"
-      ? "최신본 재확인 필요"
-      : remoteSavePhase === "failed"
-        ? "기관 도면 저장 실패"
-        : remoteSavePhase === "drive-error"
-          ? "DB 저장 완료 · Drive 재시도"
-          : remoteDraftDirty
-            ? "기관 저장 후 수정됨"
-            : remoteSavePhase === "drive-syncing" || remoteSavePhase === "db-saved"
-              ? "DB 저장 완료 · Drive 동기화 중"
-              : remoteSavePhase === "drive-ready"
-                ? "기관·Drive 저장 완료"
-                : remoteOperation === "retrying"
-                  ? "Google Drive 다시 저장 중"
-                  : remoteOperation === "listing"
-                  ? "기관 도면 목록 확인 중"
-                  : remoteOperation === "loading"
-                    ? "기관 도면 불러오는 중"
-                    : remoteOperation === "deleting"
-                      ? "기관 도면 삭제 중"
-                      : activeLocalDraftId
-                        ? activeLocalDraftFingerprint === currentDraftFingerprint ? "기기 복구됨" : "복구 후 수정됨"
-                        : savedAt ? "기기 자동 복구" : "도면 준비됨";
-  const saveStateDetail = remoteDraftDirty
-    ? `기관 저장본 이후 수정 · ${remoteSaveDetail || "현재 변경은 기기에 자동 복구 중"}`
-    : remoteSaveDetail || (activeRemoteId
-      ? activeDriveSyncStatus === "ready" ? "Google Drive 보관 완료" : activeDriveSyncStatus === "error" ? "Drive 재시도 필요" : "기관 도면 편집 중"
-      : savedAt || "새 기관 도면");
+  const typedOrganization = (draft.organizationName || "").trim();
+  const exactInstitution = institutionOptions.some((option) => option.organization === typedOrganization);
   return (
     <section className="site-layout-planner" aria-label="현장 실측 기초도면 작성기">
       <header className="site-layout-intro">
-        <div className="site-layout-brand"><span>W</span><div><b>기초도면 작성</b><small>현장 실측 → CAD팀 전달 · MOBILE FIRST BETA</small></div></div>
-        <div className="site-layout-header-actions"><div className="site-layout-save-state" role="status"><b>{saveStateTitle}</b><small>{saveStateDetail}</small></div><button type="button" onClick={resetDraft}>새 도면</button><button type="button" className="secondary" onClick={() => setDraftLibraryOpen((current) => !current)}>저장본 {remoteLayouts.length}</button><button type="button" className="primary" disabled={remoteLoading} onClick={() => void saveCurrentDraft()}>{remoteOperation === "saving" ? "저장 중…" : "저장"}</button>{activeRemoteId && remoteSavePhase === "drive-error" && <button type="button" disabled={remoteLoading} onClick={() => { const record = remoteLayouts.find((item) => item.id === activeRemoteId); if (record) void retryRemoteDrive(record); }}>Drive 다시 시도</button>}<button type="button" onClick={view === "paper" ? printA3Draft : () => { setView("paper"); setCanvasFocus(true); }}>{view === "paper" ? "A3 인쇄" : "A3"}</button></div>
+        <div className="site-layout-brand"><span aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M5 25V7h22v18H5Z" /><path d="M9 21V11h14v10H9Zm0-5h14M14 11v10" /></svg></span><div><b>기초도면 작성</b><small>현장 실측 → CAD팀 전달</small></div></div>
+        <div className="site-layout-header-actions"><button type="button" onClick={resetDraft}>새 도면</button><button type="button" className="secondary" onClick={() => { setDraftLibraryOpen(true); setDraftLibraryPage(1); }}>도면 보관함 {remoteLayouts.length}</button><button type="button" className={`primary ${remoteOperation === "saving" ? "is-saving" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "is-saved" : ""}`} disabled={remoteLoading} onClick={() => void saveCurrentDraft()}>{remoteOperation === "saving" ? "저장 중…" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "저장됨 ✓" : "기관 도면 저장"}</button>{activeRemoteId && remoteSavePhase === "drive-error" && <button type="button" disabled={remoteLoading} onClick={() => { const record = remoteLayouts.find((item) => item.id === activeRemoteId); if (record) void retryRemoteDrive(record); }}>Drive 다시 시도</button>}<button type="button" disabled={exporting} onClick={() => void downloadCurrentPdf()}>{exporting ? "PDF 생성 중…" : "PDF 저장"}</button><button type="button" className="site-layout-share-button" disabled={exporting} onClick={() => void shareCurrentPdf()}>PDF 공유</button></div>
       </header>
-      <div className="site-layout-beta-notice" role="note"><b>BETA · 개발 중</b><span>현재 개발 중인 기능입니다. 현장 실측 초안 및 CAD팀 전달용이며 최종 시공 도면으로 사용할 수 없습니다.</span></div>
-      <div className="site-layout-local-state" role="status"><span>{saveMessage}</span><small>기관별 도면 목록 · Google Drive JSON 원본 · 기기 자동 복구</small></div>
-      <details className="site-layout-context-details">
+      {(remoteSavePhase === "failed" || remoteSavePhase === "conflict" || remoteSavePhase === "drive-error") && <div className="site-layout-local-state is-error" role="alert"><span>{saveMessage}</span><small>{remoteSaveDetail || "현재 입력은 이 기기의 복구본에 남아 있습니다."}</small></div>}
+      {toastMessage && <div className="site-layout-toast" role="status" aria-live="polite">{toastMessage}</div>}
+      <details className="site-layout-context-details" open>
         <summary><b>기관·사업 정보</b><span>{draft.organizationName || "기관 미지정"} · {draft.businessRound ?? 1}차 · {draft.roomName}</span></summary>
         <div className="site-layout-context-bar">
           <label><span>기관명</span><input list="site-layout-institutions" value={draft.organizationName ?? ""} onChange={(event) => updateDraft({ organizationName: event.target.value.slice(0, 100) })} onBlur={(event) => { const match = institutionOptions.find((option) => option.organization === event.target.value.trim()); if (match) updateDraft({ organizationName: match.organization, businessRound: match.businessRound }); }} placeholder="기관명을 검색하거나 입력" /></label>
           <datalist id="site-layout-institutions">{institutionOptions.map((option) => <option key={`${option.organization}-${option.businessRound}-${option.region}`} value={option.organization}>{option.businessRound}차 · {option.region}</option>)}</datalist>
           <label><span>사업 차수</span><FriendlyNumberInput label="사업 차수" value={draft.businessRound ?? 1} min={1} max={99} decimals={0} onCommit={(value) => updateDraft({ businessRound: Math.max(1, Math.round(value)) })} /></label>
           <label><span>실 이름</span><input value={draft.roomName} onChange={(event) => updateDraft({ roomName: event.target.value.slice(0, 80) })} placeholder="예: 본관 2층 스마트 체험교실" /></label>
-          <label className="site-layout-context-notes"><span>현장 메모·CAD팀 전달사항</span><textarea value={draft.fieldNotes ?? ""} onChange={(event) => updateDraft({ fieldNotes: event.target.value.slice(0, 1000) })} placeholder="보 하단 높이, 보 사이 거리, 에어컨·기둥 간섭, 반입 동선 등 특이사항" /></label>
+          <label className="site-layout-context-notes"><span>현장 메모·CAD팀 전달사항</span><textarea value={draft.fieldNotes ?? ""} onChange={(event) => updateDraft({ fieldNotes: event.target.value.slice(0, 1000) })} placeholder="보 하단 높이, 보 사이 거리, 반입 동선 등 특이사항" /></label>
+          {typedOrganization.length >= 2 && institutionSearchResult.query === typedOrganization && !exactInstitution && <button type="button" className="site-layout-create-institution" disabled={creatingInstitution} onClick={() => void createInstitutionFromDraft()}>{creatingInstitution ? "기관 추가 중…" : `“${typedOrganization}” 새 기관으로 추가`}</button>}
         </div>
       </details>
-      {draftLibraryOpen && <section className="site-layout-draft-library" aria-label="기관별 기초도면 목록">
-        <div><div><b>기관별 기초도면</b><span>기관과 사업 차수별로 저장하고 함께 편집합니다.</span></div><button type="button" disabled={remoteLoading} onClick={() => void refreshRemoteLayouts()}>새로고침</button></div>
-        {remoteLayouts.length ? <ul>{remoteLayouts.map((record) => <li key={record.id}><div><b>{record.organizationName} · {record.businessRound}차 · {record.roomName}</b><small>v{record.editVersion} · {record.updatedByName || "사용자"} · {new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(record.updatedAt))}</small><em className={`drive-${record.driveSyncStatus}`}>{record.driveSyncStatus === "ready" ? "Drive 완료" : record.driveSyncStatus === "error" ? "Drive 재시도" : "Drive 동기화 중"}</em></div><button type="button" disabled={remoteLoading} onClick={() => void loadRemoteDraft(record)}>불러오기</button>{record.driveSyncStatus === "error" && <button type="button" disabled={remoteLoading} onClick={() => void retryRemoteDrive(record)}>Drive 다시 시도</button>}<button type="button" className="danger" disabled={remoteLoading} onClick={() => void deleteRemoteDraft(record)}>삭제</button></li>)}</ul> : <p>{remoteLoading ? "기관 도면을 불러오는 중입니다…" : "아직 저장한 기관별 기초도면이 없습니다."}</p>}
+      {draftLibraryOpen && <div className="site-layout-draft-library-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDraftLibraryOpen(false); }}><section className="site-layout-draft-library" role="dialog" aria-modal="true" aria-label="도면 보관함">
+        <div className="site-layout-draft-library-head"><div><b>도면 보관함</b><span>기관·차수·실 이름으로 검색해 필요한 도면만 불러옵니다.</span></div><button type="button" onClick={() => setDraftLibraryOpen(false)} aria-label="도면 보관함 닫기">닫기</button></div>
+        <div className="site-layout-draft-library-tools"><input value={draftLibraryQuery} onChange={(event) => { setDraftLibraryQuery(event.target.value); setDraftLibraryPage(1); }} placeholder="기관명·실 이름·사업 차수 검색" /><button type="button" disabled={remoteLoading} onClick={() => void refreshRemoteLayouts()}>새로고침</button></div>
+        {filteredRemoteLayouts.length ? <ul>{pagedRemoteLayouts.map((record) => <li key={record.id}><div><b>{record.organizationName} · {record.businessRound}차 · {record.roomName}</b><small>v{record.editVersion} · {record.updatedByName || "사용자"} · {new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(record.updatedAt))}</small><em className={`drive-${record.driveSyncStatus}`}>{record.driveSyncStatus === "ready" ? "Drive 완료" : record.driveSyncStatus === "error" ? "Drive 재시도" : "Drive 동기화 중"}</em></div><button type="button" disabled={remoteLoading} onClick={() => void loadRemoteDraft(record)}>불러오기</button>{record.pdfUrl && <a href={record.pdfUrl} target="_blank" rel="noreferrer">PDF</a>}{record.driveSyncStatus === "error" && <button type="button" disabled={remoteLoading} onClick={() => void retryRemoteDrive(record)}>Drive 재시도</button>}<button type="button" className="danger" disabled={remoteLoading} onClick={() => void deleteRemoteDraft(record)}>삭제</button></li>)}</ul> : <p>{remoteLoading ? "기관 도면을 불러오는 중입니다…" : "조건에 맞는 저장 도면이 없습니다."}</p>}
+        <div className="site-layout-draft-library-pages"><button type="button" disabled={draftLibraryPage <= 1} onClick={() => setDraftLibraryPage((page) => Math.max(1, page - 1))}>이전</button><span>{Math.min(draftLibraryPage, draftLibraryPageCount)} / {draftLibraryPageCount}</span><button type="button" disabled={draftLibraryPage >= draftLibraryPageCount} onClick={() => setDraftLibraryPage((page) => Math.min(draftLibraryPageCount, page + 1))}>다음</button></div>
         <details className="site-layout-recovery-library"><summary>이 기기 복구본 {localDrafts.length}개</summary>{localDrafts.length ? <ul>{localDrafts.map((record) => <li key={record.id}><div><b>{record.name}</b><small>{new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(record.updatedAt))}</small></div><button type="button" onClick={() => loadLocalDraft(record)}>복구</button><button type="button" className="danger" onClick={() => deleteLocalDraft(record)}>삭제</button></li>)}</ul> : <p>기기 복구본이 없습니다.</p>}</details>
-      </section>}
-      <div className="site-layout-mode-toggle" role="group" aria-label="작성 방식"><button type="button" className={workflowMode === "direct" ? "active" : ""} onClick={() => selectWorkflowMode("direct")}>도면 직접 편집</button><button type="button" className={workflowMode === "guided" ? "active" : ""} onClick={() => selectWorkflowMode("guided")}>현장 실측 도우미</button><span>{workflowMode === "guided" ? "모바일에서 질문을 하나씩 따라가며 빠짐없이 실측합니다." : "PC에서 블록을 끌어 놓고 세부 수치를 빠르게 조정합니다."}</span></div>
+      </section></div>}
 
       <section className="site-layout-guide" aria-label="현장 실측 단계">
         <nav className={`site-layout-guide-progress ${workflowMode === "direct" ? "is-direct" : ""}`}>{guideSteps.map((step, index) => {
@@ -2302,9 +2340,9 @@ export default function SiteLayoutPlannerPage() {
               <label><span>사용 망</span><select value={checklist.networkType} onChange={(event) => updateChecklist("networkType", event.target.value as NetworkType)}><option value="">미확인</option><option value="education">교육망</option><option value="private">사설망</option><option value="both">교육망·사설망</option><option value="unknown">현장 확인</option></select></label>
             </div></div>
             <div className="site-layout-checklist-group"><h3>전기·시공</h3><div>{([
-              ["powerOutlet", "사용 가능한 전원"], ["blackoutCurtain", "암막커튼"], ["floorWork", "바닥공사"], ["elevator", "엘리베이터"], ["ceilingLightRemoval", "천장 조명 철거"], ["airconConflict", "에어컨 간섭"],
+              ["powerOutlet", "사용 가능한 전원"], ["blackoutCurtain", "암막커튼"], ["floorWork", "바닥공사"], ["elevator", "엘리베이터"], ["ceilingLightRemoval", "천장 조명 철거"],
             ] as [keyof SiteChecklist, string][]).map(([key, label]) => <label key={key}><span>{label}</span><select value={checklist[key]} onChange={(event) => updateChecklist(key, event.target.value as never)}><option value="">미확인</option><option value="yes">있음·필요</option><option value="no">없음·불필요</option><option value="review">재확인</option></select></label>)}</div></div>
-            <label className="site-layout-field-notes"><span>현장 메모·CAD팀 전달사항</span><textarea value={draft.fieldNotes ?? ""} onChange={(event) => updateDraft({ fieldNotes: event.target.value.slice(0, 1000) })} placeholder="보 하단 높이, 보와 보 사이, 에어컨·기둥 간섭, 반입 동선 등 특이사항을 입력하세요." /></label>
+            <label className="site-layout-field-notes"><span>현장 메모·CAD팀 전달사항</span><textarea value={draft.fieldNotes ?? ""} onChange={(event) => updateDraft({ fieldNotes: event.target.value.slice(0, 1000) })} placeholder="보 하단 높이, 보와 보 사이, 반입 동선 등 특이사항을 입력하세요." /></label>
           </div>}
           {workflowMode === "direct" && activeStep.id === "review" && <div className="site-layout-review-grid">
             {guideSteps.filter((step) => step.id !== "review").map((step) => {
@@ -2318,8 +2356,6 @@ export default function SiteLayoutPlannerPage() {
         </div>
       </section>
 
-      {workflowMode === "direct" && <div className="site-layout-commandbar"><div>{["선택", "이동"].map((tool) => <button key={tool} type="button" className={activeTool === tool ? "active" : ""} onClick={() => { setActiveTool(tool); setCommand(`명령: ${tool} 도구가 활성화되었습니다.`); }}>{tool}</button>)}</div><p aria-live="polite">{command}</p></div>}
-
       <div ref={workspaceRef} className={`site-layout-workspace ${canvasFocus ? "is-canvas-focus" : ""} ${canvasExpanded ? "is-mobile-expanded" : ""} ${workflowMode === "guided" ? "is-guided" : ""}`}>
         <aside className={`site-layout-library ${activePresets.length ? "" : "is-context-only"}`}>
           <div><b>{activeStep.id === "room" ? "공간 입력 안내" : activeStep.id === "review" ? "최종 검수" : `${activeStep.label} 모양 선택`}</b><span>{activeStep.id === "room" ? "위에서 실측값을 입력한 뒤 다음 단계로 이동하세요." : activeStep.id === "review" ? "미확인 단계를 눌러 바로 보완할 수 있습니다." : "현장과 가장 비슷한 그림을 먼저 선택하세요."}</span></div>
@@ -2332,21 +2368,14 @@ export default function SiteLayoutPlannerPage() {
           {!activePresets.length && <div className="site-layout-library-empty">{activeStep.id === "review" ? "단계별 상태와 도면을 최종 확인하세요." : "공간 치수를 입력하면 도면이 자동 생성됩니다."}</div>}
         </aside>
 
-        <main className={`site-layout-canvas-panel view-${view}`}>
-          <div className="site-layout-canvas-head"><div><button type="button" className={view === "model" ? "active" : ""} onClick={() => setView("model")}>모델</button><button type="button" className={view === "paper" ? "active" : ""} onClick={() => { setView("paper"); setCanvasFocus(true); }}>A3 출력</button></div><div className="site-layout-canvas-meta">{pendingPreset ? <button type="button" className="site-layout-pending-placement" onClick={() => { setPendingPresetId(null); setActiveTool("선택"); setCommand("명령: 블록 배치를 취소했습니다."); }}>{pendingPreset.label} 배치 대기 · 취소</button> : <span>TOP · NTS · mm</span>}{view === "paper" && <select aria-label="A3 미리보기 배율" value={paperZoom} onChange={(event) => setPaperZoom(event.target.value === "fit" ? "fit" : Number(event.target.value) as 100 | 125)}><option value="fit">화면 맞춤</option><option value="100">100%</option><option value="125">125%</option></select>}{view === "paper" && <button type="button" className="site-layout-paper-print" onClick={printA3Draft}>A3 인쇄</button>}<button type="button" className="site-layout-focus-toggle" aria-pressed={canvasFocus || canvasExpanded} onClick={() => void toggleCanvasExpanded()}>{canvasExpanded ? "크게 보기 닫기" : canvasFocus ? "패널 보기" : "도면 크게"}</button></div></div>
+        <main className="site-layout-canvas-panel view-model">
+          <div className="site-layout-canvas-head"><div><b>CAD 모델</b><span>전체 도면 자동 맞춤</span></div><div className="site-layout-canvas-meta">{pendingPreset ? <button type="button" className="site-layout-pending-placement" onClick={() => { setPendingPresetId(null); setActiveTool("선택"); setCommand("명령: 블록 배치를 취소했습니다."); }}>{pendingPreset.label} 배치 대기 · 취소</button> : <span>클릭 선택 · 끌어서 이동 · 단위 mm</span>}</div></div>
           {orientationHint && <div className="site-layout-orientation-hint" role="status">휴대폰을 가로로 돌리면 도면을 더 넓게 볼 수 있습니다. 세로 화면에서도 계속 사용할 수 있습니다.</div>}
           <div className="site-layout-model-space">
             <div className="site-layout-board-wrap" style={{ ...physicalRoomStyle, maxWidth: `${Math.round(920 * roomRatio)}px` }}><div ref={boardRef} className={`site-layout-board site-layout-geometry-host ${pendingPreset ? "placing" : ""}`} style={physicalRoomStyle} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDrop={handleBoardDrop}><SiteLayoutGeometryView draft={physicalDraft} mode="model" paddingMm={650} selectedItemId={selectedId} interactive interactionMode={workflowMode === "direct" ? "drag" : "select"} showDimensions showLabels isItemVisible={(item) => { const legacy = draft.items.find((candidate) => candidate.id === item.id); return Boolean(legacy && itemLayer(legacy) !== "equipment" && visibleLayers[itemLayer(legacy)]); }} onBackgroundPointerDown={(point) => { if (pendingPresetId) addItem(pendingPresetId, (point.xMm / physicalDraft.roomWidthMm) * 100, (point.yMm / physicalDraft.roomHeightMm) * 100); else setSelectedId(""); }} onItemSelect={(item) => setSelectedId(item.id)} onItemPointerDown={workflowMode === "direct" ? startGeometryDrag : undefined} onModelPointerMove={(point, event) => moveGeometryDrag(point, event.pointerId)} onModelPointerUp={(_, event) => finishGeometryDrag(event.pointerId)} onModelPointerCancel={(event) => finishGeometryDrag(event.pointerId)} /></div></div>
             {!visibleBasicItemCount && activeStep.id !== "room" && <div className="site-layout-empty"><b>{activeStep.label} 모양을 선택해 도면을 시작하세요.</b><span>모바일에서는 그림을 누른 뒤 도면의 위치를 터치하세요.</span></div>}
             <small className="site-layout-coordinates">X 8,410.000&nbsp;&nbsp;Y 4,215.000&nbsp;&nbsp;Z 0.000</small>
           </div>
-          <div className="site-layout-paper-space"><div className={`site-layout-paper-sheet zoom-${paperZoom}`}><div className="site-layout-paper-plan">
-            <div className="site-layout-paper-note"><b>기초 평면도</b><span>내부 실측 {formatMillimeters(draft.roomWidth)} × {formatMillimeters(draft.roomHeight)} mm · 천장 H={formatMillimeters(ceilingHeight)} mm · 현장 실측 기준 예상 도면</span></div>
-            <div className="site-layout-paper-drawing">
-              <SiteLayoutGeometryView className="site-layout-paper-room site-layout-geometry-paper" draft={physicalDraft} mode="paper" paddingMm={650} interactive={false} showDimensions showLabels isItemVisible={(item) => { const legacy = draft.items.find((candidate) => candidate.id === item.id); return Boolean(legacy && itemLayer(legacy) !== "equipment" && itemLayer(legacy) !== "note"); }} />
-            </div>
-            <div className="site-layout-paper-title"><div><b>{draft.roomName} 평면도</b><small>BETA · 현장 실측 참고용 · CAD 검토 후 확정</small></div><span>치수 우선 · NTS (A3)</span></div>
-          </div><aside className="site-layout-title-block"><strong>{draft.roomName}</strong><section><b>기관·사업</b><p>{draft.organizationName || "기관 미지정"} · {draft.businessRound ?? 1}차 사업</p></section><section><b>도면 구성</b><p>표현용 RC 벽체 · 문 · 창호 · 기둥 · 보 · 에어컨</p></section><section><b>현장 통신</b><p>인터넷 {surveyChoiceLabel(checklist.internetAvailable)} · {internetModeLabel(checklist.internetMode)}<br />망 {networkTypeLabel(checklist.networkType)}</p></section><section><b>전기·시공</b><p>전원 {surveyChoiceLabel(checklist.powerOutlet)} · 천장조명 철거 {surveyChoiceLabel(checklist.ceilingLightRemoval)}<br />암막 {surveyChoiceLabel(checklist.blackoutCurtain)} · 바닥 {surveyChoiceLabel(checklist.floorWork)}<br />E/V {surveyChoiceLabel(checklist.elevator)} · 에어컨 간섭 {surveyChoiceLabel(checklist.airconConflict)}</p></section><section><b>CAD팀 전달 메모</b><p>{draft.fieldNotes || "특이사항 없음"}</p></section><dl><dt>PROJECT</dt><dd>{draft.organizationName || "기관 미지정"}</dd><dt>ROOM</dt><dd>{draft.roomName}</dd><dt>DATE</dt><dd>{new Intl.DateTimeFormat("ko-KR").format(new Date())}</dd><dt>SCALE</dt><dd>NTS · 치수 mm 우선</dd></dl></aside></div></div>
         </main>
 
         <aside className="site-layout-inspector">
@@ -2412,9 +2441,10 @@ export default function SiteLayoutPlannerPage() {
           </div> : <div className="site-layout-inspector-empty"><b>{activeStep.id === "room" ? "공간 크기를 먼저 입력하세요." : "배치한 블록을 선택하세요."}</b><span>선택하면 실제 치수와 설치 벽·기준 거리를 조정할 수 있습니다.</span></div>}
         </aside>
       </div>
+      <div ref={exportBoardRef} className="site-layout-export-source" aria-hidden="true"><SiteLayoutGeometryView draft={physicalDraft} mode="paper" paddingMm={650} interactive={false} showDimensions showLabels isItemVisible={(item) => { const legacy = draft.items.find((candidate) => candidate.id === item.id); return Boolean(legacy && itemLayer(legacy) !== "equipment" && itemLayer(legacy) !== "note"); }} /></div>
       {workflowMode === "guided" && selectedItem && <div className="site-layout-guided-selection-bar" role="group" aria-label="선택 객체 빠른 작업" style={{ position: "fixed", left: 12, right: 12, bottom: 72, zIndex: canvasExpanded ? 220 : 60, display: "grid", gridTemplateColumns: "minmax(0,1fr) repeat(3,auto)", alignItems: "center", gap: 8, maxWidth: 720, margin: "0 auto", padding: "10px 12px", border: "1px solid #cfd8ea", borderRadius: 14, background: "rgba(255,255,255,.98)", boxShadow: "0 -8px 24px rgba(25,43,80,.16)" }}><div style={{ minWidth: 0 }}><b style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedItem.name}</b><small>{presetForItem(selectedItem).label} · {formatMillimeters(selectedItem.width)}mm</small></div><button type="button" onClick={() => editGuidedItem(selectedItem)}>수정</button><button type="button" onClick={() => duplicateGuidedItem(selectedItem)}>복사</button><button type="button" className="danger" onClick={() => removeItemById(selectedItem.id)}>삭제</button></div>}
-      {workflowMode === "guided" ? <div className="site-layout-step-actions site-layout-question-navigation"><button type="button" onClick={questionPrevious} disabled={activeStepIndex === 0 && activeQuestionIndex === 0}>이전 질문</button><div><b>{activeStepIndex + 1}단계 · {activeStep.label}</b><span>{currentQuestionNumber}/{currentQuestionCount} 질문 · 자동 복구 중</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => { void saveCurrentDraft(); setView("paper"); setCanvasFocus(true); }}>저장·A3 확인</button> : <button type="button" className="primary" onClick={questionNext}>{activeQuestionIndex === currentQuestionCount - 1 ? "단계 완료·다음" : "다음 질문"}</button>}</div> : <div className="site-layout-step-actions"><button type="button" onClick={() => goToStep(activeStepIndex - 1)} disabled={activeStepIndex === 0}>이전</button><div><b>{activeStepIndex + 1}/{guideSteps.length} · {activeStep.label}</b><span>입력 내용은 이 기기에 자동 복구됩니다.</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => { setView("paper"); setCanvasFocus(true); }}>A3 도면 확인</button> : <button type="button" className="primary" onClick={goNextStep}>저장하고 다음</button>}</div>}
-      <footer className="site-layout-statusbar"><div><b>SNAP</b><b>ORTHO</b><b>OSNAP</b><span>GRID 10</span></div><p>BETA · 도면 단위 mm · 기관별 DB 및 Google Drive 저장 · CAD팀 전달용 기초도면</p></footer>
+      {workflowMode === "guided" ? <div className="site-layout-step-actions site-layout-question-navigation"><button type="button" onClick={questionPrevious} disabled={activeStepIndex === 0 && activeQuestionIndex === 0}>이전 질문</button><div><b>{activeStepIndex + 1}단계 · {activeStep.label}</b><span>{currentQuestionNumber}/{currentQuestionCount} 질문 · 자동 복구 중</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => void saveCurrentDraft()}>기관 도면 저장</button> : <button type="button" className="primary" onClick={questionNext}>{activeQuestionIndex === currentQuestionCount - 1 ? "단계 완료·다음" : "다음 질문"}</button>}</div> : <div className="site-layout-step-actions"><button type="button" onClick={() => goToStep(activeStepIndex - 1)} disabled={activeStepIndex === 0}>이전</button><div><b>{activeStepIndex + 1}/{guideSteps.length} · {activeStep.label}</b><span>입력 내용은 이 기기에 자동 복구됩니다.</span></div>{activeStep.id === "review" ? <button type="button" className="primary" onClick={() => void downloadCurrentPdf()}>CAD팀 전달 PDF</button> : <button type="button" className="primary" onClick={goNextStep}>저장하고 다음</button>}</div>}
+      <footer className="site-layout-statusbar"><div><b>SNAP</b><b>ORTHO</b><b>OSNAP</b><span>GRID 10</span></div><p>도면 단위 mm · 기관별 DB 및 Google Drive 저장 · CAD팀 전달용 기초도면</p></footer>
     </section>
   );
 }

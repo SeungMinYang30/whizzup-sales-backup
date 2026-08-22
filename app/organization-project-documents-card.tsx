@@ -13,6 +13,18 @@ type ProjectDocument = {
   created_at: string;
 };
 
+type SiteLayoutDocument = {
+  id: number;
+  title: string;
+  organizationName: string;
+  businessRound: number;
+  roomName: string;
+  pdfUrl: string;
+  jsonUrl: string;
+  updatedByName: string;
+  updatedAt: string;
+};
+
 type Props = {
   organization: string;
   businessRound: number;
@@ -34,7 +46,7 @@ const documentTypes = [
   { value: "통합본", label: "도면·조감도 통합본" },
   { value: "기타", label: "기타" },
 ];
-const documentFilters = ["전체", "도면", "조감도", "통합본", "기타"] as const;
+const documentFilters = ["전체", "기초도면", "도면", "조감도", "통합본", "기타"] as const;
 
 function formatBytes(value: number) {
   if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)}MB`;
@@ -79,6 +91,7 @@ function uploadFailure(payload: { error?: string; code?: string }, status: numbe
 export default function OrganizationProjectDocumentsCard({ organization, businessRound }: Props) {
   const [open, setOpen] = useState(false);
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [siteLayouts, setSiteLayouts] = useState<SiteLayoutDocument[]>([]);
   const [pendingDocuments, setPendingDocuments] = useState<PendingProjectDocument[]>([]);
   const [documentFilter, setDocumentFilter] = useState<(typeof documentFilters)[number]>("전체");
   const [uploadSummary, setUploadSummary] = useState("");
@@ -95,11 +108,19 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
     setError("");
     try {
       const params = new URLSearchParams({ organization, businessRound: String(businessRound) });
-      const response = await fetch(`/api/organization-project-documents?${params}`, { cache: "no-store" });
-      const payload = await responsePayload(response);
+      const [response, layoutResponse] = await Promise.all([
+        fetch(`/api/organization-project-documents?${params}`, { cache: "no-store" }),
+        fetch(`/api/site-layouts?q=${encodeURIComponent(organization)}`, { cache: "no-store" }),
+      ]);
+      const [payload, layoutPayload] = await Promise.all([
+        responsePayload(response),
+        layoutResponse.json().catch(() => ({})) as Promise<{ layouts?: SiteLayoutDocument[] }>,
+      ]);
       if (!response.ok) throw new Error(payload.error || "도면·조감도를 불러오지 못했습니다.");
+      if (!layoutResponse.ok) throw new Error("연결된 기초도면을 불러오지 못했습니다.");
       if (requestId !== loadSequenceRef.current) return;
       setDocuments(Array.isArray(payload.documents) ? payload.documents : []);
+      setSiteLayouts((Array.isArray(layoutPayload.layouts) ? layoutPayload.layouts : []).filter((layout) => layout.organizationName === organization && Number(layout.businessRound) === businessRound));
     } catch (caught) {
       if (requestId !== loadSequenceRef.current) return;
       setError(caught instanceof Error ? caught.message : "도면·조감도를 불러오지 못했습니다.");
@@ -235,13 +256,15 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
 
   const visibleDocuments = documentFilter === "전체"
     ? documents
-    : documents.filter((document) => document.document_type === documentFilter);
+    : documentFilter === "기초도면" ? [] : documents.filter((document) => document.document_type === documentFilter);
+  const visibleSiteLayouts = documentFilter === "전체" || documentFilter === "기초도면" ? siteLayouts : [];
+  const totalDocumentCount = documents.length + siteLayouts.length;
 
   return (
     <Fragment>
       <div className="history-summary-project-documents">
         <span>도면·조감도</span>
-        <strong>{documents.length ? `${documents.length}개 파일` : "보기·등록"}</strong>
+        <strong>{totalDocumentCount ? `${totalDocumentCount}개 파일` : "보기·등록"}</strong>
         <small>{businessRound}차 사업별 Google Drive 보관</small>
         <button type="button" onClick={() => { setOpen(true); void loadDocuments(); }}>도면·조감도 보기</button>
       </div>
@@ -267,17 +290,26 @@ export default function OrganizationProjectDocumentsCard({ organization, busines
             <small className="project-documents-storage-note">Google Drive의 지역 / 기관명 / 도면·조감도 / 사업 차수 폴더에 저장합니다. 삭제한 파일은 99_보관으로 이동합니다.</small>
             {uploadSummary ? <div className="project-documents-success" role="status">{uploadSummary}</div> : null}
             {error ? <div className="project-documents-error" role="alert">{error}</div> : null}
-            {documents.length ? <nav className="project-documents-filters" aria-label="도면·조감도 자료 필터">{documentFilters.map((filter) => {
-              const count = filter === "전체" ? documents.length : documents.filter((document) => document.document_type === filter).length;
+            {totalDocumentCount ? <nav className="project-documents-filters" aria-label="도면·조감도 자료 필터">{documentFilters.map((filter) => {
+              const count = filter === "전체" ? totalDocumentCount : filter === "기초도면" ? siteLayouts.length : documents.filter((document) => document.document_type === filter).length;
               return <button key={filter} type="button" className={documentFilter === filter ? "active" : ""} onClick={() => setDocumentFilter(filter)}>{filter} <b>{count}</b></button>;
             })}</nav> : null}
             <div className="project-documents-list">
-              {loading ? <p>파일을 불러오는 중입니다.</p> : visibleDocuments.length ? visibleDocuments.map((document) => (
-                <article key={document.id}>
+              {loading ? <p>파일을 불러오는 중입니다.</p> : <>
+              {visibleSiteLayouts.map((layout) => (
+                <article key={`layout-${layout.id}`} className="is-site-layout">
+                  <div><b>기초도면</b><strong>{layout.roomName || layout.title}</strong><small>{layout.updatedByName || "작성자 미상"} · {new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(layout.updatedAt))}</small></div>
+                  <div>{layout.pdfUrl ? <><a href={layout.pdfUrl} target="_blank" rel="noopener noreferrer">PDF 보기</a><a href={layout.pdfUrl} download>PDF 다운로드</a></> : <span>PDF 저장 전</span>}{layout.jsonUrl && <a href={layout.jsonUrl}>원본</a>}</div>
+                </article>
+              ))}
+              {visibleDocuments.map((document) => (
+                <article key={`document-${document.id}`}>
                   <div><b>{document.document_type}</b><strong>{document.original_name}</strong><small>{formatBytes(Number(document.size_bytes) || 0)} · {document.created_by_name || "등록자 미상"}</small></div>
                   <div><a href={`/api/organization-project-documents?id=${document.id}&preview=1`} target="_blank" rel="noopener noreferrer">보기</a><a href={`/api/organization-project-documents?id=${document.id}&download=1`}>다운로드</a><button type="button" className="danger" onClick={() => void deleteDocument(document)}>삭제</button></div>
                 </article>
-              )) : <p>{documents.length ? `${documentFilter} 자료가 없습니다.` : "등록된 도면·조감도가 없습니다."}</p>}
+              ))}
+              {!visibleSiteLayouts.length && !visibleDocuments.length && <p>{totalDocumentCount ? `${documentFilter} 자료가 없습니다.` : "등록된 도면·조감도 또는 기초도면이 없습니다."}</p>}
+              </>}
             </div>
           </section>
         </div>

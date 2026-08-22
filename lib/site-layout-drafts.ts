@@ -649,7 +649,7 @@ export async function syncSiteLayoutDriveFiles(input: {
     const folderSegments = [SITE_LAYOUT_DRIVE_ROOT, organizationFolder, businessRoundFolder, uniqueTitleFolder];
     const stem = revisionFileStem(revisionNumber);
     const jsonName = `${stem}_기초도면.json`;
-    const pdfName = `${stem}_A3_현장실측초안.pdf`;
+    const pdfName = `${stem}_CAD팀전달용_기초도면.pdf`;
     const jsonText = JSON.stringify(parseDraft(row.revision_draft_json), null, 2);
     const jsonFile = new File([jsonText], jsonName, {
       type: "application/json;charset=utf-8",
@@ -673,7 +673,7 @@ export async function syncSiteLayoutDriveFiles(input: {
         || input.pdf.size > 30 * 1024 * 1024
         || await input.pdf.slice(0, 5).text() !== "%PDF-"
       ) {
-        throw new SiteLayoutInputError("A3 PDF는 30MB 이하의 올바른 PDF 파일이어야 합니다.");
+        throw new SiteLayoutInputError("CAD팀 전달용 PDF는 30MB 이하의 올바른 PDF 파일이어야 합니다.");
       }
       const pdfFile = new File([input.pdf], pdfName, { type: "application/pdf" });
       storedPdf = await upsertDriveFileByContext({
@@ -687,7 +687,7 @@ export async function syncSiteLayoutDriveFiles(input: {
         new Uint8Array(await downloadedPdf.arrayBuffer()).slice(0, 5),
       );
       if (signature !== "%PDF-") {
-        throw new Error("Google Drive A3 PDF 검증에 실패했습니다.");
+        throw new Error("Google Drive CAD팀 전달용 PDF 검증에 실패했습니다.");
       }
     }
     let finalizedLayout: SiteLayout;
@@ -808,11 +808,11 @@ export function siteLayoutPdfFromBase64(value: unknown) {
   const source = String(value ?? "").trim();
   if (!source) return null;
   if (source.length > 42 * 1024 * 1024) {
-    throw new SiteLayoutInputError("A3 PDF는 30MB 이하로 저장해 주세요.");
+    throw new SiteLayoutInputError("CAD팀 전달용 PDF는 30MB 이하로 저장해 주세요.");
   }
   const base64 = source.replace(/^data:application\/pdf;base64,/i, "");
   if (!/^[A-Za-z0-9+/\r\n]+=*$/.test(base64)) {
-    throw new SiteLayoutInputError("A3 PDF 전송 형식이 올바르지 않습니다.");
+    throw new SiteLayoutInputError("CAD팀 전달용 PDF 전송 형식이 올바르지 않습니다.");
   }
   const bytes = Buffer.from(base64, "base64");
   if (
@@ -820,7 +820,7 @@ export function siteLayoutPdfFromBase64(value: unknown) {
     || bytes.length > 30 * 1024 * 1024
     || bytes.subarray(0, 5).toString("ascii") !== "%PDF-"
   ) {
-    throw new SiteLayoutInputError("A3 PDF는 30MB 이하의 올바른 PDF 파일이어야 합니다.");
+    throw new SiteLayoutInputError("CAD팀 전달용 PDF는 30MB 이하의 올바른 PDF 파일이어야 합니다.");
   }
   return new File([bytes], "site-layout-a3.pdf", { type: "application/pdf" });
 }
@@ -874,7 +874,7 @@ export async function siteLayoutDriveFile(
   );
   if (!fileId) {
     throw new SiteLayoutInputError(
-      `Google Drive에 저장된 ${kind === "pdf" ? "A3 PDF" : "JSON 원본"}이 없습니다.`,
+      `Google Drive에 저장된 ${kind === "pdf" ? "CAD팀 전달용 PDF" : "JSON 원본"}이 없습니다.`,
       404,
       "DRIVE_FILE_NOT_FOUND",
     );
