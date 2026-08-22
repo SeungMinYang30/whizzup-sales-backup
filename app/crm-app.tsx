@@ -16674,6 +16674,7 @@ export default function CrmApp({
               >
                 <span className="nav-mark">{item.mark}</span>
                 <span className="nav-label">{item.label}</span>
+                {item.id === "site-layout" && <small className="nav-beta-badge">BETA</small>}
               </button>
               {menuOrderEditing && (
                 <button

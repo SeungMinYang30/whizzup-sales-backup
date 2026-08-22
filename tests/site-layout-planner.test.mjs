@@ -47,7 +47,7 @@ test("제품 블록은 보존하되 기초 도면 UI와 출력에서 숨긴다",
 
 test("문·창호는 중복 의사 요소 없이 재사용 SVG CAD 심벌로 그린다", () => {
   assert.match(pageSource, /function CadSymbol/);
-  assert.match(pageSource, /vertical \? "0 0 70 100" : "0 0 100 70"/);
+  assert.match(pageSource, /vertical \? "0 0 70 100" : squareCoordinateSymbol \? "0 0 100 100" : "0 0 100 70"/);
   assert.match(pageSource, /M74 66A64 64/);
   assert.match(pageSource, /M50 66A40 40/);
   assert.match(pageSource, /Array\.from\(\{ length: panels - 1 \}/);
@@ -125,16 +125,16 @@ test("여닫이·미닫이·폴딩도어는 종류별 실제 평면 깊이와 �
   assert.match(pageSource, /door-sliding/);
   assert.match(pageSource, /door-folding/);
   assert.match(pageSource, /verticalOpening/);
-  assert.match(pageSource, /\(verticalOpening \? openingDepth : item\.width\) \/ draft\.roomWidth/);
-  assert.match(pageSource, /\(verticalOpening \? item\.width : openingDepth\) \/ draft\.roomHeight/);
+  assert.match(pageSource, /\(verticalOpening \? openingDepth : wallAdjustedItem\.width\) \/ draft\.roomWidth/);
+  assert.match(pageSource, /\(verticalOpening \? wallAdjustedItem\.width : openingDepth\) \/ draft\.roomHeight/);
   assert.doesNotMatch(pageSource, /item\.width \* 0\.72/);
-  assert.match(pageSource, /item\.wall === "top" && outside \? -renderedHeight/);
+  assert.match(pageSource, /wallAdjustedItem\.wall === "top" && outside && isOpening \? -renderedHeight/);
   assert.match(pageSource, /wallBoundCount = draft\.items\.filter\(isWallMounted\)\.length/);
 });
 
 test("기둥과 보는 혼동되는 해칭 대신 구조 외곽선과 중심선으로 표시한다", () => {
-  assert.match(pageSource, /symbol === "pillar"[\s\S]*?<rect x="22" y="15" width="56" height="40"/);
-  assert.match(pageSource, /symbol === "pillar-round"[\s\S]*?<circle cx="50" cy="35" r="21"/);
+  assert.match(pageSource, /symbol === "pillar"[\s\S]*?<rect x="24" y="24" width="52" height="52"/);
+  assert.match(pageSource, /symbol === "pillar-round"[\s\S]*?<circle cx="50" cy="50" r="25"/);
   assert.match(pageSource, /symbol === "beam"[\s\S]*?<rect className="cad-dash"/);
   assert.match(stylesSource, /Site layout studio v6[\s\S]*?\.site-layout-item\.kind-pillar,[\s\S]*?background: rgba/);
 });
@@ -191,7 +191,7 @@ test("천장형 에어컨은 저장본과 편집 화면 모두 정사각형을 �
   assert.match(pageSource, /selectedItem\.presetId === "aircon-ceiling"[\s\S]*?width: value, height: value/);
   assert.match(pageSource, /정사각형 한 변\(m\)/);
   assert.match(pageSource, /label="천장형 에어컨 한 변\(m\)"/);
-  assert.match(pageSource, /symbol === "aircon-ceiling"[\s\S]*?<rect x="20" y="5" width="60" height="60"/);
+  assert.match(pageSource, /symbol === "aircon-ceiling"[\s\S]*?<rect x="18" y="18" width="64" height="64"/);
   assert.match(stylesSource, /\.site-layout-size-fields\.is-square \{ grid-template-columns: minmax\(0, 1fr\)/);
 });
 
@@ -200,7 +200,24 @@ test("A3 출력은 도면·치수선·제목란을 분리하고 블록 규격을
   assert.match(pageSource, /site-layout-paper-dimension dimension-width/);
   assert.match(pageSource, /site-layout-paper-dimension dimension-height/);
   assert.match(pageSource, /현장 실측 기준 · 축척 1\/60 \(A3\)/);
-  assert.match(pageSource, /formatMillimeters\(item\.width\).*?formatMillimeters\(isOpening/);
+  assert.match(pageSource, /formatMillimeters\(wallAdjustedItem\.width\).*?formatMillimeters\(isOpening/);
   assert.match(stylesSource, /Site layout studio v7: friendly measurement editing and production-quality A3 preview/);
   assert.match(stylesSource, /\.site-layout-paper-item\.wall-bottom \.site-layout-item-caption[\s\S]*?bottom: calc\(100% \+ 3px\)/);
+});
+
+test("문 중복 호를 제거하고 정사각 설비와 벽 부착 기둥을 정확히 그린다", () => {
+  assert.match(stylesSource, /\.site-layout-paper-item\.kind-door::before,[\s\S]*?content: none !important/);
+  assert.match(pageSource, /squareCoordinateSymbol = symbol === "pillar" \|\| symbol === "pillar-round" \|\| symbol === "aircon-ceiling"/);
+  assert.match(pageSource, /symbol === "aircon-ceiling"[\s\S]*?<rect x="18" y="18" width="64" height="64"/);
+  assert.match(pageSource, /function snapPillarPlacement/);
+  assert.match(pageSource, /nearest\.distance <= 6/);
+  assert.match(pageSource, /placePillarOnWall\(normalizedItem/);
+  assert.match(pageSource, /exactPhysicalSize = wallAdjustedItem\.kind === "pillar" \|\| preset\.id === "aircon-ceiling"/);
+});
+
+test("개발 중 기능을 메뉴·페이지·A3 출력에 명확히 표시한다", () => {
+  assert.match(appSource, /item\.id === "site-layout" && <small className="nav-beta-badge">BETA<\/small>/);
+  assert.match(pageSource, /현재 개발 중인 기능입니다\. 현장 실측 초안 및 CAD팀 전달용이며 최종 시공 도면으로 사용할 수 없습니다\./);
+  assert.match(pageSource, /BETA · 현장 실측 참고용 · CAD 검토 후 확정/);
+  assert.match(stylesSource, /\.site-layout-beta-notice/);
 });

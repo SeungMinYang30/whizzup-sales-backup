@@ -143,6 +143,37 @@ function positiveDimension(value: number, fallback: number) {
 }
 function clampPercent(value: number) { return Math.min(96, Math.max(0, value)); }
 function snapGrid(value: number) { return clampPercent(Math.round(value * 5) / 5); }
+function structureFootprint(item: LayoutItem) {
+  return item.rotation === 90 ? { width: item.height, height: item.width } : { width: item.width, height: item.height };
+}
+function placePillarOnWall(item: LayoutItem, wall: WallSide, x: number, y: number, roomWidth: number, roomHeight: number) {
+  const size = structureFootprint(item);
+  const widthPercent = Math.min(100, (size.width / roomWidth) * 100);
+  const heightPercent = Math.min(100, (size.height / roomHeight) * 100);
+  const clampedX = Math.min(Math.max(0, 100 - widthPercent), Math.max(0, snapGrid(x)));
+  const clampedY = Math.min(Math.max(0, 100 - heightPercent), Math.max(0, snapGrid(y)));
+  if (wall === "top") return { wall, x: clampedX, y: 0 };
+  if (wall === "bottom") return { wall, x: clampedX, y: Math.max(0, 100 - heightPercent) };
+  if (wall === "left") return { wall, x: 0, y: clampedY };
+  return { wall, x: Math.max(0, 100 - widthPercent), y: clampedY };
+}
+function snapPillarPlacement(item: LayoutItem, x: number, y: number, roomWidth: number, roomHeight: number) {
+  const freePlacement = { wall: undefined, x: snapGrid(x), y: snapGrid(y), rotation: item.rotation };
+  if (item.kind !== "pillar") return freePlacement;
+  const size = structureFootprint(item);
+  const widthPercent = (size.width / roomWidth) * 100;
+  const heightPercent = (size.height / roomHeight) * 100;
+  const edges = [
+    { distance: Math.abs(y), wall: "top" as const },
+    { distance: Math.abs(100 - (y + heightPercent)), wall: "bottom" as const },
+    { distance: Math.abs(x), wall: "left" as const },
+    { distance: Math.abs(100 - (x + widthPercent)), wall: "right" as const },
+  ];
+  const nearest = edges.sort((a, b) => a.distance - b.distance)[0];
+  return nearest.distance <= 6
+    ? { ...placePillarOnWall(item, nearest.wall, x, y, roomWidth, roomHeight), rotation: item.rotation }
+    : freePlacement;
+}
 function validStoredDraft(value: unknown): value is LayoutDraft {
   if (!value || typeof value !== "object") return false;
   const draft = value as Partial<LayoutDraft>;
@@ -242,8 +273,10 @@ function CadSymbol({ symbol, compact = false, wall, handing = "left", swing = "i
   const shared = { vectorEffect: "non-scaling-stroke" as const };
   const isOpening = symbol.startsWith("door-") || symbol.startsWith("window-");
   const vertical = isOpening && (wall === "left" || wall === "right");
+  const squareCoordinateSymbol = symbol === "pillar" || symbol === "pillar-round" || symbol === "aircon-ceiling";
+  const centerY = squareCoordinateSymbol ? 50 : 35;
   return (
-    <svg className="site-layout-cad-symbol" viewBox={vertical ? "0 0 70 100" : "0 0 100 70"} preserveAspectRatio="none" aria-hidden="true">
+    <svg className="site-layout-cad-symbol" viewBox={vertical ? "0 0 70 100" : squareCoordinateSymbol ? "0 0 100 100" : "0 0 100 70"} preserveAspectRatio="none" aria-hidden="true">
       <g transform={isOpening ? openingCadTransform(wall, swing) : undefined}><g transform={isOpening && handing === "right" ? "translate(100 0) scale(-1 1)" : undefined}>
       {symbol === "door-single" && <><path {...shared} d="M2 66H10 M74 66H98 M10 66V3 M74 66A64 64 0 0 0 10 3" /><circle cx="10" cy="66" r="2.6" /><path className="cad-jamb" {...shared} d="M10 61V70 M74 61V70" /></>}
       {symbol === "door-double" && <><path {...shared} d="M2 66H10 M90 66H98 M10 66V26 M90 66V26 M50 66A40 40 0 0 0 10 26 M50 66A40 40 0 0 1 90 26" /><circle cx="10" cy="66" r="2.6" /><circle cx="90" cy="66" r="2.6" /><path className="cad-jamb" {...shared} d="M10 61V70 M90 61V70" /></>}
@@ -268,13 +301,13 @@ function CadSymbol({ symbol, compact = false, wall, handing = "left", swing = "i
       {symbol === "power-lan" && <><circle cx="50" cy="35" r="25" /><path {...shared} d="M37 18V35 M63 18V35 M35 35H65 M50 35V57" /><text x="50" y="66" textAnchor="middle">LAN</text></>}
       {symbol === "table" && <><circle cx="50" cy="35" r="21" /><path {...shared} d="M50 14V56 M29 35H71 M35 20L65 50 M65 20L35 50" />{[12, 50, 88].map((x) => <circle key={`t-${x}`} cx={x} cy="35" r="7" />)}<circle cx="50" cy="7" r="6" /><circle cx="50" cy="63" r="6" /></>}
       {symbol === "chair" && <><rect x="29" y="22" width="42" height="35" rx="5" /><path {...shared} d="M29 30H18V52H29 M71 30H82V52H71 M35 57V65 M65 57V65" /></>}
-      {symbol === "pillar" && <><rect x="16" y="9" width="68" height="52" /><rect x="22" y="15" width="56" height="40" /><path className="cad-center" {...shared} d="M50 3V67 M8 35H92" /></>}
-      {symbol === "pillar-round" && <><circle cx="50" cy="35" r="27" /><circle cx="50" cy="35" r="21" /><path className="cad-center" {...shared} d="M50 3V67 M18 35H82" /></>}
+      {symbol === "pillar" && <><rect x="18" y="18" width="64" height="64" /><rect x="24" y="24" width="52" height="52" /><path className="cad-center" {...shared} d="M50 8V92 M8 50H92" /></>}
+      {symbol === "pillar-round" && <><circle cx="50" cy="50" r="32" /><circle cx="50" cy="50" r="25" /><path className="cad-center" {...shared} d="M50 8V92 M8 50H92" /></>}
       {symbol === "beam" && <><rect className="cad-dash" x="5" y="20" width="90" height="30" /><path className="cad-center" {...shared} d="M3 35H97" />{!compact && <text x="50" y="15" textAnchor="middle">BEAM</text>}</>}
       {symbol === "aircon-wall" && <><rect x="8" y="18" width="84" height="34" rx="5" /><path {...shared} d="M15 31H85 M20 39H80 M30 47H70" /><circle cx="79" cy="25" r="2" /></>}
-      {symbol === "aircon-ceiling" && <><rect x="20" y="5" width="60" height="60" /><rect x="28" y="13" width="44" height="44" /><path {...shared} d="M28 13L72 57 M72 13L28 57 M50 13V57 M28 35H72" /><circle cx="50" cy="35" r="7" /></>}
+      {symbol === "aircon-ceiling" && <><rect x="18" y="18" width="64" height="64" /><rect x="27" y="27" width="46" height="46" /><path {...shared} d="M27 27L73 73 M73 27L27 73 M50 27V73 M27 50H73" /><circle cx="50" cy="50" r="7" /></>}
       {symbol === "note" && <><path {...shared} d="M7 12H78L93 27V61H7Z M78 12V27H93" /><path {...shared} d="M17 30H72 M17 40H82 M17 50H62" /></>}
-      {!compact && !isOpening && <path className="cad-center" {...shared} d="M1 35H99" />}
+      {!compact && !isOpening && <path className="cad-center" {...shared} d={`M1 ${centerY}H99`} />}
       </g></g>
     </svg>
   );
@@ -302,16 +335,18 @@ export default function SiteLayoutPlannerPage() {
         const parsed: unknown = stored ? JSON.parse(stored) : null;
         if (validStoredDraft(parsed)) {
           const storedChecks = parsed.stageChecks && typeof parsed.stageChecks === "object" ? parsed.stageChecks : {};
+          const storedRoomWidth = positiveDimension(parsed.roomWidth, defaultDraft.roomWidth);
+          const storedRoomHeight = positiveDimension(parsed.roomHeight, defaultDraft.roomHeight);
           setDraft({
             roomName: parsed.roomName.slice(0, 80) || defaultDraft.roomName,
-            roomWidth: positiveDimension(parsed.roomWidth, defaultDraft.roomWidth),
-            roomHeight: positiveDimension(parsed.roomHeight, defaultDraft.roomHeight),
+            roomWidth: storedRoomWidth,
+            roomHeight: storedRoomHeight,
             roomCeilingHeight: positiveDimension(parsed.roomCeilingHeight ?? defaultDraft.roomCeilingHeight ?? 2.7, 2.7),
             roomWallThickness: positiveDimension(parsed.roomWallThickness ?? defaultDraft.roomWallThickness ?? 0.15, 0.15),
             items: parsed.items.filter(validStoredItem).map((item) => {
               const preset = presetForItem(item);
               const normalizedWidth = positiveDimension(item.width, 1);
-              return {
+              const normalizedItem: LayoutItem = {
                 ...item,
                 presetId: preset.id,
                 name: item.name.slice(0, 60),
@@ -329,6 +364,11 @@ export default function SiteLayoutPlannerPage() {
                 beamBottomHeight: item.beamBottomHeight === undefined ? undefined : Math.max(0, positiveDimension(item.beamBottomHeight, 2.2)),
                 beamSpacing: item.beamSpacing === undefined ? undefined : Math.max(0, positiveDimension(item.beamSpacing, 1)),
               };
+              if (normalizedItem.kind !== "pillar") return normalizedItem;
+              const placement = normalizedItem.wall
+                ? placePillarOnWall(normalizedItem, normalizedItem.wall, normalizedItem.x, normalizedItem.y, storedRoomWidth, storedRoomHeight)
+                : snapPillarPlacement(normalizedItem, normalizedItem.x, normalizedItem.y, storedRoomWidth, storedRoomHeight);
+              return { ...normalizedItem, ...placement };
             }),
             stageChecks: Object.fromEntries(Object.entries(storedChecks).filter((entry): entry is [string, StageCheckStatus] => validStageCheck(entry[1]))),
             siteChecklist: normalizeChecklist(parsed.siteChecklist),
@@ -490,7 +530,9 @@ export default function SiteLayoutPlannerPage() {
     return placeWallMountedItem(item, nearest.wall, nearest.rawOffset);
   }
   function snapPlacement(item: LayoutItem, x: number, y: number) {
-    return isWallMounted(item) ? snapOpening(item, x, y) : { x: snapGrid(x), y: snapGrid(y), rotation: item.rotation };
+    if (isWallMounted(item)) return snapOpening(item, x, y);
+    if (item.kind === "pillar") return snapPillarPlacement(item, x, y, draft.roomWidth, draft.roomHeight);
+    return { x: snapGrid(x), y: snapGrid(y), rotation: item.rotation };
   }
   function updateWallMountedWall(wall: WallSide) {
     if (!selectedItem || !isWallMounted(selectedItem)) return;
@@ -516,7 +558,9 @@ export default function SiteLayoutPlannerPage() {
     const objectSize = axis === "x" ? size.width : size.height;
     const center = Math.min(Math.max(objectSize / 2, Number.isFinite(rawValue) ? rawValue : objectSize / 2), Math.max(objectSize / 2, roomSize - objectSize / 2));
     const percent = snapGrid(((center - objectSize / 2) / roomSize) * 100);
-    updateSelected(axis === "x" ? { x: percent } : { y: percent });
+    const nextX = axis === "x" ? percent : selectedItem.x;
+    const nextY = axis === "y" ? percent : selectedItem.y;
+    updateSelected(selectedItem.kind === "pillar" ? snapPillarPlacement(selectedItem, nextX, nextY, draft.roomWidth, draft.roomHeight) : axis === "x" ? { x: percent } : { y: percent });
   }
   function updateSelectedDimension(axis: "width" | "height", rawValue: number) {
     if (!selectedItem) return;
@@ -528,6 +572,11 @@ export default function SiteLayoutPlannerPage() {
     if (axis === "width" && isWallMounted(selectedItem)) {
       const next = { ...selectedItem, width: value };
       updateSelected({ width: value, ...placeWallMountedItem(next, next.wall ?? "top", next.offset ?? (next.presetId === "aircon-wall" ? value / 2 : 0)) });
+      return;
+    }
+    if (selectedItem.kind === "pillar" && selectedItem.wall) {
+      const next = { ...selectedItem, [axis]: value };
+      updateSelected({ [axis]: value, ...placePillarOnWall(next, selectedItem.wall, next.x, next.y, draft.roomWidth, draft.roomHeight) });
       return;
     }
     updateSelected({ [axis]: value });
@@ -571,7 +620,7 @@ export default function SiteLayoutPlannerPage() {
     const baseCopy = { ...selectedItem, id: crypto.randomUUID(), name: `${selectedItem.name} 복사` };
     const placement = isWallMounted(selectedItem)
       ? placeWallMountedItem(baseCopy, selectedItem.wall ?? "top", (selectedItem.offset ?? 0) + selectedItem.width + 0.2)
-      : { x: clampPercent(selectedItem.x + 4), y: clampPercent(selectedItem.y + 4) };
+      : snapPlacement(baseCopy, clampPercent(selectedItem.x + 4), clampPercent(selectedItem.y + 4));
     const copy = { ...baseCopy, ...placement };
     setDraft((current) => ({ ...current, items: [...current.items, copy] })); setSelectedId(copy.id);
   }
@@ -585,27 +634,31 @@ export default function SiteLayoutPlannerPage() {
   }
   function renderItems(className: string) {
     return draft.items.filter((item) => itemLayer(item) !== "equipment" && visibleLayers[itemLayer(item)]).map((item) => {
-      const preset = presetForItem(item); const isOpening = item.kind === "door" || item.kind === "window";
+      const wallAdjustedItem = item.kind === "pillar" && item.wall
+        ? { ...item, ...placePillarOnWall(item, item.wall, item.x, item.y, draft.roomWidth, draft.roomHeight) }
+        : item;
+      const preset = presetForItem(wallAdjustedItem); const isOpening = wallAdjustedItem.kind === "door" || wallAdjustedItem.kind === "window";
       const wallThickness = draft.roomWallThickness ?? 0.15;
-      const verticalOpening = isOpening && (item.wall === "left" || item.wall === "right");
-      const openingDepth = isOpening ? openingPlanDepthMeters(item, wallThickness) : item.height;
+      const verticalOpening = isOpening && (wallAdjustedItem.wall === "left" || wallAdjustedItem.wall === "right");
+      const openingDepth = isOpening ? openingPlanDepthMeters(wallAdjustedItem, wallThickness) : wallAdjustedItem.height;
       const widthPercent = isOpening
-        ? ((verticalOpening ? openingDepth : item.width) / draft.roomWidth) * 100
-        : ((item.rotation === 90 ? item.height : item.width) / draft.roomWidth) * 100;
+        ? ((verticalOpening ? openingDepth : wallAdjustedItem.width) / draft.roomWidth) * 100
+        : ((wallAdjustedItem.rotation === 90 ? wallAdjustedItem.height : wallAdjustedItem.width) / draft.roomWidth) * 100;
       const heightPercent = isOpening
-        ? ((verticalOpening ? item.width : openingDepth) / draft.roomHeight) * 100
-        : ((item.rotation === 90 ? item.width : item.height) / draft.roomHeight) * 100;
-      const renderedWidth = Math.min(64, Math.max(isOpening ? (verticalOpening ? 1.8 : 3) : 3.6, widthPercent));
-      const renderedHeight = Math.min(64, Math.max(isOpening ? (verticalOpening ? 3 : 1.8) : 4.5, heightPercent));
-      const outside = item.kind === "door" && item.swing === "outside";
-      const renderedLeft = item.wall === "right" ? (outside ? 100 : Math.max(0, 100 - renderedWidth)) : item.wall === "left" && outside ? -renderedWidth : item.x;
-      const renderedTop = item.wall === "bottom" ? (outside ? 100 : Math.max(0, 100 - renderedHeight)) : item.wall === "top" && outside ? -renderedHeight : item.y;
+        ? ((verticalOpening ? wallAdjustedItem.width : openingDepth) / draft.roomHeight) * 100
+        : ((wallAdjustedItem.rotation === 90 ? wallAdjustedItem.width : wallAdjustedItem.height) / draft.roomHeight) * 100;
+      const exactPhysicalSize = wallAdjustedItem.kind === "pillar" || preset.id === "aircon-ceiling";
+      const renderedWidth = Math.min(64, exactPhysicalSize ? Math.max(0.25, widthPercent) : Math.max(isOpening ? (verticalOpening ? 1.8 : 3) : 3.6, widthPercent));
+      const renderedHeight = Math.min(64, exactPhysicalSize ? Math.max(0.25, heightPercent) : Math.max(isOpening ? (verticalOpening ? 3 : 1.8) : 4.5, heightPercent));
+      const outside = wallAdjustedItem.kind === "door" && wallAdjustedItem.swing === "outside";
+      const renderedLeft = wallAdjustedItem.wall === "right" ? (outside ? 100 : Math.max(0, 100 - renderedWidth)) : wallAdjustedItem.wall === "left" && outside ? -renderedWidth : wallAdjustedItem.x;
+      const renderedTop = wallAdjustedItem.wall === "bottom" && isOpening ? (outside ? 100 : Math.max(0, 100 - renderedHeight)) : wallAdjustedItem.wall === "top" && outside && isOpening ? -renderedHeight : wallAdjustedItem.y;
       return (
-        <button key={`${className}-${item.id}`} type="button" className={`${className} kind-${item.kind} symbol-${preset.id} rotation-${item.rotation} hand-${item.handing ?? "left"} swing-${item.swing ?? "inside"} wall-${item.wall ?? "free"} ${selectedId === item.id ? "selected" : ""}`}
+        <button key={`${className}-${item.id}`} type="button" className={`${className} kind-${wallAdjustedItem.kind} symbol-${preset.id} rotation-${wallAdjustedItem.rotation} hand-${wallAdjustedItem.handing ?? "left"} swing-${wallAdjustedItem.swing ?? "inside"} wall-${wallAdjustedItem.wall ?? "free"} ${selectedId === item.id ? "selected" : ""}`}
           style={{ left: `${renderedLeft}%`, top: `${renderedTop}%`, width: `${renderedWidth}%`, height: `${renderedHeight}%` }}
           onPointerDown={className === "site-layout-item" ? (event) => startDrag(event, item) : undefined} onClick={() => setSelectedId(item.id)} aria-label={`${item.name} ${className === "site-layout-item" ? "이동" : "선택"}`}>
-          <CadSymbol symbol={preset.id} wall={isOpening ? item.wall : undefined} handing={item.handing} swing={item.swing} />
-          <span className="site-layout-item-caption"><b>{item.name}</b><small>{className === "site-layout-paper-item" ? `${preset.code} · ${formatMillimeters(item.width)}×${formatMillimeters(isOpening ? item.openingHeight ?? item.height : item.height)}mm` : preset.code}</small></span>
+          <CadSymbol symbol={preset.id} wall={isOpening ? wallAdjustedItem.wall : undefined} handing={wallAdjustedItem.handing} swing={wallAdjustedItem.swing} />
+          <span className="site-layout-item-caption"><b>{wallAdjustedItem.name}</b><small>{className === "site-layout-paper-item" ? `${preset.code} · ${formatMillimeters(wallAdjustedItem.width)}×${formatMillimeters(isOpening ? wallAdjustedItem.openingHeight ?? wallAdjustedItem.height : wallAdjustedItem.height)}mm` : preset.code}</small></span>
         </button>
       );
     });
@@ -617,6 +670,7 @@ export default function SiteLayoutPlannerPage() {
         <div className="site-layout-brand"><span>W</span><div><b>기초도면 작성</b><small>현장 실측 → CAD팀 전달 · MOBILE FIRST BETA</small></div></div>
         <div className="site-layout-header-actions"><div className="site-layout-save-state" role="status"><b>{savedAt ? "자동 저장됨" : "배치도 준비됨"}</b><small>{savedAt || "실 크기를 입력해 주세요."}</small></div><button type="button" onClick={() => { setView("paper"); setCanvasFocus(true); }}>A3 출력 미리보기</button></div>
       </header>
+      <div className="site-layout-beta-notice" role="note"><b>BETA · 개발 중</b><span>현재 개발 중인 기능입니다. 현장 실측 초안 및 CAD팀 전달용이며 최종 시공 도면으로 사용할 수 없습니다.</span></div>
 
       <section className="site-layout-guide" aria-label="현장 실측 단계">
         <nav className="site-layout-guide-progress">{guideSteps.map((step, index) => {
@@ -692,7 +746,7 @@ export default function SiteLayoutPlannerPage() {
               <div className="site-layout-paper-dimension dimension-height"><span>{formatMillimeters(draft.roomHeight)} mm</span></div>
               <div className="site-layout-paper-room" style={{ aspectRatio: `${draft.roomWidth} / ${draft.roomHeight}` }}>{renderItems("site-layout-paper-item")}</div>
             </div>
-            <div className="site-layout-paper-title"><b>{draft.roomName} 평면도</b><span>현장 실측 기준 · 축척 1/60 (A3)</span></div>
+            <div className="site-layout-paper-title"><div><b>{draft.roomName} 평면도</b><small>BETA · 현장 실측 참고용 · CAD 검토 후 확정</small></div><span>현장 실측 기준 · 축척 1/60 (A3)</span></div>
           </div><aside className="site-layout-title-block"><strong>{draft.roomName}</strong><section><b>도면 구성</b><p>RC 벽체 · 문 · 창호 · 기둥 · 보 · 에어컨</p></section><section><b>현장 통신</b><p>인터넷 {surveyChoiceLabel(checklist.internetAvailable)} · {internetModeLabel(checklist.internetMode)}<br />망 {networkTypeLabel(checklist.networkType)}</p></section><section><b>전기·시공</b><p>전원 {surveyChoiceLabel(checklist.powerOutlet)} · 전용회로 {surveyChoiceLabel(checklist.dedicatedCircuit)}<br />암막 {surveyChoiceLabel(checklist.blackoutCurtain)} · 바닥 {surveyChoiceLabel(checklist.floorWork)}<br />E/V {surveyChoiceLabel(checklist.elevator)} · 에어컨 간섭 {surveyChoiceLabel(checklist.airconConflict)}</p></section><section><b>CAD팀 전달 메모</b><p>{draft.fieldNotes || "특이사항 없음"}</p></section><dl><dt>PROJECT</dt><dd>{draft.roomName}</dd><dt>DATE</dt><dd>{new Intl.DateTimeFormat("ko-KR").format(new Date())}</dd><dt>SCALE</dt><dd>A3 1/60</dd></dl></aside></div></div>
         </main>
 

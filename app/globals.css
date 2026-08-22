@@ -18430,3 +18430,56 @@ button:is(
   .site-layout-paper-note { align-items: flex-start; flex-direction: column; gap: 2px; }
   .site-layout-paper-note span { text-align: left; }
 }
+
+/* Site layout studio v8: accurate physical geometry and clear beta status. */
+.main-nav button .nav-beta-badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 3px 6px;
+  border: 1px solid #c7d2f6;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4961c9;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  line-height: 1;
+}
+.main-nav button.active .nav-beta-badge {
+  border-color: rgba(255, 255, 255, .3);
+  background: rgba(255, 255, 255, .18);
+  color: #fff;
+}
+.site-layout-beta-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: -7px;
+  padding: 10px 14px;
+  border: 1px solid #e4c96f;
+  border-radius: 11px;
+  background: #fff9df;
+  color: #6d5b22;
+}
+.site-layout-beta-notice b { flex: 0 0 auto; color: #926d00; font-size: 10px; }
+.site-layout-beta-notice span { font-size: 10px; line-height: 1.45; }
+.site-layout-paper-item.kind-door::before,
+.site-layout-paper-item.kind-door::after { content: none !important; }
+.site-layout-item.kind-pillar,
+.site-layout-paper-item.kind-pillar,
+.site-layout-item.symbol-aircon-ceiling,
+.site-layout-paper-item.symbol-aircon-ceiling {
+  min-width: 0;
+  min-height: 0;
+}
+.site-layout-paper-item.kind-door .site-layout-cad-symbol,
+.site-layout-paper-item.kind-window .site-layout-cad-symbol { stroke-width: 1.05; }
+.site-layout-paper-item.kind-door .cad-jamb,
+.site-layout-paper-item.kind-window .cad-jamb { stroke-width: 1.35; }
+.site-layout-paper-title > div { display: grid; gap: 2px; }
+.site-layout-paper-title > div > small { color: #8a5f00; font-size: 6.5px; font-weight: 850; letter-spacing: .02em; }
+
+@media (max-width: 760px) {
+  .site-layout-beta-notice { align-items: flex-start; flex-direction: column; gap: 3px; margin-top: -9px; padding: 9px 11px; }
+  .site-layout-beta-notice span { font-size: 9px; }
+}
