@@ -1595,6 +1595,14 @@ export default function SiteLayoutPlannerPage() {
   function setGuidedPillarAttachment(item: LayoutItem, mode: "wall" | "free") {
     setSelectedId(item.id);
     if (mode === "free") {
+      const size = structureFootprint(item);
+      const maxStartX = Math.max(0, draft.roomWidth - size.width);
+      const maxStartY = Math.max(0, draft.roomHeight - size.height);
+      const wasWallAttached = item.structureAttachment?.mode === "wall" || Boolean(item.wall);
+      const currentStartX = Math.min(maxStartX, Math.max(0, (item.x / 100) * draft.roomWidth));
+      const currentStartY = Math.min(maxStartY, Math.max(0, (item.y / 100) * draft.roomHeight));
+      const startX = wasWallAttached ? maxStartX / 2 : currentStartX;
+      const startY = wasWallAttached ? maxStartY / 2 : currentStartY;
       updateSelectedById(item.id, {
         wall: undefined,
         offset: undefined,
@@ -1603,10 +1611,14 @@ export default function SiteLayoutPlannerPage() {
         structureMeasurement: undefined,
         freeReferenceX: item.freeReferenceX ?? "left",
         freeReferenceY: item.freeReferenceY ?? "top",
+        x: draft.roomWidth > 0 ? (startX / draft.roomWidth) * 100 : 0,
+        y: draft.roomHeight > 0 ? (startY / draft.roomHeight) * 100 : 0,
       });
+      setSaveMessage("실내 독립 기둥으로 전환했습니다. 두 기준벽에서 기둥 면까지의 거리를 입력해 위치를 확정해 주세요.");
       return;
     }
     selectGuidedWall({ ...item, wallInset: item.wallInset ?? 0 }, item.wall ?? "top");
+    setSaveMessage("벽 부착 기둥으로 전환했습니다. 설치 벽과 모서리 기준 거리를 확인해 주세요.");
   }
   function updatePillarWallInset(item: LayoutItem, rawValue: number) {
     if (item.kind !== "pillar" || item.structureAttachment?.mode !== "wall") return;

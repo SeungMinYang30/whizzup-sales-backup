@@ -467,6 +467,10 @@ test("직접 편집 기둥은 벽 부착과 독립 배치, 네 기준벽 면거�
     /freeReferenceY/,
     /벽→기둥 면 직각거리\(mm\)/,
     /두 기준벽→기둥 면거리/,
+    /const wasWallAttached = item\.structureAttachment\?\.mode === "wall" \|\| Boolean\(item\.wall\)/,
+    /const startX = wasWallAttached \? maxStartX \/ 2 : currentStartX/,
+    /const startY = wasWallAttached \? maxStartY \/ 2 : currentStartY/,
+    /실내 독립 기둥으로 전환했습니다\. 두 기준벽에서 기둥 면까지의 거리를 입력해 위치를 확정해 주세요/,
   ]);
 });
 
