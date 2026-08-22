@@ -2442,3 +2442,66 @@
   :is(.unified-management-table, .followup-table, .awards-table) .award-progress-content > small { display: -webkit-box !important; overflow: hidden !important; white-space: normal !important; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   :is(.unified-management-table, .followup-table, .awards-table) .management-detail-button { display: inline-flex !important; min-width: 48px !important; }
 }
+
+/* Unified institution cards use semantic sections instead of desktop column positions. */
+@media (max-width: 760px) {
+  .unified-management-table .unified-management-row {
+    grid-template-columns: 30px minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "select organization date"
+      "select region date"
+      "contact contact contact"
+      "budget budget budget"
+      "status status detail"
+      "summary summary summary"
+      "execution assignee assignee" !important;
+    gap: 7px 10px !important;
+    margin: 8px 9px !important;
+    padding: 13px !important;
+  }
+  .unified-management-table .unified-management-row.phase-pre {
+    border-left: 4px solid #3d83dd !important;
+  }
+  .unified-management-table .unified-management-row.phase-post {
+    border-left: 4px solid #7c5ce0 !important;
+  }
+  .unified-management-table td:nth-child(1) { display: block !important; grid-area: select !important; align-self: start; padding-top: 2px !important; }
+  .unified-management-table td:nth-child(2) { display: none !important; }
+  .unified-management-table td:nth-child(3) { display: block !important; grid-area: date !important; justify-self: end; text-align: right !important; }
+  .unified-management-table td:nth-child(4) { display: block !important; grid-area: region !important; color: #7a879b; }
+  .unified-management-table td:nth-child(5) { display: block !important; grid-area: organization !important; }
+  .unified-management-table td:nth-child(6) { display: block !important; grid-area: contact !important; }
+  .unified-management-table td:nth-child(7) { display: block !important; grid-area: budget !important; }
+  .unified-management-table td:nth-child(8) { display: block !important; grid-area: status !important; align-self: center; }
+  .unified-management-table td:nth-child(9) { display: block !important; grid-area: summary !important; }
+  .unified-management-table td:nth-child(10) { display: block !important; grid-area: execution !important; align-self: center; }
+  .unified-management-table td:nth-child(11) { display: block !important; grid-area: assignee !important; align-self: center; justify-self: stretch !important; }
+  .unified-management-table td:nth-child(12) { display: block !important; grid-area: detail !important; align-self: center; justify-self: end !important; }
+  .unified-management-table td:nth-child(6),
+  .unified-management-table td:nth-child(7),
+  .unified-management-table td:nth-child(9) {
+    padding: 10px 11px !important;
+    border: 1px solid #e4e9f2 !important;
+    border-radius: 10px !important;
+    background: #f8f9fc !important;
+  }
+  .unified-management-table td:nth-child(6)::before,
+  .unified-management-table td:nth-child(7)::before,
+  .unified-management-table td:nth-child(9)::before {
+    display: block;
+    margin-bottom: 7px;
+    color: #8793a6;
+    font-size: 10px;
+    font-weight: 850;
+  }
+  .unified-management-table td:nth-child(6)::before { content: "기관 담당자"; }
+  .unified-management-table td:nth-child(7)::before { content: "예산·계약"; }
+  .unified-management-table td:nth-child(9)::before { content: "업무 요약"; }
+  .unified-management-table .org-name { display: block; font-size: 15px !important; line-height: 1.35 !important; }
+  .unified-management-table .date-cell { display: block; font-size: 12px; font-weight: 850; white-space: nowrap; }
+  .unified-management-table .management-phase-tag,
+  .unified-management-table .award-result-badge { width: fit-content; margin-left: auto; }
+  .unified-management-table .management-detail-button { min-height: 38px; padding: 0 13px; font-size: 12px; }
+  .unified-management-table .award-complete-action { min-height: 38px; font-size: 11px; }
+  .unified-management-table td:nth-child(11) select { width: 100%; min-height: 38px; }
+}

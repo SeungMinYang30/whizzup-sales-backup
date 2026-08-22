@@ -915,7 +915,8 @@ export default function ResourceLibraryPage({
                       <div className="resource-attachment-list">
                         {attachments.map((file) => (
                           <a key={file.id} href={file.downloadUrl}>
-                            <span>{file.originalName}</span><small>{formatBytes(file.sizeBytes)} · 내려받기</small>
+                            <span>{file.originalName}</span>
+                            <span className="resource-attachment-download"><small>{formatBytes(file.sizeBytes)}</small><b>다운로드</b></span>
                           </a>
                         ))}
                       </div>
