@@ -3,221 +3,204 @@ import fs from "node:fs";
 import test from "node:test";
 
 const pageSource = fs.readFileSync(new URL("../app/site-layout-planner-page.tsx", import.meta.url), "utf8");
+const geometryViewSource = fs.readFileSync(new URL("../app/site-layout-geometry-view.tsx", import.meta.url), "utf8");
 const appSource = fs.readFileSync(new URL("../app/crm-app.tsx", import.meta.url), "utf8");
 const stylesSource = fs.readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
-test("기초도면 작성이 독립 메뉴와 지연 로딩 페이지로 연결된다", () => {
+function assertContainsAll(source, values, message) {
+  for (const value of values) {
+    assert.match(source, value instanceof RegExp ? value : new RegExp(value), message ?? String(value));
+  }
+}
+
+test("기초도면 작성 메뉴는 지연 로딩되고 BETA 상태를 함께 알린다", () => {
   assert.match(appSource, /lazy\(\(\) => import\("\.\/site-layout-planner-page"\)\)/);
   assert.match(appSource, /id: "site-layout", label: "기초도면 작성"/);
   assert.match(appSource, /view === "site-layout" && \(/);
   assert.match(appSource, /<SiteLayoutPlannerPage \/>/);
-});
-
-test("기본판은 기관·견적 DB 대신 브라우저에만 저장한다", () => {
-  assert.match(pageSource, /whizzup:site-layout-draft:v1/);
-  assert.match(pageSource, /window\.localStorage\.getItem/);
-  assert.match(pageSource, /window\.localStorage\.setItem/);
-  assert.doesNotMatch(pageSource, /fetch\s*\(/);
-  assert.doesNotMatch(pageSource, /\/api\//);
-});
-
-test("실 크기와 CAD 표준 블록을 편집하고 드래그할 수 있다", () => {
-  for (const label of ["단문형", "양문형", "비대칭 양문", "좌우 미닫이", "폴딩도어", "고정창", "슬라이딩 2짝", "슬라이딩 3짝", "슬라이딩 4짝", "6분할 연창", "프로젝트창", "사각 기둥", "원형 기둥", "천장 보", "벽걸이 에어컨", "천장형 에어컨"]) {
-    assert.match(pageSource, new RegExp(`label: "${label}"`));
-  }
-  assert.match(pageSource, /roomWidth/);
-  assert.match(pageSource, /roomHeight/);
-  assert.match(pageSource, /roomCeilingHeight/);
-  assert.match(pageSource, /이 크기로 시작/);
-  assert.match(pageSource, /onPointerMove=\{moveDrag\}/);
-  assert.match(pageSource, /snapOpening/);
-  assert.match(pageSource, /90° 회전/);
-  assert.match(pageSource, /duplicateSelected/);
-});
-
-test("제품 블록은 보존하되 기초 도면 UI와 출력에서 숨긴다", () => {
-  assert.match(pageSource, /const basicGroups: PresetGroup\[\] = \["문", "창호", "기둥·보", "현장 설비"\]/);
-  assert.match(pageSource, /itemPresets\.filter\(\(preset\) => basicGroups\.includes\(preset\.group\)\)/);
-  assert.match(pageSource, /itemLayer\(item\) !== "equipment" && visibleLayers/);
-  assert.match(pageSource, /equipment: false/);
-  assert.doesNotMatch(pageSource, /제품 DB 매칭/);
-  assert.doesNotMatch(pageSource, /VR 스포츠실 예시/);
-  assert.match(pageSource, /CAD팀 전달용 기초도면/);
-});
-
-test("문·창호는 중복 의사 요소 없이 재사용 SVG CAD 심벌로 그린다", () => {
-  assert.match(pageSource, /function CadSymbol/);
-  assert.match(pageSource, /vertical \? "0 0 70 100" : squareCoordinateSymbol \? "0 0 100 100" : "0 0 100 70"/);
-  assert.match(pageSource, /M74 66A64 64/);
-  assert.match(pageSource, /M50 66A40 40/);
-  assert.match(pageSource, /Array\.from\(\{ length: panels - 1 \}/);
-  assert.match(pageSource, /openingCadTransform/);
-  assert.match(stylesSource, /\.site-layout-cad-symbol/);
-  assert.match(stylesSource, /\.site-layout-item\.kind-door:not\(\.selected\)::before,[\s\S]*?content: none/);
-  assert.match(pageSource, /vectorEffect: "non-scaling-stroke"/);
-});
-
-test("모델 공간과 A3 출력 도면에 CAD 정보 구조를 제공한다", () => {
-  assert.match(pageSource, /A3 출력 미리보기/);
-  assert.match(pageSource, /site-layout-paper-sheet/);
-  assert.match(pageSource, /RC 벽체 t=\{formatMillimeters\(draft\.roomWallThickness/);
-  assert.match(pageSource, /SNAP/);
-  assert.match(pageSource, /ORTHO/);
-  assert.match(pageSource, /OSNAP/);
-  assert.match(pageSource, /A-WALL RC 벽체/);
-  assert.match(stylesSource, /repeating-linear-gradient\(135deg/);
-});
-
-test("모바일에서는 블록을 먼저 고르고 도면을 터치해 배치한다", () => {
-  assert.match(pageSource, /pendingPresetId/);
-  assert.match(pageSource, /handleBoardPointerDown/);
-  assert.match(pageSource, /\(max-width: 760px\), \(pointer: coarse\)/);
-  assert.match(pageSource, /scrollIntoView\(\{ behavior: "smooth", block: "center" \}\)/);
-  assert.match(stylesSource, /Site layout studio v3[\s\S]*?\.site-layout-library \{[\s\S]*?order: 1/);
-  assert.match(stylesSource, /Site layout studio v3[\s\S]*?\.site-layout-canvas-panel \{ order: 2/);
-  assert.match(stylesSource, /Site layout studio v3[\s\S]*?\.site-layout-board-wrap \{[\s\S]*?min-width: 0;[\s\S]*?max-width: none !important/);
-  assert.match(stylesSource, /\.site-layout-board\.placing \{ cursor: crosshair; touch-action: none; \}/);
-  assert.match(stylesSource, /Site layout studio v4[\s\S]*?\.site-layout-workspace \{[\s\S]*?max-width: 100%;[\s\S]*?align-items: stretch/);
-  assert.match(stylesSource, /Site layout studio v4[\s\S]*?\.site-layout-canvas-head,[\s\S]*?\.site-layout-model-space \{ width: 100%; max-width: 100%; \}/);
-  assert.match(stylesSource, /Site layout studio v4[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
-});
-
-test("PC에서는 그림 블록을 도면으로 직접 드래그해 넣는다", () => {
-  assert.match(pageSource, /draggable/);
-  assert.match(pageSource, /handlePresetDragStart/);
-  assert.match(pageSource, /application\/x-whizzup-floor-block/);
-  assert.match(pageSource, /handleBoardDrop/);
-  assert.match(pageSource, /onDrop=\{handleBoardDrop\}/);
-});
-
-test("현장 실측은 공간부터 현장조건과 검수까지 단계별로 진행한다", () => {
-  for (const id of ["room", "door", "window", "structure", "facility", "checklist", "review"]) {
-    assert.match(pageSource, new RegExp(`id: "${id}"`));
-  }
-  for (const text of ["공간 크기 입력", "출입문 형태와 치수", "창호 형태와 분할", "기둥과 보 실측", "에어컨과 고정 시설", "인터넷·전기·공사 조건", "CAD팀 전달 전 검수"]) {
-    assert.match(pageSource, new RegExp(text));
-  }
-  assert.match(pageSource, /확인 완료/);
-  assert.match(pageSource, /해당 없음/);
-  assert.match(pageSource, /재확인 필요/);
-  assert.match(pageSource, /저장하고 다음/);
-  assert.match(pageSource, /site-layout-guide-progress/);
-  assert.match(stylesSource, /Site layout studio v4: guided field measurement workflow/);
-});
-
-test("문·창호는 설치 벽과 실측 치수를 저장한다", () => {
-  assert.match(pageSource, /type WallSide = "top" \| "right" \| "bottom" \| "left"/);
-  assert.match(pageSource, /openingHeight/);
-  assert.match(pageSource, /sillHeight/);
-  assert.match(pageSource, /handing/);
-  assert.match(pageSource, /개구부 폭\(mm\)/);
-  assert.match(pageSource, /개구부 높이\(mm\)/);
-  assert.match(pageSource, /모서리→개구부 시작\(mm\)/);
-  assert.match(pageSource, /창 하단 높이\(mm\)/);
-  assert.match(pageSource, /function MillimeterInput/);
-  assert.match(pageSource, /placeOpeningOnWall/);
-  assert.match(pageSource, /실내·실외 열림/);
-  assert.match(pageSource, /swing/);
-});
-
-test("여닫이·미닫이·폴딩도어는 종류별 실제 평면 깊이와 벽 축을 사용한다", () => {
-  assert.match(pageSource, /function openingPlanDepthMeters/);
-  assert.match(pageSource, /door-sliding/);
-  assert.match(pageSource, /door-folding/);
-  assert.match(pageSource, /verticalOpening/);
-  assert.match(pageSource, /\(verticalOpening \? openingDepth : wallAdjustedItem\.width\) \/ draft\.roomWidth/);
-  assert.match(pageSource, /\(verticalOpening \? wallAdjustedItem\.width : openingDepth\) \/ draft\.roomHeight/);
-  assert.doesNotMatch(pageSource, /item\.width \* 0\.72/);
-  assert.match(pageSource, /wallAdjustedItem\.wall === "top" && outside && isOpening \? -renderedHeight/);
-  assert.match(pageSource, /wallBoundCount = draft\.items\.filter\(isWallMounted\)\.length/);
-});
-
-test("기둥과 보는 혼동되는 해칭 대신 구조 외곽선과 중심선으로 표시한다", () => {
-  assert.match(pageSource, /symbol === "pillar"[\s\S]*?<rect x="24" y="24" width="52" height="52"/);
-  assert.match(pageSource, /symbol === "pillar-round"[\s\S]*?<circle cx="50" cy="50" r="25"/);
-  assert.match(pageSource, /symbol === "beam"[\s\S]*?<rect className="cad-dash"/);
-  assert.match(stylesSource, /Site layout studio v6[\s\S]*?\.site-layout-item\.kind-pillar,[\s\S]*?background: rgba/);
-});
-
-test("도면 크게 보기에서는 양쪽 패널을 접고 A3와 모델 공간을 확대한다", () => {
-  assert.match(pageSource, /canvasFocus/);
-  assert.match(pageSource, /도면 크게/);
-  assert.match(pageSource, /패널 보기/);
-  assert.match(pageSource, /Math\.round\(920 \* roomRatio\)/);
-  assert.match(stylesSource, /\.site-layout-workspace\.is-canvas-focus[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
-  assert.match(stylesSource, /\.site-layout-workspace\.is-canvas-focus > \.site-layout-library,[\s\S]*?display: none/);
-});
-
-test("에어컨과 구조물은 CAD팀 전달용 기준거리와 높이를 저장한다", () => {
-  assert.match(pageSource, /모서리→에어컨 중심/);
-  assert.match(pageSource, /바닥→에어컨 하단/);
-  assert.match(pageSource, /좌측 D벽→중심/);
-  assert.match(pageSource, /상단 A벽→중심/);
-  assert.match(pageSource, /바닥→보 하단/);
-  assert.match(pageSource, /다음 보까지 유효거리/);
-  assert.match(pageSource, /isWallMounted/);
-  assert.match(pageSource, /snapPlacement/);
-});
-
-test("인터넷·전기·공사 체크표와 현장 메모를 A3 출력에 포함한다", () => {
-  for (const text of ["인터넷 사용", "연결 방식", "사용 망", "사용 가능한 전원", "전용 회로", "암막커튼", "바닥공사", "엘리베이터", "천장 조명 철거", "에어컨 간섭", "CAD팀 전달 메모"]) {
-    assert.match(pageSource, new RegExp(text));
-  }
-  assert.match(pageSource, /siteChecklist/);
-  assert.match(pageSource, /normalizeChecklist/);
-  assert.match(pageSource, /현장 통신/);
-  assert.match(pageSource, /전기·시공/);
-  assert.match(stylesSource, /site-layout-site-checklist/);
-});
-
-test("기존 브라우저 저장본은 새 현장조사 필드로 안전하게 보완한다", () => {
-  assert.match(pageSource, /parsed\.roomWallThickness \?\? defaultDraft\.roomWallThickness/);
-  assert.match(pageSource, /normalizeChecklist\(parsed\.siteChecklist\)/);
-  assert.match(pageSource, /item\.swing === "outside" \? "outside" : "inside"/);
-  assert.match(pageSource, /fieldNotes: typeof parsed\.fieldNotes === "string"/);
-});
-
-test("수치 입력은 클릭 즉시 기존 값을 전체 선택하고 자연스럽게 교체한다", () => {
-  assert.match(pageSource, /function FriendlyNumberInput/);
-  assert.match(pageSource, /onClick=\{\(event\) => event\.currentTarget\.select\(\)\}/);
-  assert.match(pageSource, /inputMode=\{decimals \? "decimal" : "numeric"\}/);
-  assert.match(pageSource, /if \(next && next !== "\."\) commit\(next\)/);
-  assert.match(pageSource, /label="공간 가로\(m\)"/);
-  assert.match(pageSource, /label="좌측 D벽에서 중심\(m\)"/);
-});
-
-test("천장형 에어컨은 저장본과 편집 화면 모두 정사각형을 유지한다", () => {
-  assert.match(pageSource, /preset\.id === "aircon-ceiling" \? normalizedWidth/);
-  assert.match(pageSource, /selectedItem\.presetId === "aircon-ceiling"[\s\S]*?width: value, height: value/);
-  assert.match(pageSource, /정사각형 한 변\(m\)/);
-  assert.match(pageSource, /label="천장형 에어컨 한 변\(m\)"/);
-  assert.match(pageSource, /symbol === "aircon-ceiling"[\s\S]*?<rect x="18" y="18" width="64" height="64"/);
-  assert.match(stylesSource, /\.site-layout-size-fields\.is-square \{ grid-template-columns: minmax\(0, 1fr\)/);
-});
-
-test("A3 출력은 도면·치수선·제목란을 분리하고 블록 규격을 표시한다", () => {
-  assert.match(pageSource, /site-layout-paper-drawing/);
-  assert.match(pageSource, /site-layout-paper-dimension dimension-width/);
-  assert.match(pageSource, /site-layout-paper-dimension dimension-height/);
-  assert.match(pageSource, /현장 실측 기준 · 축척 1\/60 \(A3\)/);
-  assert.match(pageSource, /formatMillimeters\(wallAdjustedItem\.width\).*?formatMillimeters\(isOpening/);
-  assert.match(stylesSource, /Site layout studio v7: friendly measurement editing and production-quality A3 preview/);
-  assert.match(stylesSource, /\.site-layout-paper-item\.wall-bottom \.site-layout-item-caption[\s\S]*?bottom: calc\(100% \+ 3px\)/);
-});
-
-test("문 중복 호를 제거하고 정사각 설비와 벽 부착 기둥을 정확히 그린다", () => {
-  assert.match(stylesSource, /\.site-layout-paper-item\.kind-door::before,[\s\S]*?content: none !important/);
-  assert.match(pageSource, /squareCoordinateSymbol = symbol === "pillar" \|\| symbol === "pillar-round" \|\| symbol === "aircon-ceiling"/);
-  assert.match(pageSource, /symbol === "aircon-ceiling"[\s\S]*?<rect x="18" y="18" width="64" height="64"/);
-  assert.match(pageSource, /function snapPillarPlacement/);
-  assert.match(pageSource, /nearest\.distance <= 6/);
-  assert.match(pageSource, /placePillarOnWall\(normalizedItem/);
-  assert.match(pageSource, /exactPhysicalSize = wallAdjustedItem\.kind === "pillar" \|\| preset\.id === "aircon-ceiling"/);
-});
-
-test("개발 중 기능을 메뉴·페이지·A3 출력에 명확히 표시한다", () => {
   assert.match(appSource, /item\.id === "site-layout" && <small className="nav-beta-badge">BETA<\/small>/);
+});
+
+test("페이지와 A3 출력은 비차단 BETA 안내를 유지한다", () => {
+  assert.match(pageSource, /className="site-layout-beta-notice" role="note"/);
   assert.match(pageSource, /현재 개발 중인 기능입니다\. 현장 실측 초안 및 CAD팀 전달용이며 최종 시공 도면으로 사용할 수 없습니다\./);
   assert.match(pageSource, /BETA · 현장 실측 참고용 · CAD 검토 후 확정/);
   assert.match(stylesSource, /\.site-layout-beta-notice/);
+  assert.doesNotMatch(pageSource, /alert\s*\(/);
+});
+
+test("모델과 A3 출력은 동일한 mm 초안과 공통 SVG 렌더러를 사용한다", () => {
+  assert.match(pageSource, /import SiteLayoutGeometryView from "\.\/site-layout-geometry-view"/);
+  assert.match(pageSource, /const physicalDraft = useMemo\(\(\) => normalizeDraft\(draft\)/);
+  assert.match(pageSource, /const geometryViewBox = useMemo\(\(\) => computeSvgViewBox\(physicalDraft/);
+  assert.match(pageSource, /<SiteLayoutGeometryView draft=\{physicalDraft\} mode="model"/);
+  assert.match(pageSource, /<SiteLayoutGeometryView[\s\S]*?draft=\{physicalDraft\} mode="paper"/);
+  assert.equal((pageSource.match(/<SiteLayoutGeometryView/g) ?? []).length, 2);
+  assert.doesNotMatch(pageSource, /renderItems\("(?:model|paper)"\)/);
+});
+
+test("공통 SVG는 실제 mm 좌표, 동일 viewBox, 개구부 마스크를 사용한다", () => {
+  assertContainsAll(geometryViewSource, [
+    /computeItemGeometryMm/,
+    /computeOpeningCutGeometryMm/,
+    /computeSvgViewBox/,
+    /computeWallGeometryMm/,
+    /modelPointFromClient/,
+    /viewBox=\{viewBox\.value\}/,
+    /preserveAspectRatio="xMidYMid meet"/,
+    /data-unit="mm"/,
+    /maskUnits="userSpaceOnUse"/,
+    /openingCuts\.map/,
+    /vectorEffect="non-scaling-stroke"/,
+  ]);
+  assert.match(geometryViewSource, /export type SiteLayoutGeometryViewMode = "model" \| "mobile" \| "paper"/);
+});
+
+test("문·창호·구조물·에어컨 심벌은 공통 geometry 결과로 그린다", () => {
+  assertContainsAll(geometryViewSource, [
+    /function DoorSymbol/,
+    /function WindowSymbol/,
+    /function GenericItemSymbol/,
+    /computeItemGeometryMm\(draft, item\)/,
+    /<DoorSymbol/,
+    /<WindowSymbol/,
+    /<GenericItemSymbol/,
+    /item\.kind === "pillar"/,
+    /item\.kind === "beam"/,
+    /item\.presetId === "aircon-wall"/,
+  ]);
+  assert.match(geometryViewSource, /presetId === "aircon-ceiling"/);
+  assert.match(geometryViewSource, /width=\{width\} height=\{height\}/);
+});
+
+test("기본 작성 방식은 간편 실측이며 직접 편집은 명시적으로 분리된다", () => {
+  assert.match(pageSource, /type WorkflowMode = "guided" \| "direct"/);
+  assert.match(pageSource, /useState<WorkflowMode>\("guided"\)/);
+  assert.match(pageSource, />간편 실측<\/button>/);
+  assert.match(pageSource, />도면 직접 수정<\/button>/);
+  assert.match(pageSource, /질문을 하나씩 확인합니다\./);
+  assert.match(pageSource, /workflowMode === "guided" && renderGuidedQuestion\(\)/);
+  assert.match(pageSource, /workflowMode === "direct" && <div className="site-layout-commandbar"/);
+  assert.match(pageSource, /interactive=\{workflowMode === "direct"\}/);
+});
+
+test("간편 실측은 한 질문씩 이전·다음으로 이동하는 7단계 흐름이다", () => {
+  assertContainsAll(pageSource, [
+    /id: "room"/,
+    /id: "door"/,
+    /id: "window"/,
+    /id: "structure"/,
+    /id: "facility"/,
+    /id: "checklist"/,
+    /id: "review"/,
+    /const \[activeQuestionIndex, setActiveQuestionIndex\] = useState\(0\)/,
+    /function renderGuidedQuestion\(\)/,
+    /function questionNext\(\)/,
+    /function questionPrevious\(\)/,
+    />이전 질문<\/button>/,
+    /activeQuestionIndex === currentQuestionCount - 1 \? "다음 단계" : "다음 질문"/,
+  ]);
+  assert.match(pageSource, /roomQuestions\[activeQuestionIndex\]/);
+  assert.match(pageSource, /checklistQuestions\[Math\.min\(activeQuestionIndex/);
+});
+
+test("간편 실측 질문은 현장 기준 벽·모서리·실측값을 순서대로 받는다", () => {
+  assertContainsAll(pageSource, [
+    /실내 가로 길이는 몇 m인가요\?/,
+    /바닥부터 천장까지 높이는 몇 m인가요\?/,
+    /어느 벽에 설치되어 있나요\?/,
+    /어느 모서리에서 거리를 쟀나요\?/,
+    /두 벽에서 중심까지 거리를 입력해 주세요\./,
+    /현장에서 잰 실제 크기를 입력해 주세요\./,
+    /좌측 D벽 → 중심\(m\)/,
+    /상단 A벽 → 중심\(m\)/,
+    /개구부 폭/,
+    /개구부 높이/,
+    /바닥 → 창 하단 높이/,
+    /바닥 → 보 하단/,
+    /다음 보까지 거리/,
+  ]);
+});
+
+test("현장 통신·전기·공사 조건과 CAD 메모를 마지막 설문과 A3에 반영한다", () => {
+  assertContainsAll(pageSource, [
+    /인터넷 사용/,
+    /연결 방식/,
+    /사용 망/,
+    /사용 가능한 전원/,
+    /전용 회로/,
+    /암막커튼/,
+    /바닥공사/,
+    /엘리베이터/,
+    /천장 조명 철거/,
+    /에어컨 간섭/,
+    /마지막으로 CAD팀 전달 메모를 적어 주세요\./,
+    /현장 통신/,
+    /전기·시공/,
+    /CAD팀 전달 메모/,
+  ]);
+  assert.match(pageSource, /geometryIssues\.some\(\(issue\) => issue\.severity === "error"\)/);
+  assert.match(pageSource, /물리 치수와 객체 위치 검사를 통과했습니다\./);
+});
+
+test("현재 초안과 이름 있는 초안 목록은 이 기기 localStorage에만 저장·복원한다", () => {
+  assert.match(pageSource, /const STORAGE_KEY = "whizzup:site-layout-draft:v1"/);
+  assert.match(pageSource, /const DRAFT_LIBRARY_KEY = "whizzup:site-layout-local-drafts:v1"/);
+  assertContainsAll(pageSource, [
+    /normalizeStoredDraft\(parsed\)/,
+    /parseLocalDraftLibrary\(window\.localStorage\.getItem\(DRAFT_LIBRARY_KEY\)\)/,
+    /function persistLocalDrafts\(/,
+    /function saveCurrentDraft\(\)/,
+    /function loadLocalDraft\(/,
+    /function deleteLocalDraft\(/,
+    /window\.localStorage\.setItem\(DRAFT_LIBRARY_KEY/,
+    /aria-label="이 기기에 저장한 초안"/,
+    />초안 저장<\/button>/,
+    />불러오기<\/button>/,
+    />삭제<\/button>/,
+    /기관 미연동 · 이 기기에만 저장/,
+  ]);
+  assert.doesNotMatch(pageSource, /fetch\s*\(/);
+  assert.doesNotMatch(pageSource, /\/api\//);
+  assert.doesNotMatch(pageSource, /organizationId|campaignId|quotationId/);
+});
+
+test("직접 편집에서는 PC 드래그와 포인터 좌표 변환을 유지한다", () => {
+  assertContainsAll(pageSource, [
+    /draggable/,
+    /handlePresetDragStart/,
+    /application\/x-whizzup-floor-block/,
+    /handleBoardDrop/,
+    /onDrop=\{handleBoardDrop\}/,
+    /modelPointFromClient\(event, bounds, geometryViewBox\)/,
+    /onItemPointerDown=\{startGeometryDrag\}/,
+    /onModelPointerMove=/,
+  ]);
+});
+
+test("제품 블록은 보존하되 기초도면 입력과 출력에서 숨긴다", () => {
+  assert.match(pageSource, /const basicGroups: PresetGroup\[\] = \["문", "창호", "기둥·보", "현장 설비"\]/);
+  assert.match(pageSource, /itemPresets\.filter\(\(preset\) => basicGroups\.includes\(preset\.group\)\)/);
+  assert.match(pageSource, /itemLayer\(legacy\) !== "equipment" && visibleLayers\[itemLayer\(legacy\)\]/);
+  assert.match(pageSource, /equipment: false/);
+  assert.doesNotMatch(pageSource, /제품 DB 매칭/);
+  assert.doesNotMatch(pageSource, /VR 스포츠실 예시/);
+});
+
+test("수치 입력은 클릭 시 전체 선택되고 mm 입력은 명시적으로 m 모델에 환산된다", () => {
+  assert.match(pageSource, /function FriendlyNumberInput/);
+  assert.match(pageSource, /onClick=\{\(event\) => event\.currentTarget\.select\(\)\}/);
+  assert.match(pageSource, /inputMode=\{decimals \? "decimal" : "numeric"\}/);
+  assert.match(pageSource, /function MillimeterInput/);
+  assert.match(pageSource, /value=\{Math\.round\(valueMeters \* 1000\)\}/);
+  assert.match(pageSource, /onCommit=\{\(value\) => onCommit\(value \/ 1000\)\}/);
+});
+
+test("간편 실측의 모바일 UI는 패널 대신 큰 터치 입력과 한 열 측정을 제공한다", () => {
+  assert.match(stylesSource, /Site layout studio v9: guided mobile survey, explicit local drafts and one mm renderer/);
+  assert.match(stylesSource, /\.site-layout-workspace\.is-guided > \.site-layout-library,[\s\S]*?\.site-layout-workspace\.is-guided > \.site-layout-inspector \{ display: none; \}/);
+  assert.match(stylesSource, /@media \(max-width: 760px\)[\s\S]*?\.site-layout-question-card input,[\s\S]*?min-height: 50px; font-size: 16px/);
+  assert.match(stylesSource, /@media \(max-width: 760px\)[\s\S]*?\.site-layout-choice-grid button,[\s\S]*?min-height: 52px/);
+  assert.match(stylesSource, /@media \(max-width: 760px\)[\s\S]*?\.site-layout-guided-measurements \{ grid-template-columns: 1fr; \}/);
+  assert.match(stylesSource, /@media \(max-width: 760px\)[\s\S]*?\.site-layout-workspace\.is-guided \.site-layout-board-wrap \{ max-width: 100% !important; \}/);
 });
