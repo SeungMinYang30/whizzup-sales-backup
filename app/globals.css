@@ -17708,6 +17708,13 @@ button:is(
 }
 
 /* Site layout studio v4: guided field measurement workflow. */
+.site-layout-planner {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
+}
 .site-layout-guide {
   border-bottom: 1px solid #d6deeb;
   background: linear-gradient(180deg, #f8faff 0%, #f2f6fd 100%);

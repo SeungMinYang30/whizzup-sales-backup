@@ -78,6 +78,7 @@ test("모바일에서는 블록을 먼저 고르고 도면을 터치해 배치�
   assert.match(stylesSource, /\.site-layout-board\.placing \{ cursor: crosshair; touch-action: none; \}/);
   assert.match(stylesSource, /Site layout studio v4[\s\S]*?\.site-layout-workspace \{[\s\S]*?max-width: 100%;[\s\S]*?align-items: stretch/);
   assert.match(stylesSource, /Site layout studio v4[\s\S]*?\.site-layout-canvas-head,[\s\S]*?\.site-layout-model-space \{ width: 100%; max-width: 100%; \}/);
+  assert.match(stylesSource, /Site layout studio v4[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
 });
 
 test("PC에서는 그림 블록을 도면으로 직접 드래그해 넣는다", () => {
