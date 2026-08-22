@@ -2501,7 +2501,15 @@
   .unified-management-table .date-cell { display: block; font-size: 12px; font-weight: 850; white-space: nowrap; }
   .unified-management-table .management-phase-tag,
   .unified-management-table .award-result-badge { width: fit-content; margin-left: auto; }
-  .unified-management-table .management-detail-button { min-height: 38px; padding: 0 13px; font-size: 12px; }
+  .unified-management-table .management-detail-button {
+    align-items: center !important;
+    justify-content: center !important;
+    min-height: 38px;
+    padding: 0 13px;
+    font-size: 12px;
+    line-height: 1;
+    text-align: center !important;
+  }
   .unified-management-table .award-complete-action { min-height: 38px; font-size: 11px; }
   .unified-management-table td:nth-child(11) select { width: 100%; min-height: 38px; }
 }

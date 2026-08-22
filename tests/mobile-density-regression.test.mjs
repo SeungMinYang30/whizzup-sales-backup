@@ -18,6 +18,7 @@ test("unified institution rows become compact mobile cards", () => {
   assert.match(readability, /\.unified-management-table \.unified-management-row \{[\s\S]*?grid-template-areas:[\s\S]*?"execution assignee assignee" !important;/);
   assert.match(readability, /\.unified-management-table td:nth-child\(4\) \{ display: block !important; grid-area: region !important;/);
   assert.match(readability, /content: "예산·계약";/);
+  assert.match(readability, /\.unified-management-table \.management-detail-button \{[\s\S]*?align-items: center !important;[\s\S]*?justify-content: center !important;[\s\S]*?text-align: center !important;/);
 });
 
 test("resource downloads are visually prioritized before edit actions on mobile", () => {
