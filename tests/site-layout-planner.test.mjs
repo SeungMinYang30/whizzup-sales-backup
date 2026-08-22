@@ -78,6 +78,14 @@ test("모바일에서는 블록을 먼저 고르고 도면을 터치해 배치�
   assert.match(stylesSource, /\.site-layout-board\.placing \{ cursor: crosshair; touch-action: none; \}/);
 });
 
+test("PC에서는 그림 블록을 도면으로 직접 드래그해 넣는다", () => {
+  assert.match(pageSource, /draggable/);
+  assert.match(pageSource, /handlePresetDragStart/);
+  assert.match(pageSource, /application\/x-whizzup-floor-block/);
+  assert.match(pageSource, /handleBoardDrop/);
+  assert.match(pageSource, /onDrop=\{handleBoardDrop\}/);
+});
+
 test("현장 실측은 공간부터 검수까지 단계별로 진행한다", () => {
   for (const id of ["room", "door", "window", "structure", "facility", "review"]) {
     assert.match(pageSource, new RegExp(`id: "${id}"`));

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 type LayoutItemKind = "equipment" | "table" | "door" | "window" | "pillar" | "beam" | "fixture" | "note";
 type LayoutSymbol =
@@ -314,6 +314,20 @@ export default function SiteLayoutPlannerPage() {
     event.preventDefault();
     addItem(pendingPresetId, ((event.clientX - bounds.left) / bounds.width) * 100, ((event.clientY - bounds.top) / bounds.height) * 100);
   }
+  function handlePresetDragStart(event: ReactDragEvent<HTMLButtonElement>, presetId: LayoutSymbol) {
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("application/x-whizzup-floor-block", presetId);
+    setPendingPresetId(null); setView("model"); setActiveTool("배치");
+    setCommand("명령: 블록을 도면의 원하는 위치에 놓으세요. 문·창호는 가장 가까운 벽에 자동 부착됩니다.");
+  }
+  function handleBoardDrop(event: ReactDragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const presetId = event.dataTransfer.getData("application/x-whizzup-floor-block") as LayoutSymbol;
+    if (!itemPresets.some((preset) => preset.id === presetId)) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    addItem(presetId, ((event.clientX - bounds.left) / bounds.width) * 100, ((event.clientY - bounds.top) / bounds.height) * 100);
+  }
   function startDrag(event: ReactPointerEvent<HTMLButtonElement>, item: LayoutItem) {
     if (event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -438,7 +452,7 @@ export default function SiteLayoutPlannerPage() {
           {activePresets.length > 0 && <p className="site-layout-mobile-help">그림 선택 → 도면의 벽이나 위치 터치 → 실제 치수 입력</p>}
           {activeStep.groups.map((group) => {
             const presets = activePresets.filter((preset) => preset.group === group); if (!presets.length) return null;
-            return <section key={group} className="site-layout-library-section"><h3>{group}<small>{presets.length}</small></h3><div className="site-layout-library-grid">{presets.map((preset) => <button key={preset.id} type="button" className={`kind-${preset.kind} symbol-${preset.id} ${pendingPresetId === preset.id ? "pending" : ""}`} aria-pressed={pendingPresetId === preset.id} onClick={() => choosePreset(preset.id)}><CadSymbol symbol={preset.id} compact /><span>{preset.label}</span><small>{preset.code} · {preset.width}m</small></button>)}</div></section>;
+            return <section key={group} className="site-layout-library-section"><h3>{group}<small>{presets.length}</small></h3><div className="site-layout-library-grid">{presets.map((preset) => <button key={preset.id} type="button" draggable className={`kind-${preset.kind} symbol-${preset.id} ${pendingPresetId === preset.id ? "pending" : ""}`} aria-pressed={pendingPresetId === preset.id} onDragStart={(event) => handlePresetDragStart(event, preset.id)} onClick={() => choosePreset(preset.id)}><CadSymbol symbol={preset.id} compact /><span>{preset.label}</span><small>{preset.code} · {preset.width}m</small></button>)}</div></section>;
           })}
           {!activePresets.length && <div className="site-layout-library-empty">{activeStep.id === "review" ? "단계별 상태와 도면을 최종 확인하세요." : "공간 치수를 입력하면 도면이 자동 생성됩니다."}</div>}
         </aside>
@@ -447,7 +461,7 @@ export default function SiteLayoutPlannerPage() {
           <div className="site-layout-canvas-head"><div><button type="button" className={view === "model" ? "active" : ""} onClick={() => setView("model")}>모델</button><button type="button" className={view === "paper" ? "active" : ""} onClick={() => setView("paper")}>A3 출력</button></div>{pendingPreset ? <button type="button" className="site-layout-pending-placement" onClick={() => { setPendingPresetId(null); setActiveTool("선택"); setCommand("명령: 블록 배치를 취소했습니다."); }}>{pendingPreset.label} 배치 대기 · 취소</button> : <span>TOP · 1:60 · mm</span>}</div>
           <div className="site-layout-model-space">
             <div className="site-layout-ruler top"><span>{formatMillimeters(draft.roomWidth)} mm</span></div>
-            <div className="site-layout-board-wrap" style={{ maxWidth: `${Math.round(720 * roomRatio)}px` }}><div ref={boardRef} className={`site-layout-board ${pendingPreset ? "placing" : ""}`} style={{ aspectRatio: `${draft.roomWidth} / ${draft.roomHeight}` }} onPointerMove={moveDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag} onPointerDown={handleBoardPointerDown}><div className="site-layout-room-label"><b>RC 벽체 t=150</b><span>{draft.roomName} · 천장 H={formatMillimeters(ceilingHeight)}</span></div>{renderItems("site-layout-item")}<div className="site-layout-axis-label axis-x">X</div><div className="site-layout-axis-label axis-y">Y</div><div className="site-layout-crosshair" aria-hidden="true" /></div></div>
+            <div className="site-layout-board-wrap" style={{ maxWidth: `${Math.round(720 * roomRatio)}px` }}><div ref={boardRef} className={`site-layout-board ${pendingPreset ? "placing" : ""}`} style={{ aspectRatio: `${draft.roomWidth} / ${draft.roomHeight}` }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDrop={handleBoardDrop} onPointerMove={moveDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag} onPointerDown={handleBoardPointerDown}><div className="site-layout-room-label"><b>RC 벽체 t=150</b><span>{draft.roomName} · 천장 H={formatMillimeters(ceilingHeight)}</span></div>{renderItems("site-layout-item")}<div className="site-layout-axis-label axis-x">X</div><div className="site-layout-axis-label axis-y">Y</div><div className="site-layout-crosshair" aria-hidden="true" /></div></div>
             <div className="site-layout-ruler side"><span>{formatMillimeters(draft.roomHeight)} mm</span></div>
             {!visibleBasicItemCount && activeStep.id !== "room" && <div className="site-layout-empty"><b>{activeStep.label} 모양을 선택해 도면을 시작하세요.</b><span>모바일에서는 그림을 누른 뒤 도면의 위치를 터치하세요.</span></div>}
             <small className="site-layout-coordinates">X 8,410.000&nbsp;&nbsp;Y 4,215.000&nbsp;&nbsp;Z 0.000</small>

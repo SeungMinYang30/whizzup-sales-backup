@@ -17800,6 +17800,8 @@ button:is(
   font-weight: 800;
 }
 .site-layout-stage-check [role="radio"][aria-checked="true"] { border-color: #3157e6; background: #edf2ff; color: #2449d5; box-shadow: inset 0 0 0 1px #3157e6; }
+.site-layout-library-grid button[draggable="true"] { cursor: grab; }
+.site-layout-library-grid button[draggable="true"]:active { cursor: grabbing; }
 
 .site-layout-review-grid {
   display: grid;
