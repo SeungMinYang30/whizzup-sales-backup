@@ -101,8 +101,8 @@ const paperPalette: Palette = {
   wall: "#eeeeec",
   wallLine: "#161a1d",
   hatch: "#676b70",
-  opening: "#002f43",
-  openingFill: "#bfe8f2",
+  opening: "#064f5d",
+  openingFill: "#d5eef2",
   structure: "#343b42",
   fixture: "#075b4e",
   equipment: "#6e571b",
@@ -218,17 +218,38 @@ function DoorSymbol({ draft, item, geometry, color, fillColor, strokeWidth }: {
   const span = end - start;
   const inward = item.swing === "outside" ? -1 : 1;
   const presetId = item.presetId ?? "door-single";
-  const threshold = wallStrokePath(draft, item.wall, start, end);
-  const openingHighlight = <path d={threshold} fill="none" stroke={fillColor} strokeWidth={strokeWidth * 4.4} vectorEffect="non-scaling-stroke" />;
+  const wallOuter = -draft.roomWallThicknessMm * 0.88;
+  const wallCenter = -draft.roomWallThicknessMm * 0.5;
+  const wallInner = -draft.roomWallThicknessMm * 0.12;
+  const threshold = wallStrokePath(draft, item.wall, start, end, wallCenter);
+  const frameBand = [
+    pointForWall(draft, item.wall, start, wallOuter),
+    pointForWall(draft, item.wall, end, wallOuter),
+    pointForWall(draft, item.wall, end, wallInner),
+    pointForWall(draft, item.wall, start, wallInner),
+  ];
+  const openingFrame = (
+    <g>
+      <polygon
+        points={frameBand.map((point) => `${point.x},${point.y}`).join(" ")}
+        fill={fillColor}
+        fillOpacity={0.58}
+        stroke="none"
+      />
+      <path d={threshold} fill="none" stroke={color} strokeWidth={Math.max(1.6, strokeWidth * 0.82)} vectorEffect="non-scaling-stroke" />
+      <path d={linePath(frameBand[0], frameBand[3])} fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+      <path d={linePath(frameBand[1], frameBand[2])} fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+    </g>
+  );
 
   if (presetId === "door-sliding") {
-    const trackA = wallStrokePath(draft, item.wall, start, end, -draft.roomWallThicknessMm * 0.28);
-    const trackB = wallStrokePath(draft, item.wall, start, end, draft.roomWallThicknessMm * 0.18);
+    const trackA = wallStrokePath(draft, item.wall, start, end, -draft.roomWallThicknessMm * 0.72);
+    const trackB = wallStrokePath(draft, item.wall, start, end, -draft.roomWallThicknessMm * 0.28);
     const arrowStart = pointForWall(draft, item.wall, start + span * 0.25, 130 * inward);
     const arrowEnd = pointForWall(draft, item.wall, start + span * 0.75, 130 * inward);
     return (
       <g fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke">
-        {openingHighlight}
+        {openingFrame}
         <path d={trackA} />
         <path d={trackB} />
         <path d={linePath(arrowStart, arrowEnd)} />
@@ -244,8 +265,7 @@ function DoorSymbol({ draft, item, geometry, color, fillColor, strokeWidth }: {
     });
     return (
       <g fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke">
-        {openingHighlight}
-        <path d={threshold} />
+        {openingFrame}
         <polyline points={points.map((point) => `${point.x},${point.y}`).join(" ")} />
       </g>
     );
@@ -256,8 +276,7 @@ function DoorSymbol({ draft, item, geometry, color, fillColor, strokeWidth }: {
     const split = presetId === "door-unequal" ? start + span * 0.65 : start + span / 2;
     return (
       <g>
-        {openingHighlight}
-        <path d={threshold} fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+        {openingFrame}
         <DoorLeaf draft={draft} wall={item.wall} hingeMm={start} closedMm={split} inwardMm={(split - start) * inward} color={color} strokeWidth={strokeWidth} />
         <DoorLeaf draft={draft} wall={item.wall} hingeMm={end} closedMm={split} inwardMm={(end - split) * inward} color={color} strokeWidth={strokeWidth} />
       </g>
@@ -268,8 +287,7 @@ function DoorSymbol({ draft, item, geometry, color, fillColor, strokeWidth }: {
   const closed = item.handing === "right" ? start : end;
   return (
     <g>
-      {openingHighlight}
-      <path d={threshold} fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+      {openingFrame}
       <DoorLeaf draft={draft} wall={item.wall} hingeMm={hinge} closedMm={closed} inwardMm={span * inward} color={color} strokeWidth={strokeWidth} />
     </g>
   );
@@ -298,9 +316,9 @@ function WindowSymbol({ draft, item, geometry, color, fillColor, strokeWidth }: 
   // A window is shown as a centered three-line frame inside the opening.
   // Keeping the frame away from both wall faces prevents the opening from
   // becoming a solid cyan bar when an A3 sheet is fitted to a small screen.
-  const outerOffset = -draft.roomWallThicknessMm * 0.28;
-  const centerOffset = 0;
-  const innerOffset = draft.roomWallThicknessMm * 0.28;
+  const outerOffset = -draft.roomWallThicknessMm * 0.82;
+  const centerOffset = -draft.roomWallThicknessMm * 0.5;
+  const innerOffset = -draft.roomWallThicknessMm * 0.18;
   const fillPoints = [
     pointForWall(draft, item.wall, start, outerOffset),
     pointForWall(draft, item.wall, end, outerOffset),
@@ -313,7 +331,7 @@ function WindowSymbol({ draft, item, geometry, color, fillColor, strokeWidth }: 
   });
   return (
     <g fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke">
-      <polygon points={fillPoints.map((point) => `${point.x},${point.y}`).join(" ")} fill={fillColor} fillOpacity={0.18} stroke="none" />
+      <polygon points={fillPoints.map((point) => `${point.x},${point.y}`).join(" ")} fill={fillColor} fillOpacity={0.66} stroke="none" />
       <path d={wallStrokePath(draft, item.wall, start, end, outerOffset)} />
       <path d={wallStrokePath(draft, item.wall, start, end, centerOffset)} opacity={0.72} strokeWidth={Math.max(1.2, strokeWidth * 0.68)} />
       <path d={wallStrokePath(draft, item.wall, start, end, innerOffset)} />
@@ -404,12 +422,12 @@ function measurementLabel(item: SiteLayoutItemMm, draft: SiteLayoutDraftMm) {
     return [`설치높이 ${formatMm(item.mountingHeightMm ?? 2_100)} mm`];
   }
   const size = item.kind === "door" || item.kind === "window"
-    ? `개구부 ${formatMm(item.widthMm)}×${formatMm(item.openingHeightMm ?? item.heightMm)} mm`
+    ? `${item.kind === "door" ? "문틀 전체" : "창틀 전체"} ${formatMm(item.widthMm)}×${formatMm(item.openingHeightMm ?? item.heightMm)} mm`
     : `${formatMm(item.widthMm)}×${formatMm(item.heightMm)} mm`;
   if (item.kind === "window") {
-    return [`개구부 높이 ${formatMm(item.openingHeightMm ?? item.heightMm)} mm`, `하단 ${formatMm(item.sillHeightMm ?? 0)} mm`];
+    return [`창틀 전체 높이 ${formatMm(item.openingHeightMm ?? item.heightMm)} mm`, `바닥→창틀 하단 ${formatMm(item.sillHeightMm ?? 0)} mm`];
   }
-  if (item.kind === "door") return [`개구부 높이 ${formatMm(item.openingHeightMm ?? item.heightMm)} mm`];
+  if (item.kind === "door") return [`문틀 전체 높이 ${formatMm(item.openingHeightMm ?? item.heightMm)} mm`];
   if (item.kind === "beam") {
     return [size, `보 하단 ${formatMm(item.beamBottomHeightMm ?? 0)} mm`];
   }
@@ -688,8 +706,8 @@ export function SiteLayoutGeometryView({
     .map((item) => computeOpeningCutGeometryMm(draft, item))
     .filter((rect): rect is GeometryRectMm => rect !== null);
   const symbolStrokeWidth = mode === "paper" ? 3.2 : 1.55;
-  const pillarStrokeWidth = mode === "paper" ? 1.45 : 1.25;
-  const openingStrokeWidth = mode === "paper" ? 3 : 2.4;
+  const pillarStrokeWidth = mode === "paper" ? 1.05 : 1;
+  const openingStrokeWidth = mode === "paper" ? 2.75 : 2.5;
 
   function modelPoint(event: { clientX: number; clientY: number; currentTarget: SVGElement }) {
     const bounds = event.currentTarget.ownerSVGElement?.getBoundingClientRect()

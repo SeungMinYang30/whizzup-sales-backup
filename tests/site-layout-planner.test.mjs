@@ -116,13 +116,15 @@ test("간편 실측 질문은 현장 기준 벽·모서리·실측값을 순서�
     /현장에서 잰 실제 크기를 입력해 주세요\./,
     /좌측 D벽 → \{item\.kind === "pillar" \? "기둥 면" : "중심"\}/,
     /상단 A벽 → \{item\.kind === "pillar" \? "기둥 면" : "중심"\}/,
-    /개구부 폭/,
-    /개구부 높이/,
+    /문틀 전체 폭/,
+    /창틀 전체 폭/,
+    /문틀 전체 높이/,
+    /창틀 전체 높이/,
     /바닥 → 창 하단 높이/,
     /바닥 → 보 하단/,
     /다음 보까지 거리/,
     /이전 창호 기준/,
-    /창호 끝면 사이/,
+    /창틀 끝 사이/,
     /중심 사이/,
   ]);
 });
@@ -251,14 +253,14 @@ test("기둥은 벽 부착과 실내 독립을 나누고 다음 기둥을 면간
   assert.doesNotMatch(pageSource, /preset\.kind === "pillar"[\s\S]{0,350}wall: "top", offset: 0/);
 });
 
-test("창호는 이전 창호 끝면 또는 중심을 기준으로 연쇄 등록한다", () => {
+test("창호는 이전 창틀 끝 또는 중심을 기준으로 연쇄 등록한다", () => {
   assertContainsAll(pageSource, [
     /function previousWindow\(/,
     /function addFollowupWindow\(/,
     /referenceItemId: reference\.id/,
     /distanceMode: "clear"/,
     /이전 창호 기준/,
-    /창호 끝면 사이/,
+    /창틀 끝 사이/,
     /중심 사이/,
     /\+ 다음 창호 추가/,
     /items: resolveWindowReferences\(moved\)/,
@@ -431,11 +433,11 @@ test("A3 도면은 객체별 실제 치수와 측정 기준을 진한 선으로 
     /segment\.end\.xMm/,
     /showDimensions && mode === "paper" && <ObjectDimensionLayer/,
     /const symbolStrokeWidth = mode === "paper" \? 3\.2 : 1\.55/,
-    /const pillarStrokeWidth = mode === "paper" \? 1\.45 : 1\.25/,
-    /const openingStrokeWidth = mode === "paper" \? 3 : 2\.4/,
-    /openingFill: "#bfe8f2"/,
-    /fillOpacity=\{0\.18\}/,
-    /const centerOffset = 0/,
+    /const pillarStrokeWidth = mode === "paper" \? 1\.05 : 1/,
+    /const openingStrokeWidth = mode === "paper" \? 2\.75 : 2\.5/,
+    /openingFill: "#d5eef2"/,
+    /fillOpacity=\{0\.66\}/,
+    /const centerOffset = -draft\.roomWallThicknessMm \* 0\.5/,
     /item\.kind === "pillar" \? pillarStrokeWidth : symbolStrokeWidth/,
     /paintOrder="stroke"/,
   ]);
@@ -446,4 +448,13 @@ test("A3 도면은 객체별 실제 치수와 측정 기준을 진한 선으로 
   assert.match(geometryViewSource, /if \(segment\.kind === "position"\) return point/);
   assert.match(pageSource, /천장조명 철거/);
   assert.doesNotMatch(pageSource, /전용 회로 \{surveyChoiceLabel/);
+});
+
+test("PC 직접 편집 도면은 전체 가용 폭을 사용하고 모바일에만 실측 방식 선택을 노출한다", () => {
+  assertContainsAll(stylesSource, [
+    /@media \(min-width: 761px\)[\s\S]*?\.site-layout-mode-toggle \{[\s\S]*?display: none;/,
+    /\.site-layout-workspace:not\(\.is-guided\) \.site-layout-canvas-panel \{[\s\S]*?grid-template-rows: auto minmax\(0, 1fr\);[\s\S]*?width: 100%;/,
+    /\.site-layout-workspace:not\(\.is-guided\) \.site-layout-model-space \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);[\s\S]*?width: 100%;/,
+    /\.site-layout-workspace:not\(\.is-guided\) \.site-layout-board-wrap \{[\s\S]*?width: 100% !important;/,
+  ]);
 });

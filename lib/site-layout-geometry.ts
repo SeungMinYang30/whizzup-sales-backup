@@ -643,7 +643,7 @@ export function buildSiteLayoutDimensionSegmentsMm(
       end,
       labelPrefix: measurement.distanceMode === "center"
         ? `${shortWallName(measurement.referenceWall)}→${dimensionSubjectName(item)} 중심`
-        : `${shortWallName(measurement.referenceWall)}→${dimensionSubjectName(item)} ${measurement.direction === 1 ? "시작면" : "끝면"}`,
+        : `${shortWallName(measurement.referenceWall)}→${dimensionSubjectName(item)} ${measurement.direction === 1 ? "시작" : "끝"}`,
     });
   }
 
@@ -661,7 +661,7 @@ export function buildSiteLayoutDimensionSegmentsMm(
         distanceMode: "clear",
         start: dimensionPointForWall(draft, item.wall, geometry.spanStartMm),
         end: dimensionPointForWall(draft, item.wall, geometry.spanEndMm),
-        labelPrefix: `${dimensionSubjectName(item)} 개구부`,
+        labelPrefix: item.kind === "door" ? "문틀 전체" : "창틀 전체",
       });
 
       if (item.kind === "window" && item.openingMeasurement) {
@@ -682,7 +682,7 @@ export function buildSiteLayoutDimensionSegmentsMm(
           end: dimensionPointForWall(draft, item.wall, targetCoordinateMm),
           labelPrefix: item.offsetAnchor === "center"
             ? `벽 시작→${dimensionSubjectName(item)} 중심`
-            : `벽 시작→${dimensionSubjectName(item)} 시작면`,
+            : `벽 시작→${item.kind === "door" ? "문틀 시작" : "창틀 시작"}`,
         });
         if (item.kind === "door") {
           addSegment({
@@ -694,7 +694,7 @@ export function buildSiteLayoutDimensionSegmentsMm(
             distanceMode: "clear",
             start: dimensionPointForWall(draft, item.wall, geometry.spanEndMm),
             end: dimensionPointForWall(draft, item.wall, wallLengthMm(draft, item.wall)),
-            labelPrefix: "문 끝면→벽 끝",
+            labelPrefix: "문틀 끝→벽 끝",
           });
         }
       }
