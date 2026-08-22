@@ -69,7 +69,6 @@ type Palette = {
   wallLine: string;
   hatch: string;
   opening: string;
-  openingFill: string;
   structure: string;
   fixture: string;
   equipment: string;
@@ -86,7 +85,6 @@ const modelPalette: Palette = {
   wallLine: "#c6dce4",
   hatch: "#91a9b4",
   opening: "#64e3ee",
-  openingFill: "#123d47",
   structure: "#9cb7c4",
   fixture: "#64d8b1",
   equipment: "#d8b55d",
@@ -103,7 +101,6 @@ const paperPalette: Palette = {
   wallLine: "#161a1d",
   hatch: "#676b70",
   opening: "#064f5d",
-  openingFill: "#d5eef2",
   structure: "#343b42",
   fixture: "#075b4e",
   equipment: "#6e571b",
@@ -144,21 +141,6 @@ function linePath(start: { x: number; y: number }, end: { x: number; y: number }
   return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
 }
 
-function arrowHeadPath(start: { x: number; y: number }, end: { x: number; y: number }) {
-  const deltaX = end.x - start.x;
-  const deltaY = end.y - start.y;
-  const length = Math.hypot(deltaX, deltaY) || 1;
-  const unitX = deltaX / length;
-  const unitY = deltaY / length;
-  const normalX = -unitY;
-  const normalY = unitX;
-  const back = Math.min(105, length * 0.22);
-  const side = Math.min(58, length * 0.12);
-  const left = { x: end.x - unitX * back + normalX * side, y: end.y - unitY * back + normalY * side };
-  const right = { x: end.x - unitX * back - normalX * side, y: end.y - unitY * back - normalY * side };
-  return `M ${end.x} ${end.y} L ${left.x} ${left.y} M ${end.x} ${end.y} L ${right.x} ${right.y}`;
-}
-
 function wallStrokePath(
   draft: Pick<SiteLayoutDraftMm, "roomWidthMm" | "roomHeightMm">,
   wall: SiteLayoutWallSide,
@@ -170,6 +152,41 @@ function wallStrokePath(
     pointForWall(draft, wall, startMm, inwardMm),
     pointForWall(draft, wall, endMm, inwardMm),
   );
+}
+
+function wallBandPath(
+  draft: Pick<SiteLayoutDraftMm, "roomWidthMm" | "roomHeightMm">,
+  wall: SiteLayoutWallSide,
+  startMm: number,
+  endMm: number,
+  firstInwardMm: number,
+  secondInwardMm: number,
+) {
+  const points = [
+    pointForWall(draft, wall, startMm, firstInwardMm),
+    pointForWall(draft, wall, endMm, firstInwardMm),
+    pointForWall(draft, wall, endMm, secondInwardMm),
+    pointForWall(draft, wall, startMm, secondInwardMm),
+  ];
+  return `M ${points.map((point) => `${point.x} ${point.y}`).join(" L ")} Z`;
+}
+
+const ksAppendix2OpeningPresets = new Set([
+  "door-single",
+  "door-double",
+  "door-sliding",
+  "door-folding",
+  "window-fixed",
+  "window-sliding-2",
+  "window-4",
+  "window-6",
+  "window-project",
+]);
+
+function openingSymbolSource(presetId: string) {
+  return ksAppendix2OpeningPresets.has(presetId)
+    ? "KS F 1501 부표 2"
+    : "KS F 1501 부표 2 형상 파생·현장용";
 }
 
 function DoorLeaf({
@@ -197,20 +214,18 @@ function DoorLeaf({
   const openedVector = { x: opened.x - hinge.x, y: opened.y - hinge.y };
   const cross = closedVector.x * openedVector.y - closedVector.y * openedVector.x;
   return (
-    <g fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke">
-      <path d={linePath(hinge, opened)} />
-      <path d={`M ${closed.x} ${closed.y} A ${radius} ${radius} 0 0 ${cross > 0 ? 1 : 0} ${opened.x} ${opened.y}`} strokeDasharray="55 34" />
-      <circle cx={hinge.x} cy={hinge.y} r={32} fill={color} stroke="none" />
+    <g fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="square" strokeLinejoin="miter" vectorEffect="non-scaling-stroke">
+      <path data-symbol-part="door-leaf" d={linePath(hinge, opened)} />
+      <path data-symbol-part="door-swing-arc" data-swing-angle-deg="90" d={`M ${closed.x} ${closed.y} A ${radius} ${radius} 0 0 ${cross > 0 ? 1 : 0} ${opened.x} ${opened.y}`} strokeWidth={Math.max(1.05, strokeWidth * 0.58)} />
     </g>
   );
 }
 
-function DoorSymbol({ draft, item, geometry, color, fillColor, strokeWidth }: {
+function DoorSymbol({ draft, item, geometry, color, strokeWidth }: {
   draft: SiteLayoutDraftMm;
   item: SiteLayoutItemMm;
   geometry: ItemGeometryMm;
   color: string;
-  fillColor: string;
   strokeWidth: number;
 }) {
   if (!item.wall || geometry.spanStartMm === undefined || geometry.spanEndMm === undefined) return null;
@@ -220,9 +235,9 @@ function DoorSymbol({ draft, item, geometry, color, fillColor, strokeWidth }: {
   const inward = item.swing === "outside" ? -1 : 1;
   const presetId = item.presetId ?? "door-single";
   const wallOuter = -draft.roomWallThicknessMm * 0.88;
-  const wallCenter = -draft.roomWallThicknessMm * 0.5;
   const wallInner = -draft.roomWallThicknessMm * 0.12;
-  const threshold = wallStrokePath(draft, item.wall, start, end, wallCenter);
+  const officialKsSymbol = ksAppendix2OpeningPresets.has(presetId);
+  const planSource = openingSymbolSource(presetId);
   const frameBand = [
     pointForWall(draft, item.wall, start, wallOuter),
     pointForWall(draft, item.wall, end, wallOuter),
@@ -230,44 +245,45 @@ function DoorSymbol({ draft, item, geometry, color, fillColor, strokeWidth }: {
     pointForWall(draft, item.wall, start, wallInner),
   ];
   const openingFrame = (
-    <g>
-      <polygon
-        points={frameBand.map((point) => `${point.x},${point.y}`).join(" ")}
-        fill={fillColor}
-        fillOpacity={0.58}
-        stroke="none"
-      />
-      <path d={threshold} fill="none" stroke={color} strokeWidth={Math.max(1.6, strokeWidth * 0.82)} vectorEffect="non-scaling-stroke" />
-      <path d={linePath(frameBand[0], frameBand[3])} fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
-      <path d={linePath(frameBand[1], frameBand[2])} fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+    <g data-drawing-standard={officialKsSymbol ? "KS F 1501" : undefined} data-plan-source={planSource}>
+      <path data-symbol-part="opening-jamb" d={linePath(frameBand[0], frameBand[3])} fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+      <path data-symbol-part="opening-jamb" d={linePath(frameBand[1], frameBand[2])} fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
     </g>
   );
 
   if (presetId === "door-sliding") {
-    const trackA = wallStrokePath(draft, item.wall, start, end, -draft.roomWallThicknessMm * 0.72);
-    const trackB = wallStrokePath(draft, item.wall, start, end, -draft.roomWallThicknessMm * 0.28);
-    const arrowStart = pointForWall(draft, item.wall, start + span * 0.25, 130 * inward);
-    const arrowEnd = pointForWall(draft, item.wall, start + span * 0.75, 130 * inward);
+    const firstTrack = -draft.roomWallThicknessMm * 0.68;
+    const secondTrack = -draft.roomWallThicknessMm * 0.32;
+    const leafThickness = Math.min(40, Math.max(24, draft.roomWallThicknessMm * 0.18));
+    const pocketLeafSpan = span * 0.32;
+    const firstLeafEndMm = start + pocketLeafSpan;
+    const secondLeafStartMm = end - pocketLeafSpan;
+    const meetingMm = start + span / 2;
+    const centerTrack = (firstTrack + secondTrack) / 2;
     return (
-      <g fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke">
+      <g data-drawing-standard={officialKsSymbol ? "KS F 1501" : undefined} data-plan-source={planSource} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="square" strokeLinejoin="miter" vectorEffect="non-scaling-stroke">
         {openingFrame}
-        <path d={trackA} />
-        <path d={trackB} />
-        <path d={linePath(arrowStart, arrowEnd)} />
-        <path d={arrowHeadPath(arrowStart, arrowEnd)} />
+        <path data-symbol-part="sliding-door-track" d={wallStrokePath(draft, item.wall, start, end, firstTrack)} strokeWidth={Math.max(0.9, strokeWidth * 0.55)} />
+        <path data-symbol-part="sliding-door-track" d={wallStrokePath(draft, item.wall, start, end, secondTrack)} strokeWidth={Math.max(0.9, strokeWidth * 0.55)} />
+        <path data-symbol-part="sliding-door-leaf" data-panel-index="1" d={wallBandPath(draft, item.wall, start, firstLeafEndMm, firstTrack - leafThickness / 2, firstTrack + leafThickness / 2)} />
+        <path data-symbol-part="sliding-door-clear-opening" d={wallStrokePath(draft, item.wall, firstLeafEndMm, secondLeafStartMm, centerTrack)} strokeWidth={Math.max(0.9, strokeWidth * 0.55)} />
+        <path data-symbol-part="sliding-door-leaf" data-panel-index="2" d={wallBandPath(draft, item.wall, secondLeafStartMm, end, secondTrack - leafThickness / 2, secondTrack + leafThickness / 2)} />
+        <path data-symbol-part="sliding-door-meeting-stile" d={linePath(pointForWall(draft, item.wall, meetingMm, wallOuter), pointForWall(draft, item.wall, meetingMm, wallInner))} />
       </g>
     );
   }
 
   if (presetId === "door-folding") {
-    const points = Array.from({ length: 7 }, (_, index) => {
-      const along = start + (span * index) / 6;
-      return pointForWall(draft, item.wall as SiteLayoutWallSide, along, index % 2 === 0 ? 0 : 170 * inward);
+    const foldCount = 4;
+    const foldingDepth = Math.min(span * 0.34, Math.max(210, span / foldCount));
+    const points = Array.from({ length: foldCount + 1 }, (_, index) => {
+      const along = start + (span * index) / foldCount;
+      return pointForWall(draft, item.wall as SiteLayoutWallSide, along, index % 2 === 0 ? 0 : foldingDepth * inward);
     });
     return (
-      <g fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke">
+      <g data-drawing-standard={officialKsSymbol ? "KS F 1501" : undefined} data-plan-source={planSource} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="square" strokeLinejoin="miter" vectorEffect="non-scaling-stroke">
         {openingFrame}
-        <polyline points={points.map((point) => `${point.x},${point.y}`).join(" ")} />
+        <polyline data-symbol-part="folding-door-leaves" data-fold-count={foldCount} points={points.map((point) => `${point.x},${point.y}`).join(" ")} />
       </g>
     );
   }
@@ -276,7 +292,7 @@ function DoorSymbol({ draft, item, geometry, color, fillColor, strokeWidth }: {
   if (doubleDoor) {
     const split = presetId === "door-unequal" ? start + span * 0.65 : start + span / 2;
     return (
-      <g>
+      <g data-drawing-standard={officialKsSymbol ? "KS F 1501" : undefined} data-plan-source={planSource}>
         {openingFrame}
         <DoorLeaf draft={draft} wall={item.wall} hingeMm={start} closedMm={split} inwardMm={(split - start) * inward} color={color} strokeWidth={strokeWidth} />
         <DoorLeaf draft={draft} wall={item.wall} hingeMm={end} closedMm={split} inwardMm={(end - split) * inward} color={color} strokeWidth={strokeWidth} />
@@ -287,7 +303,7 @@ function DoorSymbol({ draft, item, geometry, color, fillColor, strokeWidth }: {
   const hinge = item.handing === "right" ? end : start;
   const closed = item.handing === "right" ? start : end;
   return (
-    <g>
+    <g data-drawing-standard={officialKsSymbol ? "KS F 1501" : undefined} data-plan-source={planSource}>
       {openingFrame}
       <DoorLeaf draft={draft} wall={item.wall} hingeMm={hinge} closedMm={closed} inwardMm={span * inward} color={color} strokeWidth={strokeWidth} />
     </g>
@@ -302,50 +318,79 @@ function windowPartitionCount(presetId?: string) {
   return 1;
 }
 
-function WindowSymbol({ draft, item, geometry, color, fillColor, strokeWidth }: {
+function WindowSymbol({ draft, item, geometry, color, strokeWidth }: {
   draft: SiteLayoutDraftMm;
   item: SiteLayoutItemMm;
   geometry: ItemGeometryMm;
   color: string;
-  fillColor: string;
   strokeWidth: number;
 }) {
   if (!item.wall || geometry.spanStartMm === undefined || geometry.spanEndMm === undefined) return null;
   const start = geometry.spanStartMm;
   const end = geometry.spanEndMm;
   const count = windowPartitionCount(item.presetId);
-  // A window is shown as a centered three-line frame inside the opening.
-  // Keeping the frame away from both wall faces prevents the opening from
-  // becoming a solid cyan bar when an A3 sheet is fitted to a small screen.
+  // KS F 1501 부표 2의 평면 표시기호처럼 벽 개구부 안에 창틀과
+  // 미서기 창짝을 중첩해 그린다. 이동 방향 화살표와 입면용 X 표시는 쓰지 않는다.
   const outerOffset = -draft.roomWallThicknessMm * 0.82;
   const centerOffset = -draft.roomWallThicknessMm * 0.5;
   const innerOffset = -draft.roomWallThicknessMm * 0.18;
-  const fillPoints = [
-    pointForWall(draft, item.wall, start, outerOffset),
-    pointForWall(draft, item.wall, end, outerOffset),
-    pointForWall(draft, item.wall, end, innerOffset),
-    pointForWall(draft, item.wall, start, innerOffset),
-  ];
-  const mullions = Array.from({ length: Math.max(0, count - 1) }, (_, index) => {
-    const along = start + ((end - start) * (index + 1)) / count;
-    return wallStrokePath(draft, item.wall as SiteLayoutWallSide, along, along, outerOffset);
-  });
+  const openingSpan = end - start;
+  const slidingWindow = item.presetId === "window-sliding-2" || item.presetId === "window-3" || item.presetId === "window-4";
+  const presetId = item.presetId ?? "window-fixed";
+  const officialKsSymbol = ksAppendix2OpeningPresets.has(presetId);
+  const planSource = openingSymbolSource(presetId);
+  const firstTrack = -draft.roomWallThicknessMm * 0.71;
+  const secondTrack = -draft.roomWallThicknessMm * 0.29;
+  const sashThickness = Math.min(28, Math.max(16, draft.roomWallThicknessMm * 0.12));
+  const symbolicMeetingOverlapMm = Math.min(openingSpan * 0.06, draft.roomWallThicknessMm);
+  const casementHingeMm = item.handing === "right" ? end : start;
+  const casementClosedMm = item.handing === "right" ? start : end;
+  const casementHinge = pointForWall(draft, item.wall, casementHingeMm, centerOffset);
+  const casementClosed = pointForWall(draft, item.wall, casementClosedMm, centerOffset);
+  // KS F 1501 부표 2의 외여닫이창은 문처럼 90°로 세우지 않고,
+  // 창짝을 약 45° 바깥으로 연 평면 표시기호로 그린다.
+  const casementDirection = item.handing === "right" ? -1 : 1;
+  const casementOpenAlongMm = casementHingeMm + (casementDirection * openingSpan) / Math.SQRT2;
+  const casementOpened = pointForWall(draft, item.wall, casementOpenAlongMm, centerOffset - openingSpan / Math.SQRT2);
+  const casementClosedVector = { x: casementClosed.x - casementHinge.x, y: casementClosed.y - casementHinge.y };
+  const casementOpenedVector = { x: casementOpened.x - casementHinge.x, y: casementOpened.y - casementHinge.y };
+  const casementArcSweep = casementClosedVector.x * casementOpenedVector.y - casementClosedVector.y * casementOpenedVector.x > 0 ? 1 : 0;
   return (
-    <g fill="none" stroke={color} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke">
-      <polygon points={fillPoints.map((point) => `${point.x},${point.y}`).join(" ")} fill={fillColor} fillOpacity={0.66} stroke="none" />
-      <path d={wallStrokePath(draft, item.wall, start, end, outerOffset)} />
-      <path d={wallStrokePath(draft, item.wall, start, end, centerOffset)} opacity={0.72} strokeWidth={Math.max(1.2, strokeWidth * 0.68)} />
-      <path d={wallStrokePath(draft, item.wall, start, end, innerOffset)} />
-      <path d={linePath(pointForWall(draft, item.wall, start, outerOffset), pointForWall(draft, item.wall, start, innerOffset))} />
-      <path d={linePath(pointForWall(draft, item.wall, end, outerOffset), pointForWall(draft, item.wall, end, innerOffset))} />
-      {mullions.map((_, index) => {
+    <g data-drawing-standard={officialKsSymbol ? "KS F 1501" : undefined} data-plan-source={planSource} data-window-operation={slidingWindow ? "sliding" : item.presetId === "window-project" ? "casement-out" : "fixed"} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="square" strokeLinejoin="miter" vectorEffect="non-scaling-stroke">
+      {!slidingWindow && <>
+        <path data-symbol-part="fixed-window-frame" d={wallStrokePath(draft, item.wall, start, end, outerOffset)} />
+        <path data-symbol-part="fixed-window-glazing" d={wallStrokePath(draft, item.wall, start, end, centerOffset)} strokeWidth={Math.max(1.15, strokeWidth * 0.68)} />
+        <path data-symbol-part="fixed-window-frame" d={wallStrokePath(draft, item.wall, start, end, innerOffset)} />
+      </>}
+      <path data-symbol-part="window-jamb" d={linePath(pointForWall(draft, item.wall, start, outerOffset), pointForWall(draft, item.wall, start, innerOffset))} />
+      <path data-symbol-part="window-jamb" d={linePath(pointForWall(draft, item.wall, end, outerOffset), pointForWall(draft, item.wall, end, innerOffset))} />
+      {!slidingWindow && Array.from({ length: Math.max(0, count - 1) }, (_, index) => {
         const along = start + ((end - start) * (index + 1)) / count;
         const first = pointForWall(draft, item.wall as SiteLayoutWallSide, along, outerOffset);
         const second = pointForWall(draft, item.wall as SiteLayoutWallSide, along, innerOffset);
-        return <path key={along} d={linePath(first, second)} />;
+        return <path data-symbol-part="window-mullion" key={along} d={linePath(first, second)} />;
       })}
+      {slidingWindow && (
+        <>
+          <path data-symbol-part="sliding-window-track" d={wallStrokePath(draft, item.wall, start, end, firstTrack)} strokeWidth={Math.max(0.85, strokeWidth * 0.52)} />
+          <path data-symbol-part="sliding-window-track" d={wallStrokePath(draft, item.wall, start, end, secondTrack)} strokeWidth={Math.max(0.85, strokeWidth * 0.52)} />
+          {Array.from({ length: count }, (_, index) => {
+            const panelWidth = (openingSpan + symbolicMeetingOverlapMm * Math.max(0, count - 1)) / count;
+            const panelStart = start + index * (panelWidth - symbolicMeetingOverlapMm);
+            const track = index % 2 === 0 ? firstTrack : secondTrack;
+            return <path data-symbol-part="sliding-window-leaf" data-panel-index={index + 1} key={index} d={wallBandPath(draft, item.wall as SiteLayoutWallSide, panelStart, panelStart + panelWidth, track - sashThickness / 2, track + sashThickness / 2)} />;
+          })}
+        </>
+      )}
       {item.presetId === "window-project" && (
-        <path d={wallStrokePath(draft, item.wall, start + (end - start) * 0.16, end - (end - start) * 0.16, 180)} strokeDasharray="50 30" />
+        <g data-symbol-part="casement-window-operation" data-swing="outside" data-swing-angle-deg="45">
+          <path data-symbol-part="casement-window-leaf" d={linePath(casementHinge, casementOpened)} />
+          <path
+            data-symbol-part="casement-window-swing-arc"
+            d={`M ${casementClosed.x} ${casementClosed.y} A ${openingSpan} ${openingSpan} 0 0 ${casementArcSweep} ${casementOpened.x} ${casementOpened.y}`}
+            strokeWidth={Math.max(1.05, strokeWidth * 0.58)}
+          />
+        </g>
       )}
     </g>
   );
@@ -365,20 +410,38 @@ function GenericItemSymbol({ item, geometry, color, wallHatchId, strokeWidth }: 
 
   if (item.kind === "pillar") {
     if (item.presetId === "pillar-round") {
-      return <circle cx={centerX} cy={centerY} r={Math.min(width, height) / 2} fill={`url(#${wallHatchId})`} {...common} />;
+      const radius = Math.min(width, height) / 2;
+      return <circle data-drawing-standard="KS F 1501" data-plan-source="KS F 1501 부표 3" data-symbol-part="rc-pillar-cut" cx={centerX} cy={centerY} r={radius} fill={`url(#${wallHatchId})`} strokeLinecap="square" strokeLinejoin="miter" {...common} />;
     }
-    return <rect x={x} y={y} width={width} height={height} fill={`url(#${wallHatchId})`} {...common} />;
+    return <rect data-drawing-standard="KS F 1501" data-plan-source="KS F 1501 부표 3" data-symbol-part="rc-pillar-cut" x={x} y={y} width={width} height={height} fill={`url(#${wallHatchId})`} strokeLinecap="square" strokeLinejoin="miter" {...common} />;
   }
   if (item.kind === "beam") {
-    return <rect x={x} y={y} width={width} height={height} fill="none" strokeDasharray="75 38" {...common} />;
+    const vertical = geometry.rotation === 90;
+    const hiddenEdges = vertical
+      ? [`M ${x} ${y} V ${y + height}`, `M ${x + width} ${y} V ${y + height}`]
+      : [`M ${x} ${y} H ${x + width}`, `M ${x} ${y + height} H ${x + width}`];
+    return (
+      <g data-drawing-standard="KS F 1540·1541·1542" data-symbol-part="beam-hidden-double-line" data-beam-axis={vertical ? "vertical" : "horizontal"} fill="none" strokeLinecap="butt">
+        {hiddenEdges.map((edge, index) => <path data-symbol-part="beam-hidden-edge" key={index} d={edge} strokeDasharray="75 38" {...common} />)}
+      </g>
+    );
   }
   if (item.presetId === "aircon-ceiling") {
+    const chamfer = Math.min(width, height) * 0.02;
+    const innerInset = Math.min(width, height) * 0.02;
+    const centerInset = Math.min(width, height) * 0.12;
+    const ventInset = Math.min(width, height) * 0.07;
+    // 현장 제공 DWG의 카세트 블록이며 KS F 1501 표시기호로 분류하지 않는다.
     return (
-      <g fill="none" {...common}>
-        <rect x={x} y={y} width={width} height={height} />
-        <rect x={x + width * 0.12} y={y + height * 0.12} width={width * 0.76} height={height * 0.76} />
-        <path d={`M ${x} ${y} L ${x + width} ${y + height} M ${x + width} ${y} L ${x} ${y + height}`} />
-        <circle cx={centerX} cy={centerY} r={Math.min(width, height) * 0.11} />
+      <g data-symbol-source="supplied-dwg" data-symbol-part="cassette-ac" fill="none" {...common}>
+        <path d={`M ${x + chamfer} ${y} H ${x + width - chamfer} L ${x + width} ${y + chamfer} V ${y + height - chamfer} L ${x + width - chamfer} ${y + height} H ${x + chamfer} L ${x} ${y + height - chamfer} V ${y + chamfer} Z`} />
+        <rect x={x + innerInset} y={y + innerInset} width={width - innerInset * 2} height={height - innerInset * 2} />
+        <rect x={x + centerInset} y={y + centerInset} width={width - centerInset * 2} height={height - centerInset * 2} />
+        <path d={`M ${x + centerInset} ${y + ventInset} H ${x + width - centerInset} L ${x + width - centerInset - ventInset * 0.55} ${y + centerInset - innerInset} H ${x + centerInset + ventInset * 0.55} Z`} />
+        <path d={`M ${x + centerInset} ${y + height - ventInset} H ${x + width - centerInset} L ${x + width - centerInset - ventInset * 0.55} ${y + height - centerInset + innerInset} H ${x + centerInset + ventInset * 0.55} Z`} />
+        <path d={`M ${x + ventInset} ${y + centerInset} V ${y + height - centerInset} L ${x + centerInset - innerInset} ${y + height - centerInset - ventInset * 0.55} V ${y + centerInset + ventInset * 0.55} Z`} />
+        <path d={`M ${x + width - ventInset} ${y + centerInset} V ${y + height - centerInset} L ${x + width - centerInset + innerInset} ${y + height - centerInset - ventInset * 0.55} V ${y + centerInset + ventInset * 0.55} Z`} />
+        <text x={centerX} y={centerY} dy="0.35em" textAnchor="middle" fill={color} stroke="none" fontSize={Math.min(width, height) * 0.16} fontWeight="700">A/C</text>
       </g>
     );
   }
@@ -706,9 +769,13 @@ export function SiteLayoutGeometryView({
   const openingCuts = visibleItems
     .map((item) => computeOpeningCutGeometryMm(draft, item))
     .filter((rect): rect is GeometryRectMm => rect !== null);
-  const symbolStrokeWidth = mode === "paper" ? 3.2 : 1.55;
-  const pillarStrokeWidth = mode === "paper" ? 1.05 : 1;
-  const openingStrokeWidth = mode === "paper" ? 2.75 : 2.5;
+  // Keep the same plotted line hierarchy in model, A3 preview, and PDF.
+  // Cut structures are strongest, opening frames are medium, and hidden
+  // overhead members remain the lightest line type.
+  const cutStrokeWidth = 2.05;
+  const openingStrokeWidth = 1.8;
+  const fixtureStrokeWidth = 1.55;
+  const hiddenStrokeWidth = 1.35;
 
   function modelPoint(event: { clientX: number; clientY: number; currentTarget: SVGElement }) {
     const bounds = event.currentTarget.ownerSVGElement?.getBoundingClientRect()
@@ -797,10 +864,10 @@ export function SiteLayoutGeometryView({
       <rect x={0} y={0} width={draft.roomWidthMm} height={draft.roomHeightMm} fill={palette.room} />
       <g mask={`url(#${wallMaskId})`}>
         {Object.entries(wallGeometry).map(([wall, rect]) => (
-          <rect key={wall} {...svgRect(rect)} fill={`url(#${hatchId})`} stroke={palette.wallLine} strokeWidth={1.25} vectorEffect="non-scaling-stroke" />
+          <rect key={wall} {...svgRect(rect)} fill={`url(#${hatchId})`} stroke={palette.wallLine} strokeWidth={cutStrokeWidth} vectorEffect="non-scaling-stroke" />
         ))}
       </g>
-      <rect x={0} y={0} width={draft.roomWidthMm} height={draft.roomHeightMm} fill="none" stroke={palette.wallLine} strokeWidth={1.15} vectorEffect="non-scaling-stroke" />
+      <rect x={0} y={0} width={draft.roomWidthMm} height={draft.roomHeightMm} fill="none" stroke={palette.wallLine} strokeWidth={cutStrokeWidth} vectorEffect="non-scaling-stroke" />
 
       {showDimensions && <DimensionLayer draft={draft} palette={palette} topOffsetMm={dimensionLayout.overallOffsetMm.top} leftOffsetMm={dimensionLayout.overallOffsetMm.left} />}
       {showDimensions && mode === "paper" && <ObjectDimensionLayer draft={draft} segments={dimensionLayout.segments} palette={palette} />}
@@ -848,11 +915,17 @@ export function SiteLayoutGeometryView({
               />
             )}
             {item.kind === "door" ? (
-              <DoorSymbol draft={draft} item={item} geometry={geometry} color={color} fillColor={palette.openingFill} strokeWidth={openingStrokeWidth} />
+              <DoorSymbol draft={draft} item={item} geometry={geometry} color={color} strokeWidth={openingStrokeWidth} />
             ) : item.kind === "window" ? (
-              <WindowSymbol draft={draft} item={item} geometry={geometry} color={color} fillColor={palette.openingFill} strokeWidth={openingStrokeWidth} />
+              <WindowSymbol draft={draft} item={item} geometry={geometry} color={color} strokeWidth={openingStrokeWidth} />
             ) : (
-              <GenericItemSymbol item={item} geometry={geometry} color={color} wallHatchId={hatchId} strokeWidth={item.kind === "pillar" ? pillarStrokeWidth : symbolStrokeWidth} />
+              <GenericItemSymbol
+                item={item}
+                geometry={geometry}
+                color={color}
+                wallHatchId={hatchId}
+                strokeWidth={item.kind === "pillar" ? cutStrokeWidth : item.kind === "beam" ? hiddenStrokeWidth : fixtureStrokeWidth}
+              />
             )}
             {showLabels && <ItemLabel draft={draft} item={item} geometry={geometry} color={color} compact={compact} paper={mode === "paper"} placement={itemLabelLayout.placements.get(item.id)} />}
           </g>

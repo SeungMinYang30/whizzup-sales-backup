@@ -14542,6 +14542,84 @@ button:is(
   .site-layout-canvas-head > div:first-child span { display: none; }
 }
 
+/* KS F 1501/F 1502 계열 평면제도 심벌: 팔레트와 실제 도면의 선종을 통일한다. */
+.site-layout-canvas-panel > .site-layout-canvas-head {
+  display: none !important;
+}
+
+.site-layout-cad-symbol.is-ks-plan-symbol {
+  overflow: visible;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+
+.site-layout-cad-symbol.is-ks-plan-symbol .cad-wall-cut {
+  stroke-width: 1.9;
+}
+
+.site-layout-cad-symbol.is-ks-plan-symbol .cad-door-leaf,
+.site-layout-cad-symbol.is-ks-plan-symbol .cad-opening-frame,
+.site-layout-cad-symbol.is-ks-plan-symbol .cad-cut-surface {
+  stroke-width: 1.7;
+}
+
+.site-layout-cad-symbol.is-ks-plan-symbol .cad-swing-arc,
+.site-layout-cad-symbol.is-ks-plan-symbol .cad-operation,
+.site-layout-cad-symbol.is-ks-plan-symbol .cad-fixed-mark {
+  fill: none;
+  stroke-width: 1.2;
+}
+
+.site-layout-cad-symbol.is-ks-plan-symbol .cad-hidden {
+  fill: none;
+  stroke-width: 1.35;
+  stroke-dasharray: 7 4;
+}
+
+.site-layout-cad-symbol.is-ks-plan-symbol .cad-hatch-line {
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
+.site-layout-cad-symbol.is-ks-plan-symbol .cad-center {
+  stroke-width: 1;
+  stroke-dasharray: 9 3 2 3;
+  opacity: .42;
+}
+
+.site-layout-model-space {
+  position: relative;
+}
+
+.site-layout-pending-placement-overlay {
+  position: absolute;
+  z-index: 24;
+  top: 10px;
+  left: 50%;
+  max-width: min(88%, 520px);
+  min-height: 38px;
+  padding: 8px 14px;
+  transform: translateX(-50%);
+  overflow: hidden;
+  border: 1px solid rgba(100, 227, 238, .72);
+  border-radius: 9px;
+  background: rgba(9, 28, 38, .94);
+  color: #d9fbff;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .26);
+}
+
+@media (max-width: 760px) {
+  .site-layout-pending-placement-overlay {
+    top: 8px;
+    min-height: 42px;
+    font-size: 13px;
+  }
+}
+
 /* 2026-08-22: mobile density and alignment refinements */
 @media (max-width: 760px) {
   .dashboard-records .records-heading {

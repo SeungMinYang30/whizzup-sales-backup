@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent, type PointerEvent as ReactPointerEvent } from "react";
 import SiteLayoutGeometryView from "./site-layout-geometry-view";
 import { downloadFile, fileAsDataUrl, siteLayoutPdfFromSvg } from "./site-layout-export";
 import { computeSvgViewBox, modelPointFromClient, normalizeDraft, validateDraft, type SiteLayoutDraftMm, type SiteLayoutItemMm } from "../lib/site-layout-geometry";
@@ -36,6 +36,30 @@ type InternetMode = "" | "wired" | "wireless" | "both" | "none";
 type NetworkType = "" | "education" | "private" | "both" | "unknown";
 type GuideStepId = "room" | "door" | "window" | "structure" | "facility" | "checklist" | "review";
 type StageCheckKey = Exclude<GuideStepId, "review">;
+
+const PLAN_SYMBOL_STANDARD = {
+  drawing: "KS F 1501",
+  planAppendix: "KS F 1501 부표 2",
+  openingTerms: "KS F 1502",
+  cad: "KS F 1540·1541·1542",
+  suppliedCassette: "제공 DWG · 천장_냉난방기",
+} as const;
+
+const KS_APPENDIX_2_SYMBOLS = new Set<LayoutSymbol>([
+  "door-single",
+  "door-double",
+  "door-sliding",
+  "door-folding",
+  "window-fixed",
+  "window-sliding-2",
+  "window-4",
+  "window-6",
+  "window-project",
+]);
+
+// Older saved drawings can still contain these field-derived presets, but the
+// picker only offers symbols that map directly to the KS F 1501 appendix.
+const LEGACY_DERIVED_OPENING_SYMBOLS = new Set<LayoutSymbol>(["door-unequal", "window-3"]);
 type StageCheckStatus = "pending" | "complete" | "none" | "review";
 type WorkflowMode = "guided" | "direct";
 type RemoteOperation = "idle" | "listing" | "saving" | "retrying" | "loading" | "deleting";
@@ -177,17 +201,17 @@ const stepQuestionCounts: Record<GuideStepId, number> = {
 };
 
 const itemPresets: ItemPreset[] = [
-  { id: "door-single", kind: "door", group: "문", label: "단문형", defaultName: "단문형 출입문", code: "A-DR01", width: 0.9, height: 0.18, guide: "힌지와 90° 개폐 반경을 함께 표시합니다." },
-  { id: "door-double", kind: "door", group: "문", label: "양문형", defaultName: "양문형 출입문", code: "A-DR02", width: 1.8, height: 0.18, guide: "두 문짝의 개폐 반경과 중심선을 표시합니다." },
-  { id: "door-unequal", kind: "door", group: "문", label: "비대칭 양문", defaultName: "비대칭 양문형 출입문", code: "A-DR03", width: 1.5, height: 0.18, guide: "주문과 보조문 폭이 다른 양문형 출입문입니다." },
-  { id: "door-sliding", kind: "door", group: "문", label: "좌우 미닫이", defaultName: "좌우 미닫이문", code: "A-DR04", width: 1.8, height: 0.14, guide: "문짝 겹침과 이동 방향을 평면 심벌로 표시합니다." },
-  { id: "door-folding", kind: "door", group: "문", label: "폴딩도어", defaultName: "폴딩도어", code: "A-DR05", width: 2.4, height: 0.18, guide: "접이식 문짝 개수와 문틀 끝에서 끝까지 잰 전체 폭을 확인합니다." },
-  { id: "window-fixed", kind: "window", group: "창호", label: "고정창", defaultName: "고정창", code: "A-W01", width: 1.2, height: 0.14 },
-  { id: "window-sliding-2", kind: "window", group: "창호", label: "슬라이딩 2짝", defaultName: "좌우 슬라이딩창 2짝", code: "A-W02", width: 1.8, height: 0.14 },
-  { id: "window-3", kind: "window", group: "창호", label: "슬라이딩 3짝", defaultName: "좌우 슬라이딩창 3짝", code: "A-W03", width: 2.1, height: 0.14 },
-  { id: "window-4", kind: "window", group: "창호", label: "슬라이딩 4짝", defaultName: "좌우 슬라이딩창 4짝", code: "A-W04", width: 2.7, height: 0.14 },
-  { id: "window-6", kind: "window", group: "창호", label: "6분할 연창", defaultName: "6분할 연창", code: "A-W06", width: 4.2, height: 0.14, guide: "KS F 1515의 100mm 모듈을 참고한 예시값입니다. 실제 창틀 끝에서 끝까지 잰 치수를 우선합니다." },
-  { id: "window-project", kind: "window", group: "창호", label: "상부 힌지 외여닫이창", defaultName: "상부 힌지 외여닫이창", code: "A-W07", width: 1.2, height: 0.14 },
+  { id: "door-single", kind: "door", group: "문", label: "외여닫이문", defaultName: "외여닫이문", code: "A-DR01", width: 0.9, height: 0.18, guide: "평면 형상은 KS F 1501 부표 2, 분류명은 KS F 1502를 기준으로 하며 문짝과 90° 개폐호를 표시합니다." },
+  { id: "door-double", kind: "door", group: "문", label: "쌍여닫이문", defaultName: "쌍여닫이문", code: "A-DR02", width: 1.8, height: 0.18, guide: "KS 평면 표시기호에 맞춰 두 문짝과 각각의 90° 개폐호를 표시합니다." },
+  { id: "door-unequal", kind: "door", group: "문", label: "쌍여닫이문(비대칭)", defaultName: "비대칭 쌍여닫이문", code: "A-DR03", width: 1.5, height: 0.18, guide: "쌍여닫이문의 주문·보조문 폭을 다르게 한 현장용 파생 프리셋입니다." },
+  { id: "door-sliding", kind: "door", group: "문", label: "쌍미닫이문", defaultName: "쌍미닫이문", code: "A-DR04", width: 1.8, height: 0.14, guide: "KS F 1501 부표 2처럼 이동 화살표 없이 두 문짝의 평면 중첩으로 표시합니다." },
+  { id: "door-folding", kind: "door", group: "문", label: "접이문", defaultName: "접이문", code: "A-DR05", width: 2.4, height: 0.18, guide: "KS 분류명인 접이문을 접히는 문짝의 지그재그 평면선으로 표시합니다." },
+  { id: "window-fixed", kind: "window", group: "창호", label: "고정창", defaultName: "고정창", code: "A-W01", width: 1.2, height: 0.14, guide: "KS F 1501 부표 2의 고정 창틀 평면선과 KS F 1502 분류명을 사용합니다." },
+  { id: "window-sliding-2", kind: "window", group: "창호", label: "두짝 미서기창", defaultName: "두짝 미서기창", code: "A-W02", width: 1.8, height: 0.14, guide: "KS F 1501 부표 2처럼 이동 화살표 없이 두 창짝의 평면 중첩으로 표시합니다." },
+  { id: "window-3", kind: "window", group: "창호", label: "미서기창(3짝)", defaultName: "3짝 미서기창", code: "A-W03", width: 2.1, height: 0.14, guide: "미서기창 표준 형상을 세 창짝으로 확장한 현장용 파생 프리셋입니다." },
+  { id: "window-4", kind: "window", group: "창호", label: "네짝 미서기창", defaultName: "네짝 미서기창", code: "A-W04", width: 2.7, height: 0.14, guide: "KS F 1501 부표 2처럼 네 창짝의 중첩을 평면선으로 표시합니다." },
+  { id: "window-6", kind: "window", group: "창호", label: "연속창", defaultName: "연속창", code: "A-W06", width: 4.2, height: 0.14, guide: "KS F 1501 부표 2의 연속창처럼 창틀선과 연속 분할선을 표시하고 실제 창틀 전체 폭을 입력합니다." },
+  { id: "window-project", kind: "window", group: "창호", label: "외여닫이창", defaultName: "외여닫이창", code: "A-W07", width: 1.2, height: 0.14, guide: "KS F 1501 부표 2처럼 한쪽 경첩에서 창짝이 약 45° 바깥으로 열린 평면 표시기호입니다." },
   { id: "screen", kind: "equipment", group: "에어패스 시스템", label: "스크린", defaultName: "XR 전면 스크린", code: "E-SCR", width: 4.1, height: 0.32, catalogName: "가상스포츠시스템 (터치스크린)", catalogSpecification: "에어패스 AP-EDUVR-01 / AP-EDUVR-03 구성", guide: "DWG 기준 화면 높이는 천장 높이에서 센서·여유 약 400mm를 제외해 검토합니다." },
   { id: "equipment", kind: "equipment", group: "에어패스 시스템", label: "프로젝터", defaultName: "빔프로젝터", code: "E-PJ", width: 0.55, height: 0.42, catalogName: "빔프로젝터", catalogSpecification: "Epson 또는 단테크 초단초점 모델", guide: "단테크 초단초점 참고값은 스크린 폭 × 0.42의 투사거리입니다." },
   { id: "kiosk", kind: "equipment", group: "에어패스 시스템", label: "키오스크", defaultName: "운영 키오스크", code: "E-KSK", width: 0.72, height: 0.58, catalogName: "가상스포츠시스템 (터치스크린)", catalogSpecification: "AP-EDUVR 시스템 구성 장비", guide: "DWG 시공 메모 기준 키오스크와 각 장비 배선 거리는 15m 이내를 권장합니다." },
@@ -206,9 +230,18 @@ const itemPresets: ItemPreset[] = [
   { id: "pillar-round", kind: "pillar", group: "기둥·보", label: "원형 기둥", defaultName: "원형 콘크리트 기둥", code: "A-C02", width: 0.45, height: 0.45 },
   { id: "beam", kind: "beam", group: "기둥·보", label: "천장 보", defaultName: "콘크리트 보", code: "A-B01", width: 2.4, height: 0.35, guide: "평면에서는 천장 위 구조물임을 점선으로 표시합니다. 보 하단 높이와 보 사이 유효거리를 확인하세요." },
   { id: "aircon-wall", kind: "fixture", group: "현장 설비", label: "벽걸이 에어컨", defaultName: "벽걸이 에어컨", code: "M-AC01", width: 1.05, height: 0.32 },
-  { id: "aircon-ceiling", kind: "fixture", group: "현장 설비", label: "천장형 에어컨", defaultName: "천장형 에어컨", code: "M-AC02", width: 0.84, height: 0.84 },
+  { id: "aircon-ceiling", kind: "fixture", group: "현장 설비", label: "천장 카세트형 냉난방기", defaultName: "천장 카세트형 냉난방기", code: "M-AC02", width: 1, height: 1, guide: "제공된 도면 모음 DWG에서 158회 반복된 1,000×1,000mm ‘천장_냉난방기’ 블록을 재현한 현장 프리셋이며 KS F 1501·1502 공식 심벌이 아닙니다." },
   { id: "note", kind: "note", group: "기타", label: "현장 메모", defaultName: "현장 확인 사항", code: "A-N01", width: 1.8, height: 0.65 },
 ];
+
+function paletteSourceLabel(preset: ItemPreset) {
+  if (KS_APPENDIX_2_SYMBOLS.has(preset.id)) return PLAN_SYMBOL_STANDARD.planAppendix;
+  if (preset.kind === "door" || preset.kind === "window") return `${PLAN_SYMBOL_STANDARD.planAppendix} 형상 파생·기존 도면 호환`;
+  if (preset.kind === "pillar") return `${PLAN_SYMBOL_STANDARD.drawing} 부표 3`;
+  if (preset.kind === "beam") return PLAN_SYMBOL_STANDARD.cad;
+  if (preset.id === "aircon-ceiling") return "제공 DWG 카세트 블록";
+  return "";
+}
 
 const defaultDraft: LayoutDraft = { organizationName: "", businessRound: 1, roomName: "스마트 체험교실", roomWidth: 13.724, roomHeight: 8.146, roomCeilingHeight: 2.551, roomWallThickness: 0.15, items: [], stageChecks: {}, siteChecklist: defaultSiteChecklist, fieldNotes: "" };
 const basicGroups: PresetGroup[] = ["문", "창호", "기둥·보", "현장 설비"];
@@ -447,13 +480,13 @@ function normalizeStoredDraft(value: unknown): LayoutDraft | null {
         x: clampPercent(item.x),
         y: clampPercent(item.y),
         width: normalizedWidth,
-        height: preset.id === "aircon-ceiling" ? normalizedWidth : positiveDimension(item.height, 1),
+        height: preset.id === "aircon-ceiling" || preset.id === "pillar-round" ? normalizedWidth : positiveDimension(item.height, 1),
         openingHeight: item.openingHeight ? positiveDimension(item.openingHeight, item.kind === "door" ? 2.1 : 1.5) : undefined,
         sillHeight: item.sillHeight === undefined ? undefined : Math.max(0, Number.isFinite(item.sillHeight) ? item.sillHeight : 0.9),
         offset: item.offset === undefined ? undefined : Math.max(0, item.offset),
         wall: item.wall,
         handing: item.handing,
-        swing: item.swing === "outside" ? "outside" : "inside",
+        swing: preset.id === "window-project" || item.swing === "outside" ? "outside" : "inside",
         mountingHeight: item.mountingHeight === undefined ? undefined : Math.max(0, positiveDimension(item.mountingHeight, 2.1)),
         beamBottomHeight: item.beamBottomHeight === undefined ? undefined : Math.max(0, positiveDimension(item.beamBottomHeight, 2.2)),
         beamSpacing: item.beamSpacing === undefined ? undefined : Math.max(0, positiveDimension(item.beamSpacing, 1)),
@@ -645,24 +678,29 @@ function openingCadTransform(wall?: WallSide, swing: OpeningSwing = "inside") {
 }
 
 function CadSymbol({ symbol, compact = false, wall, handing = "left", swing = "inside" }: { symbol: LayoutSymbol; compact?: boolean; wall?: WallSide; handing?: OpeningHand; swing?: OpeningSwing }) {
-  const panels = symbol.startsWith("window-") ? Number(symbol.split("-")[1]) || 3 : 0;
+  const hatchId = `cad-symbol-hatch-${useId().replaceAll(":", "")}`;
+  const panels = symbol === "window-sliding-2" ? 2 : symbol === "window-3" ? 3 : symbol === "window-4" ? 4 : symbol === "window-6" ? 6 : 0;
+  const slidingWindow = symbol === "window-sliding-2" || symbol === "window-3" || symbol === "window-4";
   const shared = { vectorEffect: "non-scaling-stroke" as const };
   const isOpening = symbol.startsWith("door-") || symbol.startsWith("window-");
+  const isStructure = symbol === "pillar" || symbol === "pillar-round" || symbol === "beam";
+  const isOfficialKsOpening = KS_APPENDIX_2_SYMBOLS.has(symbol);
+  const isSuppliedDwgSymbol = symbol === "aircon-ceiling";
   const vertical = isOpening && (wall === "left" || wall === "right");
   const squareCoordinateSymbol = symbol === "pillar" || symbol === "pillar-round" || symbol === "aircon-ceiling";
-  const centerY = squareCoordinateSymbol ? 50 : 35;
   return (
-    <svg className="site-layout-cad-symbol" viewBox={vertical ? "0 0 70 100" : squareCoordinateSymbol ? "0 0 100 100" : "0 0 100 70"} preserveAspectRatio="none" aria-hidden="true">
+    <svg className={`site-layout-cad-symbol ${isOfficialKsOpening || isStructure ? "is-ks-plan-symbol" : isOpening ? "is-derived-plan-symbol" : isSuppliedDwgSymbol ? "is-supplied-dwg-symbol" : ""}`.trim()} viewBox={vertical ? "0 0 70 100" : squareCoordinateSymbol ? "0 0 100 100" : "0 0 100 70"} preserveAspectRatio="xMidYMid meet" aria-hidden="true" data-symbol-source={isOfficialKsOpening ? PLAN_SYMBOL_STANDARD.planAppendix : isOpening ? `${PLAN_SYMBOL_STANDARD.planAppendix} 형상 파생·기존 도면 호환` : symbol === "pillar" || symbol === "pillar-round" ? `${PLAN_SYMBOL_STANDARD.drawing} 부표 3` : symbol === "beam" ? PLAN_SYMBOL_STANDARD.cad : isSuppliedDwgSymbol ? PLAN_SYMBOL_STANDARD.suppliedCassette : undefined} data-terminology-standard={isOpening ? PLAN_SYMBOL_STANDARD.openingTerms : undefined}>
+      <defs><pattern id={hatchId} width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" className="cad-hatch-line" /></pattern></defs>
       <g transform={isOpening ? openingCadTransform(wall, swing) : undefined}><g transform={isOpening && handing === "right" ? "translate(100 0) scale(-1 1)" : undefined}>
-      {symbol === "door-single" && <><path {...shared} d="M2 66H10 M74 66H98 M10 66V3 M74 66A64 64 0 0 0 10 3" /><circle cx="10" cy="66" r="2.6" /><path className="cad-jamb" {...shared} d="M10 61V70 M74 61V70" /></>}
-      {symbol === "door-double" && <><path {...shared} d="M2 66H10 M90 66H98 M10 66V26 M90 66V26 M50 66A40 40 0 0 0 10 26 M50 66A40 40 0 0 1 90 26" /><circle cx="10" cy="66" r="2.6" /><circle cx="90" cy="66" r="2.6" /><path className="cad-jamb" {...shared} d="M10 61V70 M90 61V70" /></>}
-      {symbol === "door-unequal" && <><path {...shared} d="M2 66H10 M90 66H98 M10 66V22 M90 66V38 M62 66A52 52 0 0 0 10 14 M62 66A28 28 0 0 1 90 38" /><circle cx="10" cy="66" r="2.6" /><circle cx="90" cy="66" r="2.6" /><path className="cad-jamb" {...shared} d="M10 61V70 M90 61V70" /></>}
-      {symbol === "door-sliding" && <><path {...shared} d="M2 60H10 M90 60H98 M2 67H10 M90 67H98 M10 50H56V63H10Z M44 43H90V56H44Z M18 34H82 M75 28L83 34L75 40" /><path className="cad-jamb" {...shared} d="M10 55V70 M90 55V70" /></>}
-      {symbol === "door-folding" && <><path {...shared} d="M2 66H10 M90 66H98 M10 66L24 43L38 66L52 43L66 66L80 43L90 66" /><circle cx="10" cy="66" r="2.5" /><circle cx="90" cy="66" r="2.5" /><path className="cad-jamb" {...shared} d="M10 61V70 M90 61V70" /></>}
-      {symbol === "window-fixed" && <><path {...shared} d="M2 28H10 M90 28H98 M2 43H10 M90 43H98 M10 25H90V46H10Z M10 31H90 M10 40H90 M18 28L82 43 M82 28L18 43" /><path className="cad-jamb" {...shared} d="M10 22V49 M90 22V49" /></>}
-      {symbol === "window-sliding-2" && <><path {...shared} d="M2 28H10 M90 28H98 M2 43H10 M90 43H98 M10 25H90V46H10Z M10 31H90 M10 40H90 M50 25V46 M27 20H52 M47 16L53 20L47 24 M73 51H48 M53 47L47 51L53 55" /><path className="cad-jamb" {...shared} d="M10 22V49 M90 22V49" /></>}
-      {panels > 0 && <><path {...shared} d="M2 28H10 M90 28H98 M2 43H10 M90 43H98 M10 25H90V46H10Z M10 31H90 M10 40H90" />{Array.from({ length: panels - 1 }, (_, index) => <path key={index} {...shared} d={`M${((index + 1) * 80) / panels + 10} 25V46`} />)}<path className="cad-jamb" {...shared} d="M10 22V49 M90 22V49" /></>}
-      {symbol === "window-project" && <><path {...shared} d="M2 28H10 M90 28H98 M2 43H10 M90 43H98 M10 25H90V46H10Z M10 31H90 M10 40H90 M18 44L50 16L82 44 M50 16V7 M44 13L50 7L56 13" /><path className="cad-jamb" {...shared} d="M10 22V49 M90 22V49" /></>}
+      {symbol === "door-single" && <><path className="cad-wall-cut" {...shared} d="M2 62H14 M76 62H98" /><path className="cad-door-leaf" {...shared} d="M14 62V0" /><path className="cad-swing-arc" {...shared} d="M76 62A62 62 0 0 0 14 0" /><path className="cad-jamb" {...shared} d="M14 56V68 M76 56V68" /></>}
+      {symbol === "door-double" && <><path className="cad-wall-cut" {...shared} d="M2 62H10 M90 62H98" /><path className="cad-door-leaf" {...shared} d="M10 62V22 M90 62V22" /><path className="cad-swing-arc" {...shared} d="M50 62A40 40 0 0 0 10 22 M50 62A40 40 0 0 1 90 22" /><path className="cad-jamb" {...shared} d="M10 56V68 M90 56V68" /></>}
+      {symbol === "door-unequal" && <><path className="cad-wall-cut" {...shared} d="M2 62H10 M90 62H98" /><path className="cad-door-leaf" {...shared} d="M10 62V10 M90 62V34" /><path className="cad-swing-arc" {...shared} d="M62 62A52 52 0 0 0 10 10 M62 62A28 28 0 0 1 90 34" /><path className="cad-jamb" {...shared} d="M10 56V68 M90 56V68" /></>}
+      {symbol === "door-sliding" && <><path className="cad-wall-cut" {...shared} d="M2 58H10 M90 58H98 M2 66H10 M90 66H98" /><path className="cad-opening-frame" {...shared} d="M10 54H36V61H10Z M36 62H64 M64 63H90V70H64Z" /><path className="cad-jamb" {...shared} d="M10 52V70 M50 54V70 M90 54V72" /></>}
+      {symbol === "door-folding" && <><path className="cad-wall-cut" {...shared} d="M2 62H10 M90 62H98" /><path className="cad-door-leaf" {...shared} d="M10 62L30 41L50 62L70 41L90 62" /><path className="cad-jamb" {...shared} d="M10 56V68 M90 56V68" /></>}
+      {symbol === "window-fixed" && <><path className="cad-wall-cut" {...shared} d="M2 27H10 M90 27H98 M2 44H10 M90 44H98" /><path className="cad-opening-frame" {...shared} d="M10 27H90 M10 35.5H90 M10 44H90" /><path className="cad-jamb" {...shared} d="M10 23V48 M90 23V48" /></>}
+      {slidingWindow && <><path className="cad-wall-cut" {...shared} d="M2 27H10 M90 27H98 M2 44H10 M90 44H98" />{Array.from({ length: panels }, (_, index) => { const overlap = 4; const panelWidth = (80 + overlap * Math.max(0, panels - 1)) / panels; const panelX = 10 + index * (panelWidth - overlap); const panelY = index % 2 === 0 ? 26 : 36; return <rect className="cad-opening-frame" key={index} {...shared} x={panelX} y={panelY} width={panelWidth} height="9" />; })}<path className="cad-jamb" {...shared} d="M10 23V48 M90 23V48" /></>}
+      {symbol === "window-6" && <><path className="cad-wall-cut" {...shared} d="M2 27H10 M90 27H98 M2 44H10 M90 44H98" /><path className="cad-opening-frame" {...shared} d="M10 27H90 M10 35.5H90 M10 44H90" />{Array.from({ length: 5 }, (_, index) => <path className="cad-opening-frame" key={index} {...shared} d={`M${10 + ((index + 1) * 80) / 6} 27V44`} />)}<path className="cad-jamb" {...shared} d="M10 23V48 M90 23V48" /></>}
+      {symbol === "window-project" && <><path className="cad-wall-cut" {...shared} d="M2 50H20 M80 50H98 M2 66H20 M80 66H98" /><path className="cad-opening-frame" {...shared} d="M20 50H80 M20 58H80 M20 66H80" /><path className="cad-operation" {...shared} d="M20 58L62.43 15.57" /><path className="cad-swing-arc" {...shared} d="M80 58A60 60 0 0 0 62.43 15.57" /><path className="cad-jamb" {...shared} d="M20 46V70 M80 46V70" /></>}
       {symbol === "screen" && <><path {...shared} d="M4 15H96V50H4Z M9 20H91V45H9Z M50 50V61 M36 61H64" /><path className="cad-dash" {...shared} d="M50 12V54" /></>}
       {symbol === "equipment" && <><path {...shared} d="M20 19H77V53H20Z M30 53V61H67V53 M77 27L93 32V40L77 45" /><circle cx="85" cy="36" r="4" /></>}
       {symbol === "kiosk" && <><path {...shared} d="M27 8H73V45H27Z M33 14H67V37H33Z M42 45V58 M58 45V58 M30 58H70V64H30Z" /><circle cx="50" cy="41" r="2" /></>}
@@ -677,13 +715,12 @@ function CadSymbol({ symbol, compact = false, wall, handing = "left", swing = "i
       {symbol === "power-lan" && <><circle cx="50" cy="35" r="25" /><path {...shared} d="M37 18V35 M63 18V35 M35 35H65 M50 35V57" /><text x="50" y="66" textAnchor="middle">LAN</text></>}
       {symbol === "table" && <><circle cx="50" cy="35" r="21" /><path {...shared} d="M50 14V56 M29 35H71 M35 20L65 50 M65 20L35 50" />{[12, 50, 88].map((x) => <circle key={`t-${x}`} cx={x} cy="35" r="7" />)}<circle cx="50" cy="7" r="6" /><circle cx="50" cy="63" r="6" /></>}
       {symbol === "chair" && <><rect x="29" y="22" width="42" height="35" rx="5" /><path {...shared} d="M29 30H18V52H29 M71 30H82V52H71 M35 57V65 M65 57V65" /></>}
-      {symbol === "pillar" && <><rect x="18" y="18" width="64" height="64" /><rect x="24" y="24" width="52" height="52" /><path className="cad-center" {...shared} d="M50 8V92 M8 50H92" /></>}
-      {symbol === "pillar-round" && <><circle cx="50" cy="50" r="32" /><circle cx="50" cy="50" r="25" /><path className="cad-center" {...shared} d="M50 8V92 M8 50H92" /></>}
-      {symbol === "beam" && <><rect className="cad-dash" x="5" y="20" width="90" height="30" /><path className="cad-center" {...shared} d="M3 35H97" />{!compact && <text x="50" y="15" textAnchor="middle">BEAM</text>}</>}
+      {symbol === "pillar" && <rect className="cad-cut-surface" x="18" y="18" width="64" height="64" fill={`url(#${hatchId})`} />}
+      {symbol === "pillar-round" && <circle className="cad-cut-surface" cx="50" cy="50" r="32" fill={`url(#${hatchId})`} />}
+      {symbol === "beam" && <><path className="cad-hidden" {...shared} d="M5 22H95 M5 48H95" />{!compact && <text x="50" y="15" textAnchor="middle">보</text>}</>}
       {symbol === "aircon-wall" && <><rect x="8" y="18" width="84" height="34" rx="5" /><path {...shared} d="M15 31H85 M20 39H80 M30 47H70" /><circle cx="79" cy="25" r="2" /></>}
-      {symbol === "aircon-ceiling" && <><rect x="18" y="18" width="64" height="64" /><rect x="27" y="27" width="46" height="46" /><path {...shared} d="M27 27L73 73 M73 27L27 73 M50 27V73 M27 50H73" /><circle cx="50" cy="50" r="7" /></>}
+      {symbol === "aircon-ceiling" && <><path {...shared} d="M8 6H92L94 8V92L92 94H8L6 92V8Z M10 8H90L92 10V90L90 92H10L8 90V10Z M18 18H82V82H18Z" /><path {...shared} d="M30 8H70L72 10V15H28V10Z M28 85H72V90L70 92H30L28 90Z M8 30L10 28H15V72H10L8 70Z M85 28H90L92 30V70L90 72H85Z" /><text x="50" y="54" textAnchor="middle">A/C</text></>}
       {symbol === "note" && <><path {...shared} d="M7 12H78L93 27V61H7Z M78 12V27H93" /><path {...shared} d="M17 30H72 M17 40H82 M17 50H62" /></>}
-      {!compact && !isOpening && <path className="cad-center" {...shared} d={`M1 ${centerY}H99`} />}
       </g></g>
     </svg>
   );
@@ -734,7 +771,7 @@ export default function SiteLayoutPlannerPage() {
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
   const [activeTool, setActiveTool] = useState("선택");
-  const [command, setCommand] = useState("명령: 실 크기를 확인하고 표준 블록을 선택하세요.");
+  const [command, setCommand] = useState("명령: 실 크기를 확인하고 KS 평면제도 심벌을 선택하세요.");
   const [pendingPresetId, setPendingPresetId] = useState<LayoutSymbol | null>(null);
   const [visibleLayers, setVisibleLayers] = useState<Record<LayoutLayer, boolean>>({ opening: true, structure: true, fixture: true, equipment: false, note: false });
   const boardRef = useRef<HTMLDivElement | null>(null);
@@ -895,7 +932,7 @@ export default function SiteLayoutPlannerPage() {
   const activeStep = guideSteps[activeStepIndex];
   const roomRatio = Math.min(1.85, Math.max(0.72, draft.roomWidth / draft.roomHeight));
   const ceilingHeight = draft.roomCeilingHeight ?? 2.7;
-  const basicPresets = useMemo(() => itemPresets.filter((preset) => basicGroups.includes(preset.group)), []);
+  const basicPresets = useMemo(() => itemPresets.filter((preset) => basicGroups.includes(preset.group) && !LEGACY_DERIVED_OPENING_SYMBOLS.has(preset.id)), []);
   const visibleBasicItemCount = useMemo(() => draft.items.filter((item) => itemLayer(item) !== "equipment" && itemLayer(item) !== "note").length, [draft.items]);
   const activePresets = useMemo(() => basicPresets.filter((preset) => activeStep.groups.includes(preset.group)), [activeStep.groups, basicPresets]);
   const checklist = draft.siteChecklist ?? defaultSiteChecklist;
@@ -1031,11 +1068,19 @@ export default function SiteLayoutPlannerPage() {
     setToastMessage("CAD팀 전달용 PDF를 저장했습니다.");
   }
   async function sharePreparedPdf(file = preparedPdf) {
-    if (!file) return;
+    if (!file || preparedPdfFingerprint !== currentDraftFingerprint) {
+      setToastMessage("현재 도면 기준으로 PDF를 다시 준비하고 있습니다. 준비가 끝나면 공유를 눌러 주세요.");
+      void buildPreparedPdf();
+      return;
+    }
     const share = navigator.share?.bind(navigator);
-    const shareData = { title: `${draft.organizationName || "기관"} 기초도면`, text: "CAD팀 전달용 기초도면입니다.", files: [file] };
-    if (!share || (typeof navigator.canShare === "function" && !navigator.canShare(shareData))) {
-      setToastMessage("이 브라우저는 PDF 파일 공유를 지원하지 않습니다. PDF 저장 후 카카오톡에 첨부해 주세요. 메시지·드라이브 앱에서도 저장한 파일을 선택할 수 있습니다.");
+    const files = [file];
+    const shareData = { title: `${draft.organizationName || "기관"} 기초도면`, files };
+    const canShareFiles = typeof navigator.canShare === "function" && navigator.canShare({ files });
+    if (!share || !canShareFiles) {
+      downloadPreparedPdf(file);
+      setPdfMenuOpen(false);
+      setToastMessage("이 브라우저는 PDF 파일 공유를 지원하지 않아 파일로 저장했습니다. 저장한 PDF를 카카오톡·메시지·드라이브에 첨부해 주세요.");
       return;
     }
     try {
@@ -1043,8 +1088,10 @@ export default function SiteLayoutPlannerPage() {
       setPdfMenuOpen(false);
       setToastMessage("공유할 앱으로 PDF를 전달했습니다.");
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      setToastMessage("PDF 공유를 열지 못했습니다. 브라우저 권한을 확인하거나 PDF 저장 후 첨부해 주세요.");
+      if (error && typeof error === "object" && "name" in error && error.name === "AbortError") return;
+      downloadPreparedPdf(file);
+      setPdfMenuOpen(false);
+      setToastMessage("공유창을 열지 못해 PDF를 저장했습니다. 저장한 파일을 원하는 앱에 첨부해 주세요.");
     }
   }
   async function downloadCurrentPdf() {
@@ -1365,7 +1412,7 @@ export default function SiteLayoutPlannerPage() {
       openingHeight: preset.kind === "door" ? 2.1 : preset.kind === "window" ? 1.5 : undefined,
       sillHeight: preset.kind === "window" ? 0.9 : undefined,
       handing: preset.kind === "door" ? "left" : undefined,
-      swing: preset.kind === "door" ? "inside" : undefined,
+      swing: preset.id === "window-project" ? "outside" : preset.kind === "door" ? "inside" : undefined,
       mountingHeight: preset.id === "aircon-wall" ? 2.1 : preset.id === "aircon-ceiling" ? ceilingHeight : undefined,
       beamBottomHeight: preset.kind === "beam" ? 2.2 : undefined,
       beamSpacing: preset.kind === "beam" ? 1 : undefined,
@@ -1958,7 +2005,7 @@ export default function SiteLayoutPlannerPage() {
   function updateSelectedDimension(axis: "width" | "height", rawValue: number) {
     if (!selectedItem) return;
     const value = positiveDimension(rawValue, selectedItem[axis]);
-    if (selectedItem.presetId === "aircon-ceiling") {
+    if (selectedItem.presetId === "aircon-ceiling" || selectedItem.presetId === "pillar-round") {
       updateSelected({ width: value, height: value });
       return;
     }
@@ -2232,7 +2279,7 @@ export default function SiteLayoutPlannerPage() {
   }
   function updateStageItemDimension(item: LayoutItem, axis: "width" | "height", rawValue: number) {
     const value = positiveDimension(rawValue, item[axis]);
-    const sized = item.presetId === "aircon-ceiling" ? { ...item, width: value, height: value } : { ...item, [axis]: value };
+    const sized = item.presetId === "aircon-ceiling" || item.presetId === "pillar-round" ? { ...item, width: value, height: value } : { ...item, [axis]: value };
     const beamMeasurement = sized.kind === "beam" ? sized.structureMeasurement ?? wallMeasurement(sized.wall ?? "top", sized.offsetReference ?? "start", displayedWallDistance(sized)) : null;
     const pillarMeasurement = sized.kind === "pillar" && sized.structureAttachment?.mode === "wall"
       ? sized.structureMeasurement ?? wallMeasurement(sized.wall ?? "top", sized.offsetReference ?? "start", displayedWallDistance(sized))
@@ -2288,7 +2335,7 @@ export default function SiteLayoutPlannerPage() {
 
     const item = selectedStageItem;
     if (activeQuestionIndex === 0 || !item) {
-      return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 1/{currentQuestionCount}</small><b>현장과 가장 비슷한 형태를 골라 주세요.</b><span>고르면 기본 규격으로 하나가 생기고, 다음 질문에서 위치와 실제 치수를 조정합니다.</span></div><div className="site-layout-guided-presets">{activePresets.map((preset) => <button key={preset.id} type="button" onClick={() => chooseGuidedPreset(preset.id)}><CadSymbol symbol={preset.id} compact /><b>{preset.label}</b><small>{formatMillimeters(preset.width)}mm 기본</small></button>)}</div><button type="button" className="site-layout-question-skip" onClick={skipGuidedStage}>이 단계는 해당 없음</button></div>;
+      return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>{activeStep.label} 1/{currentQuestionCount}</small><b>현장과 가장 비슷한 형태를 골라 주세요.</b><span>고르면 기본 규격으로 하나가 생기고, 다음 질문에서 위치와 실제 치수를 조정합니다.</span></div><div className="site-layout-guided-presets">{activePresets.map((preset) => { const source = paletteSourceLabel(preset); return <button key={preset.id} type="button" onClick={() => chooseGuidedPreset(preset.id)}><CadSymbol symbol={preset.id} compact /><b>{preset.label}</b><small>{formatMillimeters(preset.width)}mm 기본{source ? ` · ${source}` : ""}</small></button>; })}</div><button type="button" className="site-layout-question-skip" onClick={skipGuidedStage}>이 단계는 해당 없음</button></div>;
     }
     const preset = presetForItem(item);
     const mounted = isWallMounted(item);
@@ -2370,7 +2417,9 @@ export default function SiteLayoutPlannerPage() {
     }
     if (activeQuestionIndex === 3) {
       if (item.kind === "pillar") {
-        return <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>기둥·보 4/{currentQuestionCount}</small><b>기둥의 폭과 깊이를 mm로 입력해 주세요.</b><span>사각 기둥은 가로 폭과 세로 깊이를 각각 기록하며, 원형 기둥은 두 값에 같은 지름을 입력합니다.</span></div><div className="site-layout-guided-measurements"><label><span>기둥 폭(mm)</span><MillimeterInput label="기둥 폭(mm)" valueMeters={item.width} minMm={100} maxMm={Math.round(draft.roomWidth * 1000)} onCommit={(value) => updateStageItemDimension(item, "width", value)} /></label><label><span>기둥 깊이(mm)</span><MillimeterInput label="기둥 깊이(mm)" valueMeters={item.height} minMm={100} maxMm={Math.round(draft.roomHeight * 1000)} onCommit={(value) => updateStageItemDimension(item, "height", value)} /></label></div></div>;
+        return item.presetId === "pillar-round"
+          ? <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>기둥·보 4/{currentQuestionCount}</small><b>원형 기둥의 지름을 mm로 입력해 주세요.</b><span>입력한 지름 한 값으로 원형 절단면을 정확히 그립니다.</span></div><div className="site-layout-guided-measurements"><label><span>기둥 지름(mm)</span><MillimeterInput label="기둥 지름(mm)" valueMeters={item.width} minMm={100} maxMm={Math.round(Math.min(draft.roomWidth, draft.roomHeight) * 1000)} onCommit={(value) => updateStageItemDimension(item, "width", value)} /></label></div></div>
+          : <div className="site-layout-question-card"><div className="site-layout-question-heading"><small>기둥·보 4/{currentQuestionCount}</small><b>기둥의 폭과 깊이를 mm로 입력해 주세요.</b><span>사각 기둥은 가로 폭과 세로 깊이를 각각 기록합니다.</span></div><div className="site-layout-guided-measurements"><label><span>기둥 폭(mm)</span><MillimeterInput label="기둥 폭(mm)" valueMeters={item.width} minMm={100} maxMm={Math.round(draft.roomWidth * 1000)} onCommit={(value) => updateStageItemDimension(item, "width", value)} /></label><label><span>기둥 깊이(mm)</span><MillimeterInput label="기둥 깊이(mm)" valueMeters={item.height} minMm={100} maxMm={Math.round(draft.roomHeight * 1000)} onCommit={(value) => updateStageItemDimension(item, "height", value)} /></label></div></div>;
       }
       const wallMax = (item.wall === "left" || item.wall === "right") ? draft.roomHeight : draft.roomWidth;
       const widthLabel = item.kind === "door" ? "문틀 전체 폭" : item.kind === "window" ? "창틀 전체 폭" : item.kind === "beam" ? "벽과 나란한 보 길이" : item.presetId === "aircon-ceiling" ? "정사각형 한 변" : "가로";
@@ -2472,7 +2521,7 @@ export default function SiteLayoutPlannerPage() {
     <section className="site-layout-planner" aria-label="현장 실측 기초도면 작성기">
       <header className="site-layout-intro">
         <div className="site-layout-brand"><span aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M5 25V7h22v18H5Z" /><path d="M9 21V11h14v10H9Zm0-5h14M14 11v10" /></svg></span><div><b>기초도면 작성</b><small>현장 실측 → CAD팀 전달</small></div></div>
-        <div className="site-layout-header-actions"><button type="button" className="site-layout-action-new" onClick={resetDraft}>새 도면</button><button type="button" className="secondary site-layout-action-library" onClick={() => { setDraftLibraryOpen(true); setDraftLibraryPage(1); }}>도면 보관함 {remoteLayouts.length}</button><button type="button" className={`primary site-layout-action-save ${remoteOperation === "saving" ? "is-saving" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "is-saved" : ""}`} disabled={remoteLoading} onClick={() => void saveCurrentDraft()}>{remoteOperation === "saving" ? "저장 중…" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "저장됨 ✓" : "기관 도면 저장"}</button>{activeRemoteId && remoteSavePhase === "drive-error" && <button type="button" className="site-layout-action-retry" disabled={remoteLoading} onClick={() => { const record = remoteLayouts.find((item) => item.id === activeRemoteId); if (record) void retryRemoteDrive(record); }}>Drive 다시 시도</button>}<div className={`site-layout-pdf-action-group ${pdfMenuOpen ? "is-open" : ""}`}><button type="button" className="site-layout-action-pdf-menu" aria-expanded={pdfMenuOpen} aria-controls="site-layout-pdf-actions" onClick={preparePdfActions}>{pdfMenuOpen ? "PDF 닫기" : "PDF"}</button>{pdfMenuOpen && <div id="site-layout-pdf-actions" className="site-layout-pdf-inline" role="menu" aria-label="PDF 작업 선택"><button type="button" role="menuitem" onClick={openPreparedPdfPreview}>미리보기</button><button type="button" role="menuitem" onClick={() => downloadPreparedPdf()} disabled={!preparedPdf || pdfPreparing}>저장</button><button type="button" role="menuitem" onClick={() => void sharePreparedPdf()} disabled={!preparedPdf || pdfPreparing}>공유</button>{pdfPreparing && <span role="status">PDF 파일 준비 중…</span>}{pdfPrepareError && <><span role="alert">{pdfPrepareError}</span><button type="button" onClick={() => void buildPreparedPdf()}>다시 만들기</button></>}</div>}</div></div>
+          <div className="site-layout-header-actions"><button type="button" className="site-layout-action-new" onClick={resetDraft}>새 도면</button><button type="button" className="secondary site-layout-action-library" onClick={() => { setDraftLibraryOpen(true); setDraftLibraryPage(1); }}>도면 보관함 {remoteLayouts.length}</button><button type="button" className={`primary site-layout-action-save ${remoteOperation === "saving" ? "is-saving" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "is-saved" : ""}`} disabled={remoteLoading} onClick={() => void saveCurrentDraft()}>{remoteOperation === "saving" ? "저장 중…" : remoteSavePhase === "drive-ready" && !remoteDraftDirty ? "저장됨 ✓" : "기관 도면 저장"}</button>{activeRemoteId && remoteSavePhase === "drive-error" && <button type="button" className="site-layout-action-retry" disabled={remoteLoading} onClick={() => { const record = remoteLayouts.find((item) => item.id === activeRemoteId); if (record) void retryRemoteDrive(record); }}>Drive 다시 시도</button>}<div className={`site-layout-pdf-action-group ${pdfMenuOpen ? "is-open" : ""}`}><button type="button" className="site-layout-action-pdf-menu" aria-expanded={pdfMenuOpen} aria-controls="site-layout-pdf-actions" onClick={preparePdfActions}>{pdfMenuOpen ? "PDF 닫기" : "PDF"}</button>{pdfMenuOpen && <div id="site-layout-pdf-actions" className="site-layout-pdf-inline" role="menu" aria-label="PDF 작업 선택"><button type="button" role="menuitem" onClick={openPreparedPdfPreview}>미리보기</button><button type="button" role="menuitem" onClick={() => downloadPreparedPdf()} disabled={!preparedPdf || preparedPdfFingerprint !== currentDraftFingerprint || pdfPreparing}>저장</button><button type="button" role="menuitem" onClick={() => void sharePreparedPdf()} disabled={!preparedPdf || preparedPdfFingerprint !== currentDraftFingerprint || pdfPreparing}>공유</button>{pdfPreparing && <span role="status">PDF 파일 준비 중…</span>}{pdfPrepareError && <><span role="alert">{pdfPrepareError}</span><button type="button" onClick={() => void buildPreparedPdf()}>다시 만들기</button></>}</div>}</div></div>
       </header>
       {(remoteSavePhase === "failed" || remoteSavePhase === "conflict" || remoteSavePhase === "drive-error") && <div className="site-layout-local-state is-error" role="alert"><span>{saveMessage}</span><small>{remoteSaveDetail || "현재 입력은 이 기기의 복구본에 남아 있습니다."}</small></div>}
       {toastMessage && <div className="site-layout-toast" role="status" aria-live="polite">{toastMessage}</div>}
@@ -2556,18 +2605,20 @@ export default function SiteLayoutPlannerPage() {
         <aside className={`site-layout-library ${activePresets.length ? "" : "is-context-only"}`}>
           <div><b>{activeStep.id === "room" ? "공간 입력 안내" : activeStep.id === "review" ? "최종 검수" : `${activeStep.label} 모양 선택`}</b><span>{activeStep.id === "room" ? "위에서 실측값을 입력한 뒤 다음 단계로 이동하세요." : activeStep.id === "review" ? "미확인 단계를 눌러 바로 보완할 수 있습니다." : "현장과 가장 비슷한 그림을 먼저 선택하세요."}</span></div>
           {activePresets.length > 0 && <p className="site-layout-mobile-help">그림 선택 → 도면의 벽이나 위치 터치 → 실제 치수 입력</p>}
-          {(activeStep.id === "door" || activeStep.id === "window") && <p className="site-layout-standard-note">기본 폭은 KS F 1515의 100mm 모듈을 참고한 시작값입니다. 현장에서는 문틀·창틀 끝에서 끝까지 잰 실제 치수를 우선하세요.</p>}
+          {(activeStep.id === "door" || activeStep.id === "window") && <p className="site-layout-standard-note">평면기호 형상: {PLAN_SYMBOL_STANDARD.planAppendix} · 명칭과 개폐 방식 분류: {PLAN_SYMBOL_STANDARD.openingTerms}. 현장에서는 문틀·창틀 바깥 끝에서 끝까지 잰 실제 치수를 우선하세요.</p>}
+          {activeStep.id === "structure" && <p className="site-layout-standard-note">기둥은 {PLAN_SYMBOL_STANDARD.drawing} 부표 3의 평면 절단면 해칭, 보는 {PLAN_SYMBOL_STANDARD.cad}의 숨은선 제도 원칙으로 표시합니다.</p>}
+          {activeStep.id === "facility" && <p className="site-layout-standard-note">천장 카세트형 냉난방기: 제공된 ‘도면 모음.dwg’의 ‘천장_냉난방기’ 블록을 재현한 현장 프리셋입니다. KS F 1501·1502 공식 심벌이 아닙니다.</p>}
           {activeStep.groups.map((group) => {
             const presets = activePresets.filter((preset) => preset.group === group); if (!presets.length) return null;
-            return <section key={group} className="site-layout-library-section"><h3>{group}<small>{presets.length}</small></h3><div className="site-layout-library-grid">{presets.map((preset) => <button key={preset.id} type="button" draggable className={`kind-${preset.kind} symbol-${preset.id} ${pendingPresetId === preset.id ? "pending" : ""}`} aria-pressed={pendingPresetId === preset.id} onDragStart={(event) => handlePresetDragStart(event, preset.id)} onClick={() => choosePreset(preset.id)}><CadSymbol symbol={preset.id} compact /><span>{preset.label}</span><small>{preset.code} · {formatMillimeters(preset.width)}mm</small></button>)}</div></section>;
+            return <section key={group} className="site-layout-library-section"><h3>{group}<small>{presets.length}</small></h3><div className="site-layout-library-grid">{presets.map((preset) => { const source = paletteSourceLabel(preset); return <button key={preset.id} type="button" draggable className={`kind-${preset.kind} symbol-${preset.id} ${pendingPresetId === preset.id ? "pending" : ""}`} aria-pressed={pendingPresetId === preset.id} onDragStart={(event) => handlePresetDragStart(event, preset.id)} onClick={() => choosePreset(preset.id)}><CadSymbol symbol={preset.id} compact /><span>{preset.label}</span><small>{preset.code} · {formatMillimeters(preset.width)}mm{source ? ` · ${source}` : ""}</small></button>; })}</div></section>;
           })}
           {!activePresets.length && <div className="site-layout-library-empty">{activeStep.id === "review" ? "단계별 상태와 도면을 최종 확인하세요." : "공간 치수를 입력하면 도면이 자동 생성됩니다."}</div>}
         </aside>
 
         <main className="site-layout-canvas-panel view-model">
-          <div className="site-layout-canvas-head"><div><b>도면</b><span>한 화면 자동 맞춤</span></div><div className="site-layout-canvas-meta">{pendingPreset ? <button type="button" className="site-layout-pending-placement" onClick={() => { setPendingPresetId(null); setActiveTool("선택"); setCommand("명령: 블록 배치를 취소했습니다."); }}>{pendingPreset.label} 배치 대기 · 취소</button> : <span>클릭 선택 · 끌어서 이동 · 단위 mm</span>}</div></div>
           {orientationHint && <div className="site-layout-orientation-hint" role="status">휴대폰을 가로로 돌리면 도면을 더 넓게 볼 수 있습니다. 세로 화면에서도 계속 사용할 수 있습니다.</div>}
           <div className="site-layout-model-space">
+            {pendingPreset && <button type="button" className="site-layout-pending-placement site-layout-pending-placement-overlay" onClick={() => { setPendingPresetId(null); setActiveTool("선택"); setCommand("명령: 심벌 배치를 취소했습니다."); }}>{pendingPreset.label} 배치 대기 · 취소</button>}
             <div className="site-layout-board-wrap" style={{ ...physicalRoomStyle, maxWidth: `${Math.round(920 * roomRatio)}px` }}><div ref={boardRef} className={`site-layout-board site-layout-geometry-host ${pendingPreset ? "placing" : ""}`} style={physicalRoomStyle} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDrop={handleBoardDrop}><SiteLayoutGeometryView draft={physicalDraft} mode="model" paddingMm={650} selectedItemId={selectedId} interactive interactionMode={workflowMode === "direct" ? "drag" : "select"} showDimensions showLabels isItemVisible={(item) => { const legacy = draft.items.find((candidate) => candidate.id === item.id); return Boolean(legacy && itemLayer(legacy) !== "equipment" && visibleLayers[itemLayer(legacy)]); }} onBackgroundPointerDown={(point) => { if (pendingPresetId) addItem(pendingPresetId, (point.xMm / physicalDraft.roomWidthMm) * 100, (point.yMm / physicalDraft.roomHeightMm) * 100); else setSelectedId(""); }} onItemSelect={(item) => setSelectedId(item.id)} onItemPointerDown={workflowMode === "direct" ? startGeometryDrag : undefined} onModelPointerMove={(point, event) => moveGeometryDrag(point, event.pointerId)} onModelPointerUp={(_, event) => finishGeometryDrag(event.pointerId)} onModelPointerCancel={(event) => finishGeometryDrag(event.pointerId)} /></div></div>
             {!visibleBasicItemCount && activeStep.id !== "room" && <div className="site-layout-empty"><b>{activeStep.label} 모양을 선택해 도면을 시작하세요.</b><span>모바일에서는 그림을 누른 뒤 도면의 위치를 터치하세요.</span></div>}
             <small className="site-layout-coordinates">X 8,410.000&nbsp;&nbsp;Y 4,215.000&nbsp;&nbsp;Z 0.000</small>
@@ -2579,7 +2630,7 @@ export default function SiteLayoutPlannerPage() {
           <div className="site-layout-layer-list"><div><i className="wall" /><span>A-WALL RC 벽체</span><b>ON</b></div>{(["opening", "structure", "fixture"] as LayoutLayer[]).map((layer) => { const meta: Record<LayoutLayer, [string, string]> = { opening: ["A-OPEN 문·창호", "opening"], structure: ["A-STRC 기둥·보", "structure"], fixture: ["M-FIX 고정 시설", "fixture"], equipment: ["E-EQPM 제품 장비", "equipment"], note: ["A-NOTE 주석", "note"] }; return <button key={layer} type="button" aria-pressed={visibleLayers[layer]} onClick={() => setVisibleLayers((current) => ({ ...current, [layer]: !current[layer] }))}><i className={meta[layer][1]} /><span>{meta[layer][0]}</span><b>{visibleLayers[layer] ? "ON" : "OFF"}</b></button>; })}</div>
           <div className="site-layout-object-head"><b>{selectedItem ? selectedItem.name : "선택 객체"}</b><span>{selectedPreset?.code ?? "객체를 선택하세요."}</span></div>
           {selectedItem && selectedPreset && itemLayer(selectedItem) !== "equipment" ? <div className="site-layout-inspector-form">
-            <div className="site-layout-inspector-preview"><CadSymbol symbol={selectedPreset.id} /><span>{selectedPreset.label}</span></div>
+            <div className="site-layout-inspector-preview"><CadSymbol symbol={selectedPreset.id} wall={selectedItem.wall} handing={selectedItem.handing} swing={selectedPreset.id === "window-project" ? "outside" : selectedItem.swing} /><span>{selectedPreset.label}</span></div>
             <label><span>이름</span><input value={selectedItem.name} onChange={(event) => updateSelected({ name: event.target.value.slice(0, 60) })} /></label>
             {selectedItem.kind === "pillar" && <div className="site-layout-structure-fields site-layout-pillar-mode-fields">
               <div className="site-layout-choice-grid two" role="group" aria-label="기둥 배치 방식">
@@ -2591,7 +2642,7 @@ export default function SiteLayoutPlannerPage() {
               {selectedItem.kind === "door" || selectedItem.kind === "window" ? <>
                 <label><span>{selectedItem.kind === "door" ? "문틀 전체 폭" : "창틀 전체 폭"}(mm)</span><MillimeterInput label={selectedItem.kind === "door" ? "문틀 전체 폭(mm)" : "창틀 전체 폭(mm)"} valueMeters={selectedItem.width} minMm={300} maxMm={Math.round(((selectedItem.wall === "left" || selectedItem.wall === "right") ? draft.roomHeight : draft.roomWidth) * 1000)} onCommit={updateOpeningWidth} /></label>
                 <label><span>{selectedItem.kind === "door" ? "문틀 전체 높이" : "창틀 전체 높이"}(mm)</span><MillimeterInput label={selectedItem.kind === "door" ? "문틀 전체 높이(mm)" : "창틀 전체 높이(mm)"} valueMeters={selectedItem.openingHeight ?? (selectedItem.kind === "door" ? 2.1 : 1.5)} minMm={300} maxMm={Math.round(Math.max(0.3, ceilingHeight - (selectedItem.kind === "window" ? selectedItem.sillHeight ?? 0.9 : 0)) * 1000)} onCommit={updateOpeningHeight} /></label>
-              </> : selectedItem.presetId === "aircon-ceiling" ? <label><span>정사각형 한 변(m)</span><FriendlyNumberInput label="천장형 에어컨 한 변(m)" value={selectedItem.width} min={0.3} max={3} onCommit={(value) => updateSelectedDimension("width", value)} /></label> : <>
+              </> : selectedItem.presetId === "aircon-ceiling" ? <label><span>정사각형 한 변(m)</span><FriendlyNumberInput label="천장형 에어컨 한 변(m)" value={selectedItem.width} min={0.3} max={3} onCommit={(value) => updateSelectedDimension("width", value)} /></label> : selectedItem.presetId === "pillar-round" ? <label><span>지름(m)</span><FriendlyNumberInput label="원형 기둥 지름(m)" value={selectedItem.width} min={0.1} max={30} onCommit={(value) => updateSelectedDimension("width", value)} /></label> : <>
                 <label><span>가로(m)</span><FriendlyNumberInput label="객체 가로(m)" value={selectedItem.width} min={0.1} max={30} onCommit={(value) => updateSelectedDimension("width", value)} /></label>
                 <label><span>세로(m)</span><FriendlyNumberInput label="객체 세로(m)" value={selectedItem.height} min={0.1} max={30} onCommit={(value) => updateSelectedDimension("height", value)} /></label>
               </>}

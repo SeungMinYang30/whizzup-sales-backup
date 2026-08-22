@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -28,6 +29,16 @@ import {
   resolveStructurePlacements,
   serializeDraft,
 } from "../lib/site-layout-geometry.ts";
+
+const geometryViewSource = readFileSync(new URL("../app/site-layout-geometry-view.tsx", import.meta.url), "utf8");
+
+function geometryViewSection(startMarker, endMarker) {
+  const start = geometryViewSource.indexOf(startMarker);
+  const end = geometryViewSource.indexOf(endMarker, start + startMarker.length);
+  assert.notEqual(start, -1, `missing geometry view marker: ${startMarker}`);
+  assert.notEqual(end, -1, `missing geometry view marker: ${endMarker}`);
+  return geometryViewSource.slice(start, end);
+}
 
 function makeItem(overrides = {}) {
   return {
@@ -362,6 +373,22 @@ test("normalization keeps a ceiling cassette square and preserves a zero sill he
   assert.equal(normalized.items[0].sillHeightMm, 0);
   assert.equal(normalized.items[1].widthMm, 840);
   assert.equal(normalized.items[1].heightMm, 840);
+});
+
+test("missing square-symbol dimensions use the current 1000 mm cassette and 450 mm round-pillar defaults", () => {
+  const normalized = normalizeDraft({
+    ...createDefaultDraft(),
+    items: [
+      makeItem({ id: "default-ac", kind: "fixture", presetId: "aircon-ceiling", name: "천장형 에어컨", widthMm: undefined, heightMm: undefined, openingHeightMm: undefined, handing: undefined, swing: undefined }),
+      makeItem({ id: "round-pillar", kind: "pillar", presetId: "pillar-round", name: "원형 기둥", widthMm: 600, heightMm: 420, openingHeightMm: undefined, handing: undefined, swing: undefined }),
+      makeItem({ id: "default-round-pillar", kind: "pillar", presetId: "pillar-round", name: "기본 원형 기둥", widthMm: undefined, heightMm: undefined, openingHeightMm: undefined, handing: undefined, swing: undefined }),
+    ],
+  });
+
+  assert.deepEqual(
+    normalized.items.map((item) => [item.widthMm, item.heightMm]),
+    [[1_000, 1_000], [600, 600], [450, 450]],
+  );
 });
 
 test("v3 beams default to wall attachment while v2 free beams keep their legacy coordinates", () => {
@@ -1052,4 +1079,75 @@ test("directional dimension padding expands only the required viewBox sides", ()
   assert.equal(expanded.minX, -draft.roomWallThicknessMm - 930);
   assert.equal(expanded.minX + expanded.width, base.minX + base.width);
   assert.equal(expanded.minY + expanded.height, base.minY + base.height);
+});
+
+test("KS F 1501 door plan symbols keep jambs, leaves, 90-degree arcs, overlapping sliders, and folding zigzags", () => {
+  const source = geometryViewSection("function DoorLeaf", "function windowPartitionCount");
+
+  assert.match(source, /const officialKsSymbol = ksAppendix2OpeningPresets\.has\(presetId\);/);
+  assert.match(source, /data-plan-source=\{planSource\}/);
+  assert.equal((source.match(/data-symbol-part="opening-jamb"/g) ?? []).length, 2);
+  assert.match(source, /data-symbol-part="door-leaf"/);
+  assert.match(source, /data-symbol-part="door-swing-arc" data-swing-angle-deg="90"/);
+  assert.equal((source.match(/data-symbol-part="sliding-door-track"/g) ?? []).length, 2);
+  assert.equal((source.match(/data-symbol-part="sliding-door-leaf"/g) ?? []).length, 2);
+  assert.match(source, /const pocketLeafSpan = span \* 0\.32;/);
+  assert.match(source, /data-symbol-part="sliding-door-clear-opening"/);
+  assert.match(source, /const meetingMm = start \+ span \/ 2;/);
+  assert.match(source, /data-symbol-part="sliding-door-meeting-stile"/);
+  assert.doesNotMatch(source, /panelOverlapRatio/);
+  assert.match(source, /const foldCount = 4;/);
+  assert.match(source, /data-symbol-part="folding-door-leaves" data-fold-count=\{foldCount\}/);
+  assert.doesNotMatch(source, /arrowHeadPath|strokeDasharray/);
+});
+
+test("KS F 1501 window plan symbols distinguish fixed glazing, overlapping sliding sashes, and outside casement swing", () => {
+  const source = geometryViewSection("function WindowSymbol", "function GenericItemSymbol");
+
+  assert.match(source, /const officialKsSymbol = ksAppendix2OpeningPresets\.has\(presetId\);/);
+  assert.match(source, /data-plan-source=\{planSource\}/);
+  assert.match(source, /data-window-operation=\{slidingWindow \? "sliding" : item\.presetId === "window-project" \? "casement-out" : "fixed"\}/);
+  assert.equal((source.match(/data-symbol-part="fixed-window-frame"/g) ?? []).length, 2);
+  assert.equal((source.match(/data-symbol-part="fixed-window-glazing"/g) ?? []).length, 1);
+  assert.equal((source.match(/data-symbol-part="sliding-window-track"/g) ?? []).length, 2);
+  assert.match(source, /data-symbol-part="sliding-window-leaf"/);
+  assert.match(source, /const symbolicMeetingOverlapMm = Math\.min\(openingSpan \* 0\.06, draft\.roomWallThicknessMm\);/);
+  assert.match(source, /const panelWidth = \(openingSpan \+ symbolicMeetingOverlapMm \* Math\.max\(0, count - 1\)\) \/ count;/);
+  assert.match(source, /const panelStart = start \+ index \* \(panelWidth - symbolicMeetingOverlapMm\);/);
+  assert.doesNotMatch(source, /0\.78/);
+  assert.match(source, /const casementOpenAlongMm = casementHingeMm \+ \(casementDirection \* openingSpan\) \/ Math\.SQRT2;/);
+  assert.match(source, /centerOffset - openingSpan \/ Math\.SQRT2/);
+  assert.match(source, /data-symbol-part="casement-window-operation" data-swing="outside" data-swing-angle-deg="45"/);
+  assert.match(source, /data-symbol-part="casement-window-leaf"/);
+  assert.match(source, /data-symbol-part="casement-window-swing-arc"/);
+  assert.match(source, /A \$\{openingSpan\} \$\{openingSpan\}/);
+  assert.doesNotMatch(source, /projectPeak|casement-window-swing"[\s\S]*?<polyline/);
+  assert.doesNotMatch(source, /arrowHeadPath|strokeDasharray/);
+
+  const openingSpan = 2_700;
+  const panelCount = 4;
+  const symbolicMeetingOverlapMm = Math.min(openingSpan * 0.06, 150);
+  const panelWidth = (openingSpan + symbolicMeetingOverlapMm * (panelCount - 1)) / panelCount;
+  const lastPanelStart = (panelCount - 1) * (panelWidth - symbolicMeetingOverlapMm);
+  assert.ok(symbolicMeetingOverlapMm > 0);
+  assert.ok(Math.abs(lastPanelStart + panelWidth - openingSpan) < 1e-9);
+});
+
+test("structure symbols use RC plan-cut hatch and rotation-aware hidden beam edges while cassette AC stays supplied-DWG", () => {
+  const source = geometryViewSection("function GenericItemSymbol", "function itemColor");
+  const cassetteSource = source.slice(
+    source.indexOf('if (item.presetId === "aircon-ceiling")'),
+    source.indexOf('if (item.presetId === "aircon-wall")'),
+  );
+
+  assert.match(source, /data-plan-source="KS F 1501 부표 3"/);
+  assert.equal((source.match(/data-symbol-part="rc-pillar-cut"/g) ?? []).length, 2);
+  assert.equal((source.match(/fill=\{`url\(#\$\{wallHatchId\}\)`\}/g) ?? []).length, 2);
+  assert.match(source, /const vertical = geometry\.rotation === 90;/);
+  assert.match(source, /data-symbol-part="beam-hidden-double-line"/);
+  assert.match(source, /data-symbol-part="beam-hidden-edge"/);
+  assert.match(source, /strokeDasharray="75 38"/);
+  assert.match(cassetteSource, /data-symbol-source="supplied-dwg"/);
+  assert.match(cassetteSource, /data-symbol-part="cassette-ac"/);
+  assert.doesNotMatch(cassetteSource, /data-drawing-standard=/);
 });

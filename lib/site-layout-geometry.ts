@@ -1014,9 +1014,10 @@ function normalizeMmItem(
 ): SiteLayoutItemMm | null {
   if (!isRecord(value) || !isItemKind(value.kind)) return null;
   const presetId = typeof value.presetId === "string" ? value.presetId.slice(0, 80) : undefined;
-  const widthMm = normalizedMm(value.widthMm, presetId === "aircon-ceiling" ? 840 : 900, 1, MAX_ITEM_DIMENSION_MM);
-  const rawHeightMm = normalizedMm(value.heightMm, presetId === "aircon-ceiling" ? 840 : 180, 1, MAX_ITEM_DIMENSION_MM);
-  const heightMm = presetId === "aircon-ceiling" ? widthMm : rawHeightMm;
+  const squareDefaultMm = presetId === "aircon-ceiling" ? 1_000 : presetId === "pillar-round" ? 450 : null;
+  const widthMm = normalizedMm(value.widthMm, squareDefaultMm ?? 900, 1, MAX_ITEM_DIMENSION_MM);
+  const rawHeightMm = normalizedMm(value.heightMm, squareDefaultMm ?? 180, 1, MAX_ITEM_DIMENSION_MM);
+  const heightMm = squareDefaultMm !== null ? widthMm : rawHeightMm;
   const rotation: SiteLayoutRotation = value.rotation === 90 ? 90 : 0;
   const legacyWall = isWallSide(value.wall) ? value.wall : undefined;
   const structureAttachment = normalizeStructureAttachment(value.structureAttachment, value.kind, legacyWall, defaultBeamToWall);
@@ -1109,9 +1110,10 @@ function legacyWallOffsetMm(
 function migrateLegacyItem(value: unknown, index: number, draft: SiteLayoutDraftMm): SiteLayoutItemMm | null {
   if (!isRecord(value) || !isItemKind(value.kind)) return null;
   const presetId = typeof value.presetId === "string" ? value.presetId.slice(0, 80) : undefined;
-  const widthMm = legacyMetersToMm(value.width, presetId === "aircon-ceiling" ? 840 : 900, 1);
-  const legacyHeightMm = legacyMetersToMm(value.height, presetId === "aircon-ceiling" ? 840 : 180, 1);
-  const heightMm = presetId === "aircon-ceiling" ? widthMm : legacyHeightMm;
+  const squareDefaultMm = presetId === "aircon-ceiling" ? 1_000 : presetId === "pillar-round" ? 450 : null;
+  const widthMm = legacyMetersToMm(value.width, squareDefaultMm ?? 900, 1);
+  const legacyHeightMm = legacyMetersToMm(value.height, squareDefaultMm ?? 180, 1);
+  const heightMm = squareDefaultMm !== null ? widthMm : legacyHeightMm;
   const rotation: SiteLayoutRotation = value.rotation === 90 ? 90 : 0;
   const legacyWall = isWallSide(value.wall) ? value.wall : undefined;
   const structureAttachment = normalizeStructureAttachment(value.structureAttachment, value.kind, legacyWall, false);

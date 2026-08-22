@@ -39,9 +39,10 @@ test("PDF 버튼은 인라인으로 확장되고 모바일 호환 미리보기·
   assert.doesNotMatch(pageSource, /className="site-layout-share-button site-layout-action-share"/);
   assert.match(pageSource, /navigator\.share/);
   assert.match(pageSource, /navigator\.canShare/);
-  assert.match(pageSource, /PDF 저장 후 카카오톡에 첨부해 주세요/);
+  assert.match(pageSource, /navigator\.canShare\(\{ files \}\)/);
+  assert.match(pageSource, /파일로 저장했습니다/);
   assert.match(pageSource, /error\.name === "AbortError"/);
-  assert.match(pageSource, /PDF 공유를 열지 못했습니다\. 브라우저 권한을 확인하거나 PDF 저장 후 첨부해 주세요/);
+  assert.match(pageSource, /공유창을 열지 못해 PDF를 저장했습니다/);
   assert.match(stylesSource, /\.site-layout-pdf-action-group button,[\s\S]*?text-align:center/);
   assert.match(stylesSource, /\.site-layout-pdf-inline \{[\s\S]*?grid-template-columns:repeat\(3/);
   assert.match(exportSource, /document\.body\.appendChild\(anchor\)/);
@@ -119,6 +120,86 @@ test("문·창호·구조물·에어컨 심벌은 공통 geometry 결과로 그�
   assert.match(geometryViewSource, /width=\{width\} height=\{height\}/);
 });
 
+test("문·창호 팔레트는 KS 평면 형상과 분류명 출처를 구분해 표시한다", () => {
+  const paletteSymbolSource = pageSource.match(/function CadSymbol\([\s\S]*?\n}\n\nexport default function SiteLayoutPlannerPage/)?.[0] ?? "";
+  assert.ok(paletteSymbolSource, "팔레트 CAD 심벌 렌더러를 찾을 수 있어야 합니다.");
+  assertContainsAll(pageSource, [
+    /drawing: "KS F 1501"/,
+    /planAppendix: "KS F 1501 부표 2"/,
+    /openingTerms: "KS F 1502"/,
+    /suppliedCassette: "제공 DWG · 천장_냉난방기"/,
+    /cad: "KS F 1540·1541·1542"/,
+    /data-symbol-source=/,
+    /data-terminology-standard=/,
+    /className="cad-wall-cut"/,
+    /className="cad-door-leaf"/,
+    /className="cad-swing-arc"/,
+    /className="cad-opening-frame"/,
+    /className="cad-cut-surface"/,
+    /className="cad-hidden"/,
+  ]);
+  assertContainsAll(pageSource, [
+    /label: "외여닫이문"/,
+    /label: "쌍여닫이문"/,
+    /label: "쌍미닫이문"/,
+    /label: "접이문"/,
+    /label: "고정창"/,
+    /label: "두짝 미서기창"/,
+    /label: "네짝 미서기창"/,
+    /label: "외여닫이창"/,
+    /평면기호 형상: \{PLAN_SYMBOL_STANDARD\.planAppendix\}/,
+    /명칭과 개폐 방식 분류: \{PLAN_SYMBOL_STANDARD\.openingTerms\}/,
+  ]);
+  assert.doesNotMatch(pageSource, /KS F 1515/);
+  assert.doesNotMatch(pageSource, /label: "단짝 여닫이문"|label: "양짝 여닫이문"|label: "쌍 미닫이문"|label: "2짝 미서기창"|label: "4짝 미서기창"/);
+  assert.doesNotMatch(pageSource, /Number\(symbol\.split\("-"\)\[1\]\) \|\| 3/);
+  assert.match(pageSource, /const slidingWindow = symbol === "window-sliding-2" \|\| symbol === "window-3" \|\| symbol === "window-4"/);
+  assert.match(paletteSymbolSource, /symbol === "door-single"[\s\S]*?A62 62 0 0 0/);
+  assert.match(paletteSymbolSource, /symbol === "door-double"[\s\S]*?A40 40 0 0 0[\s\S]*?A40 40 0 0 1/);
+  const slidingDoorSource = paletteSymbolSource.match(/symbol === "door-sliding"[\s\S]*?symbol === "door-folding"/)?.[0] ?? "";
+  assert.match(slidingDoorSource, /M10 54H36V61H10Z M36 62H64 M64 63H90V70H64Z/);
+  assert.doesNotMatch(slidingDoorSource, /arrow|marker|L83 34/);
+  const fixedWindowSource = paletteSymbolSource.match(/symbol === "window-fixed"[\s\S]*?\{slidingWindow/)?.[0] ?? "";
+  assert.match(fixedWindowSource, /M10 27H90 M10 35\.5H90 M10 44H90/);
+  assert.doesNotMatch(fixedWindowSource, /arrow|marker/);
+  const slidingWindowSource = paletteSymbolSource.match(/\{slidingWindow[\s\S]*?symbol === "window-6"/)?.[0] ?? "";
+  assert.match(slidingWindowSource, /return <rect className="cad-opening-frame"/);
+  assert.doesNotMatch(slidingWindowSource, /arrow|marker/);
+  const casementWindowSource = paletteSymbolSource.match(/symbol === "window-project"[\s\S]*?symbol === "screen"/)?.[0] ?? "";
+  assert.match(casementWindowSource, /M20 58L62\.43 15\.57/);
+  assert.match(casementWindowSource, /M80 58A60 60 0 0 0 62\.43 15\.57/);
+  assert.doesNotMatch(casementWindowSource, /M14 27L50 11L86 27|arrow|marker/);
+});
+
+test("KS F 1501 부표 2의 연속창은 공식 선택 목록에 유지한다", () => {
+  assert.match(pageSource.match(/const KS_APPENDIX_2_SYMBOLS[\s\S]*?\]\);/)?.[0] ?? "", /"window-6"/);
+  assert.doesNotMatch(pageSource.match(/const LEGACY_DERIVED_OPENING_SYMBOLS[\s\S]*?;/)?.[0] ?? "", /"window-6"/);
+  assert.match(pageSource, /id: "window-6"[\s\S]*?KS F 1501 부표 2의 연속창/);
+});
+
+test("외여닫이창과 원형 기둥은 편집·미리보기·저장 복원에서 같은 물리 형상을 유지한다", () => {
+  assert.match(pageSource, /height: preset\.id === "aircon-ceiling" \|\| preset\.id === "pillar-round" \? normalizedWidth/);
+  assert.match(pageSource, /swing: preset\.id === "window-project" \|\| item\.swing === "outside" \? "outside" : "inside"/);
+  const makeItemSource = pageSource.match(/function makeItem[\s\S]*?function wallMeasurement/)?.[0] ?? "";
+  assert.match(makeItemSource, /swing: preset\.id === "window-project" \? "outside" : preset\.kind === "door" \? "inside" : undefined/);
+  assert.match(pageSource, /swing=\{selectedPreset\.id === "window-project" \? "outside" : selectedItem\.swing\}/);
+});
+
+test("천장 카세트형 냉난방기는 KS 심벌이 아닌 제공 DWG 출처로 명시한다", () => {
+  assert.match(pageSource, /id: "aircon-ceiling"[\s\S]*?width: 1, height: 1/);
+  assert.match(pageSource, /label: "천장 카세트형 냉난방기"/);
+  assert.match(pageSource, /158회 반복된 1,000×1,000mm ‘천장_냉난방기’ 블록/);
+  assert.match(pageSource, /KS F 1501·1502 공식 심벌이 아닙니다/);
+  assert.match(pageSource, /제공 DWG 카세트 블록/);
+  assert.match(pageSource, /data-symbol-source=[\s\S]*?PLAN_SYMBOL_STANDARD\.suppliedCassette/);
+  const paletteAirconSource = pageSource.match(/\{symbol === "aircon-ceiling" && <><path[\s\S]*?\{symbol === "note"/)?.[0] ?? "";
+  assert.ok(paletteAirconSource, "천장 카세트형 냉난방기 팔레트 심벌을 찾을 수 있어야 합니다.");
+  assert.match(paletteAirconSource, /M8 6H92L94 8V92/);
+  assert.match(paletteAirconSource, /M30 8H70L72 10V15H28V10Z/);
+  assert.match(paletteAirconSource, />A\/C<\/text>/);
+  assert.doesNotMatch(paletteAirconSource, /<circle|L73 73|L27 73/);
+});
+
 test("PC는 직접 편집, 모바일·태블릿은 단계형 실측을 자동 적용한다", () => {
   assert.match(pageSource, /type WorkflowMode = "guided" \| "direct"/);
   assert.match(pageSource, /useState<WorkflowMode>\("direct"\)/);
@@ -127,7 +208,9 @@ test("PC는 직접 편집, 모바일·태블릿은 단계형 실측을 자동 �
   assert.doesNotMatch(pageSource, />현장 실측 도우미<\/button>/);
   assert.doesNotMatch(pageSource, /site-layout-mode-toggle/);
   assert.match(pageSource, /workflowMode === "guided" && renderGuidedQuestion\(\)/);
-  assert.match(pageSource, /className="site-layout-canvas-head"/);
+  assert.doesNotMatch(pageSource, /className="site-layout-canvas-head"/);
+  assert.doesNotMatch(pageSource, /한 화면 자동 맞춤/);
+  assert.match(pageSource, /site-layout-pending-placement-overlay/);
   assert.match(pageSource, /selectedItemId=\{selectedId\} interactive interactionMode=\{workflowMode === "direct" \? "drag" : "select"\} showDimensions showLabels/);
 });
 
@@ -387,9 +470,10 @@ test("직접 편집 기둥은 벽 부착과 독립 배치, 네 기준벽 면거�
   ]);
 });
 
-test("도면은 한 화면 자동 맞춤과 mm 단위를 명확히 알린다", () => {
-  assert.match(pageSource, /한 화면 자동 맞춤/);
-  assert.match(pageSource, /클릭 선택 · 끌어서 이동 · 단위 mm/);
+test("도면은 불필요한 상단 안내 띠 없이 mm 단위를 명확히 알린다", () => {
+  assert.doesNotMatch(pageSource, /한 화면 자동 맞춤/);
+  assert.match(pageSource, /실 크기를 확인하고 KS 평면제도 심벌을 선택하세요/);
+  assert.match(pageSource, /도면 단위 mm/);
   assert.doesNotMatch(pageSource, /도면 크게|zoom|paperZoom/);
 });
 
@@ -416,7 +500,7 @@ test("직접 편집한 보는 새 벽 기준으로 재측정되고 복제와 ins
 
 test("제품 블록은 보존하되 기초도면 입력과 출력에서 숨긴다", () => {
   assert.match(pageSource, /const basicGroups: PresetGroup\[\] = \["문", "창호", "기둥·보", "현장 설비"\]/);
-  assert.match(pageSource, /itemPresets\.filter\(\(preset\) => basicGroups\.includes\(preset\.group\)\)/);
+  assert.match(pageSource, /itemPresets\.filter\(\(preset\) => basicGroups\.includes\(preset\.group\) && !LEGACY_DERIVED_OPENING_SYMBOLS\.has\(preset\.id\)\)/);
   assert.match(pageSource, /itemLayer\(legacy\) !== "equipment" && visibleLayers\[itemLayer\(legacy\)\]/);
   assert.match(pageSource, /equipment: false/);
   assert.doesNotMatch(pageSource, /제품 DB 매칭/);
@@ -476,13 +560,17 @@ test("최종 단계 저장은 중복 버튼 없이 sticky 버튼 상태로 피�
   assert.match(stylesSource, /\.site-layout-step-actions > button\.is-saved/);
 });
 
-test("PDF 공유는 공유 실패를 다운로드로 바꾸지 않고 세 작업을 같은 강조로 표시한다", () => {
+test("PDF 공유는 파일 전용 지원 검사를 사용하고 미지원·오류 시 저장으로 복구한다", () => {
   const shareSource = pageSource.match(/async function sharePreparedPdf\([\s\S]*?\n  }\n  async function downloadCurrentPdf/)?.[0] ?? "";
   assert.ok(shareSource, "PDF 공유 함수를 찾을 수 있어야 합니다.");
   assert.match(shareSource, /navigator\.share\?\.bind\(navigator\)/);
-  assert.match(shareSource, /navigator\.canShare/);
-  assert.doesNotMatch(shareSource, /downloadPreparedPdf\(/);
-  assert.match(shareSource, /PDF 저장 후 카카오톡에 첨부해 주세요/);
+  assert.match(shareSource, /typeof navigator\.canShare === "function" && navigator\.canShare\(\{ files \}\)/);
+  assert.doesNotMatch(shareSource, /typeof navigator\.canShare !== "function" \|\|/);
+  assert.match(shareSource, /const shareData = \{ title:[\s\S]*?files \}/);
+  assert.equal((shareSource.match(/downloadPreparedPdf\(file\)/g) ?? []).length, 2);
+  assert.match(shareSource, /"name" in error && error\.name === "AbortError"/);
+  assert.match(shareSource, /preparedPdfFingerprint !== currentDraftFingerprint/);
+  assert.match(shareSource, /카카오톡·메시지·드라이브/);
   assert.doesNotMatch(stylesSource, /\.site-layout-pdf-inline > button:last-child \{[^}]*background:#3157e8/);
 });
 
@@ -496,13 +584,15 @@ test("CAD팀 PDF는 객체별 실제 치수와 측정 기준을 진한 선으로
     /segment\.start\.xMm/,
     /segment\.end\.xMm/,
     /showDimensions && mode === "paper" && <ObjectDimensionLayer/,
-    /const symbolStrokeWidth = mode === "paper" \? 3\.2 : 1\.55/,
-    /const pillarStrokeWidth = mode === "paper" \? 1\.05 : 1/,
-    /const openingStrokeWidth = mode === "paper" \? 2\.75 : 2\.5/,
-    /openingFill: "#d5eef2"/,
-    /fillOpacity=\{0\.66\}/,
+    /const cutStrokeWidth = 2\.05/,
+    /const openingStrokeWidth = 1\.8/,
+    /const fixtureStrokeWidth = 1\.55/,
+    /const hiddenStrokeWidth = 1\.35/,
+    /opening: "#064f5d"/,
+    /data-drawing-standard="KS F 1501"/,
+    /data-plan-source=\{planSource\}/,
     /const centerOffset = -draft\.roomWallThicknessMm \* 0\.5/,
-    /item\.kind === "pillar" \? pillarStrokeWidth : symbolStrokeWidth/,
+    /item\.kind === "pillar" \? cutStrokeWidth : item\.kind === "beam" \? hiddenStrokeWidth : fixtureStrokeWidth/,
     /paintOrder="stroke"/,
   ]);
   const measurementLabelSource = geometryViewSource.match(/function measurementLabel[\s\S]*?\n}\n\ntype ItemLabelPlacement/)?.[0] ?? "";
